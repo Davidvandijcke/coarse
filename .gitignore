@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.egg-info/
+.DS_Store
+.env
+.coarse/
+*.pdf
+!data/**/*.pdf
