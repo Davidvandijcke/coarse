@@ -7,7 +7,7 @@ from pathlib import Path
 import fitz
 import pytest
 
-from coarse.extraction import _estimate_tokens, _extract_text_mode, _extract_vision_mode, extract_text
+from coarse.extraction import _estimate_tokens, _extract_text_mode, _extract_vision_mode, clean_markdown, extract_text
 from coarse.types import PaperText
 
 
@@ -131,3 +131,42 @@ def test_extract_vision_mode_internal(minimal_pdf: Path) -> None:
     for page in pages:
         assert page.image_b64 is None
     doc.close()
+
+
+# ---------------------------------------------------------------------------
+# clean_markdown tests
+# ---------------------------------------------------------------------------
+
+def test_clean_markdown_superscript_fix() -> None:
+    """Mangled superscripts like _x_ [3] should become x^{3}."""
+    assert "x^{3}" in clean_markdown("_x_ [3]")
+    assert "n^{2}" in clean_markdown("_n_ [2]")
+
+
+def test_clean_markdown_unresolved_refs() -> None:
+    """Unresolved cross-references (**??** and ??) should be flagged."""
+    assert "[unresolved reference]" in clean_markdown("see Section **??**")
+    assert "[unresolved reference]" in clean_markdown("see Section ??")
+
+
+def test_clean_markdown_collapse_blank_lines() -> None:
+    """Runs of 4+ blank lines should collapse to 3 newlines."""
+    text = "line1\n\n\n\n\nline2"
+    cleaned = clean_markdown(text)
+    assert "\n\n\n\n" not in cleaned
+    assert "line1" in cleaned and "line2" in cleaned
+
+
+def test_clean_markdown_passthrough() -> None:
+    """Clean text should pass through unchanged."""
+    text = "This is perfectly clean markdown with no artifacts."
+    assert clean_markdown(text) == text
+
+
+def test_clean_markdown_preserves_real_content() -> None:
+    """Ensure cleanup doesn't mangle legitimate markdown."""
+    text = "**bold text** and _italic_ and [link](url) and `code`"
+    cleaned = clean_markdown(text)
+    assert "**bold text**" in cleaned
+    assert "[link](url)" in cleaned
+    assert "`code`" in cleaned

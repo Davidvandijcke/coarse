@@ -166,3 +166,59 @@ def test_overview_agent_uses_temperature_03():
 
     _, kwargs = client.complete.call_args
     assert kwargs.get("temperature") == 0.3
+
+
+def test_build_sections_summary_full_text_for_methodology():
+    """Methodology/results sections should include full text, not 500-char snippets."""
+    long_text = "A" * 3000
+    sections = [
+        SectionInfo(
+            number=1,
+            title="Methodology",
+            text=long_text,
+            section_type=SectionType.METHODOLOGY,
+        ),
+    ]
+    result = _build_sections_summary(sections)
+    # Full text should be present (not truncated to 500 chars)
+    assert long_text in result
+
+
+def test_build_sections_summary_truncates_introduction():
+    """Introduction sections should be truncated to ~2000 chars."""
+    long_text = "B" * 5000
+    sections = [
+        SectionInfo(
+            number=1,
+            title="Introduction",
+            text=long_text,
+            section_type=SectionType.INTRODUCTION,
+        ),
+    ]
+    result = _build_sections_summary(sections)
+    # Should be truncated
+    assert "[...truncated]" in result
+    assert "B" * 5000 not in result
+
+
+def test_build_sections_summary_respects_char_budget():
+    """Total output should not exceed MAX_OVERVIEW_CHARS."""
+    from coarse.agents.overview import MAX_OVERVIEW_CHARS
+    big_text = "C" * 40_000
+    sections = [
+        SectionInfo(number=i, title=f"Sec {i}", text=big_text,
+                    section_type=SectionType.METHODOLOGY)
+        for i in range(1, 4)
+    ]
+    result = _build_sections_summary(sections)
+    assert len(result) <= MAX_OVERVIEW_CHARS + 500  # some slack for headers/markers
+
+
+def test_build_sections_summary_empty_text():
+    """Sections with empty text should show (empty)."""
+    sections = [
+        SectionInfo(number=1, title="Empty", text="",
+                    section_type=SectionType.OTHER),
+    ]
+    result = _build_sections_summary(sections)
+    assert "(empty)" in result

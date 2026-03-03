@@ -33,12 +33,20 @@ def render_review(review: Review) -> str:
     parts.append("**Status**: [Pending]\n")
     parts.append("---\n")
 
-    # --- Detailed Comments ---
+    # --- Detailed Comments (grouped by severity) ---
     n = len(review.detailed_comments)
     parts.append(f"## Detailed Comments ({n})\n")
 
-    for comment in review.detailed_comments:
-        parts.append(f"### {comment.number}. {comment.title}\n")
+    # Group by severity: critical first, then major, then minor
+    severity_order = {"critical": 0, "major": 1, "minor": 2}
+    sorted_comments = sorted(
+        review.detailed_comments,
+        key=lambda c: severity_order.get(c.severity, 1),
+    )
+
+    for comment in sorted_comments:
+        severity_label = f" [{comment.severity.upper()}]" if comment.severity != "major" else ""
+        parts.append(f"### {comment.number}. {comment.title}{severity_label}\n")
         parts.append("**Status**: [Pending]\n")
         # Prefix every line of the quote with "> " for multi-line block-quotes
         quoted_lines = "\n> ".join(comment.quote.splitlines())

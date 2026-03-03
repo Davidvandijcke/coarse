@@ -11,7 +11,7 @@ from pathlib import Path
 
 from coarse.agents.critique import CritiqueAgent
 from coarse.agents.crossref import CrossrefAgent
-from coarse.agents.overview import OverviewAgent
+from coarse.agents.overview import OverviewAgent, check_assumptions, merge_overview
 from coarse.agents.section import SectionAgent
 from coarse.config import CoarseConfig, load_config
 from coarse.cost import run_cost_gate
@@ -33,8 +33,14 @@ def review_paper(
 ) -> tuple[Review, str]:
     """Full pipeline orchestrator.
 
-    Extracts PDF, runs cost gate, analyzes structure, runs overview + section agents
-    in parallel, then crossref, critique, and synthesis.
+    Pipeline order:
+    1. Extract PDF → PaperText
+    2. Cost gate (optional)
+    3. Analyze structure → PaperStructure
+    4. Phase 1: Overview agent + assumption checker (parallel, blocking)
+    5. Phase 2: Section agents (parallel, with overview context)
+    6. Cross-reference + critique
+    7. Synthesis → markdown
 
     Returns:
         (Review, markdown_string)
@@ -57,7 +63,7 @@ def review_paper(
     crossref_agent = CrossrefAgent(client)
     critique_agent = CritiqueAgent(client)
 
-    # Review main body sections only: skip references, appendix, and empty sections.
+    # Review main body sections only: skip references and empty sections.
     # Cap at 25 sections to keep total comment count manageable for crossref.
     reviewable_sections = [
         s for s in structure.sections
@@ -66,19 +72,39 @@ def review_paper(
     ]
     non_ref_sections = reviewable_sections[:25]
 
+    # --- Phase 1: Overview + assumption checker (blocking) ---
+    # Run overview and assumption checker in parallel, then merge results.
+    # Overview must complete before section agents start (they use it as context).
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        overview_future = executor.submit(overview_agent.run, structure)
+        assumption_future = executor.submit(
+            check_assumptions, structure, paper_text, client
+        )
+
+        overview = overview_future.result()
+        try:
+            assumption_issues = assumption_future.result()
+        except Exception:
+            logger.warning("Assumption checker failed, skipping")
+            assumption_issues = []
+
+    overview = merge_overview(overview, assumption_issues)
+
+    # --- Phase 2: Section agents (parallel, with overview context) ---
+    has_images = any(p.image_b64 for p in paper_text.pages)
+    pt_for_sections = paper_text if has_images else None
+
     # NOTE: LLMClient._cost_usd is incremented without a lock across threads;
     # this is a benign data race for advisory cost tracking only.
     with ThreadPoolExecutor(max_workers=10) as executor:
-        overview_future = executor.submit(overview_agent.run, structure)
-        # Pass paper_text to section agent so it can include page images in vision mode
-        has_images = any(p.image_b64 for p in paper_text.pages)
-        pt_for_sections = paper_text if has_images else None
         section_futures = [
-            executor.submit(section_agent.run, section, structure.title, pt_for_sections)
+            executor.submit(
+                section_agent.run, section, structure.title,
+                pt_for_sections, overview,
+            )
             for section in non_ref_sections
         ]
 
-        overview = overview_future.result()
         section_comments: list[DetailedComment] = []
         for i, future in enumerate(section_futures):
             try:

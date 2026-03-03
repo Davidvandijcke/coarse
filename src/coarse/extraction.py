@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from pathlib import Path
 
 import fitz  # pymupdf
@@ -62,7 +63,7 @@ def _extract_text_mode(doc: fitz.Document) -> tuple[str, list[PageContent]]:
     Returns:
         Tuple of (full_markdown, pages).
     """
-    full_markdown = pymupdf4llm.to_markdown(doc)
+    full_markdown = clean_markdown(pymupdf4llm.to_markdown(doc))
     pages = []
     for page_num, page in enumerate(doc, start=1):
         text = page.get_text("text")
@@ -91,7 +92,7 @@ def _extract_vision_mode(doc: fitz.Document) -> tuple[str, list[PageContent]]:
     Only pages with actual figures/charts get rendered as images —
     text-only and equation-only pages stay as text.
     """
-    full_markdown = pymupdf4llm.to_markdown(doc)
+    full_markdown = clean_markdown(pymupdf4llm.to_markdown(doc))
     pages = []
     figure_count = 0
     for page_num, page in enumerate(doc, start=1):
@@ -105,6 +106,34 @@ def _extract_vision_mode(doc: fitz.Document) -> tuple[str, list[PageContent]]:
         pages.append(PageContent(page_num=page_num, text=text, image_b64=image_b64))
     logger.info("Vision mode: %d/%d pages have figures", figure_count, len(doc))
     return full_markdown, pages
+
+
+def clean_markdown(text: str) -> str:
+    """Post-extraction cleanup of pymupdf4llm markdown output.
+
+    Fixes common artifacts from PDF-to-markdown conversion:
+    - Mangled subscript/superscript notation (_x_ [3] → x^{3})
+    - Unresolved LaTeX cross-references (?? → [unresolved reference])
+    - Duplicate blank lines
+    """
+    # Fix mangled superscripts: _x_ [3] → x^{3}, _x_ [2] → x^{2}
+    text = re.sub(r"_(\w+)_\s*\[(\d+)\]", r"\1^{\2}", text)
+
+    # Fix mangled subscripts with commas: _x_ ,  _y_ → x, y
+    text = re.sub(r"_(\w+)_\s*,\s*_(\w+)_", r"\1, \2", text)
+
+    # Fix isolated italic-wrapped single chars: _x_ → x (common math artifact)
+    # Only when surrounded by math context (brackets, operators, spaces)
+    text = re.sub(r"(?<=[(\[,\s])_(\w)_(?=[)\],\s.;])", r"\1", text)
+
+    # Fix unresolved cross-references: **??** or ?? in math context
+    text = re.sub(r"\*\*\?\?\*\*", "[unresolved reference]", text)
+    text = re.sub(r"(?<!\?)\?\?(?!\?)", "[unresolved reference]", text)
+
+    # Collapse runs of 3+ blank lines to 2
+    text = re.sub(r"\n{4,}", "\n\n\n", text)
+
+    return text
 
 
 def _estimate_tokens(text: str) -> int:

@@ -71,6 +71,7 @@ class DetailedComment(BaseModel):
     quote: str
     feedback: str
     status: Literal["Pending"] = "Pending"
+    severity: Literal["critical", "major", "minor"] = "major"
 
 
 class Review(BaseModel):

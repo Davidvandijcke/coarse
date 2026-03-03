@@ -22,3 +22,10 @@ Components are built in order. Each row becomes a PR.
 | 16 | CLI | done | src/coarse/cli.py, src/coarse/__init__.py, src/coarse/__main__.py | 3,5,15 | Typer CLI with progress display, interactive setup, cost approval |
 | 17 | Quality eval | done | src/coarse/quality.py | 4,14 | Compare review against reference using LLM judge (dev/eval only) |
 | 18 | README + packaging | done | README.md, CHANGELOG.md | 16 | User-facing docs, verify pip/pipx/uvx install works |
+| 19 | Text cleanup | pending | src/coarse/extraction.py | — | Post-extraction regex cleanup: fix LaTeX artifacts, normalize math notation, resolve ?? refs |
+| 20 | Full-text overview | pending | src/coarse/agents/overview.py, src/coarse/prompts.py | 19 | Give overview agent full section text (60K char budget) instead of 500-char snippets |
+| 21 | Depth prompts | pending | src/coarse/prompts.py | — | Rewrite section/overview prompts: prioritize substance over formatting, require consequence + fix |
+| 22 | Severity triage | pending | src/coarse/types.py, src/coarse/agents/critique.py, src/coarse/prompts.py, src/coarse/synthesis.py | 21 | Add severity field to DetailedComment; critique classifies critical/major/minor; output groups by severity |
+| 23 | Assumption checker | pending | src/coarse/agents/overview.py, src/coarse/prompts.py, src/coarse/pipeline.py | 20 | Focused second-pass: compare theoretical assumptions against empirical methodology |
+| 24 | Cross-section context | pending | src/coarse/agents/section.py, src/coarse/prompts.py, src/coarse/pipeline.py | 20 | Pass overview issues to section agents; reorder pipeline: overview first, then sections |
+| 25 | Quality regression | pending | tests/test_quality-eval.py, src/coarse/quality.py | 19-24 | Slow-marked regression test on R3D paper; baseline score snapshot for future comparison |

@@ -103,7 +103,7 @@ def test_review_paper_calls_stages_in_order():
         call_order.append("overview")
         return overview
 
-    def fake_section_run(section, title, paper_text=None):
+    def fake_section_run(section, title, paper_text=None, overview=None):
         call_order.append(f"section_{section.number}")
         return [_make_comment(section.number)]
 
@@ -126,6 +126,8 @@ def test_review_paper_calls_stages_in_order():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.pipeline.check_assumptions", return_value=[]),
+        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.render_review", side_effect=fake_render),
     ):
         MockOverview.return_value.run.side_effect = fake_overview_run
@@ -154,7 +156,7 @@ def test_review_paper_skips_references_section():
     overview = _make_overview()
     called_sections: list[SectionInfo] = []
 
-    def fake_section_run(section, title, paper_text=None):
+    def fake_section_run(section, title, paper_text=None, overview=None):
         called_sections.append(section)
         return [_make_comment(section.number)]
 
@@ -165,6 +167,8 @@ def test_review_paper_skips_references_section():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.pipeline.check_assumptions", return_value=[]),
+        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
         MockOverview.return_value.run.return_value = overview
@@ -192,6 +196,8 @@ def test_review_paper_date_format():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.pipeline.check_assumptions", return_value=[]),
+        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.render_review", return_value="md"),
         patch("coarse.pipeline.datetime") as mock_dt,
     ):
@@ -217,6 +223,8 @@ def _patch_pipeline_deps(overview: OverviewFeedback):
     mock_sec = stack.enter_context(patch("coarse.pipeline.SectionAgent"))
     mock_cr = stack.enter_context(patch("coarse.pipeline.CrossrefAgent"))
     mock_ct = stack.enter_context(patch("coarse.pipeline.CritiqueAgent"))
+    stack.enter_context(patch("coarse.pipeline.check_assumptions", return_value=[]))
+    stack.enter_context(patch("coarse.pipeline.merge_overview", return_value=overview))
     stack.enter_context(patch("coarse.pipeline.render_review", return_value="md"))
 
     mock_ov.return_value.run.return_value = overview
@@ -258,6 +266,8 @@ def test_review_paper_returns_review_and_markdown():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.pipeline.check_assumptions", return_value=[]),
+        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.render_review", return_value=expected_markdown),
     ):
         MockOverview.return_value.run.return_value = overview
@@ -297,6 +307,8 @@ def test_review_paper_section_comments_flattened():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.pipeline.check_assumptions", return_value=[]),
+        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
         MockOverview.return_value.run.return_value = overview
@@ -330,6 +342,8 @@ def test_review_paper_uses_provided_config():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.pipeline.check_assumptions", return_value=[]),
+        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
         MockOverview.return_value.run.return_value = overview

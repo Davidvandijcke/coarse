@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from coarse.agents.base import ReviewAgent
 from coarse.llm import LLMClient
 from coarse.prompts import SECTION_SYSTEM, section_user
-from coarse.types import DetailedComment, SectionInfo
+from coarse.types import DetailedComment, OverviewFeedback, SectionInfo
 
 if TYPE_CHECKING:
     from coarse.types import PaperText
@@ -46,6 +46,7 @@ class SectionAgent(ReviewAgent):
         section: SectionInfo,
         paper_title: str,
         paper_text: "PaperText | None" = None,
+        overview: "OverviewFeedback | None" = None,
     ) -> list[DetailedComment]:
         # Truncate very long sections to avoid token overflow
         if len(section.text) > self.MAX_SECTION_CHARS:
@@ -55,7 +56,7 @@ class SectionAgent(ReviewAgent):
         else:
             truncated = section
 
-        user_text = section_user(paper_title, truncated)
+        user_text = section_user(paper_title, truncated, overview=overview)
 
         # Build multimodal message if page images are available
         page_images = _find_section_pages(truncated, paper_text) if paper_text else []
