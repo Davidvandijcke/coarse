@@ -103,7 +103,7 @@ def test_review_paper_calls_stages_in_order():
         call_order.append("overview")
         return overview
 
-    def fake_section_run(section, title):
+    def fake_section_run(section, title, paper_text=None):
         call_order.append(f"section_{section.number}")
         return [_make_comment(section.number)]
 
@@ -154,7 +154,7 @@ def test_review_paper_skips_references_section():
     overview = _make_overview()
     called_sections: list[SectionInfo] = []
 
-    def fake_section_run(section, title):
+    def fake_section_run(section, title, paper_text=None):
         called_sections.append(section)
         return [_make_comment(section.number)]
 

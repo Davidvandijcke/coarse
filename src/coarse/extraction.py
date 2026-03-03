@@ -66,19 +66,17 @@ def _extract_text_mode(doc: fitz.Document) -> tuple[str, list[PageContent]]:
 def _extract_vision_mode(doc: fitz.Document) -> tuple[str, list[PageContent]]:
     """Render pages as PNG images and base64-encode them.
 
-    Returns:
-        Tuple of (full_markdown placeholder, pages with image_b64 set).
+    Uses pymupdf4llm for full_markdown (same quality as text mode)
+    plus page images for multimodal LLM input.
     """
+    full_markdown = pymupdf4llm.to_markdown(doc)
     pages = []
-    page_texts = []
     for page_num, page in enumerate(doc, start=1):
         text = page.get_text("text")
-        page_texts.append(text)
         pixmap = page.get_pixmap(dpi=150)
         png_bytes = pixmap.tobytes("png")
         image_b64 = base64.b64encode(png_bytes).decode("utf-8")
         pages.append(PageContent(page_num=page_num, text=text, image_b64=image_b64))
-    full_markdown = "\n\n".join(page_texts)
     return full_markdown, pages
 
 

@@ -70,8 +70,11 @@ def review_paper(
     # this is a benign data race for advisory cost tracking only.
     with ThreadPoolExecutor(max_workers=10) as executor:
         overview_future = executor.submit(overview_agent.run, structure)
+        # Pass paper_text to section agent so it can include page images in vision mode
+        has_images = any(p.image_b64 for p in paper_text.pages)
+        pt_for_sections = paper_text if has_images else None
         section_futures = [
-            executor.submit(section_agent.run, section, structure.title)
+            executor.submit(section_agent.run, section, structure.title, pt_for_sections)
             for section in non_ref_sections
         ]
 
