@@ -11,7 +11,7 @@ Components are built in order. Each row becomes a PR.
 | 5 | Cost estimator | done | src/coarse/cost.py | 4 | Pre-flight cost estimate, fetch pricing from litellm, user approval display |
 | 6 | Extraction | done | src/coarse/extraction.py | 2 | PDF → PaperText via pymupdf4llm (text mode) + pymupdf (vision mode) |
 | 7 | Prompts | done | src/coarse/prompts.py | 2 | All prompt templates for structure, overview, section, crossref, critique |
-| 8 | Structure analysis | pending | src/coarse/structure.py | 4,7 | PaperText → PaperStructure via LLM call |
+| 8 | Structure analysis | done | src/coarse/structure.py | 4,7 | PaperText → PaperStructure via LLM call |
 | 9 | Agent base | pending | src/coarse/agents/base.py, src/coarse/agents/__init__.py | 4 | ReviewAgent ABC with run() method |
 | 10 | Overview agent | pending | src/coarse/agents/overview.py | 7,9 | Macro-level review producing 4-6 OverviewIssues |
 | 11 | Section agent | pending | src/coarse/agents/section.py | 7,9 | Per-section review producing DetailedComments (runs parallel) |
