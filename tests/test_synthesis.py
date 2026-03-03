@@ -1,0 +1,158 @@
+"""Tests for coarse.synthesis.render_review."""
+from __future__ import annotations
+
+import pytest
+
+from coarse.synthesis import render_review
+from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
+
+
+def _make_review(
+    *,
+    title: str = "Test Paper",
+    domain: str = "social_sciences/economics",
+    taxonomy: str = "academic/research_paper",
+    date: str = "3/3/2026, 11:23:50 AM",
+    issues: list[OverviewIssue] | None = None,
+    comments: list[DetailedComment] | None = None,
+) -> Review:
+    if issues is None:
+        issues = [
+            OverviewIssue(title=f"Issue {i}", body=f"Body {i}") for i in range(1, 5)
+        ]
+    if comments is None:
+        comments = [
+            DetailedComment(
+                number=1,
+                title="Comment One",
+                quote="Some quoted text.",
+                feedback="Some feedback.",
+            )
+        ]
+    return Review(
+        title=title,
+        domain=domain,
+        taxonomy=taxonomy,
+        date=date,
+        overall_feedback=OverviewFeedback(issues=issues),
+        detailed_comments=comments,
+    )
+
+
+def test_render_review_returns_string():
+    review = _make_review()
+    result = render_review(review)
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+def test_render_review_header():
+    review = _make_review(
+        title="My Paper",
+        domain="social_sciences/economics",
+        taxonomy="academic/research_paper",
+        date="3/3/2026, 11:23:50 AM",
+    )
+    result = render_review(review)
+    assert "# My Paper" in result
+    assert "**Date**: 3/3/2026, 11:23:50 AM" in result
+    assert "**Domain**: social_sciences/economics" in result
+    assert "**Taxonomy**: academic/research_paper" in result
+    assert "**Filter**: Active comments" in result
+
+
+def test_render_review_overall_feedback():
+    issues = [
+        OverviewIssue(title="Alpha Issue", body="Alpha body text."),
+        OverviewIssue(title="Beta Issue", body="Beta body text."),
+        OverviewIssue(title="Gamma Issue", body="Gamma body text."),
+        OverviewIssue(title="Delta Issue", body="Delta body text."),
+    ]
+    review = _make_review(issues=issues)
+    result = render_review(review)
+
+    assert "## Overall Feedback" in result
+    assert "Here are some overall reactions to the document." in result
+    for issue in issues:
+        assert f"**{issue.title}**" in result
+        assert issue.body in result
+
+    # Single trailing [Pending] after the block, not after each issue
+    assert result.count("**Status**: [Pending]") == len(review.detailed_comments) + 1
+    # The overall status comes before the detailed comments section
+    overall_idx = result.index("## Overall Feedback")
+    detailed_idx = result.index("## Detailed Comments")
+    first_pending = result.index("**Status**: [Pending]")
+    assert overall_idx < first_pending < detailed_idx
+
+
+def test_render_review_detailed_comments_count():
+    comments = [
+        DetailedComment(number=i, title=f"C{i}", quote=f"q{i}", feedback=f"f{i}")
+        for i in range(1, 6)
+    ]
+    review = _make_review(comments=comments)
+    result = render_review(review)
+    assert "## Detailed Comments (5)" in result
+
+
+def test_render_review_detailed_comment_fields():
+    comment = DetailedComment(
+        number=3,
+        title="Missing Robustness",
+        quote="The model assumes linearity.",
+        feedback="Please add robustness checks.",
+    )
+    review = _make_review(comments=[comment])
+    result = render_review(review)
+
+    assert "### 3. Missing Robustness" in result
+    assert "**Status**: [Pending]" in result
+    assert "**Quote**:" in result
+    assert "> The model assumes linearity." in result
+    assert "**Feedback**:" in result
+    assert "Please add robustness checks." in result
+
+    # Verify order: status → quote → feedback
+    status_idx = result.index("**Status**: [Pending]", result.index("### 3."))
+    quote_idx = result.index("**Quote**:")
+    feedback_idx = result.index("**Feedback**:")
+    assert status_idx < quote_idx < feedback_idx
+
+
+def test_render_review_multiline_quote():
+    comment = DetailedComment(
+        number=1,
+        title="Multi-line",
+        quote="First line.\nSecond line.\nThird line.",
+        feedback="Fix it.",
+    )
+    review = _make_review(comments=[comment])
+    result = render_review(review)
+
+    assert "> First line." in result
+    assert "> Second line." in result
+    assert "> Third line." in result
+
+
+def test_render_review_separator_count():
+    comments = [
+        DetailedComment(number=i, title=f"C{i}", quote=f"q{i}", feedback=f"f{i}")
+        for i in range(1, 4)
+    ]
+    review = _make_review(comments=comments)
+    result = render_review(review)
+
+    # Separators: after header block, after overall feedback, after each comment (3)
+    separator_count = result.count("\n---\n")
+    assert separator_count >= 5  # 2 structural + 3 per comment
+
+
+def test_render_review_empty_comments():
+    issues = [OverviewIssue(title=f"I{i}", body=f"b{i}") for i in range(1, 5)]
+    review = _make_review(issues=issues, comments=[])
+    result = render_review(review)
+
+    assert "## Detailed Comments (0)" in result
+    assert isinstance(result, str)
+    assert len(result) > 0
