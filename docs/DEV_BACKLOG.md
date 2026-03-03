@@ -21,4 +21,4 @@ Components are built in order. Each row becomes a PR.
 | 15 | Pipeline | done | src/coarse/pipeline.py | 6,8,10-14 | review_paper() orchestrator: extract → structure → agents → synthesize |
 | 16 | CLI | done | src/coarse/cli.py, src/coarse/__init__.py, src/coarse/__main__.py | 3,5,15 | Typer CLI with progress display, interactive setup, cost approval |
 | 17 | Quality eval | done | src/coarse/quality.py | 4,14 | Compare review against reference using LLM judge (dev/eval only) |
-| 18 | README + packaging | pending | README.md, CHANGELOG.md | 16 | User-facing docs, verify pip/pipx/uvx install works |
+| 18 | README + packaging | done | README.md, CHANGELOG.md | 16 | User-facing docs, verify pip/pipx/uvx install works |
