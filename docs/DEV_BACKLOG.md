@@ -17,7 +17,7 @@ Components are built in order. Each row becomes a PR.
 | 11 | Section agent | done | src/coarse/agents/section.py | 7,9 | Per-section review producing DetailedComments (runs parallel) |
 | 12 | Crossref agent | done | src/coarse/agents/crossref.py | 7,9 | Dedup comments, validate quotes against paper text, check consistency |
 | 13 | Critique agent | done | src/coarse/agents/critique.py | 7,9 | Self-critique quality gate: revise weak comments, drop low-value ones |
-| 14 | Synthesis | pending | src/coarse/synthesis.py | 2 | Review → refine.ink-format markdown string |
+| 14 | Synthesis | done | src/coarse/synthesis.py | 2 | Review → refine.ink-format markdown string |
 | 15 | Pipeline | pending | src/coarse/pipeline.py | 6,8,10-14 | review_paper() orchestrator: extract → structure → agents → synthesize |
 | 16 | CLI | pending | src/coarse/cli.py, src/coarse/__init__.py, src/coarse/__main__.py | 3,5,15 | Typer CLI with progress display, interactive setup, cost approval |
 | 17 | Quality eval | pending | src/coarse/quality.py | 4,14 | Compare review against reference using LLM judge (dev/eval only) |
