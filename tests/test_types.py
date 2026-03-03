@@ -118,16 +118,16 @@ def test_section_type_enum_values():
 # --- OverviewFeedback ---
 
 def test_overview_feedback_count_constraint():
-    # Too few
+    # Empty is too few (min_length=1)
     with pytest.raises(ValidationError):
-        OverviewFeedback(issues=[make_issue(i) for i in range(3)])
+        OverviewFeedback(issues=[])
 
-    # Too many
+    # Too many (max_length=8)
     with pytest.raises(ValidationError):
-        OverviewFeedback(issues=[make_issue(i) for i in range(7)])
+        OverviewFeedback(issues=[make_issue(i) for i in range(9)])
 
-    # Valid range: 4 to 6
-    for count in range(4, 7):
+    # Valid range: 1 to 8
+    for count in (1, 4, 6, 8):
         fb = OverviewFeedback(issues=[make_issue(i) for i in range(count)])
         assert len(fb.issues) == count
 

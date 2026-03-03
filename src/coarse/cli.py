@@ -7,8 +7,7 @@ from typing import Optional
 
 import typer
 from rich.console import Console
-from rich.live import Live
-from rich.spinner import Spinner
+from rich.status import Status
 
 from coarse.config import (
     PROVIDER_ENV_VARS,
@@ -17,6 +16,16 @@ from coarse.config import (
     resolve_api_key,
     save_config,
 )
+from coarse.pipeline import review_paper
+
+# Cheap models per provider — used by --cheap flag
+CHEAP_MODELS = {
+    "OPENROUTER_API_KEY": "openrouter/google/gemini-2.5-flash",
+    "OPENAI_API_KEY": "openai/gpt-4o-mini",
+    "ANTHROPIC_API_KEY": "anthropic/claude-haiku-4-5",
+    "GOOGLE_API_KEY": "google/gemini-2.5-flash",
+    "GROQ_API_KEY": "groq/llama-3.3-70b-versatile",
+}
 
 app = typer.Typer(
     name="coarse",
@@ -25,6 +34,15 @@ app = typer.Typer(
 )
 
 console = Console()
+
+
+def _pick_cheap_model() -> str | None:
+    """Find the cheapest available model based on which API keys are set."""
+    import os
+    for env_var, model in CHEAP_MODELS.items():
+        if os.environ.get(env_var):
+            return model
+    return None
 
 
 def _run_setup(config: CoarseConfig) -> CoarseConfig:
@@ -74,20 +92,30 @@ def review(
     model: Optional[str] = typer.Option(
         None, "--model", "-m", help="LiteLLM model string (e.g. openai/gpt-4o)"
     ),
+    cheap: bool = typer.Option(
+        False, "--cheap", help="Use cheapest available model"
+    ),
     vision: bool = typer.Option(False, "--vision", help="Use vision mode for scanned PDFs"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation prompt"),
 ) -> None:
     """Review a PDF paper and write a markdown report."""
-    from coarse.pipeline import review_paper
 
     config = load_config()
-    resolved_model = model or config.default_model
+
+    # Resolve model: --cheap > --model > config default
+    if cheap:
+        resolved_model = _pick_cheap_model()
+        if resolved_model is None:
+            console.print("[red]--cheap: no API key found for any provider.[/red]")
+            raise typer.Exit(code=1)
+        console.print(f"[dim]Using cheap model: {resolved_model}[/dim]")
+    else:
+        resolved_model = model or config.default_model
 
     # Check API key; run setup inline if missing
     if resolve_api_key(resolved_model, config) is None:
-        console.print(
-            f"[yellow]No API key found for provider '{resolved_model.split('/')[0]}'.[/yellow]"
-        )
+        provider = resolved_model.split("/")[0] if "/" in resolved_model else resolved_model
+        console.print(f"[yellow]No API key found for provider '{provider}'.[/yellow]")
         if not sys.stdin.isatty():
             console.print(
                 "[red]stdin is not a TTY. "
@@ -99,15 +127,21 @@ def review(
     # Determine output path
     out_path = output or Path(f"{pdf.stem}_review.md")
 
-    # Run pipeline with spinner
-    with Live(Spinner("dots", text="Reviewing paper…"), console=console, refresh_per_second=10):
+    console.print(f"[bold]Reviewing[/bold] {pdf.name} with {resolved_model}")
+
+    with Status("Running review pipeline...", console=console):
         review_obj, markdown = review_paper(
             pdf_path=pdf,
-            model=model,
+            model=resolved_model,
             vision=vision,
             skip_cost_gate=yes,
             config=config,
         )
 
     out_path.write_text(markdown, encoding="utf-8")
-    console.print(f"[green]Review written to {out_path}[/green]")
+    n_comments = len(review_obj.detailed_comments)
+    n_issues = len(review_obj.overall_feedback.issues)
+    console.print(
+        f"[green]Review written to {out_path}[/green] "
+        f"({n_issues} issues, {n_comments} detailed comments)"
+    )

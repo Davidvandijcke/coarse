@@ -25,6 +25,7 @@ PROVIDER_ENV_VARS: dict[str, str] = {
     "groq": "GROQ_API_KEY",
     "together": "TOGETHER_API_KEY",
     "azure": "AZURE_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
 }
 
 

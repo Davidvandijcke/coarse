@@ -1,11 +1,9 @@
 """Tests for cli.py — Typer CLI commands."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from coarse.cli import app
@@ -35,8 +33,7 @@ def _make_review() -> Review:
     )
 
 
-def _fake_review_paper(**kwargs):
-    """Stub for pipeline.review_paper that returns (Review, markdown)."""
+def _fake_review_paper(pdf_path, model=None, vision=False, skip_cost_gate=False, config=None):
     return _make_review(), "# Test Paper\n"
 
 
@@ -49,16 +46,10 @@ def test_review_command_invokes_pipeline(tmp_path):
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
-    captured: dict = {}
-
-    def fake_review_paper(pdf_path, model=None, vision=False, skip_cost_gate=False, config=None):
-        captured["pdf_path"] = pdf_path
-        return _make_review(), "# Test Paper\n"
-
     with (
         patch("coarse.cli.resolve_api_key", return_value="sk-test"),
         patch("coarse.cli.load_config", return_value=CoarseConfig()),
-        patch("coarse.pipeline.review_paper", fake_review_paper),
+        patch("coarse.cli.review_paper", _fake_review_paper),
     ):
         result = runner.invoke(app, ["review", str(pdf), "--yes"])
 
@@ -74,13 +65,10 @@ def test_review_command_default_output_path(tmp_path):
     pdf = tmp_path / "myresearch.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
-    def fake_review_paper(pdf_path, model=None, vision=False, skip_cost_gate=False, config=None):
-        return _make_review(), "# Test Paper\n"
-
     with (
         patch("coarse.cli.resolve_api_key", return_value="sk-test"),
         patch("coarse.cli.load_config", return_value=CoarseConfig()),
-        patch("coarse.pipeline.review_paper", fake_review_paper),
+        patch("coarse.cli.review_paper", _fake_review_paper),
     ):
         result = runner.invoke(app, ["review", str(pdf), "--yes"])
 
@@ -100,13 +88,13 @@ def test_review_command_custom_output_path(tmp_path):
     pdf.write_bytes(b"%PDF-1.4 fake")
     out = tmp_path / "out.md"
 
-    def fake_review_paper(pdf_path, model=None, vision=False, skip_cost_gate=False, config=None):
+    def fake(pdf_path, model=None, vision=False, skip_cost_gate=False, config=None):
         return _make_review(), "# Custom Output\n"
 
     with (
         patch("coarse.cli.resolve_api_key", return_value="sk-test"),
         patch("coarse.cli.load_config", return_value=CoarseConfig()),
-        patch("coarse.pipeline.review_paper", fake_review_paper),
+        patch("coarse.cli.review_paper", fake),
     ):
         result = runner.invoke(app, ["review", str(pdf), "--output", str(out), "--yes"])
 
@@ -126,14 +114,14 @@ def test_review_yes_flag_skips_cost_gate(tmp_path):
 
     captured: dict = {}
 
-    def fake_review_paper(pdf_path, model=None, vision=False, skip_cost_gate=False, config=None):
+    def fake(pdf_path, model=None, vision=False, skip_cost_gate=False, config=None):
         captured["skip_cost_gate"] = skip_cost_gate
         return _make_review(), "# Test\n"
 
     with (
         patch("coarse.cli.resolve_api_key", return_value="sk-test"),
         patch("coarse.cli.load_config", return_value=CoarseConfig()),
-        patch("coarse.pipeline.review_paper", fake_review_paper),
+        patch("coarse.cli.review_paper", fake),
     ):
         result = runner.invoke(app, ["review", str(pdf), "--yes"])
 
@@ -176,7 +164,6 @@ def test_setup_command_writes_config(tmp_path, monkeypatch):
         patch("coarse.cli.load_config", return_value=CoarseConfig()),
         patch("coarse.cli.save_config", fake_save_config),
     ):
-        # Provide: default model, then blank for all API key prompts
         from coarse.config import PROVIDER_ENV_VARS
 
         inputs = ["openai/gpt-4o"] + [""] * len(PROVIDER_ENV_VARS)
@@ -198,8 +185,6 @@ def test_setup_skips_keys_already_in_env(tmp_path, monkeypatch):
 
     prompts_asked: list[str] = []
 
-    original_prompt = __import__("typer").prompt
-
     def fake_prompt(text, **kwargs):
         prompts_asked.append(text)
         return kwargs.get("default", "")
@@ -216,7 +201,6 @@ def test_setup_skips_keys_already_in_env(tmp_path, monkeypatch):
     ):
         result = runner.invoke(app, ["setup"])
 
-    # OPENAI_API_KEY is set, so no prompt for it should appear
     assert not any("OPENAI_API_KEY" in p for p in prompts_asked)
 
 

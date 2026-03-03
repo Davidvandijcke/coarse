@@ -39,7 +39,7 @@ STATE_DIR = REPO_ROOT / ".coarse"
 STATE_FILE = STATE_DIR / "dev_state.json"
 SPECS_DIR = REPO_ROOT / ".coarse" / "specs"
 DEFAULT_MODEL = "sonnet"
-PHASE_TIMEOUT = 900  # 15 minutes per phase
+PHASE_TIMEOUT = 1800  # 30 minutes per phase
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -444,17 +444,12 @@ def build_implement_prompt(
         6. Run `uv run pytest tests/ -v` and fix any failures.
         7. Run `uv run ruff check src/coarse/` and fix lint errors.
 
-        ## Commit & PR
+        ## Commit
         After all tests pass:
         1. `git add` only the files you created/modified.
         2. Commit: `feat(coarse): add {component.name} (#{component.number})`
            Include `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`.
-        3. Push: `git push -u origin {branch_name}`
-        4. Create PR:
-           ```
-           gh pr create --title "feat(coarse): add {component.name} (#{component.number})" \\
-             --body "## Summary\\nImplement {component.name}: {component.description}\\n\\n## Test plan\\n- [ ] All tests pass\\n\\nGenerated with Claude Code"
-           ```
+        Do NOT push or create a PR. This is a local-only repo.
 
         ## Rules
         - Implement ONLY what the spec describes. No extras.
@@ -467,8 +462,6 @@ def build_implement_prompt(
         ## Output
         When done, return ONLY a JSON object:
         {{{{
-            "pr_number": <int>,
-            "pr_url": "<url>",
             "files_created": ["<path>", ...],
             "files_modified": ["<path>", ...],
             "tests_passed": true | false,
@@ -520,86 +513,20 @@ def run_implement(
 # ---------------------------------------------------------------------------
 
 
-def build_review_prompt(pr_number: int, component: ComponentEntry) -> str:
-    return textwrap.dedent(f"""\
-        You are reviewing PR #{pr_number} which implements component #{component.number}
-        "{component.name}" for the `coarse` package.
-
-        ## Steps
-        1. Run `gh pr diff {pr_number}` to see the changes.
-        2. Run `gh pr view {pr_number}` to see the PR description.
-        3. Read the changed files to understand context.
-        4. Read CLAUDE.md for project conventions.
-        5. Check that:
-           - Code matches the described spec
-           - Tests cover the public API
-           - No unnecessary complexity or over-engineering
-           - Prompts (if any) are in prompts.py
-           - Types (if any) match types.py conventions
-           - No hardcoded model names outside config.py
-           - Code is clean and minimal
-
-        ## Bash Restrictions
-        You may ONLY use Bash for: `gh pr diff`, `gh pr view`, `git log`, `git diff`,
-        `uv run pytest`, `uv run ruff check`.
-
-        ## Output
-        Return ONLY a JSON object:
-        {{{{
-            "verdict": "approve" | "request_changes",
-            "comments": ["<comment>", ...],
-            "summary": "<1-2 sentence assessment>"
-        }}}}
-    """)
-
-
-REVIEW_SYSTEM = (
-    "You are a code reviewer. Be thorough but pragmatic. "
-    "Output ONLY valid JSON. Approve if the code is correct, tested, and minimal. "
-    "Request changes only for real bugs or missing tests, not style preferences."
-)
-
-
-def run_review(pr_number: int, component: ComponentEntry, model: str) -> dict:
-    """Phase 3: review the PR."""
-    print(f"\n--- Phase 3: Review PR #{pr_number} ({component.name}) ---")
-    prompt = build_review_prompt(pr_number, component)
-    envelope = run_claude(
-        prompt,
-        allowed_tools="Read,Grep,Glob,Bash",
-        model=model,
-        system_append=REVIEW_SYSTEM,
-    )
-    result_text = extract_result_text(envelope)
-    review = parse_json_from_text(result_text)
-    review["_meta"] = {
-        "phase": "review",
-        "model": model,
-        "cost_usd": envelope.get("total_cost_usd"),
-    }
-    return review
-
-
 # ---------------------------------------------------------------------------
-# Phase 4: Merge
+# Phase 3: Merge
 # ---------------------------------------------------------------------------
 
 
-def merge_pr(pr_number: int, component: ComponentEntry, worktree_path: Path) -> None:
-    """Merge PR and clean up."""
-    print(f"\n--- Phase 4: Merge PR #{pr_number} ---")
+def merge_branch(component: ComponentEntry, worktree_path: Path, branch_name: str) -> None:
+    """Merge feature branch into main and clean up."""
+    print(f"\n--- Phase 3: Merge {branch_name} ---")
 
-    subprocess.run(
-        ["gh", "pr", "merge", str(pr_number), "--squash"],
-        cwd=str(REPO_ROOT),
-        check=True,
-    )
-    print(f"  PR #{pr_number} merged.")
-
-    git("pull", "origin", "main")
-    print("  Pulled main.")
+    git("merge", branch_name, "--no-edit")
+    print(f"  Merged {branch_name} into main.")
 
     git("worktree", "remove", str(worktree_path), check=False)
+    git("branch", "-D", branch_name, check=False)
     print(f"  Removed worktree: {worktree_path}")
 
     update_backlog_status(component.name, "done")
@@ -721,36 +648,18 @@ def process_component(
 
     # Phase 2: Implement
     impl_result, worktree_path = run_implement(component, spec, args.model)
-    pr_number = impl_result.get("pr_number")
-
-    if not pr_number:
-        raise PipelineError(
-            f"Phase 2 did not produce a PR. Result: {json.dumps(impl_result, indent=2)[:500]}"
-        )
 
     tests_passed = impl_result.get("tests_passed", False)
     test_count = impl_result.get("test_count", 0)
-    print(f"\n  PR #{pr_number}: {impl_result.get('pr_url', '?')}")
     print(f"  Tests: {'PASS' if tests_passed else 'FAIL'} ({test_count} tests)")
 
     if not tests_passed:
-        print(f"  WARNING: Tests did not pass. Check PR #{pr_number}.")
+        print(f"  WARNING: Tests did not pass.")
 
-    # Phase 3: Review
-    review = run_review(pr_number, component, args.model)
-    verdict = review.get("verdict", "request_changes")
-    print(f"\n  Review verdict: {verdict}")
-    print(f"  Summary: {review.get('summary', 'N/A')}")
-    for comment in review.get("comments", []):
-        print(f"    - {comment}")
-
-    if verdict != "approve":
-        print(f"\n  PR #{pr_number} needs changes. Skipping merge.")
-        update_backlog_status(component.name, "pending")
-        return False
-
-    # Phase 4: Merge
-    merge_pr(pr_number, component, worktree_path)
+    # Phase 3: Merge branch into main
+    safe_name = component.name.lower().replace(" ", "-")
+    branch_name = f"feat/{component.number}-{safe_name}"
+    merge_branch(component, worktree_path, branch_name)
     clear_state()
     print(f"\n  Done! {component.name} built and merged.")
     return True
@@ -809,17 +718,10 @@ def main() -> int:
         # Jump straight to implement
         try:
             impl_result, worktree_path = run_implement(component, spec, args.model)
-            pr_number = impl_result.get("pr_number")
-            if not pr_number:
-                raise PipelineError("No PR number from implementation.")
-
-            review = run_review(pr_number, component, args.model)
-            if review.get("verdict") == "approve":
-                merge_pr(pr_number, component, worktree_path)
-                clear_state()
-            else:
-                print(f"PR #{pr_number} needs changes.")
-                return EXIT_ERROR
+            safe_name = component.name.lower().replace(" ", "-")
+            branch_name = f"feat/{component.number}-{safe_name}"
+            merge_branch(component, worktree_path, branch_name)
+            clear_state()
         except PipelineError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return EXIT_ERROR

@@ -52,7 +52,7 @@ class OverviewIssue(BaseModel):
 
 
 class OverviewFeedback(BaseModel):
-    issues: list[OverviewIssue] = Field(min_length=4, max_length=6)
+    issues: list[OverviewIssue] = Field(min_length=1, max_length=8)
 
 
 class DetailedComment(BaseModel):
