@@ -14,7 +14,7 @@ Components are built in order. Each row becomes a PR.
 | 8 | Structure analysis | done | src/coarse/structure.py | 4,7 | PaperText → PaperStructure via LLM call |
 | 9 | Agent base | done | src/coarse/agents/base.py, src/coarse/agents/__init__.py | 4 | ReviewAgent ABC with run() method |
 | 10 | Overview agent | done | src/coarse/agents/overview.py | 7,9 | Macro-level review producing 4-6 OverviewIssues |
-| 11 | Section agent | pending | src/coarse/agents/section.py | 7,9 | Per-section review producing DetailedComments (runs parallel) |
+| 11 | Section agent | done | src/coarse/agents/section.py | 7,9 | Per-section review producing DetailedComments (runs parallel) |
 | 12 | Crossref agent | pending | src/coarse/agents/crossref.py | 7,9 | Dedup comments, validate quotes against paper text, check consistency |
 | 13 | Critique agent | pending | src/coarse/agents/critique.py | 7,9 | Self-critique quality gate: revise weak comments, drop low-value ones |
 | 14 | Synthesis | pending | src/coarse/synthesis.py | 2 | Review → refine.ink-format markdown string |
