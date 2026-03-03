@@ -4,7 +4,7 @@ Components are built in order. Each row becomes a PR.
 
 | # | Component | Status | File(s) | Deps | Description |
 |---|-----------|--------|---------|------|-------------|
-| 1 | Project setup | pending | pyproject.toml, .gitignore, LICENSE | — | Verify project structure, add missing scaffolding, initial commit |
+| 1 | Project setup | done | pyproject.toml, .gitignore, LICENSE | — | Verify project structure, add missing scaffolding, initial commit |
 | 2 | Types | pending | src/coarse/types.py | — | Pydantic models: PaperText, PaperStructure, Review, DetailedComment, CostEstimate, etc. |
 | 3 | Config | pending | src/coarse/config.py | 2 | Settings: ~/.coarse/config.toml, API key resolution, model defaults |
 | 4 | LLM client | pending | src/coarse/llm.py | 2,3 | litellm + instructor wrapper, cost tracking, structured output |
