@@ -38,7 +38,7 @@ def _make_section(number: int, section_type: SectionType = SectionType.INTRODUCT
     return SectionInfo(
         number=number,
         title=f"Section {number}",
-        text=f"Content of section {number}.",
+        text=f"Content of section {number}. " * 10,  # >50 chars to pass pipeline filter
         section_type=section_type,
     )
 

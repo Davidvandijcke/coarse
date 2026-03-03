@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PageContent(BaseModel):
@@ -30,12 +30,22 @@ class SectionType(str, Enum):
 
 
 class SectionInfo(BaseModel):
-    number: int
+    number: int | float | str
     title: str
     text: str
-    section_type: SectionType
+    section_type: SectionType = SectionType.OTHER
     claims: list[str] = Field(default_factory=list)
     definitions: list[str] = Field(default_factory=list)
+
+    @field_validator("section_type", mode="before")
+    @classmethod
+    def _coerce_section_type(cls, v: str) -> str:
+        """Map unknown section_type values to 'other'."""
+        try:
+            SectionType(v)
+            return v
+        except ValueError:
+            return SectionType.OTHER.value
 
 
 class PaperStructure(BaseModel):

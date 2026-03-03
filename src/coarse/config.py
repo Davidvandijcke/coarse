@@ -91,6 +91,12 @@ def resolve_api_key(provider: str, config: CoarseConfig | None = None) -> str | 
         if value:
             return value
 
+    # For unknown providers (e.g. qwen/, deepseek/), fall back to OpenRouter key
+    if name not in PROVIDER_ENV_VARS:
+        or_key = os.environ.get("OPENROUTER_API_KEY")
+        if or_key:
+            return or_key
+
     # Fall back to config file
     if config is None:
         config = load_config()

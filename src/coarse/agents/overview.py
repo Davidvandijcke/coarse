@@ -10,16 +10,16 @@ from coarse.types import OverviewFeedback, PaperStructure, SectionInfo
 def _build_sections_summary(sections: list[SectionInfo]) -> str:
     """Convert sections list to a condensed text block for the overview prompt.
 
-    Each section is formatted as:
-        ## {number}. {title} ({section_type})
-        Claims: {claims joined by semicolons}
+    Each section includes title, type, and a snippet of the section text.
     """
     parts = []
     for sec in sections:
-        claims_str = "; ".join(sec.claims) if sec.claims else "(none)"
+        snippet = sec.text[:500].strip() if sec.text else "(empty)"
+        if len(sec.text) > 500:
+            snippet += "..."
         parts.append(
             f"## {sec.number}. {sec.title} ({sec.section_type.value})\n"
-            f"Claims: {claims_str}"
+            f"{snippet}"
         )
     return "\n\n".join(parts)
 

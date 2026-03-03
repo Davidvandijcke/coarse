@@ -29,12 +29,24 @@ class SectionAgent(ReviewAgent):
     def __init__(self, client: LLMClient) -> None:
         super().__init__(client)
 
+    # Maximum section text length (chars) sent to the LLM.
+    # Sections longer than this are truncated to avoid token limits.
+    MAX_SECTION_CHARS = 15_000
+
     def run(self, section: SectionInfo, paper_title: str) -> list[DetailedComment]:  # type: ignore[override]
+        # Truncate very long sections to avoid token overflow
+        if len(section.text) > self.MAX_SECTION_CHARS:
+            truncated = section.model_copy(
+                update={"text": section.text[: self.MAX_SECTION_CHARS] + "\n\n[...truncated]"}
+            )
+        else:
+            truncated = section
+
         messages = [
             {"role": "system", "content": SECTION_SYSTEM},
-            {"role": "user", "content": section_user(paper_title, section)},
+            {"role": "user", "content": section_user(paper_title, truncated)},
         ]
         result = self.client.complete(
-            messages, _SectionComments, max_tokens=2048, temperature=0.3
+            messages, _SectionComments, max_tokens=4096, temperature=0.3
         )
         return result.comments

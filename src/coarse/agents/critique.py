@@ -33,6 +33,6 @@ class CritiqueAgent(ReviewAgent):
             {"role": "user", "content": user_content},
         ]
         result = self.client.complete(
-            messages, _RevisedComments, max_tokens=4096, temperature=0.1
+            messages, _RevisedComments, max_tokens=16384, temperature=0.1
         )
         return result.comments

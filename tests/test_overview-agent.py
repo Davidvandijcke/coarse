@@ -121,8 +121,6 @@ def test_build_sections_summary_includes_all_sections():
 
     for sec in sections:
         assert sec.title in result
-        for claim in sec.claims:
-            assert claim in result
 
 
 def test_build_sections_summary_empty_claims():

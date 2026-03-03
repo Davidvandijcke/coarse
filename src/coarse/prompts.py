@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 STRUCTURE_SYSTEM = """\
 You are an expert academic paper analyst. Your task is to parse the structure of a \
-research paper and extract its key components.
+research paper and identify its sections.
 
 Extract the following from the paper:
 - title: The full title of the paper
@@ -30,15 +30,15 @@ Extract the following from the paper:
 - sections: Each section of the paper (excluding references list entries)
 
 For each section provide:
-- number: Sequential section number starting at 1
-- title: The section heading
-- text: The full section text content
+- number: Section number as a string (e.g. "1", "2.1", "3.2.1" — use the paper's own numbering)
+- title: The section heading exactly as it appears in the paper
+- text: Leave as empty string ""
 - section_type: One of: abstract, introduction, related_work, methodology, results, \
 discussion, conclusion, appendix, references, other
-- claims: List of 2-5 key empirical or theoretical claims made in this section
-- definitions: List of key terms or formal definitions introduced in this section
 
-Be thorough and precise. Preserve mathematical notation as-is.
+IMPORTANT: Set text to "" for every section. Section text will be extracted separately. \
+Do NOT include claims or definitions — leave those as empty lists. \
+Keep your output compact.
 """
 
 
@@ -160,8 +160,9 @@ You are an expert peer reviewer performing a final quality check on a set of \
 detailed comments for a research paper.
 
 Your tasks:
-1. Deduplication: Merge near-duplicate comments that raise the same issue. \
-Keep the most substantive version; discard redundant ones.
+1. Deduplication: Aggressively merge near-duplicate or closely related comments. \
+Keep the single most substantive version; discard redundant ones. Comments about \
+the same issue in nearby text should be merged into one.
 2. Quote verification: Verify that every comment's quote is a verbatim substring \
 of the paper text. If a quote is paraphrased or inaccurate, correct it by finding \
 the closest matching passage in the paper, or remove the comment if no suitable \
@@ -169,10 +170,12 @@ passage exists.
 3. Numbering: Return the consolidated list renumbered sequentially from 1.
 
 Requirements:
-- Preserve all genuinely distinct comments
+- TARGET 15-25 comments total. Aggressively deduplicate to stay within this range.
+- Keep feedback CONCISE: 2-3 sentences per comment. No multi-paragraph explanations.
 - Do not add new comments; only consolidate and correct existing ones
-- A comment is a duplicate if it identifies the same problem in the same location, \
-even if worded differently
+- A comment is a duplicate if it raises a similar concern, even in different sections
+- Prioritize the most impactful comments; drop minor formatting/notation nitpicks \
+if the list exceeds 25
 - After merging, renumber comments starting from 1
 """
 

@@ -22,18 +22,25 @@ class CrossrefAgent(ReviewAgent):
     def __init__(self, client: LLMClient) -> None:
         super().__init__(client)
 
+    # Max chars of paper text to send for quote verification
+    MAX_PAPER_CHARS = 80_000
+
     def run(  # type: ignore[override]
         self,
         paper_text: PaperText,
         overview: OverviewFeedback,
         comments: list[DetailedComment],
     ) -> list[DetailedComment]:
-        user_content = crossref_user(paper_text.full_markdown, overview, comments)
+        # Truncate very long papers to keep within context window
+        text = paper_text.full_markdown
+        if len(text) > self.MAX_PAPER_CHARS:
+            text = text[: self.MAX_PAPER_CHARS] + "\n\n[...truncated]"
+        user_content = crossref_user(text, overview, comments)
         messages = [
             {"role": "system", "content": CROSSREF_SYSTEM},
             {"role": "user", "content": user_content},
         ]
         result = self.client.complete(
-            messages, _ConsolidatedComments, max_tokens=4096, temperature=0.1
+            messages, _ConsolidatedComments, max_tokens=32768, temperature=0.1
         )
         return result.comments

@@ -5,6 +5,7 @@ Runs the full review pipeline: extract -> cost gate -> structure -> agents -> sy
 from __future__ import annotations
 
 import datetime
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from coarse.llm import LLMClient
 from coarse.structure import analyze_structure
 from coarse.synthesis import render_review
 from coarse.types import DetailedComment, Review, SectionType
+
+logger = logging.getLogger(__name__)
 
 
 def review_paper(
@@ -54,9 +57,14 @@ def review_paper(
     crossref_agent = CrossrefAgent(client)
     critique_agent = CritiqueAgent(client)
 
-    non_ref_sections = [
-        s for s in structure.sections if s.section_type != SectionType.REFERENCES
+    # Review main body sections only: skip references, appendix, and empty sections.
+    # Cap at 25 sections to keep total comment count manageable for crossref.
+    reviewable_sections = [
+        s for s in structure.sections
+        if s.section_type not in (SectionType.REFERENCES, SectionType.APPENDIX)
+        and len(s.text) > 50
     ]
+    non_ref_sections = reviewable_sections[:25]
 
     # NOTE: LLMClient._cost_usd is incremented without a lock across threads;
     # this is a benign data race for advisory cost tracking only.
@@ -69,8 +77,17 @@ def review_paper(
 
         overview = overview_future.result()
         section_comments: list[DetailedComment] = []
-        for future in section_futures:
-            section_comments.extend(future.result())
+        for i, future in enumerate(section_futures):
+            try:
+                section_comments.extend(future.result())
+            except Exception:
+                sec_title = non_ref_sections[i].title if i < len(non_ref_sections) else "?"
+                logger.warning("Section agent failed for '%s', skipping", sec_title)
+
+    # Cap comments sent to crossref to avoid output token overflow.
+    if len(section_comments) > 50:
+        logger.info("Capping %d section comments to 50 for crossref", len(section_comments))
+        section_comments = section_comments[:50]
 
     deduped_comments = crossref_agent.run(paper_text, overview, section_comments)
     final_comments = critique_agent.run(overview, deduped_comments)
