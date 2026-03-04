@@ -16,16 +16,8 @@ from coarse.config import (
     resolve_api_key,
     save_config,
 )
+from coarse.models import CHEAP_MODELS
 from coarse.pipeline import review_paper
-
-# Cheap models per provider — used by --cheap flag
-CHEAP_MODELS = {
-    "OPENROUTER_API_KEY": "openrouter/google/gemini-3-flash",
-    "OPENAI_API_KEY": "openai/gpt-4o-mini",
-    "ANTHROPIC_API_KEY": "anthropic/claude-4.5-haiku",
-    "GOOGLE_API_KEY": "google/gemini-3-flash",
-    "GROQ_API_KEY": "groq/llama-3.3-70b-versatile",
-}
 
 app = typer.Typer(
     name="coarse",

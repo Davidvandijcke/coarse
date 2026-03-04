@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Model manifest** (`models.py`) — Single source of truth for all model IDs, replacing scattered constants in cli.py, config.py, llm.py.
+- **Quote verification** (`quote_verify.py`) — Post-processing fuzzy match of comment quotes against paper text; drops or flags unverifiable quotes.
+- **Post-extraction QA** (`extraction_qa.py`) — Vision LLM spot-checks Docling output against page images for papers with figures/tables.
+- **CI pipeline** (`.github/workflows/ci.yml`) — Ruff lint (advisory), pytest (blocking), version consistency check on every PR.
+- **Pre-PR command** (`.claude/commands/pre-pr.md`) — 5-agent parallel code review integrated into push workflow.
+- **Evaluation data** (`data/refine_examples/`) — Reference reviews and papers for quality scoring.
+- **New tests** — `test_quote_verify.py`, `test_domain_calibration.py`, `test_multi_judge.py`, `test_section_routing.py`.
+
 ### Changed
 
 - **Replace PDF pipeline with Docling** — Single-pass document conversion replaces the 3-source pymupdf4llm/fitz/vision-LLM stack. Section text is now a substring of full_markdown, fixing quote verification mismatches. Structure extraction via markdown heading parsing instead of vision-LLM (~$0.05-0.10/paper → free). Scanned PDFs now supported via Docling OCR.

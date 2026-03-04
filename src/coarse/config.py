@@ -13,6 +13,8 @@ from pathlib import Path
 import tomli_w
 from pydantic import BaseModel, Field
 
+from coarse.models import DEFAULT_MODEL, VISION_MODEL
+
 # Maps provider name -> environment variable name.
 # Extensible: add entries as more providers are supported.
 PROVIDER_ENV_VARS: dict[str, str] = {
@@ -30,8 +32,8 @@ PROVIDER_ENV_VARS: dict[str, str] = {
 
 
 class CoarseConfig(BaseModel):
-    default_model: str = "qwen/qwen3.5-plus-02-15"
-    vision_model: str = "gemini/gemini-3-flash"
+    default_model: str = DEFAULT_MODEL
+    vision_model: str = VISION_MODEL
     extraction_qa: bool = True
     max_cost_usd: float = 10.0
     api_keys: dict[str, str] = Field(default_factory=dict)

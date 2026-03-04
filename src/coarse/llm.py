@@ -13,14 +13,12 @@ import litellm
 from pydantic import BaseModel
 
 from coarse.config import CoarseConfig, load_config
+from coarse.models import JSON_MODE_PREFIXES
 
 logger = logging.getLogger(__name__)
 
 # Suppress litellm noise
 litellm.suppress_debug_info = True
-
-# Models known to need JSON mode (no reliable tool-calling)
-_JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini")
 
 
 class LLMClient:
@@ -100,7 +98,7 @@ def _needs_json_mode(model: str) -> bool:
     if lower.startswith("openrouter/"):
         return True
     # Known model families that work better with JSON mode
-    for prefix in _JSON_MODE_PREFIXES:
+    for prefix in JSON_MODE_PREFIXES:
         if prefix in lower:
             return True
     return False
