@@ -59,6 +59,30 @@ def build_cost_estimate(
             )
         )
 
+    if config.use_coding_agents:
+        # Coding section agents: ~$0.50 each, up to max_coding_sections
+        n_coding = min(config.max_coding_sections, section_count)
+        for i in range(n_coding):
+            stages.append(
+                CostStage(
+                    name=f"coding_section_{i + 1}",
+                    model=config.agent_model,
+                    estimated_tokens_in=total_tokens,
+                    estimated_tokens_out=2000,
+                    estimated_cost_usd=0.50,
+                )
+            )
+        # Coding critique agent: ~$1.00
+        stages.append(
+            CostStage(
+                name="coding_critique",
+                model=config.agent_model,
+                estimated_tokens_in=total_tokens,
+                estimated_tokens_out=3000,
+                estimated_cost_usd=1.00,
+            )
+        )
+
     total = sum(s.estimated_cost_usd for s in stages)
     return CostEstimate(stages=stages, total_cost_usd=total)
 

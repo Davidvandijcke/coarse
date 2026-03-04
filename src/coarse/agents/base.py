@@ -1,10 +1,13 @@
-"""Abstract base class for all review agents."""
+"""Abstract base classes for review agents."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Type
 
 from pydantic import BaseModel
 
+from coarse.config import CoarseConfig
 from coarse.llm import LLMClient
 
 
@@ -17,3 +20,24 @@ class ReviewAgent(ABC):
 
     @abstractmethod
     def run(self, **kwargs) -> BaseModel: ...
+
+
+class CodingReviewAgent(ABC):
+    """Base class for coding agents that use OpenHands SDK for deep analysis.
+
+    Concrete subclasses implement prepare_workspace() and output_schema() to
+    define the workspace layout and expected output format. The run() method
+    matches the signature of the corresponding standard agent for drop-in swap.
+    """
+
+    def __init__(self, config: CoarseConfig, fallback_client: LLMClient | None = None) -> None:
+        self.config = config
+        self.fallback_client = fallback_client
+
+    @abstractmethod
+    def prepare_workspace(self, workspace: Path, **kwargs) -> str:
+        """Write context files to workspace. Return the task prompt."""
+
+    @abstractmethod
+    def output_schema(self) -> Type[BaseModel]:
+        """Return the Pydantic model class for the agent's structured output."""

@@ -5,7 +5,7 @@
 Free, open-source AI academic paper reviewer. The rough alternative to refine.ink.
 Users provide their own API keys and pay only the LLM provider directly (~$2-5 per review vs refine.ink's ~$50).
 
-**Package:** `coarse` (Python 3.11+, Pydantic, litellm, instructor)
+**Package:** `coarse` (Python 3.12+, Pydantic, litellm, instructor, openhands-sdk)
 **Install:** `pip install coarse` / `pipx install coarse` / `uvx coarse paper.pdf`
 
 ## Python Environment
@@ -30,6 +30,10 @@ paper.pdf
     → [crossref agent]   LLM → deduplicate, validate quotes, consistency
     → [critique agent]   LLM → self-critique quality gate, revise weak comments
     → [synthesis.py]     Deterministic → paper_review.md (refine.ink format)
+
+With `--agentic`: proof/methodology/results sections use CodingSectionAgent (OpenHands SDK),
+critique uses CodingCritiqueAgent. Agents read full paper, cross-reference sections, verify math.
+Transparent fallback to standard LLM agents on failure.
 ```
 
 ### Package Structure
@@ -46,6 +50,7 @@ src/coarse/
 ├── structure.py             # PaperText → PaperStructure (heading parse + LLM metadata)
 ├── quote_verify.py          # Post-processing quote verification
 ├── models.py                # Model manifest — single source of truth for all model IDs
+├── coding_agent.py          # OpenHands SDK wrapper (run_agent, run_agent_sync)
 ├── llm.py                   # litellm wrapper, model registry, cost tracking
 ├── prompts.py               # All prompt templates
 ├── types.py                 # Pydantic models
@@ -54,11 +59,14 @@ src/coarse/
 ├── quality.py               # Quality eval against reference (dev only)
 └── agents/
     ├── __init__.py
-    ├── base.py              # ReviewAgent ABC
+    ├── base.py              # ReviewAgent + CodingReviewAgent ABCs
     ├── overview.py          # Macro-level feedback (4-6 issues)
     ├── section.py           # Per-section detailed review
+    ├── coding_section.py    # CodingSectionAgent (OpenHands, proof/methodology/results)
     ├── crossref.py          # Cross-reference consistency
-    └── critique.py          # Self-critique quality gate
+    ├── critique.py          # Self-critique quality gate
+    ├── coding_critique.py   # CodingCritiqueAgent (OpenHands, quote/claim verification)
+    └── literature.py        # arXiv literature search (agentic loop)
 ```
 
 ### Key Types (types.py)
@@ -80,7 +88,7 @@ Auto-detects API keys from env vars or `~/.coarse/config.toml`.
 
 ### Dependencies
 
-Core: litellm, instructor, docling, pydantic, typer, rich, tomli-w, pymupdf
+Core: litellm, instructor, docling, pydantic, typer, rich, tomli-w, pymupdf, openhands-sdk
 Dev: pytest, ruff
 
 ## Reference Review
@@ -178,12 +186,22 @@ Runs on every push to main and every PR:
 6. **Prompts in prompts.py.** All LLM prompt templates go in one file, not scattered.
 7. **Structured output.** Use instructor + Pydantic models for all LLM responses.
 
-## Model Preferences
+## Model Manifest (models.py)
 
-- **Default model**: `qwen/qwen3.5-plus-02-15` (via OpenRouter)
-- **Vision model**: `gemini/gemini-3-flash` — used for post-extraction QA (spot-checks Docling output against page images). Skipped automatically for clean text-only papers.
-- Structure extraction uses heading parsing from Docling markdown + cheap text-LLM metadata call.
-- All model IDs are defined in `models.py`. `config.py` imports defaults from there. Don't hardcode model strings elsewhere.
+**`src/coarse/models.py` is the single source of truth for ALL model IDs.** Never hardcode model strings in any other file — always `from coarse.models import DEFAULT_MODEL, VISION_MODEL, CHEAP_MODELS`.
+
+Current models (verified 2026-03-04):
+- **Default**: `qwen/qwen3.5-plus-02-15` (via OpenRouter, 1M ctx, $0.26/1.56 per 1M tok)
+- **Vision**: `google/gemini-3-flash-preview` (1M ctx, $0.50/3.00 per 1M tok) — post-extraction QA
+- **Cheap (OpenAI)**: `openai/gpt-5.1-codex-mini` ($0.25/2.00)
+- **Cheap (Anthropic)**: `anthropic/claude-haiku-4.5` ($1.00/5.00)
+- **Agent**: `moonshotai/kimi-k2.5` (via OpenRouter) — used by coding agents (`--agentic`)
+
+**Hard rules:**
+- NEVER write a model ID string literal outside `models.py`. Import the constant.
+- Tests that reference models must `from coarse.models import ...`, not hardcode strings.
+- Before changing model IDs, verify on OpenRouter: `python3 ~/.claude/skills/latest-models/scripts/fetch_models.py --search=<model>`
+- Model IDs go stale fast. The `gemini/` prefix is wrong for OpenRouter (use `google/`). Old IDs like `gpt-4o-mini`, `claude-3-5-haiku-20241022` are deprecated.
 
 ## What NOT to Do
 
@@ -191,3 +209,7 @@ Runs on every push to main and every PR:
 - Don't add dependencies without checking pyproject.toml first
 - Don't create config systems beyond `~/.coarse/config.toml`
 - Don't hardcode model names outside models.py
+
+
+paperreview token tPJXuHFvrYEiP4bBfQ1Mw27--mdv9YTICu5by9jy3oM
+look into what we can learn from them https://paperreview.ai/tech-overview

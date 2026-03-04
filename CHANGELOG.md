@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Coding agents** (`coding_agent.py`, `agents/coding_section.py`, `agents/coding_critique.py`) — OpenHands SDK integration for autonomous paper analysis. Coding agents can read full paper text, cross-reference sections, and run Python to verify math. Opt-in via `--agentic` CLI flag with transparent fallback to standard LLM agents on failure.
+- **CodingReviewAgent ABC** (`agents/base.py`) — Abstract base class for file-workspace-based coding agents with `prepare_workspace()` and `output_schema()`.
+- **`--agentic` CLI flag** — Enables coding agents for proof/methodology/results sections and critique pass (~$2-3 extra, 3-10 min vs ~30s).
+- **Coding agent config** — `use_coding_agents`, `agent_model`, `agent_budget_usd`, `max_coding_sections` on `CoarseConfig`.
+- **AGENT_MODEL constant** (`models.py`) — `moonshotai/kimi-k2.5` for coding agent LLM.
+- **Coding agent tests** — `test_coding_agent.py` (12 tests), `test_coding_section.py` (10 tests), `test_coding_critique.py` (10 tests).
 - **Model manifest** (`models.py`) — Single source of truth for all model IDs, replacing scattered constants in cli.py, config.py, llm.py.
 - **Quote verification** (`quote_verify.py`) — Post-processing fuzzy match of comment quotes against paper text; drops or flags unverifiable quotes.
 - **Post-extraction QA** (`extraction_qa.py`) — Vision LLM spot-checks Docling output against page images for papers with figures/tables.
@@ -14,6 +20,10 @@
 
 ### Changed
 
+- **Python 3.12+ required** — Upgraded from 3.11+ to support `openhands-sdk` dependency.
+- **`openhands-sdk` is a core dependency** — Moved from optional to required for coding agent support.
+- **Pipeline hybrid dispatch** — `review_paper()` routes proof/methodology/results sections to coding agents when `--agentic` enabled, capped at `max_coding_sections` (default 3). Other sections use standard LLM agents.
+- **Cost estimation** — Pre-flight estimate includes coding agent costs (~$0.50/section + $1.00/critique) when agentic mode enabled.
 - **Replace PDF pipeline with Docling** — Single-pass document conversion replaces the 3-source pymupdf4llm/fitz/vision-LLM stack. Section text is now a substring of full_markdown, fixing quote verification mismatches. Structure extraction via markdown heading parsing instead of vision-LLM (~$0.05-0.10/paper → free). Scanned PDFs now supported via Docling OCR.
 
 ### Removed

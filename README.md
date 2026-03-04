@@ -66,6 +66,18 @@ Set the environment variable for your provider before running:
 
 Alternatively, run `coarse setup` to store keys in `~/.coarse/config.toml`.
 
+## Agentic mode
+
+For deeper analysis of proof-heavy, methodology, or results sections, enable coding agents:
+
+```bash
+coarse review paper.pdf --agentic
+```
+
+Coding agents use the [OpenHands SDK](https://github.com/All-Hands-AI/openhands) to autonomously
+read the full paper, cross-reference sections, and run Python to verify math. Adds ~$2-3 and takes
+3-10 minutes (vs ~30s for standard mode). Falls back to standard LLM agents on failure.
+
 ## Cost
 
 coarse estimates cost before running and asks for confirmation.

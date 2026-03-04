@@ -36,8 +36,13 @@ def test_literature_type():
     assert detect_section_focus(section) == "literature"
 
 
-def test_general_fallback():
+def test_results_type():
     section = _make_section("This section presents results.", SectionType.RESULTS)
+    assert detect_section_focus(section) == "results"
+
+
+def test_general_fallback():
+    section = _make_section("This section discusses implications.", SectionType.DISCUSSION)
     assert detect_section_focus(section) == "general"
 
 

@@ -89,12 +89,21 @@ def review(
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation prompt"),
     no_qa: bool = typer.Option(False, "--no-qa", help="Skip post-extraction quality check"),
+    agentic: bool = typer.Option(
+        False, "--agentic", help="Use coding agents for deeper analysis (slower, ~$2-3 extra)"
+    ),
 ) -> None:
     """Review a PDF paper and write a markdown report."""
 
     config = load_config()
     if no_qa:
         config = config.model_copy(update={"extraction_qa": False})
+    if agentic:
+        config = config.model_copy(update={"use_coding_agents": True})
+        console.print(
+            "[dim]Agentic mode: proof/methodology/results sections use coding agents "
+            "(~3-10 min vs ~30s)[/dim]"
+        )
 
     # Resolve model: --cheap > --model > config default
     if cheap:
