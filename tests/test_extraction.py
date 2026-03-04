@@ -16,6 +16,7 @@ def mock_docling_result():
     mock_doc = MagicMock()
     mock_doc.export_to_markdown.return_value = (
         "# Test Paper\n\n## Abstract\n\nThis is a test abstract.\n\n"
+        "<!-- PAGE BREAK -->\n"
         "## Introduction\n\nHello, this is a test PDF for coarse extraction.\n"
     )
     mock_result = MagicMock()
@@ -91,3 +92,21 @@ def test_extract_text_docling_error(minimal_pdf: Path) -> None:
         MockConverter.return_value.convert.side_effect = RuntimeError("bad PDF")
         with pytest.raises(ValueError, match="Cannot convert PDF"):
             extract_text(minimal_pdf, use_cache=False)
+
+
+def test_extract_text_contains_page_break_markers(minimal_pdf: Path, mock_docling_result) -> None:
+    """Extracted markdown should contain page break markers from Docling."""
+    with patch("coarse.extraction.DocumentConverter") as MockConverter:
+        MockConverter.return_value.convert.return_value = mock_docling_result
+        result = extract_text(minimal_pdf, use_cache=False)
+    assert "<!-- PAGE BREAK -->" in result.full_markdown
+
+
+def test_export_called_with_page_break_placeholder(minimal_pdf: Path, mock_docling_result) -> None:
+    """Verify export_to_markdown is called with the page_break_placeholder argument."""
+    with patch("coarse.extraction.DocumentConverter") as MockConverter:
+        MockConverter.return_value.convert.return_value = mock_docling_result
+        extract_text(minimal_pdf, use_cache=False)
+    mock_docling_result.document.export_to_markdown.assert_called_once_with(
+        page_break_placeholder="<!-- PAGE BREAK -->"
+    )

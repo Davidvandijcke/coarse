@@ -366,6 +366,7 @@ def test_review_paper_uses_provided_config():
         review_paper("paper.pdf", skip_cost_gate=True, config=config)
 
     mock_load_config.assert_not_called()
-    # LLMClient is called once (no separate vision client anymore)
+    # LLMClient is called twice: once for main model, once for vision QA
     assert captured_models[0] == "anthropic/claude-3-5-haiku-20241022"
-    assert len(captured_models) == 1
+    assert captured_models[1] == "gemini/gemini-3-flash"
+    assert len(captured_models) == 2

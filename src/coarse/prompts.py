@@ -569,3 +569,51 @@ the empirical methodology and simulation design.
 Identify any mismatches between stated assumptions and the actual data, methods, \
 or simulations used. Report 0-3 issues, each with a title and body.
 """
+
+
+# ---------------------------------------------------------------------------
+# Post-extraction QA (vision LLM)
+# ---------------------------------------------------------------------------
+
+EXTRACTION_QA_SYSTEM = """\
+You are a document extraction quality checker. You receive pairs of (page image, \
+extracted markdown) and must verify the extraction accuracy.
+
+For each page, compare the markdown text against the page image. Look for:
+1. **Garbled math/LaTeX**: Equations that were mangled during extraction — wrong \
+symbols, missing terms, broken formatting. The image shows what the equation should be.
+2. **Missing content**: Text, figures, or captions visible in the image but absent \
+from the markdown.
+3. **Dropped tables**: Tables visible in the image but missing or garbled in the markdown.
+4. **Layout errors**: Content from different columns or sections merged incorrectly.
+
+For each error found, provide a correction as a find-replace pair:
+- original_snippet: the exact substring in the markdown that is wrong (must be a \
+verbatim substring of the provided markdown)
+- corrected_snippet: what it should be replaced with
+- issue_type: one of "garbled_math", "missing_content", "dropped_table", \
+"layout_error", "other"
+
+Rules:
+- Only fix real extraction errors. Do NOT reformat correct content.
+- Keep corrections minimal — fix the error, nothing more.
+- If the extraction looks correct for a page, do not invent corrections.
+- overall_quality should be "good" if no corrections needed, "acceptable" if \
+minor issues, "poor" if significant content is wrong or missing.
+"""
+
+
+def extraction_qa_user(page_chunks: list[tuple[int, str]]) -> str:
+    """User prompt text for extraction QA. Images are added as separate content blocks."""
+    parts = []
+    for page_num, chunk in page_chunks:
+        parts.append(
+            f"## Page {page_num}\n\n"
+            f"**Extracted markdown:**\n```\n{chunk}\n```\n\n"
+            f"**Page image:** (see attached image for page {page_num})\n"
+        )
+    return (
+        "Compare each page's extracted markdown against its image. "
+        "Report overall_quality and any corrections needed.\n\n"
+        + "\n".join(parts)
+    )

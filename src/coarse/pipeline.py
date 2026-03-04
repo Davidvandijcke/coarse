@@ -122,6 +122,12 @@ def review_paper(
 
     paper_text = extract_text(pdf_path)
 
+    if config.extraction_qa:
+        from coarse.extraction_qa import run_extraction_qa
+
+        vision_client = LLMClient(model=config.vision_model, config=config)
+        paper_text = run_extraction_qa(Path(pdf_path), paper_text, vision_client)
+
     if not skip_cost_gate:
         run_cost_gate(paper_text, config)
 

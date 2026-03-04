@@ -42,7 +42,7 @@ Pass any litellm-compatible model string with `--model`:
 ```bash
 coarse review paper.pdf --model openai/gpt-4o
 coarse review paper.pdf --model anthropic/claude-3-5-sonnet-20241022
-coarse review paper.pdf --model gemini/gemini-1.5-pro
+coarse review paper.pdf --model gemini/gemini-3-flash
 ```
 
 The default model is `qwen/qwen3.5-plus-02-15` (via OpenRouter). Any model supported by
@@ -76,7 +76,8 @@ coarse estimates cost before running and asks for confirmation.
 | Long (30+ pp)   | $2 - $5       |
 
 The default spending cap is **$10 per review** (`max_cost_usd` in config). Use `--yes` to skip the
-confirmation prompt. Scanned PDFs are supported via Docling's built-in OCR.
+confirmation prompt. Use `--no-qa` to skip the post-extraction quality check (vision LLM).
+Scanned PDFs are supported via Docling's built-in OCR.
 
 ## Output format
 
@@ -128,6 +129,8 @@ Settings are stored in `~/.coarse/config.toml`:
 
 ```toml
 default_model = "qwen/qwen3.5-plus-02-15"
+vision_model = "gemini/gemini-3-flash"
+extraction_qa = true
 max_cost_usd = 10.0
 
 [api_keys]

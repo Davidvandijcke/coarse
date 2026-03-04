@@ -20,10 +20,10 @@ from coarse.pipeline import review_paper
 
 # Cheap models per provider — used by --cheap flag
 CHEAP_MODELS = {
-    "OPENROUTER_API_KEY": "openrouter/google/gemini-2.5-flash",
+    "OPENROUTER_API_KEY": "openrouter/google/gemini-3-flash",
     "OPENAI_API_KEY": "openai/gpt-4o-mini",
-    "ANTHROPIC_API_KEY": "anthropic/claude-haiku-4-5",
-    "GOOGLE_API_KEY": "google/gemini-2.5-flash",
+    "ANTHROPIC_API_KEY": "anthropic/claude-4.5-haiku",
+    "GOOGLE_API_KEY": "google/gemini-3-flash",
     "GROQ_API_KEY": "groq/llama-3.3-70b-versatile",
 }
 
@@ -96,10 +96,13 @@ def review(
         False, "--cheap", help="Use cheapest available model"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation prompt"),
+    no_qa: bool = typer.Option(False, "--no-qa", help="Skip post-extraction quality check"),
 ) -> None:
     """Review a PDF paper and write a markdown report."""
 
     config = load_config()
+    if no_qa:
+        config = config.model_copy(update={"extraction_qa": False})
 
     # Resolve model: --cheap > --model > config default
     if cheap:

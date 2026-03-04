@@ -46,6 +46,19 @@ def build_cost_estimate(
             )
         )
 
+    if config.extraction_qa:
+        qa_tokens_in = total_tokens + 5000  # markdown chunks + ~10 page images
+        qa_cost = estimate_call_cost(config.vision_model, qa_tokens_in, 1000)
+        stages.append(
+            CostStage(
+                name="extraction_qa",
+                model=config.vision_model,
+                estimated_tokens_in=qa_tokens_in,
+                estimated_tokens_out=1000,
+                estimated_cost_usd=qa_cost,
+            )
+        )
+
     total = sum(s.estimated_cost_usd for s in stages)
     return CostEstimate(stages=stages, total_cost_usd=total)
 

@@ -23,6 +23,7 @@ uv run python -m coarse paper.pdf
 ```
 paper.pdf
     → [extraction.py]   Docling → PaperText (single high-quality markdown)
+    → [extraction_qa.py] Vision LLM spot-check (skipped for clean text papers)
     → [structure.py]     Parse headings + cheap LLM → PaperStructure (sections, domain)
     → [overview agent]   LLM → 4-6 macro issues (parallel with section agents)
     → [section agents]   LLM → 15-25 detailed comments (1 per section, parallel)
@@ -41,6 +42,7 @@ src/coarse/
 ├── config.py                # ~/.coarse/config.toml, API key management
 ├── cost.py                  # Cost estimation + user approval gate
 ├── extraction.py            # PDF → PaperText (Docling markdown)
+├── extraction_qa.py         # Post-extraction QA via vision LLM (Gemini Flash)
 ├── structure.py             # PaperText → PaperStructure (heading parse + LLM metadata)
 ├── quote_verify.py          # Post-processing quote verification
 ├── llm.py                   # litellm wrapper, model registry, cost tracking
@@ -77,8 +79,8 @@ Auto-detects API keys from env vars or `~/.coarse/config.toml`.
 
 ### Dependencies
 
-Core: litellm, instructor, docling, pydantic, typer, rich, tomli-w
-Dev: pytest, ruff, pymupdf
+Core: litellm, instructor, docling, pydantic, typer, rich, tomli-w, pymupdf
+Dev: pytest, ruff
 
 ## Reference Review
 
@@ -178,7 +180,8 @@ Runs on every push to main and every PR:
 ## Model Preferences
 
 - **Default model**: `qwen/qwen3.5-plus-02-15` (via OpenRouter)
-- Structure extraction no longer uses a separate vision model — headings are parsed from Docling markdown, metadata via cheap text-LLM call using the default model.
+- **Vision model**: `gemini/gemini-3-flash` — used for post-extraction QA (spot-checks Docling output against page images). Skipped automatically for clean text-only papers.
+- Structure extraction uses heading parsing from Docling markdown + cheap text-LLM metadata call.
 - Defaults are set in `config.py` (`CoarseConfig`). Don't hardcode model strings elsewhere.
 
 ## What NOT to Do

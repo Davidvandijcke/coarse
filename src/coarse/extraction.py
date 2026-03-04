@@ -85,7 +85,9 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
     try:
         converter = DocumentConverter()
         result = converter.convert(str(path))
-        full_markdown = result.document.export_to_markdown()
+        full_markdown = result.document.export_to_markdown(
+            page_break_placeholder="<!-- PAGE BREAK -->"
+        )
     except Exception as exc:
         raise ValueError(f"Cannot convert PDF: {pdf_path}") from exc
 

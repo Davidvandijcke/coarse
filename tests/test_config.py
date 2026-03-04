@@ -31,6 +31,8 @@ def test_load_config_missing_file(tmp_config_path):
     cfg = load_config()
     assert isinstance(cfg, CoarseConfig)
     assert cfg.default_model == "qwen/qwen3.5-plus-02-15"
+    assert cfg.vision_model == "gemini/gemini-3-flash"
+    assert cfg.extraction_qa is True
     assert cfg.max_cost_usd == 10.0
     assert cfg.api_keys == {}
 
