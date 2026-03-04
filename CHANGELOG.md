@@ -18,8 +18,8 @@
 
 ### Removed
 
-- **Vision mode** — Removed `--vision` flag, `vision_model` config, page image rendering, and vision-LLM structure extraction. Docling's LaTeX/table conversion compensates for the loss of page images.
-- **pymupdf/pymupdf4llm dependencies** — Replaced by `docling>=2.0`. pymupdf kept in dev deps for test PDF creation.
+- **Vision-based structure extraction** — Removed `--vision` CLI flag and vision-LLM structure extraction pipeline. `vision_model` config field kept for post-extraction QA. Page rendering repurposed for QA spot-checks.
+- **pymupdf4llm dependency** — Replaced by `docling>=2.0`. pymupdf kept for extraction QA page rendering.
 
 ## v0.1.0 — 2026-03-03
 

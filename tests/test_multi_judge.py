@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from coarse.agents.overview import OverviewAgent, synthesize_overviews
 from coarse.prompts import OVERVIEW_PERSONAS, OVERVIEW_SYNTHESIS_SYSTEM
 from coarse.types import (
@@ -51,7 +53,7 @@ def test_run_panel_calls_three_judges():
     # Mock run to return overview, and synthesize_overviews
     with patch.object(agent, "run", return_value=overview) as mock_run:
         with patch("coarse.agents.overview.synthesize_overviews", return_value=synthesized):
-            result = agent.run_panel(_make_structure())
+            agent.run_panel(_make_structure())
 
     assert mock_run.call_count == 3
     # Each call should have a different persona
@@ -86,7 +88,6 @@ def test_run_panel_all_fail_raises():
     agent = OverviewAgent(mock_client)
 
     with patch.object(agent, "run", side_effect=RuntimeError("fail")):
-        import pytest
         with pytest.raises(RuntimeError, match="All overview judges failed"):
             agent.run_panel(_make_structure())
 

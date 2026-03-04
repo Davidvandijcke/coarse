@@ -45,6 +45,7 @@ src/coarse/
 ├── extraction_qa.py         # Post-extraction QA via vision LLM (Gemini Flash)
 ├── structure.py             # PaperText → PaperStructure (heading parse + LLM metadata)
 ├── quote_verify.py          # Post-processing quote verification
+├── models.py                # Model manifest — single source of truth for all model IDs
 ├── llm.py                   # litellm wrapper, model registry, cost tracking
 ├── prompts.py               # All prompt templates
 ├── types.py                 # Pydantic models
@@ -182,11 +183,11 @@ Runs on every push to main and every PR:
 - **Default model**: `qwen/qwen3.5-plus-02-15` (via OpenRouter)
 - **Vision model**: `gemini/gemini-3-flash` — used for post-extraction QA (spot-checks Docling output against page images). Skipped automatically for clean text-only papers.
 - Structure extraction uses heading parsing from Docling markdown + cheap text-LLM metadata call.
-- Defaults are set in `config.py` (`CoarseConfig`). Don't hardcode model strings elsewhere.
+- All model IDs are defined in `models.py`. `config.py` imports defaults from there. Don't hardcode model strings elsewhere.
 
 ## What NOT to Do
 
 - Don't commit `.env`, API keys, `.DS_Store`, `__pycache__/`
 - Don't add dependencies without checking pyproject.toml first
 - Don't create config systems beyond `~/.coarse/config.toml`
-- Don't hardcode model names outside config.py
+- Don't hardcode model names outside models.py

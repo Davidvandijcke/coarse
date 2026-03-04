@@ -6,18 +6,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from coarse.llm import LLMClient
+from coarse.models import CHEAP_MODELS
 from coarse.pipeline import review_paper
 from coarse.quality import evaluate_review_panel
-from coarse.synthesis import render_review
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "refine_examples"
 
@@ -25,7 +22,10 @@ DATA_DIR = Path(__file__).parent.parent / "data" / "refine_examples"
 PAPERS = {
     "r3d": {
         "pdf": DATA_DIR / "r3d" / "r3d (16).pdf",
-        "reference": DATA_DIR / "r3d" / "feedback-regression-discontinuity-design-with-distribution--2026-03-03.md",
+        "reference": (
+            DATA_DIR / "r3d"
+            / "feedback-regression-discontinuity-design-with-distribution--2026-03-03.md"
+        ),
     },
     "targeting_interventions": {
         "pdf": DATA_DIR / "targeting_interventions" / "paper.pdf",
@@ -86,13 +86,12 @@ def run_paper(name: str, info: dict, model: str) -> dict:
 
     # Score against reference if available
     if ref_path and ref_path.exists():
-        print(f"  Scoring against reference...")
+        print("  Scoring against reference...")
         reference = ref_path.read_text(encoding="utf-8")
         eval_client = LLMClient(model=model)
         try:
             synth_report, individual = evaluate_review_panel(
                 markdown, reference, client=eval_client,
-                paper_text=review.title,  # lightweight context
             )
             result["scores"] = {
                 "overall": synth_report.overall_score,
@@ -110,7 +109,7 @@ def run_paper(name: str, info: dict, model: str) -> dict:
             result["eval_error"] = str(e)
             print(f"  Eval failed: {e}")
     else:
-        print(f"  No reference review — skipping scoring")
+        print("  No reference review — skipping scoring")
 
     return result
 
@@ -123,7 +122,14 @@ def main():
     args = parser.parse_args()
 
     if args.cheap:
-        model = "openrouter/google/gemini-2.5-flash"
+        # Pick the first cheap model with an available API key
+        model = None
+        for env_var, m in CHEAP_MODELS.items():
+            if os.environ.get(env_var):
+                model = m
+                break
+        if not model:
+            model = CHEAP_MODELS.get("OPENROUTER_API_KEY", "openrouter/google/gemini-3-flash")
     else:
         model = args.model  # None → review_paper uses config.default_model
 
@@ -144,7 +150,7 @@ def main():
 
     # Summary
     print(f"\n{'='*60}")
-    print(f"  SUMMARY")
+    print("  SUMMARY")
     print(f"{'='*60}")
     for r in results:
         if "error" in r:
