@@ -45,7 +45,7 @@ coarse review paper.pdf --model anthropic/claude-3-5-sonnet-20241022
 coarse review paper.pdf --model gemini/gemini-1.5-pro
 ```
 
-The default model is `openai/gpt-4o`. Any model supported by
+The default model is `qwen/qwen3.5-plus-02-15` (via OpenRouter). Any model supported by
 [litellm](https://docs.litellm.ai/docs/providers) works here.
 
 ## API keys
@@ -70,16 +70,13 @@ Alternatively, run `coarse setup` to store keys in `~/.coarse/config.toml`.
 
 coarse estimates cost before running and asks for confirmation.
 
-| Mode   | Typical cost  |
-|--------|---------------|
-| Text   | $1 - $3       |
-| Vision | $3 - $6       |
+| Paper length    | Typical cost  |
+|-----------------|---------------|
+| Short (< 20pp)  | $1 - $2       |
+| Long (30+ pp)   | $2 - $5       |
 
 The default spending cap is **$10 per review** (`max_cost_usd` in config). Use `--yes` to skip the
-confirmation prompt.
-
-Vision mode (`--vision`) is for scanned PDFs where text extraction fails. It sends page images
-to the model and costs more.
+confirmation prompt. Scanned PDFs are supported via Docling's built-in OCR.
 
 ## Output format
 
@@ -130,8 +127,7 @@ print(review.detailed_comments[0].feedback)  # access structured fields
 Settings are stored in `~/.coarse/config.toml`:
 
 ```toml
-default_model = "openai/gpt-4o"
-vision_model = "openai/gpt-4o"
+default_model = "qwen/qwen3.5-plus-02-15"
 max_cost_usd = 10.0
 
 [api_keys]

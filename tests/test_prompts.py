@@ -1,14 +1,13 @@
 from coarse.prompts import (
     CROSSREF_SYSTEM,
     CRITIQUE_SYSTEM,
+    METADATA_SYSTEM,
     OVERVIEW_SYSTEM,
     SECTION_SYSTEM,
-    STRUCTURE_SYSTEM,
     crossref_user,
     critique_user,
     overview_user,
     section_user,
-    structure_user,
 )
 from coarse.types import (
     DetailedComment,
@@ -58,14 +57,6 @@ def make_comments() -> list[DetailedComment]:
             feedback="The continuity assumption for potential outcomes is never stated.",
         ),
     ]
-
-
-# --- structure_user ---
-
-def test_structure_user_embeds_text():
-    paper = "# My Paper\n\nThis is the abstract.\n\n## Introduction\n\nText here."
-    result = structure_user(paper)
-    assert paper in result
 
 
 # --- overview_user ---
@@ -145,9 +136,9 @@ def test_critique_user_embeds_comments():
 # --- System prompt constants ---
 
 def test_all_system_prompts_are_nonempty_strings():
-    for prompt in (STRUCTURE_SYSTEM, OVERVIEW_SYSTEM, SECTION_SYSTEM, CROSSREF_SYSTEM, CRITIQUE_SYSTEM):
+    for prompt in (METADATA_SYSTEM, OVERVIEW_SYSTEM, SECTION_SYSTEM, CROSSREF_SYSTEM, CRITIQUE_SYSTEM):
         assert isinstance(prompt, str)
-        assert len(prompt) > 100
+        assert len(prompt) > 50
 
 
 def test_section_system_requires_verbatim_quote():

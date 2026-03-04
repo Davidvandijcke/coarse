@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Replace PDF pipeline with Docling** — Single-pass document conversion replaces the 3-source pymupdf4llm/fitz/vision-LLM stack. Section text is now a substring of full_markdown, fixing quote verification mismatches. Structure extraction via markdown heading parsing instead of vision-LLM (~$0.05-0.10/paper → free). Scanned PDFs now supported via Docling OCR.
+
+### Removed
+
+- **Vision mode** — Removed `--vision` flag, `vision_model` config, page image rendering, and vision-LLM structure extraction. Docling's LaTeX/table conversion compensates for the loss of page images.
+- **pymupdf/pymupdf4llm dependencies** — Replaced by `docling>=2.0`. pymupdf kept in dev deps for test PDF creation.
+
 ## v0.1.0 — 2026-03-03
 
 Initial release.

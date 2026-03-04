@@ -4,15 +4,8 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
-class PageContent(BaseModel):
-    page_num: int
-    text: str
-    image_b64: Optional[str] = None
-
-
 class PaperText(BaseModel):
     full_markdown: str
-    pages: list[PageContent]
     token_estimate: int
 
 
@@ -34,6 +27,8 @@ class SectionInfo(BaseModel):
     title: str
     text: str
     section_type: SectionType = SectionType.OTHER
+    page_start: int = 0
+    page_end: int = 0
     claims: list[str] = Field(default_factory=list)
     definitions: list[str] = Field(default_factory=list)
 
@@ -54,6 +49,12 @@ class PaperStructure(BaseModel):
     taxonomy: str
     abstract: str
     sections: list[SectionInfo]
+
+
+class PaperMetadata(BaseModel):
+    """Response model for cheap text-LLM domain/taxonomy classification."""
+    domain: str
+    taxonomy: str
 
 
 class OverviewIssue(BaseModel):
@@ -81,6 +82,26 @@ class Review(BaseModel):
     date: str
     overall_feedback: OverviewFeedback
     detailed_comments: list[DetailedComment]
+
+
+class DomainCalibration(BaseModel):
+    """Domain-specific review criteria generated dynamically from paper content."""
+    methodology_concerns: list[str] = Field(
+        description="3-5 key methodological concerns for this type of paper"
+    )
+    assumption_red_flags: list[str] = Field(
+        description="Assumptions that commonly fail in this domain"
+    )
+    what_not_to_check: list[str] = Field(
+        description="What is irrelevant for this paper type"
+    )
+    evaluation_standards: list[str] = Field(
+        description="What a top-tier journal in this field expects"
+    )
+
+
+class ExtractionError(Exception):
+    """Raised when PDF text extraction produces unusable output."""
 
 
 class CostStage(BaseModel):

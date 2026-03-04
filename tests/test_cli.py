@@ -33,7 +33,7 @@ def _make_review() -> Review:
     )
 
 
-def _fake_review_paper(pdf_path, model=None, vision=False, skip_cost_gate=False, config=None):
+def _fake_review_paper(pdf_path, model=None, skip_cost_gate=False, config=None):
     return _make_review(), "# Test Paper\n"
 
 
@@ -88,7 +88,7 @@ def test_review_command_custom_output_path(tmp_path):
     pdf.write_bytes(b"%PDF-1.4 fake")
     out = tmp_path / "out.md"
 
-    def fake(pdf_path, model=None, vision=False, skip_cost_gate=False, config=None):
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None):
         return _make_review(), "# Custom Output\n"
 
     with (
@@ -114,7 +114,7 @@ def test_review_yes_flag_skips_cost_gate(tmp_path):
 
     captured: dict = {}
 
-    def fake(pdf_path, model=None, vision=False, skip_cost_gate=False, config=None):
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None):
         captured["skip_cost_gate"] = skip_cost_gate
         return _make_review(), "# Test\n"
 

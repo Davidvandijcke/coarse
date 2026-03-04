@@ -11,7 +11,7 @@ from coarse.types import CostEstimate, CostStage, PaperText
 
 
 def _paper(tokens: int = 10_000) -> PaperText:
-    return PaperText(full_markdown="x", pages=[], token_estimate=tokens)
+    return PaperText(full_markdown="x", token_estimate=tokens)
 
 
 def _config(model: str = "openai/gpt-4o", max_cost: float = 10.0) -> CoarseConfig:
@@ -25,13 +25,13 @@ def _config(model: str = "openai/gpt-4o", max_cost: float = 10.0) -> CoarseConfi
 def test_build_cost_estimate_returns_all_stages():
     estimate = build_cost_estimate(_paper(), _config(), section_count=8)
     names = [s.name for s in estimate.stages]
-    assert "structure" in names
+    assert "metadata" in names
     assert "overview" in names
     assert "crossref" in names
     assert "critique" in names
     section_stages = [n for n in names if n.startswith("section_")]
     assert len(section_stages) == 8
-    # Total stage count: structure + overview + 8 sections + crossref + critique = 12
+    # Total stage count: metadata + overview + 8 sections + crossref + critique = 12
     assert len(estimate.stages) == 12
 
 

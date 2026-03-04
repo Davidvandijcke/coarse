@@ -95,7 +95,6 @@ def review(
     cheap: bool = typer.Option(
         False, "--cheap", help="Use cheapest available model"
     ),
-    vision: bool = typer.Option(False, "--vision", help="Use vision mode for scanned PDFs"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation prompt"),
 ) -> None:
     """Review a PDF paper and write a markdown report."""
@@ -133,7 +132,6 @@ def review(
         review_obj, markdown = review_paper(
             pdf_path=pdf,
             model=resolved_model,
-            vision=vision,
             skip_cost_gate=yes,
             config=config,
         )

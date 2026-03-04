@@ -13,7 +13,6 @@ from coarse.types import (
     DetailedComment,
     OverviewFeedback,
     OverviewIssue,
-    PageContent,
     PaperStructure,
     PaperText,
     Review,
@@ -29,7 +28,6 @@ from coarse.types import (
 def _make_paper_text() -> PaperText:
     return PaperText(
         full_markdown="Full paper markdown.",
-        pages=[PageContent(page_num=1, text="Full paper markdown.")],
         token_estimate=500,
     )
 
@@ -38,7 +36,7 @@ def _make_section(number: int, section_type: SectionType = SectionType.INTRODUCT
     return SectionInfo(
         number=number,
         title=f"Section {number}",
-        text=f"Content of section {number}. " * 10,  # >50 chars to pass pipeline filter
+        text=f"Content of section {number}. " * 40,
         section_type=section_type,
     )
 
@@ -91,7 +89,7 @@ def test_review_paper_calls_stages_in_order():
 
     call_order: list[str] = []
 
-    def fake_extract(path, vision=False):
+    def fake_extract(path):
         call_order.append("extract")
         return paper_text
 
@@ -99,11 +97,11 @@ def test_review_paper_calls_stages_in_order():
         call_order.append("structure")
         return structure
 
-    def fake_overview_run(s):
+    def fake_overview_run(s, calibration=None):
         call_order.append("overview")
         return overview
 
-    def fake_section_run(section, title, paper_text=None, overview=None):
+    def fake_section_run(section, title, overview=None, calibration=None, focus="general"):
         call_order.append(f"section_{section.number}")
         return [_make_comment(section.number)]
 
@@ -122,15 +120,17 @@ def test_review_paper_calls_stages_in_order():
     with (
         patch("coarse.pipeline.extract_text", side_effect=fake_extract),
         patch("coarse.pipeline.analyze_structure", side_effect=fake_analyze),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.check_assumptions", return_value=[]),
         patch("coarse.pipeline.merge_overview", return_value=overview),
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", side_effect=fake_render),
     ):
-        MockOverview.return_value.run.side_effect = fake_overview_run
+        MockOverview.return_value.run_panel.side_effect = fake_overview_run
         MockSection.return_value.run.side_effect = fake_section_run
         MockCrossref.return_value.run.side_effect = fake_crossref_run
         MockCritique.return_value.run.side_effect = fake_critique_run
@@ -156,22 +156,24 @@ def test_review_paper_skips_references_section():
     overview = _make_overview()
     called_sections: list[SectionInfo] = []
 
-    def fake_section_run(section, title, paper_text=None, overview=None):
+    def fake_section_run(section, title, overview=None, calibration=None, focus="general"):
         called_sections.append(section)
         return [_make_comment(section.number)]
 
     with (
         patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.check_assumptions", return_value=[]),
         patch("coarse.pipeline.merge_overview", return_value=overview),
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
-        MockOverview.return_value.run.return_value = overview
+        MockOverview.return_value.run_panel.return_value = overview
         MockSection.return_value.run.side_effect = fake_section_run
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
         MockCritique.return_value.run.return_value = [_make_comment(1)]
@@ -192,17 +194,19 @@ def test_review_paper_date_format():
     with (
         patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=_make_structure()),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.check_assumptions", return_value=[]),
         patch("coarse.pipeline.merge_overview", return_value=overview),
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
         patch("coarse.pipeline.datetime") as mock_dt,
     ):
         mock_dt.date.today.return_value = fixed_date
-        MockOverview.return_value.run.return_value = overview
+        MockOverview.return_value.run_panel.return_value = overview
         MockSection.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
         MockCritique.return_value.run.return_value = [_make_comment(1)]
@@ -219,15 +223,17 @@ def _patch_pipeline_deps(overview: OverviewFeedback):
     stack = ExitStack()
     stack.enter_context(patch("coarse.pipeline.extract_text", return_value=_make_paper_text()))
     stack.enter_context(patch("coarse.pipeline.analyze_structure", return_value=_make_structure()))
+    stack.enter_context(patch("coarse.pipeline.calibrate_domain", return_value=None))
     mock_ov = stack.enter_context(patch("coarse.pipeline.OverviewAgent"))
     mock_sec = stack.enter_context(patch("coarse.pipeline.SectionAgent"))
     mock_cr = stack.enter_context(patch("coarse.pipeline.CrossrefAgent"))
     mock_ct = stack.enter_context(patch("coarse.pipeline.CritiqueAgent"))
     stack.enter_context(patch("coarse.pipeline.check_assumptions", return_value=[]))
     stack.enter_context(patch("coarse.pipeline.merge_overview", return_value=overview))
+    stack.enter_context(patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c))
     stack.enter_context(patch("coarse.pipeline.render_review", return_value="md"))
 
-    mock_ov.return_value.run.return_value = overview
+    mock_ov.return_value.run_panel.return_value = overview
     mock_sec.return_value.run.return_value = [_make_comment(1)]
     mock_cr.return_value.run.return_value = [_make_comment(1)]
     mock_ct.return_value.run.return_value = [_make_comment(1)]
@@ -262,15 +268,17 @@ def test_review_paper_returns_review_and_markdown():
     with (
         patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=_make_structure()),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.check_assumptions", return_value=[]),
         patch("coarse.pipeline.merge_overview", return_value=overview),
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value=expected_markdown),
     ):
-        MockOverview.return_value.run.return_value = overview
+        MockOverview.return_value.run_panel.return_value = overview
         MockSection.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
         MockCritique.return_value.run.return_value = [_make_comment(1)]
@@ -303,15 +311,17 @@ def test_review_paper_section_comments_flattened():
     with (
         patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.check_assumptions", return_value=[]),
         patch("coarse.pipeline.merge_overview", return_value=overview),
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
-        MockOverview.return_value.run.return_value = overview
+        MockOverview.return_value.run_panel.return_value = overview
         # Each section returns 2 comments
         MockSection.return_value.run.return_value = [_make_comment(1), _make_comment(2)]
         MockCrossref.return_value.run.side_effect = fake_crossref_run
@@ -338,15 +348,17 @@ def test_review_paper_uses_provided_config():
         patch("coarse.pipeline.LLMClient", side_effect=fake_llm_client),
         patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=_make_structure()),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.check_assumptions", return_value=[]),
         patch("coarse.pipeline.merge_overview", return_value=overview),
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
-        MockOverview.return_value.run.return_value = overview
+        MockOverview.return_value.run_panel.return_value = overview
         MockSection.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
         MockCritique.return_value.run.return_value = [_make_comment(1)]
@@ -354,4 +366,6 @@ def test_review_paper_uses_provided_config():
         review_paper("paper.pdf", skip_cost_gate=True, config=config)
 
     mock_load_config.assert_not_called()
-    assert captured_models == ["anthropic/claude-3-5-haiku-20241022"]
+    # LLMClient is called once (no separate vision client anymore)
+    assert captured_models[0] == "anthropic/claude-3-5-haiku-20241022"
+    assert len(captured_models) == 1

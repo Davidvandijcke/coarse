@@ -17,28 +17,97 @@ from coarse.config import CoarseConfig, load_config
 from coarse.cost import run_cost_gate
 from coarse.extraction import extract_text
 from coarse.llm import LLMClient
+from coarse.prompts import CALIBRATION_SYSTEM, calibration_user
+from coarse.quote_verify import verify_quotes
 from coarse.structure import analyze_structure
 from coarse.synthesis import render_review
-from coarse.types import DetailedComment, Review, SectionType
+from coarse.types import (
+    DetailedComment,
+    DomainCalibration,
+    ExtractionError,
+    PaperStructure,
+    PaperText,
+    Review,
+    SectionType,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _check_extraction_quality(structure: "PaperStructure") -> bool:
+    """Check whether extraction produced usable output.
+
+    Returns True if sections exist with non-empty text.
+    """
+    if not structure.sections:
+        logger.warning("No sections extracted from markdown.")
+        return False
+
+    return True
+
+
+_PROOF_KEYWORDS = frozenset([
+    "theorem", "proof", "lemma", "proposition", "corollary", "q.e.d", "qed",
+    "∎", "□", "we prove", "we show that", "it follows that",
+])
+
+
+def detect_section_focus(section: "SectionInfo") -> str:
+    """Detect whether a section contains proofs, methodology, literature, etc.
+
+    Returns one of: "proof", "methodology", "literature", "general".
+    """
+    text_lower = section.text.lower()
+    if any(kw in text_lower for kw in _PROOF_KEYWORDS):
+        return "proof"
+    if section.section_type == SectionType.METHODOLOGY:
+        return "methodology"
+    if section.section_type == SectionType.RELATED_WORK:
+        return "literature"
+    return "general"
+
+
+def calibrate_domain(
+    structure: PaperStructure, client: LLMClient
+) -> DomainCalibration | None:
+    """Generate domain-specific review criteria from the paper's content.
+
+    Single cheap LLM call (~$0.02). Returns None on failure (fallback to generic).
+    """
+    section_titles = ", ".join(
+        f"{s.number}. {s.title}" for s in structure.sections
+    )
+    messages = [
+        {"role": "system", "content": CALIBRATION_SYSTEM},
+        {
+            "role": "user",
+            "content": calibration_user(
+                structure.title, structure.domain,
+                structure.abstract, section_titles,
+            ),
+        },
+    ]
+    try:
+        return client.complete(messages, DomainCalibration, max_tokens=2048, temperature=0.3)
+    except Exception:
+        logger.warning("Domain calibration failed, using generic prompts")
+        return None
 
 
 def review_paper(
     pdf_path: str | Path,
     model: str | None = None,
-    vision: bool = False,
     skip_cost_gate: bool = False,
     config: CoarseConfig | None = None,
 ) -> tuple[Review, str]:
     """Full pipeline orchestrator.
 
     Pipeline order:
-    1. Extract PDF → PaperText
+    1. Extract PDF → PaperText (Docling markdown)
     2. Cost gate (optional)
-    3. Analyze structure → PaperStructure
+    3. Analyze structure via markdown parsing + cheap LLM metadata → PaperStructure
     4. Phase 1: Overview agent + assumption checker (parallel, blocking)
-    5. Phase 2: Section agents (parallel, with overview context)
+    5. Phase 2: Section agents (parallel, text-only with overview context)
     6. Cross-reference + critique
     7. Synthesis → markdown
 
@@ -51,34 +120,41 @@ def review_paper(
     resolved_model = model or config.default_model
     client = LLMClient(model=resolved_model, config=config)
 
-    paper_text = extract_text(pdf_path, vision=vision)
+    paper_text = extract_text(pdf_path)
 
     if not skip_cost_gate:
         run_cost_gate(paper_text, config)
 
     structure = analyze_structure(paper_text, client)
+    if not _check_extraction_quality(structure):
+        raise ExtractionError(
+            "Extraction failed: no sections found in markdown. "
+            "The PDF may be scanned/image-only with no extractable text."
+        )
+
+    # Domain calibration: generate domain-specific review criteria
+    calibration = calibrate_domain(structure, client)
 
     overview_agent = OverviewAgent(client)
     section_agent = SectionAgent(client)
     crossref_agent = CrossrefAgent(client)
     critique_agent = CritiqueAgent(client)
 
-    # Review main body sections only: skip references and empty sections.
+    # Review main body sections only: skip references/appendix.
     # Cap at 25 sections to keep total comment count manageable for crossref.
     reviewable_sections = [
         s for s in structure.sections
         if s.section_type not in (SectionType.REFERENCES, SectionType.APPENDIX)
-        and len(s.text) > 50
     ]
     non_ref_sections = reviewable_sections[:25]
 
-    # --- Phase 1: Overview + assumption checker (blocking) ---
-    # Run overview and assumption checker in parallel, then merge results.
-    # Overview must complete before section agents start (they use it as context).
+    # --- Phase 1: Multi-judge overview panel + assumption checker (blocking) ---
     with ThreadPoolExecutor(max_workers=2) as executor:
-        overview_future = executor.submit(overview_agent.run, structure)
+        overview_future = executor.submit(
+            overview_agent.run_panel, structure, calibration
+        )
         assumption_future = executor.submit(
-            check_assumptions, structure, paper_text, client
+            check_assumptions, structure, client, calibration
         )
 
         overview = overview_future.result()
@@ -90,17 +166,13 @@ def review_paper(
 
     overview = merge_overview(overview, assumption_issues)
 
-    # --- Phase 2: Section agents (parallel, with overview context) ---
-    has_images = any(p.image_b64 for p in paper_text.pages)
-    pt_for_sections = paper_text if has_images else None
-
-    # NOTE: LLMClient._cost_usd is incremented without a lock across threads;
-    # this is a benign data race for advisory cost tracking only.
+    # --- Phase 2: Section agents (parallel, text-only with overview context) ---
     with ThreadPoolExecutor(max_workers=10) as executor:
         section_futures = [
             executor.submit(
                 section_agent.run, section, structure.title,
-                pt_for_sections, overview,
+                overview, calibration,
+                detect_section_focus(section),
             )
             for section in non_ref_sections
         ]
@@ -108,7 +180,8 @@ def review_paper(
         section_comments: list[DetailedComment] = []
         for i, future in enumerate(section_futures):
             try:
-                section_comments.extend(future.result())
+                comments = future.result()
+                section_comments.extend(comments)
             except Exception:
                 sec_title = non_ref_sections[i].title if i < len(non_ref_sections) else "?"
                 logger.warning("Section agent failed for '%s', skipping", sec_title)
@@ -119,7 +192,9 @@ def review_paper(
         section_comments = section_comments[:50]
 
     deduped_comments = crossref_agent.run(paper_text, overview, section_comments)
-    final_comments = critique_agent.run(overview, deduped_comments)
+    # Final quote verification against full paper text
+    verified_comments = verify_quotes(deduped_comments, paper_text.full_markdown, drop_unverified=True)
+    final_comments = critique_agent.run(overview, verified_comments)
 
     review = Review(
         title=structure.title,

@@ -10,7 +10,6 @@ from coarse.types import (
     DetailedComment,
     OverviewFeedback,
     OverviewIssue,
-    PageContent,
     PaperStructure,
     PaperText,
     Review,
@@ -55,27 +54,13 @@ def make_review(n_comments: int = 2) -> Review:
 # --- PaperText ---
 
 def test_paper_text_basic():
-    pages = [
-        PageContent(page_num=1, text="Page one text."),
-        PageContent(page_num=2, text="Page two text."),
-    ]
-    pt = PaperText(full_markdown="# Full\nPage one text.\nPage two text.", pages=pages, token_estimate=150)
+    pt = PaperText(full_markdown="# Full\nPage one text.\nPage two text.", token_estimate=150)
     assert pt.full_markdown.startswith("# Full")
     assert pt.token_estimate == 150
-    assert len(pt.pages) == 2
 
 
-def test_page_content_image_optional():
-    p = PageContent(page_num=1, text="Hello")
-    assert p.image_b64 is None
-
-    p2 = PageContent(page_num=2, text="World", image_b64="base64data==")
-    assert p2.image_b64 == "base64data=="
-
-
-def test_paper_text_empty_pages():
-    pt = PaperText(full_markdown="All text as one block.", pages=[], token_estimate=50)
-    assert pt.pages == []
+def test_paper_text_empty():
+    pt = PaperText(full_markdown="All text as one block.", token_estimate=50)
     assert pt.full_markdown == "All text as one block."
 
 

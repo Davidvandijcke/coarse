@@ -22,8 +22,8 @@ uv run python -m coarse paper.pdf
 
 ```
 paper.pdf
-    → [extraction.py]   PDF → PaperText (pymupdf4llm text or page images)
-    → [structure.py]     LLM → PaperStructure (sections, claims, domain)
+    → [extraction.py]   Docling → PaperText (single high-quality markdown)
+    → [structure.py]     Parse headings + cheap LLM → PaperStructure (sections, domain)
     → [overview agent]   LLM → 4-6 macro issues (parallel with section agents)
     → [section agents]   LLM → 15-25 detailed comments (1 per section, parallel)
     → [crossref agent]   LLM → deduplicate, validate quotes, consistency
@@ -40,8 +40,9 @@ src/coarse/
 ├── cli.py                   # Typer CLI, progress display (rich)
 ├── config.py                # ~/.coarse/config.toml, API key management
 ├── cost.py                  # Cost estimation + user approval gate
-├── extraction.py            # PDF → PaperText (pymupdf4llm + vision mode)
-├── structure.py             # PaperText → PaperStructure (LLM call)
+├── extraction.py            # PDF → PaperText (Docling markdown)
+├── structure.py             # PaperText → PaperStructure (heading parse + LLM metadata)
+├── quote_verify.py          # Post-processing quote verification
 ├── llm.py                   # litellm wrapper, model registry, cost tracking
 ├── prompts.py               # All prompt templates
 ├── types.py                 # Pydantic models
@@ -59,10 +60,10 @@ src/coarse/
 
 ### Key Types (types.py)
 
-- `PaperText` — extracted PDF content (full_markdown, pages, token_estimate)
-- `PageContent` — per-page text + optional base64 image
+- `PaperText` — extracted PDF content (full_markdown, token_estimate)
 - `PaperStructure` — title, domain, taxonomy, abstract, sections[]
 - `SectionInfo` — number, title, text, section_type, claims[], definitions[]
+- `PaperMetadata` — domain, taxonomy (response model for LLM classification)
 - `OverviewFeedback` — issues[] (4-6 macro issues with title + body)
 - `DetailedComment` — number, title, status, quote (verbatim), feedback
 - `Review` — complete output (overall_feedback + detailed_comments)
@@ -76,8 +77,8 @@ Auto-detects API keys from env vars or `~/.coarse/config.toml`.
 
 ### Dependencies
 
-Core: litellm, instructor, pymupdf4llm, pymupdf, pydantic, typer, rich, tomli-w
-Dev: pytest, ruff
+Core: litellm, instructor, docling, pydantic, typer, rich, tomli-w
+Dev: pytest, ruff, pymupdf
 
 ## Reference Review
 
@@ -124,6 +125,46 @@ Explanation of issue + constructive remediation guidance.
 ---
 ```
 
+## Git Workflow
+
+### Branch Naming
+
+```
+feat/<issue>-<description>    # New features
+fix/<issue>-<description>     # Bug fixes
+docs/<description>            # Documentation only
+```
+
+### Conventional Commits
+
+```
+feat(pipeline): add parallel section processing
+fix(extraction): handle scanned PDFs without text layer
+docs: update changelog for v0.1.1
+test(agents): add edge case for empty sections
+refactor(llm): simplify cost tracking
+```
+
+### Before Every Commit
+
+1. `uv run ruff check src/ tests/` — fix lint errors
+2. `uv run pytest tests/ -v` — all tests pass
+3. Verify version consistency: `pyproject.toml` matches `src/coarse/__init__.py`
+
+### Pre-PR Checklist
+
+1. **CHANGELOG.md** — Add entry for the change. Every PR, no exceptions.
+2. **Tests** — New functionality has tests. Existing tests pass.
+3. **Lint** — `ruff check` passes.
+4. **Version** — Bump in both `pyproject.toml` and `__init__.py` if releasing.
+
+### CI Pipeline (.github/workflows/ci.yml)
+
+Runs on every push to main and every PR:
+- **Ruff lint** — advisory (non-blocking)
+- **pytest** — blocking
+- **Version consistency** — blocking (pyproject.toml must match __init__.py)
+
 ## Development Rules
 
 1. **Simplicity first.** Minimum code that solves the problem.
@@ -133,6 +174,12 @@ Explanation of issue + constructive remediation guidance.
 5. **Don't over-engineer.** No abstractions for single-use code. No speculative features.
 6. **Prompts in prompts.py.** All LLM prompt templates go in one file, not scattered.
 7. **Structured output.** Use instructor + Pydantic models for all LLM responses.
+
+## Model Preferences
+
+- **Default model**: `qwen/qwen3.5-plus-02-15` (via OpenRouter)
+- Structure extraction no longer uses a separate vision model — headings are parsed from Docling markdown, metadata via cheap text-LLM call using the default model.
+- Defaults are set in `config.py` (`CoarseConfig`). Don't hardcode model strings elsewhere.
 
 ## What NOT to Do
 

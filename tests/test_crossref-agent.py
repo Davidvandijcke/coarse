@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 from coarse.agents.crossref import CrossrefAgent, _ConsolidatedComments
 from coarse.llm import LLMClient
 from coarse.prompts import CROSSREF_SYSTEM
-from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, PageContent, PaperText
+from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, PaperText
 
 
 def _make_client() -> LLMClient:
@@ -14,7 +14,6 @@ def _make_client() -> LLMClient:
 def _make_paper_text(markdown: str = "Full paper text here.") -> PaperText:
     return PaperText(
         full_markdown=markdown,
-        pages=[PageContent(page_num=1, text=markdown)],
         token_estimate=100,
     )
 

@@ -1,139 +1,104 @@
 """PDF extraction for coarse.
 
-Converts a PDF file to PaperText using pymupdf4llm (text mode) or
-pymupdf page rendering (vision mode).
+Uses Docling for high-quality document conversion: layout analysis, OCR,
+LaTeX rendering, and table extraction — all in one pass. The resulting
+markdown is the single source of truth for all downstream processing.
 """
 from __future__ import annotations
 
-import base64
+import json
 import logging
-import re
 from pathlib import Path
 
-import fitz  # pymupdf
-import pymupdf4llm
+from docling.document_converter import DocumentConverter
 
-from coarse.types import PageContent, PaperText
+from coarse.types import PaperText
 
 logger = logging.getLogger(__name__)
 
-# Pages with more vector drawings than this are considered "figure pages"
-# and get rendered as images in vision mode.
-_VECTOR_DRAWING_THRESHOLD = 50
+
+def _cache_path(pdf_path: Path) -> Path:
+    """Return the cache file path for a given PDF."""
+    return pdf_path.with_suffix(".extraction_cache.json")
 
 
-def extract_text(pdf_path: str | Path, vision: bool = False) -> PaperText:
-    """Extract text from a PDF file.
+def _load_cache(pdf_path: Path) -> PaperText | None:
+    """Load cached extraction if it exists and is newer than the PDF."""
+    cache = _cache_path(pdf_path)
+    if not cache.exists():
+        return None
+    if cache.stat().st_mtime < pdf_path.stat().st_mtime:
+        logger.info("Cache stale (PDF modified since cache), re-extracting")
+        return None
+    try:
+        data = json.loads(cache.read_text(encoding="utf-8"))
+        paper_text = PaperText.model_validate(data)
+        logger.info("Loaded extraction cache from %s", cache.name)
+        return paper_text
+    except Exception:
+        logger.warning("Cache corrupt, re-extracting")
+        return None
+
+
+def _save_cache(pdf_path: Path, paper_text: PaperText) -> None:
+    """Save extraction result to cache file next to the PDF."""
+    cache = _cache_path(pdf_path)
+    try:
+        cache.write_text(
+            paper_text.model_dump_json(indent=None),
+            encoding="utf-8",
+        )
+        size_kb = cache.stat().st_size / 1024
+        logger.info("Saved extraction cache (%.1f KB) to %s", size_kb, cache.name)
+    except Exception:
+        logger.warning("Failed to write extraction cache, continuing without cache")
+
+
+def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
+    """Extract text from a PDF file using Docling.
+
+    Docling handles layout analysis, OCR for scanned pages, LaTeX formula
+    conversion, and table extraction. Returns a single high-quality markdown
+    string that serves as the single source of truth for all downstream agents.
 
     Args:
         pdf_path: Path to the PDF file.
-        vision: If True, render figure pages as images for multimodal input.
+        use_cache: If True (default), use cached extraction when available.
 
     Returns:
-        PaperText with full_markdown, per-page PageContent list, and token_estimate.
+        PaperText with full_markdown and token_estimate.
 
     Raises:
         FileNotFoundError: If the PDF file does not exist.
-        ValueError: If pymupdf cannot open the file (encrypted/corrupt).
+        ValueError: If Docling cannot convert the file.
     """
     path = Path(pdf_path)
     if not path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
+    # Try loading from cache first
+    if use_cache:
+        cached = _load_cache(path)
+        if cached is not None:
+            return cached
+
     try:
-        doc = fitz.open(str(path))
+        converter = DocumentConverter()
+        result = converter.convert(str(path))
+        full_markdown = result.document.export_to_markdown()
     except Exception as exc:
-        raise ValueError(f"Cannot open PDF: {pdf_path}") from exc
+        raise ValueError(f"Cannot convert PDF: {pdf_path}") from exc
 
-    if vision:
-        full_markdown, pages = _extract_vision_mode(doc)
-    else:
-        full_markdown, pages = _extract_text_mode(doc)
-
-    return PaperText(
+    paper_text = PaperText(
         full_markdown=full_markdown,
-        pages=pages,
         token_estimate=_estimate_tokens(full_markdown),
     )
 
+    # Cache for next time
+    if use_cache:
+        _save_cache(path, paper_text)
 
-def _extract_text_mode(doc: fitz.Document) -> tuple[str, list[PageContent]]:
-    """Extract text using pymupdf4llm for full markdown and fitz for per-page text.
-
-    Returns:
-        Tuple of (full_markdown, pages).
-    """
-    full_markdown = clean_markdown(pymupdf4llm.to_markdown(doc))
-    pages = []
-    for page_num, page in enumerate(doc, start=1):
-        text = page.get_text("text")
-        pages.append(PageContent(page_num=page_num, text=text))
-    return full_markdown, pages
-
-
-def _page_has_figures(page: fitz.Page) -> bool:
-    """Detect whether a page contains figures/charts worth rendering as images.
-
-    Checks for raster images (embedded PNGs/JPEGs) and high vector drawing
-    counts (plots/charts rendered as paths). Tables and equations are handled
-    better by text extraction, so they don't trigger image rendering.
-    """
-    if page.get_images(full=True):
-        return True
-    if len(page.get_drawings()) > _VECTOR_DRAWING_THRESHOLD:
-        return True
-    return False
-
-
-def _extract_vision_mode(doc: fitz.Document) -> tuple[str, list[PageContent]]:
-    """Extract text + selectively render figure pages as images.
-
-    Uses pymupdf4llm for full_markdown (same quality as text mode).
-    Only pages with actual figures/charts get rendered as images —
-    text-only and equation-only pages stay as text.
-    """
-    full_markdown = clean_markdown(pymupdf4llm.to_markdown(doc))
-    pages = []
-    figure_count = 0
-    for page_num, page in enumerate(doc, start=1):
-        text = page.get_text("text")
-        image_b64 = None
-        if _page_has_figures(page):
-            pixmap = page.get_pixmap(dpi=150)
-            png_bytes = pixmap.tobytes("png")
-            image_b64 = base64.b64encode(png_bytes).decode("utf-8")
-            figure_count += 1
-        pages.append(PageContent(page_num=page_num, text=text, image_b64=image_b64))
-    logger.info("Vision mode: %d/%d pages have figures", figure_count, len(doc))
-    return full_markdown, pages
-
-
-def clean_markdown(text: str) -> str:
-    """Post-extraction cleanup of pymupdf4llm markdown output.
-
-    Fixes common artifacts from PDF-to-markdown conversion:
-    - Mangled subscript/superscript notation (_x_ [3] → x^{3})
-    - Unresolved LaTeX cross-references (?? → [unresolved reference])
-    - Duplicate blank lines
-    """
-    # Fix mangled superscripts: _x_ [3] → x^{3}, _x_ [2] → x^{2}
-    text = re.sub(r"_(\w+)_\s*\[(\d+)\]", r"\1^{\2}", text)
-
-    # Fix mangled subscripts with commas: _x_ ,  _y_ → x, y
-    text = re.sub(r"_(\w+)_\s*,\s*_(\w+)_", r"\1, \2", text)
-
-    # Fix isolated italic-wrapped single chars: _x_ → x (common math artifact)
-    # Only when surrounded by math context (brackets, operators, spaces)
-    text = re.sub(r"(?<=[(\[,\s])_(\w)_(?=[)\],\s.;])", r"\1", text)
-
-    # Fix unresolved cross-references: **??** or ?? in math context
-    text = re.sub(r"\*\*\?\?\*\*", "[unresolved reference]", text)
-    text = re.sub(r"(?<!\?)\?\?(?!\?)", "[unresolved reference]", text)
-
-    # Collapse runs of 3+ blank lines to 2
-    text = re.sub(r"\n{4,}", "\n\n\n", text)
-
-    return text
+    return paper_text
 
 
 def _estimate_tokens(text: str) -> int:

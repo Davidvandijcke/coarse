@@ -30,8 +30,7 @@ def tmp_config_path(tmp_path, monkeypatch):
 def test_load_config_missing_file(tmp_config_path):
     cfg = load_config()
     assert isinstance(cfg, CoarseConfig)
-    assert cfg.default_model == "openai/gpt-4o"
-    assert cfg.vision_model == "openai/gpt-4o"
+    assert cfg.default_model == "qwen/qwen3.5-plus-02-15"
     assert cfg.max_cost_usd == 10.0
     assert cfg.api_keys == {}
 
@@ -43,7 +42,6 @@ def test_load_config_partial_toml(tmp_config_path):
 
     cfg = load_config()
     assert cfg.default_model == "anthropic/claude-3-5-sonnet"
-    assert cfg.vision_model == "openai/gpt-4o"
     assert cfg.max_cost_usd == 10.0
     assert cfg.api_keys == {}
 
@@ -53,14 +51,12 @@ def test_load_config_partial_toml(tmp_config_path):
 def test_save_and_reload(tmp_config_path):
     original = CoarseConfig(
         default_model="anthropic/claude-3-5-sonnet",
-        vision_model="openai/gpt-4o",
         max_cost_usd=5.0,
         api_keys={"anthropic": "sk-ant-test"},
     )
     save_config(original)
     reloaded = load_config()
     assert reloaded.default_model == original.default_model
-    assert reloaded.vision_model == original.vision_model
     assert reloaded.max_cost_usd == original.max_cost_usd
     assert reloaded.api_keys == original.api_keys
 

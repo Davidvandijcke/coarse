@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 litellm.suppress_debug_info = True
 
 # Models known to need JSON mode (no reliable tool-calling)
-_JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together")
+_JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini")
 
 
 class LLMClient:
@@ -78,7 +78,7 @@ def _normalize_model(model: str) -> str:
     if model.startswith("openrouter/"):
         return model
     # Direct provider models (anthropic/..., openai/..., google/...) — don't touch
-    direct_providers = ("anthropic", "openai", "google", "groq", "azure", "cohere")
+    direct_providers = ("anthropic", "openai", "google", "gemini", "groq", "azure", "cohere")
     prefix = model.split("/")[0].lower() if "/" in model else ""
     if prefix in direct_providers:
         return model

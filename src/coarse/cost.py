@@ -26,7 +26,7 @@ def build_cost_estimate(
     section_tokens = max(1, total_tokens // section_count)
 
     stage_defs: list[tuple[str, int, int]] = [
-        ("structure", total_tokens, 800),
+        ("metadata", 500, 100),
         ("overview", total_tokens, 1200),
         *[(f"section_{i + 1}", section_tokens, 600) for i in range(section_count)],
         ("crossref", total_tokens, 1000),
