@@ -13,14 +13,12 @@ import litellm
 from pydantic import BaseModel
 
 from coarse.config import CoarseConfig, load_config
+from coarse.models import JSON_MODE_PREFIXES
 
 logger = logging.getLogger(__name__)
 
 # Suppress litellm noise
 litellm.suppress_debug_info = True
-
-# Models known to need JSON mode (no reliable tool-calling)
-_JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together")
 
 
 class LLMClient:
@@ -78,7 +76,7 @@ def _normalize_model(model: str) -> str:
     if model.startswith("openrouter/"):
         return model
     # Direct provider models (anthropic/..., openai/..., google/...) — don't touch
-    direct_providers = ("anthropic", "openai", "google", "groq", "azure", "cohere")
+    direct_providers = ("anthropic", "openai", "google", "gemini", "groq", "azure", "cohere")
     prefix = model.split("/")[0].lower() if "/" in model else ""
     if prefix in direct_providers:
         return model
@@ -100,7 +98,7 @@ def _needs_json_mode(model: str) -> bool:
     if lower.startswith("openrouter/"):
         return True
     # Known model families that work better with JSON mode
-    for prefix in _JSON_MODE_PREFIXES:
+    for prefix in JSON_MODE_PREFIXES:
         if prefix in lower:
             return True
     return False

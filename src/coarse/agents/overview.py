@@ -7,15 +7,18 @@ from coarse.agents.base import ReviewAgent
 from coarse.llm import LLMClient
 from coarse.prompts import (
     ASSUMPTION_CHECK_SYSTEM,
+    OVERVIEW_PERSONAS,
+    OVERVIEW_SYNTHESIS_SYSTEM,
     OVERVIEW_SYSTEM,
     assumption_check_user,
+    overview_synthesis_user,
     overview_user,
 )
 from coarse.types import (
+    DomainCalibration,
     OverviewFeedback,
     OverviewIssue,
     PaperStructure,
-    PaperText,
     SectionInfo,
     SectionType,
 )
@@ -88,18 +91,68 @@ class OverviewAgent(ReviewAgent):
     def __init__(self, client: LLMClient) -> None:
         super().__init__(client)
 
-    def run(self, structure: PaperStructure) -> OverviewFeedback:  # type: ignore[override]
+    def run(  # type: ignore[override]
+        self,
+        structure: PaperStructure,
+        calibration: DomainCalibration | None = None,
+        persona: str | None = None,
+    ) -> OverviewFeedback:
         sections_summary = _build_sections_summary(structure.sections)
+        system = (persona + "\n\n" + OVERVIEW_SYSTEM) if persona else OVERVIEW_SYSTEM
         messages = [
-            {"role": "system", "content": OVERVIEW_SYSTEM},
+            {"role": "system", "content": system},
             {
                 "role": "user",
-                "content": overview_user(structure.title, structure.abstract, sections_summary),
+                "content": overview_user(
+                    structure.title, structure.abstract,
+                    sections_summary, calibration=calibration,
+                ),
             },
         ]
         return self.client.complete(  # type: ignore[return-value]
             messages, OverviewFeedback, max_tokens=4096, temperature=0.3
         )
+
+    def run_panel(
+        self,
+        structure: PaperStructure,
+        calibration: DomainCalibration | None = None,
+    ) -> OverviewFeedback:
+        """Run 3 judges in parallel with different personas, then synthesize."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        overviews: list[OverviewFeedback] = []
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [
+                executor.submit(self.run, structure, calibration, persona)
+                for persona in OVERVIEW_PERSONAS
+            ]
+            for i, future in enumerate(futures):
+                try:
+                    overviews.append(future.result())
+                except Exception:
+                    logger.warning("Overview judge %d failed, skipping", i)
+
+        if not overviews:
+            raise RuntimeError("All overview judges failed")
+        if len(overviews) == 1:
+            return overviews[0]
+
+        return synthesize_overviews(overviews, self.client)
+
+
+def synthesize_overviews(
+    overviews: list[OverviewFeedback],
+    client: LLMClient,
+) -> OverviewFeedback:
+    """Synthesize multiple overview assessments into a single consolidated overview."""
+    messages = [
+        {"role": "system", "content": OVERVIEW_SYNTHESIS_SYSTEM},
+        {"role": "user", "content": overview_synthesis_user(overviews)},
+    ]
+    return client.complete(  # type: ignore[return-value]
+        messages, OverviewFeedback, max_tokens=4096, temperature=0.2
+    )
 
 
 # Section types relevant for assumption checking
@@ -113,8 +166,8 @@ _ASSUMPTION_RELEVANT_TYPES = {
 
 def check_assumptions(
     structure: PaperStructure,
-    paper_text: PaperText,
     client: LLMClient,
+    calibration: DomainCalibration | None = None,
 ) -> list[OverviewIssue]:
     """Focused check: are theoretical assumptions consistent with empirical methods?
 
@@ -137,7 +190,12 @@ def check_assumptions(
 
     messages = [
         {"role": "system", "content": ASSUMPTION_CHECK_SYSTEM},
-        {"role": "user", "content": assumption_check_user(structure.title, sections_text)},
+        {
+            "role": "user",
+            "content": assumption_check_user(
+                structure.title, sections_text, calibration=calibration
+            ),
+        },
     ]
 
     try:

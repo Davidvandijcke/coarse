@@ -16,16 +16,8 @@ from coarse.config import (
     resolve_api_key,
     save_config,
 )
+from coarse.models import CHEAP_MODELS
 from coarse.pipeline import review_paper
-
-# Cheap models per provider — used by --cheap flag
-CHEAP_MODELS = {
-    "OPENROUTER_API_KEY": "openrouter/google/gemini-2.5-flash",
-    "OPENAI_API_KEY": "openai/gpt-4o-mini",
-    "ANTHROPIC_API_KEY": "anthropic/claude-haiku-4-5",
-    "GOOGLE_API_KEY": "google/gemini-2.5-flash",
-    "GROQ_API_KEY": "groq/llama-3.3-70b-versatile",
-}
 
 app = typer.Typer(
     name="coarse",
@@ -95,12 +87,14 @@ def review(
     cheap: bool = typer.Option(
         False, "--cheap", help="Use cheapest available model"
     ),
-    vision: bool = typer.Option(False, "--vision", help="Use vision mode for scanned PDFs"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation prompt"),
+    no_qa: bool = typer.Option(False, "--no-qa", help="Skip post-extraction quality check"),
 ) -> None:
     """Review a PDF paper and write a markdown report."""
 
     config = load_config()
+    if no_qa:
+        config = config.model_copy(update={"extraction_qa": False})
 
     # Resolve model: --cheap > --model > config default
     if cheap:
@@ -133,7 +127,6 @@ def review(
         review_obj, markdown = review_paper(
             pdf_path=pdf,
             model=resolved_model,
-            vision=vision,
             skip_cost_gate=yes,
             config=config,
         )

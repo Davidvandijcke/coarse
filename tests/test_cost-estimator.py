@@ -11,7 +11,7 @@ from coarse.types import CostEstimate, CostStage, PaperText
 
 
 def _paper(tokens: int = 10_000) -> PaperText:
-    return PaperText(full_markdown="x", pages=[], token_estimate=tokens)
+    return PaperText(full_markdown="x", token_estimate=tokens)
 
 
 def _config(model: str = "openai/gpt-4o", max_cost: float = 10.0) -> CoarseConfig:
@@ -25,18 +25,21 @@ def _config(model: str = "openai/gpt-4o", max_cost: float = 10.0) -> CoarseConfi
 def test_build_cost_estimate_returns_all_stages():
     estimate = build_cost_estimate(_paper(), _config(), section_count=8)
     names = [s.name for s in estimate.stages]
-    assert "structure" in names
+    assert "metadata" in names
     assert "overview" in names
     assert "crossref" in names
     assert "critique" in names
     section_stages = [n for n in names if n.startswith("section_")]
     assert len(section_stages) == 8
-    # Total stage count: structure + overview + 8 sections + crossref + critique = 12
-    assert len(estimate.stages) == 12
+    assert "extraction_qa" in names
+    # Total stage count: metadata + overview + 8 sections + crossref + critique + extraction_qa = 13
+    assert len(estimate.stages) == 13
 
 
 def test_build_cost_estimate_zero_cost_unknown_model():
-    estimate = build_cost_estimate(_paper(), _config(model="unknown/totally-fake-model"))
+    config = _config(model="unknown/totally-fake-model")
+    config = config.model_copy(update={"extraction_qa": False})
+    estimate = build_cost_estimate(_paper(), config)
     assert len(estimate.stages) > 0
     assert all(s.estimated_cost_usd == 0.0 for s in estimate.stages)
     assert estimate.total_cost_usd == 0.0
@@ -115,3 +118,23 @@ def test_run_cost_gate_returns_estimate():
     assert isinstance(result, CostEstimate)
     assert len(result.stages) > 0
     assert abs(result.total_cost_usd - sum(s.estimated_cost_usd for s in result.stages)) < 1e-10
+
+
+# ---------------------------------------------------------------------------
+# extraction_qa cost stage
+# ---------------------------------------------------------------------------
+
+def test_extraction_qa_stage_present_when_enabled():
+    config = CoarseConfig(extraction_qa=True)
+    estimate = build_cost_estimate(_paper(), config)
+    names = [s.name for s in estimate.stages]
+    assert "extraction_qa" in names
+    qa_stage = next(s for s in estimate.stages if s.name == "extraction_qa")
+    assert qa_stage.model == config.vision_model
+
+
+def test_extraction_qa_stage_absent_when_disabled():
+    config = CoarseConfig(extraction_qa=False)
+    estimate = build_cost_estimate(_paper(), config)
+    names = [s.name for s in estimate.stages]
+    assert "extraction_qa" not in names

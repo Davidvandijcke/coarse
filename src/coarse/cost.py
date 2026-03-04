@@ -26,7 +26,7 @@ def build_cost_estimate(
     section_tokens = max(1, total_tokens // section_count)
 
     stage_defs: list[tuple[str, int, int]] = [
-        ("structure", total_tokens, 800),
+        ("metadata", 500, 100),
         ("overview", total_tokens, 1200),
         *[(f"section_{i + 1}", section_tokens, 600) for i in range(section_count)],
         ("crossref", total_tokens, 1000),
@@ -43,6 +43,19 @@ def build_cost_estimate(
                 estimated_tokens_in=tokens_in,
                 estimated_tokens_out=tokens_out,
                 estimated_cost_usd=cost,
+            )
+        )
+
+    if config.extraction_qa:
+        qa_tokens_in = total_tokens + 5000  # markdown chunks + ~10 page images
+        qa_cost = estimate_call_cost(config.vision_model, qa_tokens_in, 1000)
+        stages.append(
+            CostStage(
+                name="extraction_qa",
+                model=config.vision_model,
+                estimated_tokens_in=qa_tokens_in,
+                estimated_tokens_out=1000,
+                estimated_cost_usd=qa_cost,
             )
         )
 
