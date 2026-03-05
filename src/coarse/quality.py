@@ -32,16 +32,19 @@ class QualityReport(BaseModel):
 
 _JUDGE_SYSTEM = """\
 You are an expert academic peer review evaluator. You have access to the \
-original paper, a high-quality reference review, and a generated review. \
-Your task is to assess the generated review's quality both independently \
-and relative to the reference.
+original paper, a reference review written by another reviewer, and a \
+generated review. Your task is to assess the generated review's quality \
+primarily against the paper itself, using the reference for calibration.
 
 Score each dimension from 1 (very poor) to 5 (excellent):
 
 1. **coverage**: Does the generated review identify the paper's most important \
-issues? Use the reference review as a guide for what matters, but also credit \
-the generated review for finding valid issues the reference missed. Score 5 if \
-all major issues are covered, 1 if most are missing.
+issues? Evaluate this against the paper itself — what are the real strengths, \
+weaknesses, and gaps? The reference review may help calibrate what matters, but \
+it is not the answer key. Credit the generated review fully for finding valid \
+issues the reference missed, and do not penalize it for omitting issues that \
+are minor or debatable. Score 5 if the review catches the paper's major issues, \
+1 if most important issues are missing.
 2. **specificity**: Are comments precise, with correct verbatim quotes from the \
 paper and actionable guidance? Verify quotes against the paper text. Score 5 if \
 every comment has an accurate quote and clear fix, 1 if comments are vague or \
@@ -75,22 +78,25 @@ def _judge_user(reference: str, generated: str, paper_text: str = "") -> str:
 
 """
     return f"""\
-Evaluate the following generated review against the reference review.
+Evaluate the following generated review. Use the paper text as the primary \
+source of truth and the reference review for calibration (not as an answer key).
 {paper_block}
-## Reference Review
+## Reference Review (for calibration only)
 <reference>
 {reference}
 </reference>
 
-## Generated Review
+## Generated Review (evaluate this)
 <generated>
 {generated}
 </generated>
 
 Score the generated review on: coverage, specificity, depth, and format (each 1-5).
-Verify quotes against the paper text. Assess depth independently — does the \
-generated review engage with the paper's actual methodology and assumptions?
-Provide reasoning for each score, plus 2-3 strengths and 2-3 weaknesses.
+Verify quotes against the paper text. Assess coverage and depth against the \
+paper itself — does the generated review find the paper's real issues and \
+engage with its actual methodology and assumptions? Credit valid issues the \
+reference missed. Provide reasoning for each score, plus 2-3 strengths and \
+2-3 weaknesses.
 """
 
 
