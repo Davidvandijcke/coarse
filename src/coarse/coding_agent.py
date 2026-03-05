@@ -86,9 +86,10 @@ async def run_agent(
     """
     try:
         from openhands.sdk import LLM, Agent, AgentContext, Conversation, Tool
+        import openhands.tools  # noqa: F401 — triggers tool registration
     except ImportError as e:
         raise RuntimeError(
-            "openhands-sdk is required for coding agents. "
+            "openhands-sdk and openhands-tools are required for coding agents. "
             "Install with: pip install coarse[agents]"
         ) from e
 
@@ -102,8 +103,8 @@ async def run_agent(
     )
 
     tools = [
-        Tool(name="TerminalTool"),
-        Tool(name="FileEditorTool"),
+        Tool(name="terminal"),
+        Tool(name="file_editor"),
     ]
 
     # Inject structured output instructions into system prompt
