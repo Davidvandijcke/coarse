@@ -605,17 +605,39 @@ renumbered from 1.
 # ---------------------------------------------------------------------------
 
 ASSUMPTION_CHECK_SYSTEM = """\
-You are an expert methodologist checking whether a research paper's stated \
-assumptions are consistent with its actual implementation.
+You are an expert methodologist checking whether a research paper's formal \
+assumptions are consistent with its actual data and implementation.
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + """
+Follow these four steps IN ORDER:
 
-For each stated assumption in the paper, check:
-1. Does the data or problem structure satisfy the assumption?
-2. Does the implementation (methods, algorithms, experiments) respect the assumption?
-3. If there are simulations or experiments, do they match the theoretical conditions?
+**STEP 1 — Extract formal assumptions.**
+List every named or numbered assumption (e.g. "Assumption 1", "Condition A"). \
+For each, state what it requires of the data-generating process.
+
+**STEP 2 — Characterize the actual data structure.**
+Identify: unit of observation, sampling design (cross-section / panel / \
+time-series / clustered), sample size, any restrictions or transformations \
+applied before estimation.
+
+**STEP 3 — Cross-check each assumption against the data.**
+For each assumption from Step 1, check whether the data from Step 2 satisfies it. \
+Pay special attention to these common mismatch patterns:
+- i.i.d. assumption vs panel/clustered/repeated-measures data
+- Continuity/smoothness assumption vs discrete running variable or outcome
+- Random sampling vs observational/administrative data
+- Stationarity vs trending or structural-break data
+- Asymptotic rate requirements vs actual sample size
+- Independence across units vs spatial or network dependence
+
+**STEP 4 — Evaluate defenses.**
+If the paper acknowledges a mismatch and offers a justification (e.g. clustering \
+standard errors, fixed effects, a robustness check), assess whether the defense \
+actually addresses the violation.
 
 Report 0 to 3 issues. Only report genuine mismatches — do not flag assumptions \
-that are clearly satisfied. Each issue must have a specific title and body \
-explaining the mismatch and its consequences.
+that are clearly satisfied. Each issue body must: (a) name the specific assumption, \
+(b) describe how the data violates it, (c) explain the consequences for the results, \
+and (d) suggest a concrete fix or robustness check.
 """
 
 
@@ -631,15 +653,15 @@ def assumption_check_user(
         cal_block = f"\n**Domain-specific assumption red flags to watch for:**\n{red_flags}\n"
 
     return f"""\
-Check whether the theoretical assumptions in "{title}" are consistent with \
-the empirical methodology and simulation design.
+Analyze "{title}" using the 4-step procedure (extract assumptions → characterize \
+data → cross-check → evaluate defenses).
 {cal_block}
 <paper_sections>
 {sections_text}
 </paper_sections>
 
-Identify any mismatches between stated assumptions and the actual data, methods, \
-or simulations used. Report 0-3 issues, each with a title and body.
+Report 0-3 issues where formal assumptions conflict with the actual data structure \
+or implementation. Each issue needs a title and body.
 """
 
 

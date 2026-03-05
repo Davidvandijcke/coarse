@@ -105,9 +105,18 @@ def test_fallback_to_docling(minimal_pdf: Path) -> None:
     mock_result = MagicMock()
     mock_result.document = mock_doc
 
+    mock_converter_cls = MagicMock()
+    mock_converter_cls.return_value.convert.return_value = mock_result
+
+    # Mock at sys.modules level to avoid importing real docling (pulls in torch)
+    mock_docling = MagicMock()
+    mock_docling.document_converter.DocumentConverter = mock_converter_cls
+
     with patch("coarse.config.resolve_api_key", return_value=None):
-        with patch("docling.document_converter.DocumentConverter") as MockConverter:
-            MockConverter.return_value.convert.return_value = mock_result
+        with patch.dict("sys.modules", {
+            "docling": mock_docling,
+            "docling.document_converter": mock_docling.document_converter,
+        }):
             result = extract_text(minimal_pdf, use_cache=False)
 
     assert "Docling Fallback" in result.full_markdown
@@ -116,9 +125,9 @@ def test_fallback_to_docling(minimal_pdf: Path) -> None:
 def test_all_backends_fail(minimal_pdf: Path) -> None:
     """When all backends fail, raises ValueError."""
     with patch("coarse.config.resolve_api_key", return_value=None):
-        with patch(
-            "docling.document_converter.DocumentConverter",
-            side_effect=ImportError("no docling"),
+        with patch.dict(
+            "sys.modules",
+            {"docling": None, "docling.document_converter": None},
         ):
             with pytest.raises(ValueError, match="no extraction backend"):
                 extract_text(minimal_pdf, use_cache=False)

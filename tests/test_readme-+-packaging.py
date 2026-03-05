@@ -132,6 +132,7 @@ def test_package_builds(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_package_installs_in_fresh_venv(tmp_path):
     """Install the built wheel into a fresh venv; verify `coarse --help` exits 0."""
     # Build wheel
