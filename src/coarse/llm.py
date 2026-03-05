@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 import instructor
 import litellm
@@ -42,6 +43,23 @@ for _model_id, _info in _CUSTOM_MODEL_INFO.items():
     litellm.model_cost[f"openrouter/{_model_id}"] = _info
 
 
+_CTRL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _sanitized_completion(*args, **kwargs):
+    """Wrap litellm.completion to strip control characters from response content.
+
+    Some models (e.g. MiMo) emit control characters in JSON output that break
+    Pydantic parsing.  Stripping \x00-\x1f (except \t and \n) is safe for JSON.
+    """
+    response = litellm.completion(*args, **kwargs)
+    for choice in getattr(response, "choices", []):
+        msg = getattr(choice, "message", None)
+        if msg and hasattr(msg, "content") and isinstance(msg.content, str):
+            msg.content = _CTRL_CHAR_RE.sub("", msg.content)
+    return response
+
+
 class LLMClient:
     """Wraps litellm + instructor for structured output. Tracks cumulative cost."""
 
@@ -51,7 +69,7 @@ class LLMClient:
         self._model = model or config.default_model
         self._model = _normalize_model(self._model)
         mode = instructor.Mode.JSON if _needs_json_mode(self._model) else instructor.Mode.TOOLS
-        self._client = instructor.from_litellm(litellm.completion, mode=mode)
+        self._client = instructor.from_litellm(_sanitized_completion, mode=mode)
         self._cost_usd: float = 0.0
 
     def complete(
@@ -60,6 +78,8 @@ class LLMClient:
         response_model: type[BaseModel],
         max_tokens: int = 4096,
         temperature: float = 0.3,
+        timeout: int = 300,
+        **kwargs,
     ) -> BaseModel:
         """Single structured LLM call. Returns parsed Pydantic model."""
         # Clamp max_tokens to model's known limit
@@ -71,7 +91,9 @@ class LLMClient:
             response_model=response_model,
             max_tokens=clamped,
             temperature=temperature,
+            timeout=timeout,
             max_retries=3,
+            **kwargs,
         )
         try:
             cost = litellm.completion_cost(completion_response=completion)

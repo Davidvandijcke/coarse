@@ -22,7 +22,7 @@ uv run python -m coarse paper.pdf
 
 ```
 paper.pdf
-    → [extraction.py]   Docling → PaperText (single high-quality markdown)
+    → [extraction.py]   Mistral OCR / Docling fallback → PaperText (markdown)
     → [extraction_qa.py] Vision LLM spot-check (skipped for clean text papers)
     → [structure.py]     Parse headings + cheap LLM → PaperStructure (sections, domain)
     → [overview agent]   LLM → 4-6 macro issues (parallel with section agents)
@@ -45,7 +45,7 @@ src/coarse/
 ├── cli.py                   # Typer CLI, progress display (rich)
 ├── config.py                # ~/.coarse/config.toml, API key management
 ├── cost.py                  # Cost estimation + user approval gate
-├── extraction.py            # PDF → PaperText (Docling markdown)
+├── extraction.py            # PDF → PaperText (Mistral OCR → OpenRouter → Docling)
 ├── extraction_qa.py         # Post-extraction QA via vision LLM (Gemini Flash)
 ├── structure.py             # PaperText → PaperStructure (heading parse + LLM metadata)
 ├── quote_verify.py          # Post-processing quote verification
@@ -192,7 +192,9 @@ Runs on every push to main and every PR:
 
 Current models (verified 2026-03-04):
 - **Default**: `qwen/qwen3.5-plus-02-15` (via OpenRouter, 1M ctx, $0.26/1.56 per 1M tok)
-- **Vision**: `google/gemini-3-flash-preview` (1M ctx, $0.50/3.00 per 1M tok) — post-extraction QA
+- **Vision**: `gemini/gemini-3-flash-preview` (1M ctx, $0.50/3.00 per 1M tok) — post-extraction QA (litellm uses `gemini/` prefix)
+- **OCR**: `mistral/mistral-ocr-latest` — PDF text extraction (Mistral OCR via litellm)
+- **OpenRouter Extraction**: `google/gemini-3-flash-preview` — fallback extraction via OpenRouter file-parser plugin
 - **Cheap (OpenAI)**: `openai/gpt-5.1-codex-mini` ($0.25/2.00)
 - **Cheap (Anthropic)**: `anthropic/claude-haiku-4.5` ($1.00/5.00)
 - **Agent**: `moonshotai/kimi-k2.5` (via OpenRouter) — used by coding agents (`--agentic`)

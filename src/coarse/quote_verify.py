@@ -107,16 +107,17 @@ def _find_nearest_passage(
 
 
 def _trim_to_best_match(quote: str, passage: str) -> str:
-    """Trim passage to the subsequence that best matches quote length."""
+    """Find the subsequence of passage that best matches quote, allowing slight expansion."""
     if len(passage) <= len(quote):
         return passage
 
-    quote_len = len(quote)
+    # Allow window up to 1.5x quote length to recover truncated quotes
+    window = min(len(passage), int(len(quote) * 1.5))
     best_ratio = 0.0
-    best_sub = passage[:quote_len]
+    best_sub = passage[:window]
 
-    for start in range(0, len(passage) - quote_len + 1, max(1, quote_len // 8)):
-        sub = passage[start : start + quote_len]
+    for start in range(0, len(passage) - window + 1, max(1, window // 8)):
+        sub = passage[start : start + window]
         ratio = difflib.SequenceMatcher(None, quote.lower(), sub.lower()).ratio()
         if ratio > best_ratio:
             best_ratio = ratio

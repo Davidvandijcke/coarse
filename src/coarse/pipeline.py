@@ -33,6 +33,7 @@ from coarse.types import (
     PaperStructure,
     PaperText,
     Review,
+    SectionInfo,
     SectionType,
 )
 
@@ -89,7 +90,7 @@ def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]
     return [c.model_copy(update={"number": i}) for i, c in enumerate(comments, start=1)]
 
 
-def detect_section_focus(section: "SectionInfo") -> str:
+def detect_section_focus(section: SectionInfo) -> str:
     """Detect whether a section contains proofs, methodology, literature, etc.
 
     Returns one of: "proof", "methodology", "results", "literature", "general".
@@ -138,11 +139,11 @@ def review_paper(
     model: str | None = None,
     skip_cost_gate: bool = False,
     config: CoarseConfig | None = None,
-) -> tuple[Review, str]:
+) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
     Pipeline order:
-    1. Extract PDF → PaperText (Docling markdown)
+    1. Extract PDF → PaperText (Mistral OCR / Docling fallback)
     2. Cost gate (optional)
     3. Analyze structure via markdown parsing + cheap LLM metadata → PaperStructure
     4. Phase 1: Overview agent + assumption checker (parallel, blocking)
@@ -220,11 +221,13 @@ def review_paper(
         coding_critique_agent = CodingCritiqueAgent(config, fallback_client=client)
         logger.info("Agentic mode: proof/methodology/results sections use coding agents")
 
-    # Review main body sections only: skip references/appendix.
+    # Review main body sections + appendix proof sections; skip references.
     # Cap at 25 sections to keep total comment count manageable for crossref.
     reviewable_sections = [
         s for s in structure.sections
-        if s.section_type not in (SectionType.REFERENCES, SectionType.APPENDIX)
+        if s.section_type != SectionType.REFERENCES
+        and (s.section_type != SectionType.APPENDIX
+             or detect_section_focus(s) == "proof")
     ]
     non_ref_sections = reviewable_sections[:25]
 
@@ -273,7 +276,7 @@ def review_paper(
                     executor.submit(
                         section_agent.run, section, structure.title,
                         overview, calibration,
-                        detect_section_focus(section),
+                        focus,
                         literature_context,
                     )
                 )

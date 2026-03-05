@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Appendix proof coverage** — Appendix sections classified as "proof" are now reviewed instead of skipped, catching proof errors in covariance calculations, sign errors, Fubini-Tonelli applications, etc.
+- **Anti-redundancy prompts** — Section agents instructed not to restate overview issues; crossref dedup now removes comments whose core point duplicates an overview issue even if they add a quote.
+- **Anti-truncation quote instructions** — Replaced weak "2 full sentences" guidance with strict "NEVER truncate mid-equation" rule in all section prompts.
+- **Section agent max_tokens** — Increased from 8192 to 16384 to prevent quote truncation in math-heavy sections.
+- **Quote verify expansion** — `_trim_to_best_match` now uses a 1.5x window to expand truncated quotes instead of re-truncating correct matches.
+
 ### Added
 
 - **Coding agents** (`coding_agent.py`, `agents/coding_section.py`, `agents/coding_critique.py`) — OpenHands SDK integration for autonomous paper analysis. Coding agents can read full paper text, cross-reference sections, and run Python to verify math. Opt-in via `--agentic` CLI flag with transparent fallback to standard LLM agents on failure.
@@ -18,8 +26,7 @@
 - **Evaluation data** (`data/refine_examples/`) — Reference reviews and papers for quality scoring.
 - **New tests** — `test_quote_verify.py`, `test_domain_calibration.py`, `test_multi_judge.py`, `test_section_routing.py`.
 
-### Changed
-
+- **Mistral OCR extraction** — Primary PDF extraction now uses Mistral OCR via litellm (94% math accuracy). Docling kept as offline fallback. Priority: MISTRAL_API_KEY direct → OpenRouter file-parser plugin → Docling.
 - **Python 3.12+ required** — Upgraded from 3.11+ to support `openhands-sdk` dependency.
 - **`openhands-sdk` is a core dependency** — Moved from optional to required for coding agent support.
 - **Pipeline hybrid dispatch** — `review_paper()` routes proof/methodology/results sections to coding agents when `--agentic` enabled, capped at `max_coding_sections` (default 3). Other sections use standard LLM agents.

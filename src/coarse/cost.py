@@ -10,6 +10,7 @@ from rich.table import Table
 
 from coarse.config import CoarseConfig
 from coarse.llm import estimate_call_cost
+from coarse.models import OCR_MODEL
 from coarse.types import CostEstimate, CostStage, PaperText
 
 _DEFAULT_SECTION_COUNT = 8
@@ -25,6 +26,18 @@ def build_cost_estimate(
     total_tokens = paper_text.token_estimate
     section_tokens = max(1, total_tokens // section_count)
 
+    # OCR extraction cost (Mistral OCR: ~$0.002/page)
+    est_pages = max(1, total_tokens // 250)
+    stages: list[CostStage] = [
+        CostStage(
+            name="pdf_extraction",
+            model=OCR_MODEL,
+            estimated_tokens_in=0,
+            estimated_tokens_out=0,
+            estimated_cost_usd=est_pages * 0.002,
+        ),
+    ]
+
     stage_defs: list[tuple[str, int, int]] = [
         ("metadata", 500, 100),
         ("overview", total_tokens, 1200),
@@ -33,7 +46,6 @@ def build_cost_estimate(
         ("critique", total_tokens, 800),
     ]
 
-    stages: list[CostStage] = []
     for name, tokens_in, tokens_out in stage_defs:
         cost = estimate_call_cost(model, tokens_in, tokens_out)
         stages.append(

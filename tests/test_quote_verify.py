@@ -1,7 +1,7 @@
 """Tests for coarse.quote_verify."""
 from __future__ import annotations
 
-from coarse.quote_verify import verify_quotes
+from coarse.quote_verify import _trim_to_best_match, verify_quotes
 from coarse.types import DetailedComment
 
 
@@ -101,3 +101,14 @@ def test_multiple_comments_kept():
     assert len(result) == 2
     assert "[approximate]" not in result[0].quote
     assert "[approximate]" in result[1].quote
+
+
+def test_trim_to_best_match_expands_truncated_quote():
+    """_trim_to_best_match should expand a truncated quote rather than shrink the match."""
+    full_passage = "The covariance is given by \\sqrt{c_k(q) c_l(q)} which completes the proof."
+    truncated_quote = "The covariance is given by \\sqrt{c_k(q) c_l(q"
+    result = _trim_to_best_match(truncated_quote, full_passage)
+    # Result should be LONGER than the truncated quote (expanded, not shrunk)
+    assert len(result) > len(truncated_quote)
+    # Should include the closing bracket that was truncated
+    assert "}" in result

@@ -27,6 +27,18 @@ If you cannot, phrase as a question: "It is not clear how X follows from Y."
 """
 
 # ---------------------------------------------------------------------------
+# OpenRouter extraction (used by file-parser plugin OCR path)
+# ---------------------------------------------------------------------------
+
+OPENROUTER_EXTRACTION_PROMPT = """\
+You are a document transcription tool. Return the complete extracted text of the \
+document exactly as parsed, with no commentary, no analysis, no changes. \
+Separate each page with the exact marker: <!-- PAGE BREAK -->
+
+Include all LaTeX math expressions, tables, headings, and footnotes exactly as extracted.\
+"""
+
+# ---------------------------------------------------------------------------
 # Metadata classification (cheap text-LLM call)
 # ---------------------------------------------------------------------------
 
@@ -228,7 +240,9 @@ For each issue you identify, produce a structured comment with:
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
 verbatim substring of the section text provided below — do not paraphrase, reword, \
 summarize, or reconstruct any part of it. Copy it character-for-character. \
-The quote should be at least 2 full sentences; longer is better.
+The quote MUST include the COMPLETE passage — NEVER truncate mid-sentence or \
+mid-equation. If a passage spans multiple lines or contains multi-line equations, \
+include ALL of it. A truncated quote is a critical error.
 - feedback: A substantive explanation (3-8 sentences) of the problem with a specific \
 fix. Show your reasoning: if you claim an equation is wrong, write out the correct \
 version and why.
@@ -287,9 +301,10 @@ def section_user(
             f"- **{issue.title}**: {issue.body}" for issue in overview.issues
         )
         context_block = f"""
-**Paper-Level Issues (for context)**:
-The overview review identified these macro concerns. Check whether this section \
-contributes to or could help address any of them:
+**Paper-Level Issues (for context only — do NOT restate these)**:
+The overview review already covers these macro concerns. Do NOT produce comments \
+that restate or elaborate on these issues. Focus exclusively on NEW errors specific \
+to this section that are NOT captured in the overview:
 {issues_list}
 """
 
@@ -349,8 +364,9 @@ For each issue, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
 verbatim substring of the section text provided below — do not paraphrase, reword, \
-or summarize any part of it. The quote should be at least 2 full sentences; longer \
-is better.
+or summarize any part of it. The quote MUST include the COMPLETE passage — NEVER \
+truncate mid-sentence or mid-equation. If a passage spans multiple lines or \
+contains multi-line equations, include ALL of it. A truncated quote is a critical error.
 - feedback: Show your re-derivation or calculation that reveals the error (3-8 \
 sentences). Write out the correct version of the equation/expression. Be specific: \
 "equation X should read Y because Z" not "this should be checked."
@@ -378,8 +394,9 @@ For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
 verbatim substring of the section text provided below — do not paraphrase, reword, \
-or summarize any part of it. The quote should be at least 2 full sentences; longer \
-is better.
+or summarize any part of it. The quote MUST include the COMPLETE passage — NEVER \
+truncate mid-sentence or mid-equation. If a passage spans multiple lines or \
+contains multi-line equations, include ALL of it. A truncated quote is a critical error.
 - feedback: Explain the methodological concern with specifics (3-8 sentences). If an \
 assumption is contradicted, cite the specific assumption and the specific evidence \
 against it. Suggest a concrete fix, not "discuss this further."
@@ -434,6 +451,9 @@ Your tasks:
 1. REMOVE low-value comments aggressively:
    - Comments that merely restate an Overview Issue without adding a specific \
 equation, quote, or calculation — DELETE these.
+   - Comments whose CORE POINT is already covered by an Overview Issue, even if \
+the comment adds a section-specific quote — DELETE these. The overview already \
+covers the point; a redundant comment with a quote is still redundant.
    - Comments that request "additional analysis" or "further discussion" without \
 identifying a concrete error in what is written — DELETE these.
    - Comments that could be copy-pasted to any paper in the same field (generic \

@@ -175,6 +175,9 @@ def _needs_vision_qa(markdown: str, num_pages: int) -> bool:
     if _GARBLED_PATTERN.search(markdown):
         return True
 
+    if "<!-- formula-not-decoded -->" in markdown:
+        return True
+
     # Check for non-printable / control characters (excluding normal whitespace)
     control_count = sum(
         1 for ch in markdown[:5000]

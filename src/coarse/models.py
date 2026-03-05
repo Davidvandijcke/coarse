@@ -23,6 +23,12 @@ CHEAP_MODELS: dict[str, str] = {
     "GROQ_API_KEY": "groq/llama-3.3-70b-versatile",
 }
 
+# OCR model for PDF text extraction (Mistral OCR via litellm)
+OCR_MODEL = "mistral/mistral-ocr-latest"
+
+# Model used by OpenRouter extraction fallback (google/ prefix for OpenRouter API)
+OPENROUTER_EXTRACTION_MODEL = "google/gemini-3-flash-preview"
+
 # Coding agent model (used by CodingSectionAgent / CodingCritiqueAgent)
 AGENT_MODEL = "moonshotai/kimi-k2.5"
 

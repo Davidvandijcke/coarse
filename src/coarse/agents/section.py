@@ -61,6 +61,6 @@ class SectionAgent(ReviewAgent):
         ]
 
         result = self.client.complete(
-            messages, _SectionComments, max_tokens=8192, temperature=0.3
+            messages, _SectionComments, max_tokens=16384, temperature=0.3
         )
         return result.comments

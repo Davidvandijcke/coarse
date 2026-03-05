@@ -32,10 +32,11 @@ def test_build_cost_estimate_returns_all_stages():
     section_stages = [n for n in names if n.startswith("section_")]
     assert len(section_stages) == 8
     assert "extraction_qa" in names
+    assert "pdf_extraction" in names
     # Coding agent stages included by default (use_coding_agents=True):
     # coding_section_1..3 + coding_critique = 4 extra
-    # Total: metadata + overview + 8 sections + crossref + critique + extraction_qa + 4 coding = 17
-    assert len(estimate.stages) == 17
+    # Total: pdf_extraction + metadata + overview + 8 sections + crossref + critique + extraction_qa + 4 coding = 18
+    assert len(estimate.stages) == 18
 
 
 def test_build_cost_estimate_zero_cost_unknown_model():
@@ -43,8 +44,9 @@ def test_build_cost_estimate_zero_cost_unknown_model():
     config = config.model_copy(update={"extraction_qa": False, "use_coding_agents": False})
     estimate = build_cost_estimate(_paper(), config)
     assert len(estimate.stages) > 0
-    assert all(s.estimated_cost_usd == 0.0 for s in estimate.stages)
-    assert estimate.total_cost_usd == 0.0
+    # pdf_extraction stage has fixed cost; all LLM stages should be zero for unknown model
+    llm_stages = [s for s in estimate.stages if s.name != "pdf_extraction"]
+    assert all(s.estimated_cost_usd == 0.0 for s in llm_stages)
 
 
 def test_total_cost_matches_sum():
