@@ -45,7 +45,7 @@ def _build_sections_summary(sections: list[SectionInfo]) -> str:
     """Convert sections list to a text block for the overview prompt.
 
     Methodology, results, discussion, and appendix sections get full text.
-    Introduction, conclusion, and related_work get truncated to 2000 chars.
+    Introduction, conclusion, and related_work get truncated to 10K chars.
     Total output is capped at MAX_OVERVIEW_CHARS with proportional allocation.
     """
     # Phase 1: Build raw parts with full or truncated text
@@ -162,6 +162,7 @@ def synthesize_overviews(
 
 # Section types relevant for assumption checking
 _ASSUMPTION_RELEVANT_TYPES = {
+    SectionType.INTRODUCTION,
     SectionType.METHODOLOGY,
     SectionType.RESULTS,
     SectionType.DISCUSSION,
@@ -176,7 +177,8 @@ def check_assumptions(
 ) -> list[OverviewIssue]:
     """Focused check: are theoretical assumptions consistent with empirical methods?
 
-    Extracts methodology and empirical sections, sends to LLM for consistency check.
+    Extracts assumption-relevant sections (intro, methodology, results,
+    discussion, other), sends to LLM for consistency check.
     Returns 0-3 OverviewIssue objects.
     """
     relevant_sections = [
@@ -186,7 +188,7 @@ def check_assumptions(
     if not relevant_sections:
         return []
 
-    # Build condensed text from relevant sections (cap at 40K chars)
+    # Build condensed text from relevant sections (cap at 500K chars)
     sections_text = "\n\n".join(
         f"## {s.number}. {s.title}\n{s.text}" for s in relevant_sections
     )

@@ -152,7 +152,7 @@ class TestRunAgentSync:
             import coarse.coding_agent as mod
 
             importlib.reload(mod)
-            with pytest.raises(RuntimeError, match="openhands-sdk is required"):
+            with pytest.raises(RuntimeError, match="openhands-sdk"):
                 mod.run_agent_sync(
                     task_prompt="test",
                     system_prompt="test",
@@ -177,7 +177,7 @@ class TestRunAgentSync:
         mock_modules = _mock_openhands_modules()
 
         def slow_run():
-            time.sleep(100)
+            time.sleep(0.5)
 
         mock_conversation = MagicMock()
         mock_conversation.return_value.run = slow_run

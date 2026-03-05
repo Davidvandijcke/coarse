@@ -4,6 +4,7 @@
 
 ### Changed
 
+- **Structured assumption cross-check** — Rewrote `ASSUMPTION_CHECK_SYSTEM` with a 4-step procedure (extract assumptions → characterize data → cross-check with common mismatch patterns → evaluate defenses). Added INTRODUCTION sections to assumption-relevant types so data descriptions are visible. Adds `_TONE_BLOCK` to assumption prompt.
 - **Appendix proof coverage** — Appendix sections classified as "proof" are now reviewed instead of skipped, catching proof errors in covariance calculations, sign errors, Fubini-Tonelli applications, etc.
 - **Anti-redundancy prompts** — Section agents instructed not to restate overview issues; crossref dedup now removes comments whose core point duplicates an overview issue even if they add a quote.
 - **Anti-truncation quote instructions** — Replaced weak "2 full sentences" guidance with strict "NEVER truncate mid-equation" rule in all section prompts.

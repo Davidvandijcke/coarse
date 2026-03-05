@@ -1,11 +1,14 @@
+from coarse.agents.overview import _ASSUMPTION_RELEVANT_TYPES
 from coarse.prompts import (
-    CROSSREF_SYSTEM,
+    ASSUMPTION_CHECK_SYSTEM,
     CRITIQUE_SYSTEM,
+    CROSSREF_SYSTEM,
     METADATA_SYSTEM,
     OVERVIEW_SYSTEM,
     SECTION_SYSTEM,
-    crossref_user,
+    assumption_check_user,
     critique_user,
+    crossref_user,
     overview_user,
     section_user,
 )
@@ -16,7 +19,6 @@ from coarse.types import (
     SectionInfo,
     SectionType,
 )
-
 
 # --- Fixtures ---
 
@@ -136,7 +138,10 @@ def test_critique_user_embeds_comments():
 # --- System prompt constants ---
 
 def test_all_system_prompts_are_nonempty_strings():
-    for prompt in (METADATA_SYSTEM, OVERVIEW_SYSTEM, SECTION_SYSTEM, CROSSREF_SYSTEM, CRITIQUE_SYSTEM):
+    for prompt in (
+        METADATA_SYSTEM, OVERVIEW_SYSTEM, SECTION_SYSTEM,
+        CROSSREF_SYSTEM, CRITIQUE_SYSTEM, ASSUMPTION_CHECK_SYSTEM,
+    ):
         assert isinstance(prompt, str)
         assert len(prompt) > 50
 
@@ -152,3 +157,29 @@ def test_overview_system_specifies_issue_count():
 
 def test_crossref_system_mentions_deduplication():
     assert "duplic" in CROSSREF_SYSTEM.lower()
+
+
+# --- Assumption checker ---
+
+def test_assumption_check_system_includes_tone_and_confidence():
+    assert "constructive colleague" in ASSUMPTION_CHECK_SYSTEM
+    assert "rederive" in ASSUMPTION_CHECK_SYSTEM
+
+
+def test_assumption_check_system_has_four_steps():
+    for step in ("STEP 1", "STEP 2", "STEP 3", "STEP 4"):
+        assert step in ASSUMPTION_CHECK_SYSTEM
+
+
+def test_assumption_check_system_lists_common_mismatches():
+    for pattern in ("i.i.d.", "panel", "continuity", "discrete", "stationarity"):
+        assert pattern.lower() in ASSUMPTION_CHECK_SYSTEM.lower()
+
+
+def test_assumption_check_user_references_procedure():
+    result = assumption_check_user("Test Paper", "some text")
+    assert "4-step" in result
+
+
+def test_assumption_relevant_types_includes_introduction():
+    assert SectionType.INTRODUCTION in _ASSUMPTION_RELEVANT_TYPES
