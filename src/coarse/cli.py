@@ -124,6 +124,10 @@ def review(
     else:
         resolved_model = model or config.default_model
 
+    # Propagate -m to coding agents so they use the same model
+    if model:
+        config = config.model_copy(update={"agent_model": resolved_model})
+
     # Check API key; run setup inline if missing
     if resolve_api_key(resolved_model, config) is None:
         provider = resolved_model.split("/")[0] if "/" in resolved_model else resolved_model

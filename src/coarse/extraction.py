@@ -10,8 +10,6 @@ import json
 import logging
 from pathlib import Path
 
-from docling.document_converter import DocumentConverter
-
 from coarse.types import PaperText
 
 logger = logging.getLogger(__name__)
@@ -83,6 +81,8 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
             return cached
 
     try:
+        from docling.document_converter import DocumentConverter
+
         converter = DocumentConverter()
         result = converter.convert(str(path))
         full_markdown = result.document.export_to_markdown(
