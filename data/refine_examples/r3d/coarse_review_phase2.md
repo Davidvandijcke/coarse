@@ -11,184 +11,224 @@
 
 Here are some overall reactions to the document.
 
-**Internal Contradiction in Fréchet Estimator Bandwidth Derivation**
+**Hierarchical Variance Structure and Bootstrap Validity**
 
-All three reviewers identify a critical theoretical inconsistency regarding the bandwidth selection for the Fréchet estimator. Section 3 explicitly states that no closed-form asymptotic MSE exists because Taylor expansions are not well-defined in the space of distributions, yet Appendix A-4.2.2 derives IMSE-optimal bandwidths using explicit bias and variance terms reliant on asymptotic equivalence with local polynomial estimators. This circular reasoning undermines the theoretical foundation; the paper must either provide valid functional Taylor expansions in Wasserstein space or reclassify the bandwidth selection as a heuristic validated by simulation rather than theory.
+The proposed multiplier bootstrap and asymptotic theory treat observations as i.i.d. draws (Assumption L1), ignoring the hierarchical data structure where treatment is assigned at the group level and outcomes are estimated from within-group subsamples. This oversight fails to capture two-level variance (between-group vs. within-group sampling variation) and correlation within groups, risking significant undercoverage of confidence bands. Additionally, the validity of the uniform bands relies on unverified VC-type conditions for the weighted empirical process. To address this, modify Algorithm 1 to draw group-level multipliers or aggregate residuals to the group level, incorporate within-group sampling variance into the asymptotic theory, and provide simulation evidence demonstrating empirical coverage rates across varying sample sizes and bandwidths.
 
-**Unverified Within-Group Sample Size Requirements**
+**Identification Assumption Verification and Continuity Bias**
 
-The panel consistently flags Assumption Q1, which requires within-group empirical quantile estimators to converge faster than the across-group rate (√nh), as inadequately addressed in both theory and practice. The empirical application uses state-level data with dramatic variation in family counts (e.g., 204 effective state observations vs. 230,340 family observations), risking noisy quantile estimates that propagate bias into the second-stage RDD. The paper must specify minimum within-group sample size (ni) requirements and demonstrate these are met, or provide sensitivity analysis showing how estimator performance degrades when Q1 is violated.
+Assumption I1 requires the average quantile function to be continuous at the cutoff, but this is threatened by discontinuities in within-group sample sizes (n_i) which induce artificial jumps in empirical quantile precision, biasing treatment effect estimates. Furthermore, the empirical application lacks standard RDD validity checks, such as McCrary density tests for running variable manipulation and covariate balance tests adapted for distributional outcomes. Without these, the causal interpretation is vulnerable to sorting and pre-existing discontinuities. Fix: Add a formal pre-test procedure (e.g., placebo cutoff tests), include density discontinuity tests and distributional balance checks in Section 4.2, and theoretically address bias from heterogeneous n_i by weighting observations or adding continuity assumptions on sample sizes.
 
-**Invalid Hadamard Differentiability Assumption for Discrete Outcomes**
+**Bandwidth Selection and Smoothness Heterogeneity**
 
-Theoretical validity of the multiplier bootstrap (Theorem 3) relies on the projection mapping being Hadamard differentiable with an identity derivative, which holds only if limit quantile functions are strictly increasing. However, the empirical income data likely contains discrete components (top-coding, rounding, zeros) that create flat regions in the CDF, violating strict monotonicity and invalidating the functional delta method argument. The paper should add robustness results for non-strictly-increasing quantile functions, explicitly assume positive continuous densities, or acknowledge that uniform confidence bands are incorrect for realistic income distributions.
+The paper applies scalar RDD bandwidth rates (h → 0, nh^2 → ∞) to functional outcomes without theoretical justification that these remain optimal for distribution-valued data. Moreover, using a single IMSE-optimal bandwidth across all quantiles assumes homogeneous smoothness, which likely fails in the tails. This is critical because the main empirical finding of 'income reductions at the top' relies on the 85th-95th percentiles, precisely where a single bandwidth may oversmooth and distort effects. Fix: Provide theoretical justification for scalar bandwidth rates in the functional setting or derive new rates, and conduct a sensitivity analysis using quantile-specific bandwidths to verify that tail effects persist under optimization for local smoothness.
 
-**Missing Empirical RDD Validity and Manipulation Tests**
+**Fréchet Estimator Asymptotic Equivalence and Monotonicity**
 
-The empirical application employs a close-election RDD at the state-governor level but fails to report standard validity checks such as McCrary density tests or covariate balance tests for the state-level running variable. Without demonstrating continuity of the running variable density and covariates at the cutoff, the local randomization assumption underlying the R3D identification strategy remains unsupported, particularly given potential latent group heterogeneity between states that narrowly elect different parties. The authors must add density continuity tests and discuss why manipulation is unlikely in this specific electoral context.
+Theorem 4 claims the Fréchet estimator has the same asymptotic distribution as the local polynomial estimator, relying on the Hadamard derivative of the projection operator equaling the identity. This holds only if the true quantile function is strictly increasing; if flat regions exist (common in income data), the derivative is not the identity, invalidating the equivalence claim. There is also a logical tension between the estimator's purpose (preventing quantile crossing via projection) and the equivalence claim (which requires the constraint to be inactive asymptotically). Fix: Add an explicit assumption that true average quantile functions are strictly increasing, or modify Theorem 4 to characterize the asymptotic distribution when monotonicity fails, and include a lemma proving the probability of crossing vanishes under specific smoothness conditions.
 
-**Underdeveloped Fuzzy RDD Identification Conditions**
+**Sensitivity to Distributional Metric Choice**
 
-The extension to fuzzy RDD (Section 2.5.3, Lemma 3) relies on untestable assumptions regarding complier status interacting with distribution-valued outcomes, specifically the 'zero-measure indefinites' assumption (Assumption I5) which is neither clearly defined nor verifiable. The identification argument does not establish whether monotonicity holds uniformly across all quantiles or if different distribution parts have different complier populations. The paper should explicitly define Assumption I5, clarify when fuzzy R3D is necessary versus sharp R3D, and provide testable implications for complier distribution assumptions in the functional outcome setting.
+The Fréchet estimator relies on the 2-Wasserstein distance, which equates the Fréchet mean to the average quantile function. However, the choice of metric implicitly weights different parts of the distribution and determines the definition of 'average,' potentially driving the heterogeneity findings and the equality-efficiency trade-off conclusion. The paper provides no robustness checks against alternative metrics (e.g., L2 on CDFs, Kolmogorov-Smirnov, energy distance) that might capture different aspects of distributional change. Fix: Add a robustness section comparing LAQTE estimates under at least one alternative metric and discuss whether the substantive conclusions regarding inequality and efficiency are dependent on the 2-Wasserstein specification.
 
-**Unsubstantiated Claims of Standard Quantile RDD Inconsistency**
+**Fully Observed Distributions Assumption vs. Sampled Reality**
 
-The paper motivates the new method by claiming standard quantile RDD is biased and inconsistent, but the simulation evidence (Section 4.1) primarily demonstrates inference problems (artificially tight confidence bands) rather than point estimate inconsistency. The theoretical argument for why standard quantile RDD fails is not formally proven, and simulations are limited to two DGPs. The authors should clarify whether the inconsistency refers to biased point estimates or invalid inference, provide direct bias comparisons, and add a formal proposition showing under what conditions the standard estimator converges to a different limit.
+Section 2.1 explicitly assumes that the distribution-valued outcome $Y_i$ (and its quantile function $Q_{Y_i}$) is 'fully observed' for each unit, treating it as a direct random element in Wasserstein space. However, the motivating examples in Section 2.2 (e.g., test scores within schools, wages within establishments) inherently involve observing a finite sample of individuals within each group, not the true population distribution. The estimators in Section 2.5 and inference in Algorithm 1 treat $Q_{Y_i}(q)$ as observed data without accounting for the within-group estimation error or the heteroskedasticity introduced by varying group sizes. This mismatches the theoretical assumption with the actual problem structure, potentially biasing standard errors and bandwidth selection which rely on the variance of the 'observed' outcome rather than the variance of the estimated distribution.
 
-**Variance Underestimation Due to Within-Group Sampling Assumption**
+**Continuous Running Variable Assumption vs. Discrete Examples**
 
-The theoretical framework (Section 2 & 3 main) assumes that group-level distributions $Y_i$ are 'fully observed' (Section 2.1), implying zero within-group estimation error for quantiles $Q_{Y_i}(q)$. However, the motivating examples (e.g., test scores in schools, wages in firms) and typical empirical applications involve finite within-group samples. The paper relegates the correction for within-group sampling noise to an extension (Section 3.3.1). If the main confidence bands (Section 3) are applied to data with finite within-group sizes without this extension, the standard errors will fail to account for the variance introduced by estimating $Q_{Y_i}(q)$, leading to underestimated uncertainty and invalid inference.
+Assumption I2 (Section 2.3.2) requires the running variable $X$ to have a differentiable CDF and a well-defined PDF at the cutoff, implying continuity. However, Motivating Example 2 (Section 2.2) uses 'parent vote share' in school elections as the running variable. Vote shares are inherently discrete (determined by a finite number of voters), which violates the continuity assumption required for the local polynomial asymptotics and bias corrections derived in Section 2.7. Applying the continuous RD theory to discrete running variables without adjustment (e.g., for heaping or discreteness) risks invalidating the identification strategy and inference.
 
-**Lack of Manipulation Checks for Group-Level Running Variables**
+**Independence of Groups Assumption vs. Clustered Data Structures**
 
-Assumption I2 posits a continuous, non-manipulated density for the running variable $X$ ($f_X$ differentiable, no manipulation). The motivating examples include 'vote share' and 'poverty rate', which are group-level variables known to be susceptible to manipulation (e.g., counties manipulating poverty rates, close elections). The provided methodology does not describe specific robustness checks (e.g., McCrary test, donut RD, covariate balance) tailored to verify I2 in these high-risk group-level contexts. Relying on I2 without empirical verification in settings prone to manipulation creates a risk that the local randomization assumption is violated, biasing the treatment effect estimates.
+The setting in Section 2.1 assumes that the group-level observations $(X_i, Y_i)$ are i.i.d. draws from a joint distribution $F$. The multiplier bootstrap in Algorithm 1 respects this by resampling units $i$ independently. However, the motivating examples (counties, school districts, establishments) often exhibit spatial correlation or clustering at higher levels (e.g., schools within districts, counties within states). The methodology does not incorporate clustering of standard errors across these higher-level aggregates. If the empirical implementation applies this i.i.d. bootstrap to clustered data, the resulting uniform confidence bands will likely be too narrow, leading to over-rejection of the null hypothesis.
 
 **Status**: [Pending]
 
 ---
 
-## Detailed Comments (12)
+## Detailed Comments (15)
 
-### 2. Theoretical Contradiction in Fréchet Bandwidth Justification [CRITICAL]
+### 4. LAQTE Conflated with Fréchet Mean Distribution [CRITICAL]
 
 **Status**: [Pending]
 
 **Quote**:
-> For the Fr´echet estimator in Section 2.5.2, no such closed-form expression for the asymp totic MSE exists, because the Taylor expansions it relies on is not well-defined in the space of distributio
+> In particular, the distribution defined by the LAQTEs has the intuitive interpretation of being the unique distribution with the lowest possible cumulative 'leastsquares' cost of transporting its probability mass into each of the underlying distributions of the individual units.
 
 **Feedback**:
-The author claims no closed-form MSE exists, yet Appendix A-4.2.2 derives IMSE-optimal bandwidths using explicit bias and variance terms via asymptotic equivalence. This circular reasoning undermines the theoretical foundation; either provide valid Taylor expansions or reclassify bandwidth selection as heuristic.
+The Local Average Quantile Treatment Effect (LAQTE) is defined as the difference between average quantile functions, representing a causal effect, not a probability distribution. The Fréchet mean property (minimizing expected Wasserstein distance) applies to the average quantile function of the potential outcomes, which defines a valid distribution. The LAQTE function does not necessarily satisfy quantile function properties (e.g., monotonicity) and thus cannot be interpreted as a distribution minimizing transport cost.
 
 ---
 
-### 8. Hadamard Differentiability Requirement for Discrete Outcomes [CRITICAL]
+### 9. Lemma 2 Incorrectly Claims Pointwise and Lp Error Reduction [CRITICAL]
 
 **Status**: [Pending]
 
 **Quote**:
-> edly, my results leverage the fact that Fr´echet regression in 2-Wasserstein space is an L^{2} projection of the local polynomial estimator onto the space of quantile functions.
+> Then the projected curve ˆ Q ∗ = Π Q ( ˆ Q ) is closer to the true curve in the sense that, for each x ∈ R ,
 
 **Feedback**:
-Inference (Theorem 3) requires the projection mapping to be Hadamard differentiable, which is violated if limit quantile functions are not strictly increasing (e.g., discrete data). Explicitly assume positive continuous densities or acknowledge invalidity for realistic income distributions.
+The L_2 projection operator Π_Q onto the cone of monotone functions guarantees global norm reduction, not pointwise inequality for every x. Furthermore, quantile functions are defined on the probability domain [0, 1], not x ∈ R. Additionally, the claim that the 'no-regret' property holds in 'any L_p norm' is mathematically incorrect; an L_2 projection ensures error reduction in the L_2 norm but not necessarily in L_1 or L_∞.
 
 ---
 
-### 10. Bandwidth Rate Requirement Contradiction [CRITICAL]
+### 10. Fuzzy Monotonicity Assumption Implies Sharp Design [CRITICAL]
 
 **Status**: [Pending]
 
 **Quote**:
-> The_ _baseline_ _bandwidth_ h = _hn_ _satisfies_ _h →_ 0 _,_ nh^{2}
+> - I5 (Monotonicity) . lim x → 0 P ( T 1 > T 0 | X = x ) = 1 and P (Indefinites)
 
 **Feedback**:
-Assumption K2 requires nh^{2p+3} → 0 (undersmoothing), but the text states this accommodates rates 'slower than h = n^{-1/5}'. For MSE-optimal bandwidth h ∝ n^{-1/(2p+3)}, the term converges to a constant, not zero. Resolve this contradiction.
+In a Fuzzy RDD design, the compliance rate P(T_1 > T_0) is typically strictly less than 1, allowing for always-takers and never-takers. This assumption forces the compliance rate to 1 at the cutoff, implying the first-stage denominator equals 1. This collapses the Fuzzy Wald estimator to the Sharp RD estimator, contradicting the section's premise of estimating a Fuzzy R3D model. Standard monotonicity assumptions require P(T_1 ≥ T_0) = 1 (no defiers), not strict inequality.
 
 ---
 
-### 12. Variance Underestimation Due to 'Fully Observed' Assumption [CRITICAL]
+### 11. Bootstrap Process Independent of Multipliers in Algorithm 1 [CRITICAL]
 
 **Status**: [Pending]
 
 **Quote**:
-> 'fully observed'
+> Form estimate of limiting process ˆ G R3D ,b ( q j ) = ˆ m + , ( ⊕ ) ,p ( q j ) -ˆ m -, ( ⊕ ) ,p ( q j ).
 
 **Feedback**:
-Section 2.1 assumes group-level distributions are 'fully observed', implying zero within-group estimation error. However, empirical applications involve finite within-group samples. Applying main confidence bands without correction leads to underestimated uncertainty and invalid inference.
+Step 11 lies inside the bootstrap loop (Steps 6-12), but the right-hand side uses estimates computed in Step 2 (outside the bootstrap loop). Consequently, the bootstrap process is identical for all b, and the multipliers drawn in Step 7 are never utilized, rendering the bootstrap degenerate. Additionally, Step 14 uses index b after the loop closes, and the interval [q,q] in the test statistic is zero-length.
 
 ---
 
-### 1. Factual Error: Frandsen et al. (2012) Uniform Confidence Bands
+### 14. Fréchet Estimator Asymptotic Equivalence and Monotonicity [CRITICAL]
 
 **Status**: [Pending]
 
 **Quote**:
-> es. Frandsen et al. (2012) first developed the framework for quantile RD and derived uniform convergence results, though they did not derive uniform confidence b
+> Theorem 4 claims the Fréchet estimator has the same asymptotic distribution as the local polynomial estimator, relying on the Hadamard derivative of the projection operator equaling the identity.
 
 **Feedback**:
-This claim is factually incorrect. Frandsen, Frölich, and Melly (2012, Econometrica) explicitly derive uniform confidence bands for quantile treatment effects in RDD (Section 4, Theorem 2). This misrepresentation unfairly diminishes prior work to overstate novelty.
+This equivalence holds only if the true quantile function is strictly increasing; if flat regions exist (common in income data), the derivative is not the identity, invalidating the equivalence claim. Add an explicit assumption that true average quantile functions are strictly increasing, or modify Theorem 4 to characterize the asymptotic distribution when monotonicity fails, and include a lemma proving the probability of crossing vanishes under specific smoothness conditions.
 
 ---
 
-### 6. Impossible Inequality in Neighborhood Definition
+### 1. Table 1 Subcategory Percentages Exceed Total
 
 **Status**: [Pending]
 
 **Quote**:
-> nd let c _<_ 0 _<_ c . Also, define _Yc_ := _{Y_ ( ω ) : ω _∈_ Ω
+> |                           | Economics   | Political Science   |
+> |---------------------------|-------------|---------------------|
+> | Any R3D (%)               | 37.9        | 32.3                |
+> | Disaggregated (%)         | 25.8        | 15.1                |
+> | Aggregated (%)            | 19.7        | 19.4                |
 
 **Feedback**:
-The text defines the neighborhood using 'c < 0 < c', which is mathematically impossible for a single scalar c. It should be 'c̲ < 0 < c̄' (lower and upper bounds), as confirmed by the use of [c̲, c̄] in Assumption L3.
+Mathematical inconsistency: If 'Any R3D' represents papers with either disaggregated OR aggregated data, and these subcategories are mutually exclusive, then Any R3D should equal Disaggregated + Aggregated. For Economics: 25.8 + 19.7 = 45.5%, but Any R3D shows 37.9%. For Political Science: 15.1 + 19.4 = 34.5%, but Any R3D shows 32.3%. The subcategory sums exceed the total category, indicating a calculation error or overlapping categories contrary to the table note.
 
 ---
 
-### 7. Overstatement of Standard Quantile RDD Inconsistency
+### 2. Card and Krueger Study Design Mischaracterization
 
 **Status**: [Pending]
 
 **Quote**:
-> d, in what follows, the quantile RD estimator is shown to be biased and inconsistent in the R3D setting, both theoretically and in simulations. Se
+> Card and Krueger (2000) studied the effect of a minimum wage increase ( T ) in New Jersey on wages, employment, and prices in fast food restaurants, comparing establishments on either side of the border with Pennsylvania. The running variable here is distance to the border ( X ) .
 
 **Feedback**:
-Simulation evidence primarily demonstrates inference problems (undercovering), not fundamental inconsistency of the point estimator. Standard quantile RDD remains consistent under correct specification. Clarify whether 'inconsistency' refers to inference failure under misspecification.
+Card and Krueger (1994/2000) is a canonical Difference-in-Differences study, not a Regression Discontinuity Design based on distance to the border. They compared state-level aggregates before and after the policy change, not local variation around a geographic cutoff using distance as a running variable. Presenting this as an RDD example is factually incorrect and undermines the motivating evidence.
 
 ---
 
-### 9. Logical Error in Continuity Assumption Comparison
+### 5. Proposition 1 Quantile Index Domain Mismatch
 
 **Status**: [Pending]
 
 **Quote**:
-> wise unrestricted. Indeed, while I1 is consistent with the common approach of averaging the outcome variable at the level of the aggregate unit and then estimating a standard RD, the continuity assumption in Frandsen et al. (2012) is not: there would be no random variation
+> Proposition 1 (Smooth average vs. discontinuous observed quantile functions) . Fix q ∈ (0 , 1) .
 
 **Feedback**:
-This reasoning is flawed. Standard RD relies on continuity of E[Y|X], while Y retains variance. Similarly, Frandsen et al. (2012) rely on continuity of the conditional quantile function, which does not imply zero variance or deterministic averages.
+The proposition header restricts the quantile index q to the open interval (0, 1), but part (ii) of the proposition claims the result holds for 'q ∈ [0 , 1]'. Quantiles at the boundaries 0 and 1 correspond to the infimum and supremum of the support and often require distinct assumptions (e.g., bounded support) not stated here, making the extension to the closed interval mathematically unsupported by the stated premises.
 
 ---
 
-### 11. Untestable Fuzzy RDD Assumption I5
+### 6. Q-RDD Estimand Misidentified as Distribution Function
 
 **Status**: [Pending]
 
 **Quote**:
-> 'zero-measure indefinites' assumption (Assumption I5)
+> The Q-RDD on the other hand, aims to estimate a fixed distribution function.
 
 **Feedback**:
-Assumption I5 is neither clearly defined nor verifiable. The identification argument does not establish whether monotonicity holds uniformly across all quantiles or if different distribution parts have different complier populations. Explicitly define I5 and provide testable implications.
+Frandsen et al. (2012) target the discontinuity in the conditional quantile function, not a 'fixed distribution function'. Quantile RD estimates Q_{Y|X}(τ|c+) - Q_{Y|X}(τ|c-). A distribution function refers to F(y), whereas Q-RDD targets quantiles τ. This mischaracterization undermines the comparison between methods. Rewrite as 'aims to estimate a discontinuity in the conditional quantile function'.
 
 ---
 
-### 3. Inconsistent Cutoff Notation in Density Assumption I2 [MINOR]
+### 7. Contradictory Claims on Group Level Weighting
 
 **Status**: [Pending]
 
 **Quote**:
-> (Density at threshold) **.** _FX_ ( x ) _is_ _differentiable_ _at_ c _and_ 0 _<_
+> The former approach estimates a weighted average treatment effect, weighted by group size
 
 **Feedback**:
-In Assumption I2, the cutoff is denoted as 'c', but throughout Section 2 (Equation 1, Assumption I1, Lemma 1), the cutoff is explicitly set to 0. For consistency with Lemma 1 ('lim x→0'), the assumption should state differentiability at 0.
+This statement contradicts the subsequent claim that 'The strategy of first aggregating to the group level... will estimate the unweighted average treatment effect.' Both sentences refer to Approach 1 (aggregating to group level). Standard RDD theory confirms that group-level aggregation yields an unweighted ATE, while disaggregated regression yields a group-size-weighted ATE. The text likely swapped 'former' and 'latter' in the first instance.
 
 ---
 
-### 4. Typo in Counterfactual Distribution Description [MINOR]
+### 12. Reversal of CCT Bandwidth Selection Orders
 
 **Status**: [Pending]
 
 **Quote**:
-> e he counterfactual distribution functions Y _[t]_ are drawn from a class of normal distributions
+> Here, s is the desired order of the local polynomial regression (typically s = 1 for local linear), which is used for bandwidth selection, while estimation is done with a p -th order polynomial where p >
 
 **Feedback**:
-There is a typographical error: 'he' should be 'the'. This appears in the paragraph following Proposition 1 in Section 2.3.2.
+This contradicts the standard Calonico et al. (2014) procedure referenced. In CCT, the bandwidth h is selected to minimize the MSE of the p-th order estimator (e.g., local quadratic, p=2), which is then bias-corrected using the s-th order (e.g., local linear, s=1). The text reverses this, claiming selection is based on the lower order s. This leads to suboptimal bandwidths for the main p-th order estimator.
 
 ---
 
-### 5. Incorrect Variance Notation for Scalar Running Variable [MINOR]
+### 13. MSE Equivalence Requires L2 Convergence
 
 **Status**: [Pending]
 
 **Quote**:
-> n addition, let µ = E [ X ] and Σ = var( X ) with Σ positive defi
+> As a result, their mean squared errors are asymptotically equivalent.
 
 **Feedback**:
-X is defined as a scalar-valued running variable (X ∈ R). For a scalar, variance is a real number, and 'positive definite' is reserved for covariance matrices. The condition should simply be Σ > 0.
+Convergence in probability (o_p(1)) of the difference between estimators does not imply convergence of their second moments (Mean Squared Error). To claim MSE equivalence, the paper must establish L_2 convergence (i.e., E[∥difference∥^2] -> 0). Without uniform integrability or bounds ensuring the difference vanishes in mean square, the deduction that MSEs are equivalent is mathematically unsupported.
+
+---
+
+### 15. Fully Observed Distributions Assumption vs. Sampled Reality
+
+**Status**: [Pending]
+
+**Quote**:
+> Section 2.1 explicitly assumes that the distribution-valued outcome $Y_i$ (and its quantile function $Q_{Y_i}$) is 'fully observed' for each unit
+
+**Feedback**:
+The motivating examples in Section 2.2 (e.g., test scores within schools, wages within establishments) inherently involve observing a finite sample of individuals within each group, not the true population distribution. The estimators in Section 2.5 and inference in Algorithm 1 treat $Q_{Y_i}(q)$ as observed data without accounting for the within-group estimation error or the heteroskedasticity introduced by varying group sizes. This mismatches the theoretical assumption with the actual problem structure, potentially biasing standard errors and bandwidth selection.
+
+---
+
+### 3. Notation Collision Between Space and Random Variable Y [MINOR]
+
+**Status**: [Pending]
+
+**Quote**:
+> be the space of cumulative distribution functions (cdfs) G on R with finite variance, ∫ R x 2 d G ( x ) < ∞ . Let ( X,Y ) ∼ F be a random element with joint distribution F on R ×Y . H
+
+**Feedback**:
+The symbol Y is overloaded to denote both the metric space of CDFs (first sentence) and the random variable (second sentence). In the pair (X, Y), Y acts as the random variable, but in the product space R ×Y, Y acts as the space. This ambiguity should be resolved by using distinct notation (e.g., script Y for the space) to prevent confusion in subsequent derivations involving marginal distributions.
+
+---
+
+### 8. Invalid Indicator Function Syntax in Estimator Definition [MINOR]
+
+**Status**: [Pending]
+
+**Quote**:
+> δ ± i := 1 { X i ⩾ < c }
+
+**Feedback**:
+The indicator function definition is syntactically invalid due to the sequence '⩾ <' (rendering as '>= <'). This makes the estimator undefined. It should be split into two separate indicators for the treatment and control sides, e.g., δ_i^+ := 1{X_i ≥ c} and δ_i^- := 1{X_i < c}, or use a single indicator with a side parameter.
 
 ---

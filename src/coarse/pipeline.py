@@ -9,8 +9,13 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from coarse.agents.critique import CritiqueAgent
 from coarse.agents.crossref import CrossrefAgent
+from coarse.agents.literature import search_literature
 from coarse.agents.overview import OverviewAgent, check_assumptions, merge_overview
 from coarse.agents.section import SectionAgent
 from coarse.config import CoarseConfig, load_config
@@ -34,6 +39,15 @@ from coarse.types import (
 logger = logging.getLogger(__name__)
 
 
+def _coding_agents_available() -> bool:
+    """Check if openhands-sdk is installed."""
+    try:
+        import openhands.sdk  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def _check_extraction_quality(structure: "PaperStructure") -> bool:
     """Check whether extraction produced usable output.
 
@@ -51,17 +65,42 @@ _PROOF_KEYWORDS = frozenset([
     "∎", "□", "we prove", "we show that", "it follows that",
 ])
 
+# Section focuses routed to coding agents (when agentic mode is on)
+_CODING_AGENT_FOCUSES = frozenset(["proof", "methodology", "results"])
+
+
+def _compute_comment_target(structure: PaperStructure, paper_text: PaperText) -> int:
+    """Compute a dynamic comment count target based on paper size.
+
+    Formula: clamp(n_sections * 1.5 + token_k * 0.3, 6, 25)
+    where token_k = token_estimate / 1000.
+    """
+    n_sections = len([
+        s for s in structure.sections
+        if s.section_type not in (SectionType.REFERENCES, SectionType.APPENDIX)
+    ])
+    token_k = paper_text.token_estimate / 1000.0
+    raw = n_sections * 1.5 + token_k * 0.3
+    return max(6, min(25, int(round(raw))))
+
+
+def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]:
+    """Renumber comments sequentially 1..N."""
+    return [c.model_copy(update={"number": i}) for i, c in enumerate(comments, start=1)]
+
 
 def detect_section_focus(section: "SectionInfo") -> str:
     """Detect whether a section contains proofs, methodology, literature, etc.
 
-    Returns one of: "proof", "methodology", "literature", "general".
+    Returns one of: "proof", "methodology", "results", "literature", "general".
     """
     text_lower = section.text.lower()
     if any(kw in text_lower for kw in _PROOF_KEYWORDS):
         return "proof"
     if section.section_type == SectionType.METHODOLOGY:
         return "methodology"
+    if section.section_type == SectionType.RESULTS:
+        return "results"
     if section.section_type == SectionType.RELATED_WORK:
         return "literature"
     return "general"
@@ -112,7 +151,7 @@ def review_paper(
     7. Synthesis → markdown
 
     Returns:
-        (Review, markdown_string)
+        (Review, markdown_string, paper_text)
     """
     if config is None:
         config = load_config()
@@ -123,10 +162,16 @@ def review_paper(
     paper_text = extract_text(pdf_path)
 
     if config.extraction_qa:
+        from coarse.extraction import _save_cache
         from coarse.extraction_qa import run_extraction_qa
 
         vision_client = LLMClient(model=config.vision_model, config=config)
-        paper_text = run_extraction_qa(Path(pdf_path), paper_text, vision_client)
+        corrected = run_extraction_qa(Path(pdf_path), paper_text, vision_client)
+        if corrected is not paper_text:
+            # QA applied corrections — update the cache so future runs skip QA
+            _save_cache(Path(pdf_path), corrected)
+            logger.info("Extraction cache updated with QA corrections")
+        paper_text = corrected
 
     if not skip_cost_gate:
         run_cost_gate(paper_text, config)
@@ -138,13 +183,42 @@ def review_paper(
             "The PDF may be scanned/image-only with no extractable text."
         )
 
-    # Domain calibration: generate domain-specific review criteria
-    calibration = calibrate_domain(structure, client)
+    # Domain calibration + literature search (parallel, both cheap)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        cal_future = executor.submit(calibrate_domain, structure, client)
+        lit_future = executor.submit(
+            search_literature, structure.title, structure.abstract, client
+        )
+
+        calibration = cal_future.result()
+        try:
+            literature_context = lit_future.result()
+        except Exception:
+            logger.warning("Literature search failed, skipping")
+            literature_context = ""
+
+    # Compute dynamic comment target based on paper size
+    comment_target = _compute_comment_target(structure, paper_text)
+
+    # Determine if coding agents should be used
+    use_coding = config.use_coding_agents and _coding_agents_available()
+    if config.use_coding_agents and not use_coding:
+        logger.warning("Coding agents requested but openhands-sdk not installed; using standard agents")
 
     overview_agent = OverviewAgent(client)
     section_agent = SectionAgent(client)
     crossref_agent = CrossrefAgent(client)
-    critique_agent = CritiqueAgent(client)
+
+    # Prepare coding agents if enabled
+    coding_section_agent = None
+    coding_critique_agent = None
+    if use_coding:
+        from coarse.agents.coding_critique import CodingCritiqueAgent
+        from coarse.agents.coding_section import CodingSectionAgent
+
+        coding_section_agent = CodingSectionAgent(config, fallback_client=client)
+        coding_critique_agent = CodingCritiqueAgent(config, fallback_client=client)
+        logger.info("Agentic mode: proof/methodology/results sections use coding agents")
 
     # Review main body sections only: skip references/appendix.
     # Cap at 25 sections to keep total comment count manageable for crossref.
@@ -157,7 +231,7 @@ def review_paper(
     # --- Phase 1: Multi-judge overview panel + assumption checker (blocking) ---
     with ThreadPoolExecutor(max_workers=2) as executor:
         overview_future = executor.submit(
-            overview_agent.run_panel, structure, calibration
+            overview_agent.run_panel, structure, calibration, literature_context
         )
         assumption_future = executor.submit(
             check_assumptions, structure, client, calibration
@@ -173,15 +247,36 @@ def review_paper(
     overview = merge_overview(overview, assumption_issues)
 
     # --- Phase 2: Section agents (parallel, text-only with overview context) ---
+    # Route proof/methodology/results to coding agents (capped at max_coding_sections)
+    coding_count = 0
     with ThreadPoolExecutor(max_workers=10) as executor:
-        section_futures = [
-            executor.submit(
-                section_agent.run, section, structure.title,
-                overview, calibration,
-                detect_section_focus(section),
-            )
-            for section in non_ref_sections
-        ]
+        section_futures = []
+        for section in non_ref_sections:
+            focus = detect_section_focus(section)
+            if (
+                use_coding
+                and coding_section_agent is not None
+                and focus in _CODING_AGENT_FOCUSES
+                and coding_count < config.max_coding_sections
+            ):
+                coding_count += 1
+                section_futures.append(
+                    executor.submit(
+                        coding_section_agent.run, section, structure.title,
+                        overview, calibration, focus, literature_context,
+                        paper_markdown=paper_text.full_markdown,
+                        all_sections=structure.sections,
+                    )
+                )
+            else:
+                section_futures.append(
+                    executor.submit(
+                        section_agent.run, section, structure.title,
+                        overview, calibration,
+                        detect_section_focus(section),
+                        literature_context,
+                    )
+                )
 
         section_comments: list[DetailedComment] = []
         for i, future in enumerate(section_futures):
@@ -192,15 +287,29 @@ def review_paper(
                 sec_title = non_ref_sections[i].title if i < len(non_ref_sections) else "?"
                 logger.warning("Section agent failed for '%s', skipping", sec_title)
 
-    # Cap comments sent to crossref to avoid output token overflow.
-    if len(section_comments) > 50:
-        logger.info("Capping %d section comments to 50 for crossref", len(section_comments))
-        section_comments = section_comments[:50]
-
-    deduped_comments = crossref_agent.run(paper_text, overview, section_comments)
+    deduped_comments = crossref_agent.run(
+        paper_text, overview, section_comments, comment_target=comment_target
+    )
     # Final quote verification against full paper text
-    verified_comments = verify_quotes(deduped_comments, paper_text.full_markdown, drop_unverified=True)
-    final_comments = critique_agent.run(overview, verified_comments)
+    verified_comments = verify_quotes(
+        deduped_comments, paper_text.full_markdown, drop_unverified=True,
+    )
+
+    # Critique — coding agent when agentic mode is on
+    if use_coding and coding_critique_agent is not None:
+        final_comments = coding_critique_agent.run(
+            overview, verified_comments, comment_target=comment_target,
+            paper_markdown=paper_text.full_markdown,
+            all_sections=structure.sections,
+        )
+    else:
+        critique_agent = CritiqueAgent(client)
+        final_comments = critique_agent.run(
+            overview, verified_comments, comment_target=comment_target
+        )
+
+    # Ensure sequential numbering 1..N
+    final_comments = _renumber_comments(final_comments)
 
     review = Review(
         title=structure.title,
@@ -212,4 +321,4 @@ def review_paper(
     )
 
     markdown = render_review(review)
-    return review, markdown
+    return review, markdown, paper_text

@@ -67,9 +67,6 @@ Do not compute overall_score — it will be computed externally.
 def _judge_user(reference: str, generated: str, paper_text: str = "") -> str:
     paper_block = ""
     if paper_text:
-        # Truncate to ~80k chars to stay within context limits
-        if len(paper_text) > 80_000:
-            paper_text = paper_text[:80_000] + "\n\n[...truncated]"
         paper_block = f"""
 ## Original Paper
 <paper>

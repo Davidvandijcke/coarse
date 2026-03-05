@@ -13,7 +13,7 @@ from coarse.types import DetailedComment
 logger = logging.getLogger(__name__)
 
 # Minimum fuzzy match ratio to accept a corrected quote
-_MIN_MATCH_RATIO = 0.75
+_MIN_MATCH_RATIO = 0.70
 
 
 def verify_quotes(

@@ -8,14 +8,13 @@ version = "0.1.0"
 description = "Free, open-source AI academic paper reviewer. The rough alternative to refine.ink."
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [{ name = "David Van Dijcke" }]
 keywords = ["academic", "paper", "review", "ai", "llm"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
 ]
@@ -28,6 +27,8 @@ dependencies = [
     "rich>=13.0",
     "tomli-w>=1.0",
     "pymupdf>=1.24",
+    "openhands-sdk>=0.1",
+    "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -40,7 +41,7 @@ coarse = "coarse.cli:app"
 packages = ["src/coarse"]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]

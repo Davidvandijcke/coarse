@@ -15,6 +15,7 @@ from coarse.extraction_qa import (
     _select_qa_pages,
     _split_by_page,
 )
+from coarse.models import VISION_MODEL
 from coarse.types import PaperText
 
 
@@ -214,7 +215,7 @@ def test_run_qa_good_quality_returns_original(mock_render, mock_pages, mock_key)
     paper = _make_paper_text(md)
 
     mock_client = MagicMock()
-    mock_client._model = "gemini/gemini-3-flash"
+    mock_client._model = VISION_MODEL
     mock_client.complete.return_value = ExtractionQAResult(
         overall_quality="good", corrections=[]
     )
@@ -233,7 +234,7 @@ def test_run_qa_with_corrections_patches_markdown(mock_render, mock_pages, mock_
     paper = _make_paper_text(md)
 
     mock_client = MagicMock()
-    mock_client._model = "gemini/gemini-3-flash"
+    mock_client._model = VISION_MODEL
     mock_client.complete.return_value = ExtractionQAResult(
         overall_quality="acceptable",
         corrections=[
@@ -261,7 +262,7 @@ def test_run_qa_graceful_failure_on_llm_error(mock_render, mock_pages, mock_key)
     paper = _make_paper_text(md)
 
     mock_client = MagicMock()
-    mock_client._model = "gemini/gemini-3-flash"
+    mock_client._model = VISION_MODEL
     mock_client.complete.side_effect = RuntimeError("API error")
 
     result = run_extraction_qa(Path("/fake.pdf"), paper, mock_client)
@@ -279,7 +280,7 @@ def test_run_qa_skips_when_prefilter_false(mock_pages, mock_key):
     paper = _make_paper_text(md)
 
     mock_client = MagicMock()
-    mock_client._model = "gemini/gemini-3-flash"
+    mock_client._model = VISION_MODEL
 
     result = run_extraction_qa(Path("/fake.pdf"), paper, mock_client)
     assert result.full_markdown == paper.full_markdown
@@ -294,7 +295,7 @@ def test_run_qa_no_api_key_skips(mock_key):
     paper = _make_paper_text(md)
 
     mock_client = MagicMock()
-    mock_client._model = "gemini/gemini-3-flash"
+    mock_client._model = VISION_MODEL
 
     result = run_extraction_qa(Path("/fake.pdf"), paper, mock_client)
     assert result.full_markdown == md
@@ -311,7 +312,7 @@ def test_run_qa_single_page_pdf(mock_render, mock_pages, mock_key):
     paper = _make_paper_text(md)
 
     mock_client = MagicMock()
-    mock_client._model = "gemini/gemini-3-flash"
+    mock_client._model = VISION_MODEL
     mock_client.complete.return_value = ExtractionQAResult(
         overall_quality="good", corrections=[]
     )
@@ -330,7 +331,7 @@ def test_run_qa_empty_corrections_list(mock_render, mock_pages, mock_key):
     paper = _make_paper_text(md)
 
     mock_client = MagicMock()
-    mock_client._model = "gemini/gemini-3-flash"
+    mock_client._model = VISION_MODEL
     mock_client.complete.return_value = ExtractionQAResult(
         overall_quality="acceptable", corrections=[]
     )

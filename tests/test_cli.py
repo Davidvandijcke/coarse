@@ -34,7 +34,8 @@ def _make_review() -> Review:
 
 
 def _fake_review_paper(pdf_path, model=None, skip_cost_gate=False, config=None):
-    return _make_review(), "# Test Paper\n"
+    from coarse.types import PaperText
+    return _make_review(), "# Test Paper\n", PaperText(full_markdown="", token_estimate=0)
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +90,8 @@ def test_review_command_custom_output_path(tmp_path):
     out = tmp_path / "out.md"
 
     def fake(pdf_path, model=None, skip_cost_gate=False, config=None):
-        return _make_review(), "# Custom Output\n"
+        from coarse.types import PaperText
+        return _make_review(), "# Custom Output\n", PaperText(full_markdown="", token_estimate=0)
 
     with (
         patch("coarse.cli.resolve_api_key", return_value="sk-test"),
@@ -116,7 +118,8 @@ def test_review_yes_flag_skips_cost_gate(tmp_path):
 
     def fake(pdf_path, model=None, skip_cost_gate=False, config=None):
         captured["skip_cost_gate"] = skip_cost_gate
-        return _make_review(), "# Test\n"
+        from coarse.types import PaperText
+        return _make_review(), "# Test\n", PaperText(full_markdown="", token_estimate=0)
 
     with (
         patch("coarse.cli.resolve_api_key", return_value="sk-test"),

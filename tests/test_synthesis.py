@@ -96,6 +96,74 @@ def test_render_review_detailed_comments_count():
     assert "## Detailed Comments (5)" in result
 
 
+def test_render_review_no_severity_labels():
+    """Severity labels like [CRITICAL] or [MINOR] must not appear in output."""
+    comments = [
+        DetailedComment(
+            number=1, title="A critical issue", quote="q1", feedback="f1",
+            severity="critical",
+        ),
+        DetailedComment(
+            number=2, title="A minor issue", quote="q2", feedback="f2",
+            severity="minor",
+        ),
+        DetailedComment(
+            number=3, title="A major issue", quote="q3", feedback="f3",
+            severity="major",
+        ),
+    ]
+    review = _make_review(comments=comments)
+    result = render_review(review)
+
+    assert "[CRITICAL]" not in result
+    assert "[MINOR]" not in result
+    assert "[MAJOR]" not in result
+
+
+def test_render_review_pipeline_order_preserved():
+    """Comments should appear in pipeline order, not sorted by severity."""
+    comments = [
+        DetailedComment(number=1, title="Minor First", quote="q1", feedback="f1", severity="minor"),
+        DetailedComment(number=2, title="Critical Second", quote="q2", feedback="f2", severity="critical"),
+        DetailedComment(number=3, title="Major Third", quote="q3", feedback="f3", severity="major"),
+    ]
+    review = _make_review(comments=comments)
+    result = render_review(review)
+
+    # Comments should be in original order: 1, 2, 3
+    idx_minor = result.index("### 1. Minor First")
+    idx_critical = result.index("### 2. Critical Second")
+    idx_major = result.index("### 3. Major Third")
+    assert idx_minor < idx_critical < idx_major
+
+
+def test_render_review_summary():
+    """If overview has a summary, it should appear as **Outline** in output."""
+    issues = [OverviewIssue(title=f"I{i}", body=f"b{i}") for i in range(1, 5)]
+    overview = OverviewFeedback(
+        summary="This paper studies X using method Y and finds Z.",
+        issues=issues,
+    )
+    review = _make_review(issues=issues)
+    # Manually set summary
+    review = Review(
+        title=review.title, domain=review.domain, taxonomy=review.taxonomy,
+        date=review.date,
+        overall_feedback=overview,
+        detailed_comments=review.detailed_comments,
+    )
+    result = render_review(review)
+    assert "**Outline**" in result
+    assert "This paper studies X using method Y and finds Z." in result
+
+
+def test_render_review_no_summary_when_empty():
+    """If summary is empty, **Outline** should not appear."""
+    review = _make_review()
+    result = render_review(review)
+    assert "**Outline**" not in result
+
+
 def test_render_review_detailed_comment_fields():
     comment = DetailedComment(
         number=3,

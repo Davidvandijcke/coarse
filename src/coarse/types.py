@@ -63,6 +63,7 @@ class OverviewIssue(BaseModel):
 
 
 class OverviewFeedback(BaseModel):
+    summary: str = ""
     issues: list[OverviewIssue] = Field(min_length=1, max_length=8)
 
 

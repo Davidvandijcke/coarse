@@ -185,8 +185,8 @@ def test_build_sections_summary_full_text_for_methodology():
 
 
 def test_build_sections_summary_truncates_introduction():
-    """Introduction sections should be truncated to ~2000 chars."""
-    long_text = "B" * 5000
+    """Introduction sections should be truncated to ~10000 chars."""
+    long_text = "B" * 15_000  # exceeds 10K _TRUNCATED_LIMIT
     sections = [
         SectionInfo(
             number=1,
@@ -198,7 +198,7 @@ def test_build_sections_summary_truncates_introduction():
     result = _build_sections_summary(sections)
     # Should be truncated
     assert "[...truncated]" in result
-    assert "B" * 5000 not in result
+    assert "B" * 15_000 not in result
 
 
 def test_build_sections_summary_respects_char_budget():

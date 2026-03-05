@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from coarse.agents.base import ReviewAgent
 from coarse.llm import LLMClient
-from coarse.prompts import CROSSREF_SYSTEM, crossref_user
+from coarse.prompts import CROSSREF_SYSTEM, crossref_system, crossref_user
 from coarse.types import DetailedComment, OverviewFeedback, PaperText
 
 
@@ -22,22 +22,18 @@ class CrossrefAgent(ReviewAgent):
     def __init__(self, client: LLMClient) -> None:
         super().__init__(client)
 
-    # Max chars of paper text to send for quote verification
-    MAX_PAPER_CHARS = 80_000
-
     def run(  # type: ignore[override]
         self,
         paper_text: PaperText,
         overview: OverviewFeedback,
         comments: list[DetailedComment],
+        comment_target: int | str | None = None,
     ) -> list[DetailedComment]:
-        # Truncate very long papers to keep within context window
         text = paper_text.full_markdown
-        if len(text) > self.MAX_PAPER_CHARS:
-            text = text[: self.MAX_PAPER_CHARS] + "\n\n[...truncated]"
         user_content = crossref_user(text, overview, comments)
+        sys_prompt = crossref_system(comment_target) if comment_target else CROSSREF_SYSTEM
         messages = [
-            {"role": "system", "content": CROSSREF_SYSTEM},
+            {"role": "system", "content": sys_prompt},
             {"role": "user", "content": user_content},
         ]
         result = self.client.complete(

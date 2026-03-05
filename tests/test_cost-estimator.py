@@ -32,13 +32,15 @@ def test_build_cost_estimate_returns_all_stages():
     section_stages = [n for n in names if n.startswith("section_")]
     assert len(section_stages) == 8
     assert "extraction_qa" in names
-    # Total stage count: metadata + overview + 8 sections + crossref + critique + extraction_qa = 13
-    assert len(estimate.stages) == 13
+    # Coding agent stages included by default (use_coding_agents=True):
+    # coding_section_1..3 + coding_critique = 4 extra
+    # Total: metadata + overview + 8 sections + crossref + critique + extraction_qa + 4 coding = 17
+    assert len(estimate.stages) == 17
 
 
 def test_build_cost_estimate_zero_cost_unknown_model():
     config = _config(model="unknown/totally-fake-model")
-    config = config.model_copy(update={"extraction_qa": False})
+    config = config.model_copy(update={"extraction_qa": False, "use_coding_agents": False})
     estimate = build_cost_estimate(_paper(), config)
     assert len(estimate.stages) > 0
     assert all(s.estimated_cost_usd == 0.0 for s in estimate.stages)

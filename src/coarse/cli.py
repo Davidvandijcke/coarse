@@ -5,6 +5,10 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import typer
 from rich.console import Console
 from rich.status import Status
@@ -89,12 +93,26 @@ def review(
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation prompt"),
     no_qa: bool = typer.Option(False, "--no-qa", help="Skip post-extraction quality check"),
+    agentic: bool = typer.Option(
+        False, "--agentic", help="(default now — kept for backwards compat)"
+    ),
+    no_agentic: bool = typer.Option(
+        False, "--no-agentic", help="Disable coding agents (faster, less thorough)"
+    ),
 ) -> None:
     """Review a PDF paper and write a markdown report."""
 
     config = load_config()
     if no_qa:
         config = config.model_copy(update={"extraction_qa": False})
+    if no_agentic:
+        config = config.model_copy(update={"use_coding_agents": False})
+        console.print("[dim]Coding agents disabled[/dim]")
+    elif agentic or config.use_coding_agents:
+        console.print(
+            "[dim]Agentic mode: proof/methodology/results sections use coding agents "
+            "(~3-10 min vs ~30s)[/dim]"
+        )
 
     # Resolve model: --cheap > --model > config default
     if cheap:
@@ -124,7 +142,7 @@ def review(
     console.print(f"[bold]Reviewing[/bold] {pdf.name} with {resolved_model}")
 
     with Status("Running review pipeline...", console=console):
-        review_obj, markdown = review_paper(
+        review_obj, markdown, _ = review_paper(
             pdf_path=pdf,
             model=resolved_model,
             skip_cost_gate=yes,

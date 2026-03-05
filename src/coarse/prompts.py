@@ -12,6 +12,21 @@ if TYPE_CHECKING:
     from coarse.types import DetailedComment, DomainCalibration, OverviewFeedback, SectionInfo
 
 # ---------------------------------------------------------------------------
+# Shared tone & confidence instructions injected into all review prompts
+# ---------------------------------------------------------------------------
+
+_TONE_BLOCK = """
+Write as a constructive colleague. Use "It would be helpful to...", "Readers might note..."
+NEVER use "Mathematical Error:", "CRITICAL:", "INCORRECT", or "undermines".
+NEVER declare something wrong unless you can rederive the correct answer.
+"""
+
+_CONFIDENCE_GATE = """
+Only claim an error if you can show the correct derivation step-by-step in your feedback.
+If you cannot, phrase as a question: "It is not clear how X follows from Y."
+"""
+
+# ---------------------------------------------------------------------------
 # Metadata classification (cheap text-LLM call)
 # ---------------------------------------------------------------------------
 
@@ -102,21 +117,23 @@ OVERVIEW_SYNTHESIS_SYSTEM = """\
 You are a meta-reviewer synthesizing multiple independent overview assessments \
 of a research paper. You have received reports from a panel of expert reviewers, \
 each with a distinct perspective.
-
+""" + _TONE_BLOCK + """
 Your task:
-1. Produce 4-6 consolidated issues that represent the panel's collective assessment.
-2. Deduplicate: merge issues that address the same concern from different angles.
-3. When reviewers disagree, weight toward the more critical assessment — \
+1. Produce a neutral 3-5 sentence summary of what the paper does (its question, \
+method, and main result). This goes in the "summary" field.
+2. Produce 4-6 consolidated issues that represent the panel's collective assessment.
+3. Deduplicate: merge issues that address the same concern from different angles.
+4. When reviewers disagree, weight toward the more critical assessment — \
 overrating quality is worse than underrating it.
-4. Each issue must have a concise title and substantive body paragraph.
-5. Preserve the most specific, actionable version of each concern.
+5. Each issue must have a concise title and substantive body paragraph.
+6. Preserve the most specific, actionable version of each concern.
 """
 
 OVERVIEW_SYSTEM = """\
 You are an expert peer reviewer. Your task is to identify the 4 to 6 most important \
 high-level issues with a research paper.
-
-Focus on substantive concerns, prioritized by severity:
+""" + _TONE_BLOCK + """
+Focus on substantive concerns in order of importance:
 1. **Concrete errors**: Equations that appear wrong, proofs with gaps, results that \
 contradict the paper's own assumptions or data. Identify the specific location \
 (section, equation number) where the error occurs.
@@ -133,7 +150,8 @@ requests for additional experiments or analyses, formatting/notation issues.
 
 Requirements:
 - Produce exactly 4 to 6 issues (no fewer than 4, no more than 6)
-- Each issue must have a concise, specific title and a substantive body paragraph
+- Each issue must have a concise, specific title and a substantive body paragraph \
+(4-8 sentences explaining the concern, its implications, and a suggested remediation)
 - Each issue must reference specific parts of the paper (section numbers, equations, \
 theorems) — not just "the methodology" or "the analysis"
 - For each issue: (a) state exactly what is wrong, (b) explain why it matters for \
@@ -148,11 +166,16 @@ def overview_user(
     abstract: str,
     sections_summary: str,
     calibration: "DomainCalibration | None" = None,
+    literature_context: str = "",
 ) -> str:
     """User prompt for overview. Embeds title, abstract, and condensed section summary."""
     cal_block = ""
     if calibration:
         cal_block = "\n" + _format_calibration(calibration) + "\n"
+
+    lit_block = ""
+    if literature_context:
+        lit_block = f"\n**Related Literature (from arXiv)**:\n{literature_context}\n"
 
     return f"""\
 Review the following research paper and identify 4-6 major high-level issues.
@@ -161,7 +184,7 @@ Review the following research paper and identify 4-6 major high-level issues.
 
 **Abstract**:
 {abstract}
-{cal_block}
+{cal_block}{lit_block}
 **Section Summary**:
 {sections_summary}
 
@@ -199,16 +222,18 @@ version of each issue.
 SECTION_SYSTEM = """\
 You are an expert peer reviewer. Your task is to find concrete errors and \
 inconsistencies in a single section of a research paper.
-
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + """
 For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words) describing the exact problem
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
 verbatim substring of the section text provided below — do not paraphrase, reword, \
-summarize, or reconstruct any part of it. Copy it character-for-character.
-- feedback: A substantive explanation of the problem with a specific fix. Show your \
-reasoning: if you claim an equation is wrong, write out what it should be and why.
+summarize, or reconstruct any part of it. Copy it character-for-character. \
+The quote should be at least 2 full sentences; longer is better.
+- feedback: A substantive explanation (3-8 sentences) of the problem with a specific \
+fix. Show your reasoning: if you claim an equation is wrong, write out the correct \
+version and why.
 
-Prioritize issues by severity:
+Prioritize issues in order of importance:
 (a) Concrete errors — sign mistakes, wrong prefactors, algebraic mistakes, flawed \
 logic, missing assumptions that invalidate results. When the section contains \
 equations, VERIFY them by working through the algebra yourself. Do not just flag \
@@ -239,6 +264,7 @@ def section_user(
     section: "SectionInfo",
     overview: "OverviewFeedback | None" = None,
     calibration: "DomainCalibration | None" = None,
+    literature_context: str = "",
 ) -> str:
     """User prompt for a single section review.
 
@@ -258,7 +284,7 @@ def section_user(
     context_block = ""
     if overview and overview.issues:
         issues_list = "\n".join(
-            f"- **{issue.title}**: {issue.body[:200]}" for issue in overview.issues
+            f"- **{issue.title}**: {issue.body}" for issue in overview.issues
         )
         context_block = f"""
 **Paper-Level Issues (for context)**:
@@ -271,12 +297,16 @@ contributes to or could help address any of them:
     if calibration:
         cal_block = "\n" + _format_calibration(calibration) + "\n"
 
+    lit_block = ""
+    if literature_context:
+        lit_block = f"\n**Related Literature (from arXiv)**:\n{literature_context}\n"
+
     return f"""\
 Review the following section of "{paper_title}" and produce detailed comments.
 
 **Section {section.number}: {section.title}**
 **Type**: {section.section_type.value}
-{claims_block}{defs_block}{context_block}{cal_block}
+{claims_block}{defs_block}{context_block}{cal_block}{lit_block}
 
 **Section Text**:
 {section.text}
@@ -295,7 +325,7 @@ requests for additional work.
 SECTION_PROOF_SYSTEM = """\
 You are an expert mathematical proof checker. Your job is to VERIFY the mathematics \
 in this section by working through it yourself, not just reading it passively.
-
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + """
 For each theorem, proposition, lemma, or corollary:
 
 1. STATE the claim precisely.
@@ -319,17 +349,19 @@ For each issue, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
 verbatim substring of the section text provided below — do not paraphrase, reword, \
-or summarize any part of it.
-- feedback: Show your re-derivation or calculation that reveals the error. Write out \
-the correct version of the equation/expression. Be specific: "equation X should read \
-Y because Z" not "this should be checked."
+or summarize any part of it. The quote should be at least 2 full sentences; longer \
+is better.
+- feedback: Show your re-derivation or calculation that reveals the error (3-8 \
+sentences). Write out the correct version of the equation/expression. Be specific: \
+"equation X should read Y because Z" not "this should be checked."
 
 Report 0-5 issues. Only report errors you can demonstrate through calculation, not \
 stylistic preferences. If you find no errors after careful verification, report 0 issues.
 """
 
 SECTION_METHODOLOGY_SYSTEM = """\
-You are an expert methodologist reviewing a methodology section of a research paper. \
+You are an expert methodologist reviewing a methodology section of a research paper.
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + """
 Focus on:
 
 1. Does the method actually identify or estimate the stated target quantity? \
@@ -346,10 +378,11 @@ For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
 verbatim substring of the section text provided below — do not paraphrase, reword, \
-or summarize any part of it.
-- feedback: Explain the methodological concern with specifics. If an assumption is \
-contradicted, cite the specific assumption and the specific evidence against it. \
-Suggest a concrete fix, not "discuss this further."
+or summarize any part of it. The quote should be at least 2 full sentences; longer \
+is better.
+- feedback: Explain the methodological concern with specifics (3-8 sentences). If an \
+assumption is contradicted, cite the specific assumption and the specific evidence \
+against it. Suggest a concrete fix, not "discuss this further."
 
 Prioritize issues that affect the validity of the paper's main claims. Do NOT \
 request additional analyses — focus on errors in what is already written. \
@@ -358,7 +391,9 @@ Report 1-5 comments.
 
 SECTION_LITERATURE_SYSTEM = """\
 You are an expert reviewer checking the related work / literature review section \
-of a research paper. Focus on:
+of a research paper.
+""" + _TONE_BLOCK + """
+Focus on:
 
 1. Are prior work claims accurate and fairly represented?
 2. Is the positioning relative to existing literature correct?
@@ -370,9 +405,10 @@ For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
 verbatim substring of the section text provided below — do not paraphrase, reword, \
-or summarize any part of it.
-- feedback: Explain the concern with specifics. If a claim about prior work is wrong, \
-state what the prior work actually shows.
+or summarize any part of it. The quote should be at least 2 full sentences; longer \
+is better.
+- feedback: Explain the concern with specifics (3-8 sentences). If a claim about prior \
+work is wrong, state what the prior work actually shows.
 
 Report 1-5 comments. Focus on factual errors about prior work, not citation formatting \
 or "missing references" unless the omission is egregious.
@@ -390,10 +426,10 @@ SECTION_SYSTEM_MAP: dict[str, str] = {
 # Cross-reference / deduplication agent
 # ---------------------------------------------------------------------------
 
-CROSSREF_SYSTEM = """\
+_CROSSREF_SYSTEM_TEMPLATE = """\
 You are an expert peer reviewer performing a final quality check on a set of \
 detailed comments for a research paper.
-
+""" + _TONE_BLOCK + """
 Your tasks:
 1. REMOVE low-value comments aggressively:
    - Comments that merely restate an Overview Issue without adding a specific \
@@ -412,14 +448,22 @@ suitable passage exists. Quotes that are summaries or rewordings are NOT accepta
 4. Renumber the surviving comments sequentially from 1.
 
 Requirements:
-- TARGET 10-15 comments total. Fewer comments that each catch a real error are \
-worth more than many surface-level observations.
+- TARGET {comment_target} comments total. Fewer comments that each catch a real error \
+are worth more than many surface-level observations.
 - Keep feedback CONCISE but SPECIFIC: 2-4 sentences per comment. Include the \
 calculation or cross-reference that demonstrates the error.
 - Do not add new comments; only consolidate, correct, and remove existing ones.
 - Prioritize comments that demonstrate concrete errors (wrong equation, sign error, \
 contradictory claim, missing factor) over comments that suggest improvements.
 """
+
+# Default constant for backward compat
+CROSSREF_SYSTEM = _CROSSREF_SYSTEM_TEMPLATE.format(comment_target="10-15")
+
+
+def crossref_system(comment_target: int | str = "10-15") -> str:
+    """Return crossref system prompt with dynamic comment target."""
+    return _CROSSREF_SYSTEM_TEMPLATE.format(comment_target=comment_target)
 
 
 def crossref_user(
@@ -462,11 +506,11 @@ the paper text, and return the consolidated list renumbered from 1.
 # Self-critique quality gate
 # ---------------------------------------------------------------------------
 
-CRITIQUE_SYSTEM = """\
+_CRITIQUE_SYSTEM_TEMPLATE = """\
 You are an expert peer reviewer performing a final quality evaluation of review \
 comments for a research paper. Your goal: every surviving comment should identify \
 a concrete, verifiable issue in the paper.
-
+""" + _TONE_BLOCK + """
 REMOVE a comment if ANY of these apply:
 - The feedback asks for "additional analysis," "further experiments," or "more discussion" \
 without pointing to a specific error in the existing text
@@ -491,9 +535,17 @@ the evidence presented
 the actual claim
 
 Return the final revised set of comments renumbered from 1. \
-Aim for 10-20 total comments. It is better to have 8 comments that each catch a \
-real error than 20 comments of mixed quality.
+Aim for {comment_target} total comments. It is better to have 8 comments that each \
+catch a real error than 20 comments of mixed quality.
 """
+
+# Default constant for backward compat
+CRITIQUE_SYSTEM = _CRITIQUE_SYSTEM_TEMPLATE.format(comment_target="10-20")
+
+
+def critique_system(comment_target: int | str = "10-20") -> str:
+    """Return critique system prompt with dynamic comment target."""
+    return _CRITIQUE_SYSTEM_TEMPLATE.format(comment_target=comment_target)
 
 
 def critique_user(

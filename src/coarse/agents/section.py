@@ -31,7 +31,7 @@ class SectionAgent(ReviewAgent):
     """
 
     # Maximum section text length (chars) sent to the LLM.
-    MAX_SECTION_CHARS = 15_000
+    MAX_SECTION_CHARS = 500_000
 
     def run(  # type: ignore[override]
         self,
@@ -40,6 +40,7 @@ class SectionAgent(ReviewAgent):
         overview: "OverviewFeedback | None" = None,
         calibration: "DomainCalibration | None" = None,
         focus: str = "general",
+        literature_context: str = "",
     ) -> list[DetailedComment]:
         # Truncate very long sections to avoid token overflow
         if len(section.text) > self.MAX_SECTION_CHARS:
@@ -51,7 +52,8 @@ class SectionAgent(ReviewAgent):
 
         system_prompt = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
         user_text = section_user(
-            paper_title, truncated, overview=overview, calibration=calibration
+            paper_title, truncated, overview=overview, calibration=calibration,
+            literature_context=literature_context,
         )
         messages = [
             {"role": "system", "content": system_prompt},
@@ -59,6 +61,6 @@ class SectionAgent(ReviewAgent):
         ]
 
         result = self.client.complete(
-            messages, _SectionComments, max_tokens=4096, temperature=0.3
+            messages, _SectionComments, max_tokens=8192, temperature=0.3
         )
         return result.comments

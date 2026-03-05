@@ -69,7 +69,7 @@ def test_run_panel_single_judge_fallback():
     overview = _make_overview()
     call_count = 0
 
-    def run_with_failures(structure, calibration=None, persona=None):
+    def run_with_failures(structure, calibration=None, persona=None, literature_context=""):
         nonlocal call_count
         call_count += 1
         if call_count > 1:
