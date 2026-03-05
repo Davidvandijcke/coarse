@@ -101,7 +101,7 @@ def test_section_agent_truncates_long_text():
     client = _make_client()
     client.complete.return_value = _make_section_comments(1)
 
-    long_text = "A" * 20_000
+    long_text = "A" * 600_000  # exceeds 500K limit
     section = _make_section(text=long_text)
     agent = SectionAgent(client)
     agent.run(section, "Paper Title")

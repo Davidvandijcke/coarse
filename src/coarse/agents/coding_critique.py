@@ -16,6 +16,7 @@ from typing import Type
 from pydantic import BaseModel
 
 from coarse.agents.base import CodingReviewAgent
+from coarse.agents.coding_section import _VERIFY_QUOTE_SCRIPT
 from coarse.agents.critique import CritiqueAgent, _RevisedComments
 from coarse.coding_agent import DEFAULT_AGENT_TOOLS, run_agent_sync
 from coarse.config import CoarseConfig
@@ -34,13 +35,18 @@ Your workspace contains:
 - `overview.json` — the overview feedback (macro-level issues)
 - `comments.json` — the comments to evaluate
 - `sections/` — individual section files with headings
+- `verify_quote.py` — quote verification script (see below)
 - `example_output.json` — example of valid output format
 
 Instructions:
 1. For EACH comment in `comments.json`:
-   a. Grep `paper.md` for the quoted text — verify it exists verbatim.
-   b. Read surrounding context to verify the claim is accurate.
-   c. If the comment claims a math error, check the equations using Python
+   a. Verify the quote: `python verify_quote.py "quoted text from comment"`
+      This uses fuzzy matching and reports whether the quote exists in paper.md.
+   b. Alternatively use grep directly:
+      - `grep -n -i "key phrase" paper.md` — find with line numbers
+      - `grep -C 3 "key phrase" paper.md` — show surrounding context
+   c. Read surrounding context to verify the claim is accurate.
+   d. If the comment claims a math error, check the equations using Python
       (stdlib math only — do NOT assume numpy or sympy are installed).
 2. Do NOT modify the `quote` field unless you find the exact verbatim passage
    and the current quote is a paraphrase. In that case, replace with the real text.
@@ -97,6 +103,9 @@ class CodingCritiqueAgent(CodingReviewAgent):
                 (sections_dir / filename).write_text(
                     f"# Section {s.number}: {s.title}\n\n{s.text}", encoding="utf-8"
                 )
+
+        # Quote verification script
+        (workspace / "verify_quote.py").write_text(_VERIFY_QUOTE_SCRIPT, encoding="utf-8")
 
         # Example output
         example = {

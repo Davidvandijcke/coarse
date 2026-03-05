@@ -9,6 +9,10 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from coarse.agents.critique import CritiqueAgent
 from coarse.agents.crossref import CrossrefAgent
 from coarse.agents.literature import search_literature
@@ -147,7 +151,7 @@ def review_paper(
     7. Synthesis → markdown
 
     Returns:
-        (Review, markdown_string)
+        (Review, markdown_string, paper_text)
     """
     if config is None:
         config = load_config()
@@ -158,10 +162,16 @@ def review_paper(
     paper_text = extract_text(pdf_path)
 
     if config.extraction_qa:
+        from coarse.extraction import _save_cache
         from coarse.extraction_qa import run_extraction_qa
 
         vision_client = LLMClient(model=config.vision_model, config=config)
-        paper_text = run_extraction_qa(Path(pdf_path), paper_text, vision_client)
+        corrected = run_extraction_qa(Path(pdf_path), paper_text, vision_client)
+        if corrected is not paper_text:
+            # QA applied corrections — update the cache so future runs skip QA
+            _save_cache(Path(pdf_path), corrected)
+            logger.info("Extraction cache updated with QA corrections")
+        paper_text = corrected
 
     if not skip_cost_gate:
         run_cost_gate(paper_text, config)
@@ -277,11 +287,6 @@ def review_paper(
                 sec_title = non_ref_sections[i].title if i < len(non_ref_sections) else "?"
                 logger.warning("Section agent failed for '%s', skipping", sec_title)
 
-    # Cap comments sent to crossref to avoid output token overflow.
-    if len(section_comments) > 50:
-        logger.info("Capping %d section comments to 50 for crossref", len(section_comments))
-        section_comments = section_comments[:50]
-
     deduped_comments = crossref_agent.run(
         paper_text, overview, section_comments, comment_target=comment_target
     )
@@ -316,4 +321,4 @@ def review_paper(
     )
 
     markdown = render_review(review)
-    return review, markdown
+    return review, markdown, paper_text

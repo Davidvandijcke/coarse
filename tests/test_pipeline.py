@@ -79,7 +79,7 @@ def _make_config() -> CoarseConfig:
 
 def test_review_paper_calls_stages_in_order():
     """Verify each stage is called once in the correct order."""
-    config = _make_config()
+    config = CoarseConfig(default_model="openai/gpt-4o-mini", use_coding_agents=False)
     paper_text = _make_paper_text()
     structure = _make_structure()
     overview = _make_overview()
@@ -221,7 +221,7 @@ def test_review_paper_date_format():
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
         MockCritique.return_value.run.return_value = [_make_comment(1)]
 
-        review, _ = review_paper("paper.pdf", skip_cost_gate=True, config=config)
+        review, _, _pt = review_paper("paper.pdf", skip_cost_gate=True, config=config)
 
     assert review.date == "03/03/2026"
 
@@ -297,7 +297,7 @@ def test_review_paper_returns_review_and_markdown():
 
         result = review_paper("paper.pdf", skip_cost_gate=True, config=config)
 
-    review, markdown = result
+    review, markdown, _pt = result
     assert isinstance(review, Review)
     assert isinstance(markdown, str)
     assert review.title == "Test Paper"
@@ -467,9 +467,9 @@ def test_compute_comment_target_excludes_references():
 # Tests: coding agent hybrid dispatch
 # ---------------------------------------------------------------------------
 
-def test_coding_agents_off_by_default():
+def test_coding_agents_disabled_explicitly():
     """use_coding_agents=False → no coding agents instantiated."""
-    config = _make_config()
+    config = CoarseConfig(default_model="openai/gpt-4o-mini", use_coding_agents=False)
     assert config.use_coding_agents is False
 
     overview = _make_overview()
@@ -488,7 +488,7 @@ def test_coding_agents_unavailable_silent_fallback():
 
     with _patch_pipeline_deps(overview):
         with patch("coarse.pipeline._coding_agents_available", return_value=False):
-            review, _ = review_paper("paper.pdf", skip_cost_gate=True, config=config)
+            review, _, _pt = review_paper("paper.pdf", skip_cost_gate=True, config=config)
 
     assert isinstance(review, Review)
 

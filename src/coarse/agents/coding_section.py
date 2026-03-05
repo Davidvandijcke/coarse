@@ -30,6 +30,80 @@ from coarse.types import (
 
 logger = logging.getLogger(__name__)
 
+# Self-contained script dropped into agent workspaces for quote verification.
+# Uses the same fuzzy matching logic as coarse/quote_verify.py but with no
+# package imports so it runs standalone in the temp workspace.
+_VERIFY_QUOTE_SCRIPT = '''\
+#!/usr/bin/env python3
+"""Verify a quote against paper.md using fuzzy matching.
+
+Usage: python verify_quote.py "your quote here"
+"""
+import difflib
+import sys
+
+MIN_MATCH_RATIO = 0.70
+
+def find_nearest(quote, paper_text, window_factor=1.5):
+    quote_len = len(quote)
+    window_size = max(int(quote_len * window_factor), 50)
+    step = max(1, quote_len // 4)
+    best_ratio, best_passage = 0.0, ""
+    ql = quote.lower()
+    for i in range(0, len(paper_text) - min(quote_len, len(paper_text)) + 1, step):
+        candidate = paper_text[i:i + window_size]
+        ratio = difflib.SequenceMatcher(None, ql, candidate.lower()).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_passage = candidate
+    if best_passage and best_ratio >= MIN_MATCH_RATIO:
+        # Trim to best-matching substring
+        best_sub, best_sub_ratio = best_passage[:quote_len], 0.0
+        for start in range(0, len(best_passage) - quote_len + 1, max(1, quote_len // 8)):
+            sub = best_passage[start:start + quote_len]
+            r = difflib.SequenceMatcher(None, ql, sub.lower()).ratio()
+            if r > best_sub_ratio:
+                best_sub_ratio = r
+                best_sub = sub
+        best_passage = best_sub
+    return best_passage, best_ratio
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python verify_quote.py \\"your quote here\\"")
+        sys.exit(1)
+    quote = sys.argv[1]
+    paper = open("paper.md", encoding="utf-8").read()
+    # Exact match first
+    if quote.lower() in paper.lower():
+        print(f"EXACT MATCH found.")
+        # Show location
+        idx = paper.lower().index(quote.lower())
+        line_num = paper[:idx].count("\\n") + 1
+        print(f"Location: line {line_num}")
+        sys.exit(0)
+    passage, ratio = find_nearest(quote, paper)
+    if ratio >= MIN_MATCH_RATIO:
+        print(f"FUZZY MATCH (ratio={ratio:.2f})")
+        print(f"Nearest passage: {passage!r}")
+    else:
+        print(f"NO MATCH (best ratio={ratio:.2f})")
+        print("The quote does not appear in the paper. Use an exact verbatim quote.")
+        sys.exit(1)
+'''
+
+
+def _build_section_index(all_sections: list[SectionInfo]) -> dict:
+    """Build a keyword → section number index from claims and definitions."""
+    index: dict[str, list] = {}
+    for s in all_sections:
+        section_ref = f"Section {s.number}: {s.title}"
+        for claim in s.claims:
+            index.setdefault(claim, []).append(section_ref)
+        for defn in s.definitions:
+            index.setdefault(defn, []).append(section_ref)
+    return index
+
 
 _TASK_TEMPLATE = """\
 You are reviewing section "{section_title}" of the paper "{paper_title}".
@@ -39,16 +113,22 @@ Your workspace contains:
 - `section.md` — the section you are reviewing (with metadata header)
 - `other_sections/` — each other section as a numbered file
 - `context.json` — overview issues, calibration, literature context
+- `section_index.json` — keyword → section number mapping for cross-references
+- `verify_quote.py` — quote verification script (see below)
 - `example_output.json` — example of valid output format
 
 Instructions:
 1. Read `section.md` first to understand the section content.
-2. Use `grep` on `paper.md` or `other_sections/` to cross-reference claims,
-   definitions, and equations mentioned in other sections.
+2. Use grep to cross-reference claims, definitions, and equations:
+   - `grep -n "search term" paper.md` — shows line numbers for precise location
+   - `grep -i -C 3 "search term" paper.md` — case-insensitive with 3 lines of context
+   - `grep -n "definition" other_sections/*.md` — search across all sections
+   - Check `section_index.json` first to find which section defines a term.
 3. If the section contains equations, verify them using Python (stdlib math only —
    do NOT assume numpy or sympy are installed).
 4. For each issue found, include an EXACT verbatim quote from section.md.
    Do NOT modify, paraphrase, or reconstruct quotes.
+   Verify each quote: `python verify_quote.py "your quote here"`
 5. Write your output to `_review_output.json` following the schema in
    `example_output.json`.
 
@@ -123,6 +203,15 @@ class CodingSectionAgent(CodingReviewAgent):
             json.dumps(context, indent=2), encoding="utf-8"
         )
 
+        # Quote verification script
+        (workspace / "verify_quote.py").write_text(_VERIFY_QUOTE_SCRIPT, encoding="utf-8")
+
+        # Section cross-reference index
+        section_index = _build_section_index(all_sections)
+        (workspace / "section_index.json").write_text(
+            json.dumps(section_index, indent=2), encoding="utf-8"
+        )
+
         # Example output (concrete example helps agents produce valid JSON)
         example = {
             "comments": [
@@ -165,6 +254,9 @@ class CodingSectionAgent(CodingReviewAgent):
         """
         system_prompt = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
 
+        # Proof/methodology sections need more turns for derivation checking
+        turns = 25 if focus == "proof" else 15
+
         try:
             with tempfile.TemporaryDirectory(prefix="coarse_section_") as tmpdir:
                 workspace = Path(tmpdir)
@@ -185,7 +277,7 @@ class CodingSectionAgent(CodingReviewAgent):
                     output_schema=_SectionComments,
                     working_directory=workspace,
                     allowed_tools=DEFAULT_AGENT_TOOLS,
-                    max_turns=15,
+                    max_turns=turns,
                     model=self.config.agent_model,
                     max_budget_usd=0.50,
                     timeout=120.0,

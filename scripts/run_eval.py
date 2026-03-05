@@ -1,4 +1,4 @@
-"""Run Phase 2 eval: review all 5 reference papers and score against references.
+"""Run Phase 3 eval: review all 5 reference papers and score against references.
 
 Usage: uv run python scripts/run_eval.py [--model MODEL] [--cheap]
 """
@@ -60,7 +60,7 @@ def run_paper(name: str, info: dict, model: str) -> dict:
 
     t0 = time.time()
     try:
-        review, markdown = review_paper(
+        review, markdown, paper_text = review_paper(
             pdf_path, model=model, skip_cost_gate=True,
         )
     except Exception as e:
@@ -72,7 +72,7 @@ def run_paper(name: str, info: dict, model: str) -> dict:
 
     # Save the review
     out_dir = pdf_path.parent
-    out_path = out_dir / "coarse_review_phase2.md"
+    out_path = out_dir / "coarse_review_phase3.md"
     out_path.write_text(markdown, encoding="utf-8")
 
     result = {
@@ -92,6 +92,7 @@ def run_paper(name: str, info: dict, model: str) -> dict:
         try:
             synth_report, individual = evaluate_review_panel(
                 markdown, reference, client=eval_client,
+                paper_text=paper_text.full_markdown,
             )
             result["scores"] = {
                 "overall": synth_report.overall_score,
@@ -115,7 +116,7 @@ def run_paper(name: str, info: dict, model: str) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run Phase 2 eval on 5 reference papers")
+    parser = argparse.ArgumentParser(description="Run Phase 3 eval on 5 reference papers")
     parser.add_argument("--model", default=None, help="Model to use (default: from config)")
     parser.add_argument("--cheap", action="store_true", help="Use cheap model")
     parser.add_argument("--paper", type=str, default=None, help="Run only one paper (by name)")
@@ -129,11 +130,11 @@ def main():
                 model = m
                 break
         if not model:
-            model = CHEAP_MODELS.get("OPENROUTER_API_KEY", "openrouter/google/gemini-3-flash")
+            model = CHEAP_MODELS.get("OPENROUTER_API_KEY", CHEAP_MODELS["OPENROUTER_API_KEY"])
     else:
         model = args.model  # None → review_paper uses config.default_model
 
-    print(f"Phase 2 Eval — Model: {model}")
+    print(f"Phase 3 Eval — Model: {model}")
     print(f"Papers: {', '.join(PAPERS.keys())}")
 
     papers_to_run = PAPERS
@@ -163,7 +164,7 @@ def main():
                   f"{r['n_comments']} comments, {r['elapsed_s']:.0f}s)")
 
     # Save results
-    out_path = Path(__file__).parent.parent / "data" / "phase2_eval_results.json"
+    out_path = Path(__file__).parent.parent / "data" / "phase3_eval_results.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # Convert Path objects for JSON serialization
     serializable = []

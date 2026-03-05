@@ -11,7 +11,8 @@ Last verified: 2026-03-04
 DEFAULT_MODEL = "qwen/qwen3.5-plus-02-15"
 
 # Vision model for post-extraction QA (multimodal, spot-checks Docling output)
-VISION_MODEL = "google/gemini-3-flash-preview"
+# litellm uses 'gemini/' prefix for Google AI Studio (not 'google/')
+VISION_MODEL = "gemini/gemini-3-flash-preview"
 
 # Per-provider cheap alternatives (used by --cheap flag)
 CHEAP_MODELS: dict[str, str] = {

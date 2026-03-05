@@ -123,7 +123,7 @@ actionable feedback.
 from coarse import review_paper
 from pathlib import Path
 
-review, markdown = review_paper(
+review, markdown, paper_text = review_paper(
     pdf_path=Path("paper.pdf"),
     model="openai/gpt-4o",   # optional; uses config default if omitted
 )
@@ -132,8 +132,8 @@ print(markdown)                         # full review as markdown string
 print(review.detailed_comments[0].feedback)  # access structured fields
 ```
 
-`review_paper` returns a `(Review, str)` tuple where the first element is the structured
-`Review` Pydantic model and the second is the rendered markdown.
+`review_paper` returns a `(Review, str, PaperText)` tuple: the structured `Review` model,
+rendered markdown, and the extracted paper text (useful for quality evaluation).
 
 ## Configuration
 

@@ -26,7 +26,7 @@ from coarse.types import (
 logger = logging.getLogger(__name__)
 
 # Maximum total characters sent to the overview agent.
-MAX_OVERVIEW_CHARS = 60_000
+MAX_OVERVIEW_CHARS = 500_000
 
 # Section types that get full text (theory-heavy, high-value for cross-cutting analysis).
 _FULL_TEXT_TYPES = {
@@ -38,7 +38,7 @@ _FULL_TEXT_TYPES = {
 }
 
 # Section types that get truncated (context only, not where the substance lives).
-_TRUNCATED_LIMIT = 2000
+_TRUNCATED_LIMIT = 10_000
 
 
 def _build_sections_summary(sections: list[SectionInfo]) -> str:
@@ -96,6 +96,7 @@ class OverviewAgent(ReviewAgent):
         structure: PaperStructure,
         calibration: DomainCalibration | None = None,
         persona: str | None = None,
+        literature_context: str = "",
     ) -> OverviewFeedback:
         sections_summary = _build_sections_summary(structure.sections)
         system = (persona + "\n\n" + OVERVIEW_SYSTEM) if persona else OVERVIEW_SYSTEM
@@ -106,6 +107,7 @@ class OverviewAgent(ReviewAgent):
                 "content": overview_user(
                     structure.title, structure.abstract,
                     sections_summary, calibration=calibration,
+                    literature_context=literature_context,
                 ),
             },
         ]
@@ -117,6 +119,7 @@ class OverviewAgent(ReviewAgent):
         self,
         structure: PaperStructure,
         calibration: DomainCalibration | None = None,
+        literature_context: str = "",
     ) -> OverviewFeedback:
         """Run 3 judges in parallel with different personas, then synthesize."""
         from concurrent.futures import ThreadPoolExecutor
@@ -124,7 +127,9 @@ class OverviewAgent(ReviewAgent):
         overviews: list[OverviewFeedback] = []
         with ThreadPoolExecutor(max_workers=3) as executor:
             futures = [
-                executor.submit(self.run, structure, calibration, persona)
+                executor.submit(
+                    self.run, structure, calibration, persona, literature_context
+                )
                 for persona in OVERVIEW_PERSONAS
             ]
             for i, future in enumerate(futures):
@@ -185,8 +190,8 @@ def check_assumptions(
     sections_text = "\n\n".join(
         f"## {s.number}. {s.title}\n{s.text}" for s in relevant_sections
     )
-    if len(sections_text) > 40_000:
-        sections_text = sections_text[:40_000] + "\n\n[...truncated]"
+    if len(sections_text) > 500_000:
+        sections_text = sections_text[:500_000] + "\n\n[...truncated]"
 
     messages = [
         {"role": "system", "content": ASSUMPTION_CHECK_SYSTEM},
