@@ -86,9 +86,6 @@ async def run_agent(
     """
     try:
         from openhands.sdk import LLM, Agent, AgentContext, Conversation, Tool
-        from openhands.tools.file_editor import FileEditorTool
-        from openhands.tools.terminal import TerminalTool
-        from pydantic import SecretStr  # noqa: F811
     except ImportError as e:
         raise RuntimeError(
             "openhands-sdk is required for coding agents. "
@@ -100,13 +97,13 @@ async def run_agent(
 
     llm = LLM(
         model=resolved_model,
-        api_key=SecretStr(api_key),
+        api_key=api_key,
         base_url=os.getenv("LLM_BASE_URL"),
     )
 
     tools = [
-        Tool(name=TerminalTool.name),
-        Tool(name=FileEditorTool.name),
+        Tool(name="TerminalTool"),
+        Tool(name="FileEditorTool"),
     ]
 
     # Inject structured output instructions into system prompt
@@ -121,7 +118,7 @@ async def run_agent(
     )
 
     context = AgentContext(system_message_suffix=full_system)
-    agent = Agent(llm=llm, tools=tools, context=context)
+    agent = Agent(llm=llm, tools=tools, agent_context=context)
 
     if max_budget_usd:
         logger.info("Agent budget cap: $%.2f (advisory)", max_budget_usd)
