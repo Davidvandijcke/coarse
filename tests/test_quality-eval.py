@@ -11,11 +11,11 @@ from coarse.synthesis import render_review
 from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
 
 
-def _make_dimension(dimension: str, score: int) -> DimensionScore:
+def _make_dimension(dimension: str, score: float) -> DimensionScore:
     return DimensionScore(dimension=dimension, score=score, reasoning=f"Reasoning for {dimension}.")
 
 
-def _make_judge_output(scores: list[int]) -> _JudgeOutput:
+def _make_judge_output(scores: list[float]) -> _JudgeOutput:
     dimensions = [
         _make_dimension(dim, score)
         for dim, score in zip(["coverage", "specificity", "depth", "format"], scores)
@@ -27,7 +27,7 @@ def _make_judge_output(scores: list[int]) -> _JudgeOutput:
     )
 
 
-def _make_mock_client(scores: list[int]) -> LLMClient:
+def _make_mock_client(scores: list[float]) -> LLMClient:
     client = MagicMock(spec=LLMClient)
     client.complete.return_value = _make_judge_output(scores)
     return client

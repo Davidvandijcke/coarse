@@ -5,6 +5,7 @@
 ### Fixed
 
 - **LaTeX garbling in review quotes** — Added `verify_quotes` call after critique agent (which re-garbles LaTeX via JSON round-trip). Added LaTeX preservation instructions to all section prompts.
+- **Quality scorer synthesizer overriding judges** — Synthesis prompt now faithfully aggregates panel scores instead of re-evaluating independently. Scoring changed from integer 1-5 to half-point increments (1.0-5.0) for finer granularity.
 
 ### Changed
 
