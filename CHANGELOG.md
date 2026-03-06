@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Web hosting infrastructure** — Vercel (Next.js) + Supabase (auth/DB/storage) + Modal (serverless compute) architecture for hosted web version. Two tiers: free (data-sharing consent for research) and BYOK (user's own OpenRouter key).
+- **Modal worker** (`deploy/modal_worker.py`) — Serverless function wrapping `review_paper()` with Supabase integration, BYOK key isolation, and webhook auth.
+- **Supabase schema** (`deploy/supabase_schema.sql`) — PostgreSQL schema with profiles, reviews, RLS policies, rate limiting, and storage bucket configuration.
+- **Next.js frontend** (`web/`) — Landing page, auth (Google/GitHub/magic link), dashboard with realtime status, PDF upload with drag-and-drop, review viewer with markdown rendering, settings page, and shareable review links.
+
+### Changed
+
+- **Optional heavy dependencies** — `docling` and `openhands-sdk` moved to optional extras (`pip install coarse[docling]`, `pip install coarse[agentic]`). Core install is now lightweight (~500MB Docker image vs ~1.5GB).
+
 ### Fixed
 
 - **LaTeX garbling in review quotes** — Added `verify_quotes` call after critique agent (which re-garbles LaTeX via JSON round-trip). Added LaTeX preservation instructions to all section prompts.

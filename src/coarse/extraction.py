@@ -205,7 +205,9 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
 
     if full_markdown is None:
         raise ValueError(
-            f"Cannot convert PDF (no extraction backend available): {pdf_path}"
+            f"Cannot convert PDF: no extraction backend available for {pdf_path}. "
+            "Set MISTRAL_API_KEY or OPENROUTER_API_KEY, or install offline extraction: "
+            "pip install coarse[docling]"
         )
 
     paper_text = PaperText(
