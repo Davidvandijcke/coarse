@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class DimensionScore(BaseModel):
     dimension: str
-    score: int  # 1-5
+    score: float  # 1.0-5.0, half-point increments (1, 1.5, 2, ..., 5)
     reasoning: str
 
 
@@ -36,7 +36,10 @@ original paper, a reference review written by another reviewer, and a \
 generated review. Your task is to assess the generated review's quality \
 primarily against the paper itself, using the reference for calibration.
 
-Score each dimension from 1 (very poor) to 5 (excellent):
+Score each dimension from 1.0 (very poor) to 5.0 (excellent) in half-point \
+increments (1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5). Use half-points to \
+distinguish minor issues from major ones — e.g., one truncated quote out of \
+19 is a 4.5, not a 4:
 
 1. **coverage**: Does the generated review identify the paper's most important \
 issues? Evaluate this against the paper itself — what are the real strengths, \
@@ -91,7 +94,8 @@ source of truth and the reference review for calibration (not as an answer key).
 {generated}
 </generated>
 
-Score the generated review on: coverage, specificity, depth, and format (each 1-5).
+Score the generated review on: coverage, specificity, depth, and format \
+(each 1.0-5.0 in half-point increments).
 Verify quotes against the paper text. Assess coverage and depth against the \
 paper itself — does the generated review find the paper's real issues and \
 engage with its actual methodology and assumptions? Credit valid issues the \
@@ -181,8 +185,12 @@ communication).
 
 Your task:
 1. For each dimension (coverage, specificity, depth, format), determine a final \
-consensus score (1-5) that reflects the panel's assessments. Weight disagreements \
-toward the more critical judge — overrating quality is worse than underrating it.
+consensus score (1.0-5.0 in half-point increments) that FAITHFULLY reflects \
+the panel's actual scores. Your score must stay within the range of the \
+judges' scores — if all judges gave 5, the consensus is 5; if judges gave \
+4.5, 4.5, 5, the consensus is 4.5 or 5. Do NOT introduce your own \
+independent assessment or dock points for issues the judges did not penalize. \
+When judges disagree, weight toward the more critical judge.
 2. Synthesize 3-5 key strengths from across all judges' reports (deduplicate).
 3. Synthesize 3-5 key weaknesses (deduplicate and prioritize the most actionable).
 4. Provide 3-5 concrete improvement_suggestions for the review pipeline — \
@@ -298,7 +306,7 @@ def evaluate_review_panel(
 
 def _average_reports(reports: list[QualityReport]) -> QualityReport:
     """Simple average fallback when synthesis isn't possible."""
-    dim_scores: dict[str, list[int]] = {}
+    dim_scores: dict[str, list[float]] = {}
     for r in reports:
         for d in r.dimensions:
             dim_scores.setdefault(d.dimension, []).append(d.score)
@@ -306,7 +314,7 @@ def _average_reports(reports: list[QualityReport]) -> QualityReport:
     dims = [
         DimensionScore(
             dimension=name,
-            score=round(sum(scores) / len(scores)),
+            score=round(sum(scores) / len(scores) * 2) / 2,  # nearest 0.5
             reasoning=f"Average of {len(scores)} judge(s)",
         )
         for name, scores in dim_scores.items()
