@@ -90,7 +90,7 @@ async def run_agent(
     except ImportError as e:
         raise RuntimeError(
             "openhands-sdk and openhands-tools are required for coding agents. "
-            "Install with: pip install coarse[agents]"
+            "Install with: pip install coarse[agentic]"
         ) from e
 
     resolved_model = model or AGENT_MODEL

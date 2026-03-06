@@ -21,18 +21,18 @@ classifiers = [
 dependencies = [
     "litellm>=1.60",
     "instructor>=1.7",
-    "docling>=2.0",
     "pydantic>=2.0",
     "typer>=0.12",
     "rich>=13.0",
     "tomli-w>=1.0",
     "pymupdf>=1.24",
-    "openhands-sdk>=0.1",
-    "openhands-tools>=0.1",
     "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
+docling = ["docling>=2.0"]
+agentic = ["openhands-sdk>=0.1", "openhands-tools>=0.1"]
+all = ["coarse[docling,agentic]"]
 dev = ["pytest>=8.0", "ruff>=0.4"]
 
 [project.scripts]
