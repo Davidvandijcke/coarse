@@ -148,7 +148,7 @@ def review_paper(
     3. Analyze structure via markdown parsing + cheap LLM metadata → PaperStructure
     4. Phase 1: Overview agent + assumption checker (parallel, blocking)
     5. Phase 2: Section agents (parallel, text-only with overview context)
-    6. Cross-reference + critique
+    6. Cross-reference + quote verification + critique + quote re-verification
     7. Synthesis → markdown
 
     Returns:
@@ -310,6 +310,11 @@ def review_paper(
         final_comments = critique_agent.run(
             overview, verified_comments, comment_target=comment_target
         )
+
+    # Re-verify quotes after critique (critique re-emits through JSON, re-garbling LaTeX)
+    final_comments = verify_quotes(
+        final_comments, paper_text.full_markdown, drop_unverified=True,
+    )
 
     # Ensure sequential numbering 1..N
     final_comments = _renumber_comments(final_comments)
