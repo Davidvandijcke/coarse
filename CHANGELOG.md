@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **LaTeX garbling in review quotes** — Added `verify_quotes` call after critique agent (which re-garbles LaTeX via JSON round-trip). Added LaTeX preservation instructions to all section prompts.
+
 ### Changed
 
 - **Structured assumption cross-check** — Rewrote `ASSUMPTION_CHECK_SYSTEM` with a 4-step procedure (extract assumptions → characterize data → cross-check with common mismatch patterns → evaluate defenses). Added INTRODUCTION sections to assumption-relevant types so data descriptions are visible. Adds `_TONE_BLOCK` to assumption prompt.

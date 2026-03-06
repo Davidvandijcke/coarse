@@ -5,6 +5,9 @@ from coarse.prompts import (
     CROSSREF_SYSTEM,
     METADATA_SYSTEM,
     OVERVIEW_SYSTEM,
+    SECTION_LITERATURE_SYSTEM,
+    SECTION_METHODOLOGY_SYSTEM,
+    SECTION_PROOF_SYSTEM,
     SECTION_SYSTEM,
     assumption_check_user,
     critique_user,
@@ -179,6 +182,16 @@ def test_assumption_check_system_lists_common_mismatches():
 def test_assumption_check_user_references_procedure():
     result = assumption_check_user("Test Paper", "some text")
     assert "4-step" in result
+
+
+def test_section_prompts_include_latex_preservation_instruction():
+    latex_phrase = "do not render or interpret LaTeX"
+    prompts = (
+        SECTION_SYSTEM, SECTION_PROOF_SYSTEM,
+        SECTION_METHODOLOGY_SYSTEM, SECTION_LITERATURE_SYSTEM,
+    )
+    for prompt in prompts:
+        assert latex_phrase in prompt
 
 
 def test_assumption_relevant_types_includes_introduction():

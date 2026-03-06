@@ -28,7 +28,9 @@ paper.pdf
     → [overview agent]   LLM → 4-6 macro issues (parallel with section agents)
     → [section agents]   LLM → 15-25 detailed comments (1 per section, parallel)
     → [crossref agent]   LLM → deduplicate, validate quotes, consistency
+    → [quote_verify.py]  Programmatic → fuzzy-match quotes against paper text
     → [critique agent]   LLM → self-critique quality gate, revise weak comments
+    → [quote_verify.py]  Programmatic → re-verify quotes (critique re-garbles via JSON)
     → [synthesis.py]     Deterministic → paper_review.md (refine.ink format)
 
 With `--agentic`: proof/methodology/results sections use CodingSectionAgent (OpenHands SDK),

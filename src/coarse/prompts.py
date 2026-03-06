@@ -240,6 +240,8 @@ For each issue you identify, produce a structured comment with:
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
 verbatim substring of the section text provided below — do not paraphrase, reword, \
 summarize, or reconstruct any part of it. Copy it character-for-character. \
+If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy them \
+exactly with their backslashes — do not render or interpret LaTeX as symbols. \
 The quote MUST include the COMPLETE passage — NEVER truncate mid-sentence or \
 mid-equation. If a passage spans multiple lines or contains multi-line equations, \
 include ALL of it. A truncated quote is a critical error.
@@ -364,7 +366,10 @@ For each issue, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
 verbatim substring of the section text provided below — do not paraphrase, reword, \
-or summarize any part of it. The quote MUST include the COMPLETE passage — NEVER \
+or summarize any part of it. \
+If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy them \
+exactly with their backslashes — do not render or interpret LaTeX as symbols. \
+The quote MUST include the COMPLETE passage — NEVER \
 truncate mid-sentence or mid-equation. If a passage spans multiple lines or \
 contains multi-line equations, include ALL of it. A truncated quote is a critical error.
 - feedback: Show your re-derivation or calculation that reveals the error (3-8 \
@@ -394,7 +399,10 @@ For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
 verbatim substring of the section text provided below — do not paraphrase, reword, \
-or summarize any part of it. The quote MUST include the COMPLETE passage — NEVER \
+or summarize any part of it. \
+If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy them \
+exactly with their backslashes — do not render or interpret LaTeX as symbols. \
+The quote MUST include the COMPLETE passage — NEVER \
 truncate mid-sentence or mid-equation. If a passage spans multiple lines or \
 contains multi-line equations, include ALL of it. A truncated quote is a critical error.
 - feedback: Explain the methodological concern with specifics (3-8 sentences). If an \
@@ -422,8 +430,10 @@ For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
 verbatim substring of the section text provided below — do not paraphrase, reword, \
-or summarize any part of it. The quote should be at least 2 full sentences; longer \
-is better.
+or summarize any part of it. \
+If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy them \
+exactly with their backslashes — do not render or interpret LaTeX as symbols. \
+The quote should be at least 2 full sentences; longer is better.
 - feedback: Explain the concern with specifics (3-8 sentences). If a claim about prior \
 work is wrong, state what the prior work actually shows.
 
