@@ -238,3 +238,44 @@ def test_review_nonexistent_pdf():
     """Invoking review with a nonexistent PDF exits with non-zero code."""
     result = runner.invoke(app, ["review", "/nonexistent/path/paper.pdf"])
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# test_review_eval_flag_saves_quality_report
+# ---------------------------------------------------------------------------
+
+def test_review_eval_flag_saves_quality_report(tmp_path):
+    """--eval runs quality evaluation and writes a quality report file."""
+    from unittest.mock import call
+    from coarse.quality import DimensionScore, QualityReport
+
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    ref = tmp_path / "reference.md"
+    ref.write_text("# Reference Review\n\nSome reference content.", encoding="utf-8")
+
+    mock_report = QualityReport(
+        overall_score=4.0,
+        dimensions=[DimensionScore(dimension="coverage", score=4.0, reasoning="Good.")],
+        strengths=["S1"],
+        weaknesses=["W1"],
+    )
+
+    written_paths: list = []
+
+    def fake_save(report, output_path, reference_path, model, mode):
+        written_paths.append(output_path)
+        output_path.write_text("# Quality Evaluation\n", encoding="utf-8")
+
+    with (
+        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.review_paper", _fake_review_paper),
+        patch("coarse.quality.evaluate_review", return_value=mock_report),
+        patch("coarse.quality.save_quality_report", fake_save),
+    ):
+        result = runner.invoke(app, ["review", str(pdf), "--yes", "--eval", str(ref)])
+
+    assert result.exit_code == 0, result.output
+    assert len(written_paths) == 1
+    assert "quality" in written_paths[0].name

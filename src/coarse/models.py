@@ -32,5 +32,8 @@ OPENROUTER_EXTRACTION_MODEL = "google/gemini-3-flash-preview"
 # Coding agent model (used by CodingSectionAgent / CodingCritiqueAgent)
 AGENT_MODEL = "moonshotai/kimi-k2.5"
 
+# Model used for quality evaluation (dev-only, single-judge or panel)
+QUALITY_MODEL = "google/gemini-3-flash-preview"
+
 # Model families that need JSON mode instead of tool-calling
 JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini")

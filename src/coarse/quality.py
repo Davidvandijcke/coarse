@@ -5,12 +5,15 @@ Supports both single-judge and multi-judge panel evaluation with synthesis.
 """
 from __future__ import annotations
 
+import datetime
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from pydantic import BaseModel
 
 from coarse.llm import LLMClient
+from coarse.models import QUALITY_MODEL
 from coarse.synthesis import render_review
 from coarse.types import Review
 
@@ -115,6 +118,7 @@ def evaluate_review(
     reference: str,
     client: LLMClient | None = None,
     paper_text: str = "",
+    model: str = QUALITY_MODEL,
 ) -> QualityReport:
     """LLM-judge evaluation of a generated review against a reference.
 
@@ -125,7 +129,7 @@ def evaluate_review(
     Creates a default LLMClient if none provided.
     """
     if client is None:
-        client = LLMClient()
+        client = LLMClient(model=model)
 
     if isinstance(generated, Review):
         generated = render_review(generated)
@@ -236,6 +240,7 @@ def evaluate_review_panel(
     reference: str,
     client: LLMClient | None = None,
     paper_text: str = "",
+    model: str = QUALITY_MODEL,
 ) -> tuple[QualityReport, list[QualityReport]]:
     """Multi-judge panel evaluation with synthesis.
 
@@ -246,7 +251,7 @@ def evaluate_review_panel(
         (synthesized_report, individual_reports)
     """
     if client is None:
-        client = LLMClient()
+        client = LLMClient(model=model)
 
     if isinstance(generated, Review):
         generated = render_review(generated)
@@ -302,6 +307,54 @@ def evaluate_review_panel(
         weaknesses=synth.weaknesses,
     )
     return synthesized, individual_reports
+
+
+def save_quality_report(
+    report: QualityReport,
+    output_path: Path,
+    reference_path: str,
+    model: str = QUALITY_MODEL,
+    mode: str = "single",
+) -> None:
+    """Write a quality report as a markdown file.
+
+    Includes timestamp, reference review path, model, and mode so results
+    are reproducible and traceable across dev runs.
+    """
+    timestamp = datetime.datetime.now().isoformat(timespec="seconds")
+
+    dim_rows = "\n".join(
+        f"| {d.dimension} | {d.score}/5 | {d.reasoning} |"
+        for d in report.dimensions
+    )
+    strengths = "\n".join(f"- {s}" for s in report.strengths)
+    weaknesses = "\n".join(f"- {w}" for w in report.weaknesses)
+
+    content = f"""\
+# Quality Evaluation
+
+**Timestamp**: {timestamp}
+**Reference**: {reference_path}
+**Model**: {model}
+**Mode**: {mode}
+
+## Overall Score: {report.overall_score:.2f}/5.0
+
+## Dimensions
+
+| Dimension | Score | Reasoning |
+|-----------|-------|-----------|
+{dim_rows}
+
+## Strengths
+
+{strengths}
+
+## Weaknesses
+
+{weaknesses}
+"""
+    output_path.write_text(content, encoding="utf-8")
 
 
 def _average_reports(reports: list[QualityReport]) -> QualityReport:

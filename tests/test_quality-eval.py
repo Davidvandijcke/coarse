@@ -1,12 +1,14 @@
 """Tests for coarse.quality — evaluate_review and QualityReport."""
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from coarse.llm import LLMClient
-from coarse.quality import DimensionScore, QualityReport, _JudgeOutput, evaluate_review
+from coarse.models import QUALITY_MODEL
+from coarse.quality import DimensionScore, QualityReport, _JudgeOutput, evaluate_review, save_quality_report
 from coarse.synthesis import render_review
 from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
 
@@ -124,7 +126,7 @@ def test_evaluate_review_creates_default_client():
             reference="# Reference\n\nContent.",
         )
 
-        mock_cls.assert_called_once_with()
+        mock_cls.assert_called_once_with(model=QUALITY_MODEL)
 
 
 def test_dimension_scores_in_valid_range():
@@ -142,3 +144,52 @@ def test_dimension_scores_in_valid_range():
         assert 1 <= dim.score <= 5
 
     assert 1.0 <= result.overall_score <= 5.0
+
+
+# ---------------------------------------------------------------------------
+# test_save_quality_report_creates_file
+# ---------------------------------------------------------------------------
+
+def test_save_quality_report_creates_file(tmp_path):
+    """save_quality_report writes a markdown file with expected metadata fields."""
+    dimensions = [
+        DimensionScore(dimension="coverage", score=4.0, reasoning="Good coverage."),
+        DimensionScore(dimension="specificity", score=3.5, reasoning="Some vague points."),
+        DimensionScore(dimension="depth", score=4.5, reasoning="Very thorough."),
+        DimensionScore(dimension="format", score=5.0, reasoning="Perfect structure."),
+    ]
+    report = QualityReport(
+        overall_score=4.25,
+        dimensions=dimensions,
+        strengths=["Catches the key assumptions issue"],
+        weaknesses=["Misses one minor exposition gap"],
+    )
+
+    out = tmp_path / "paper_quality_test.md"
+    ref_path = "/data/refine_examples/r3d/reference.md"
+
+    save_quality_report(report, out, ref_path, model=QUALITY_MODEL, mode="single")
+
+    assert out.exists()
+    content = out.read_text(encoding="utf-8")
+
+    assert "# Quality Evaluation" in content
+    assert ref_path in content
+    assert QUALITY_MODEL in content
+    assert "single" in content
+    assert "4.25/5.0" in content
+    assert "coverage" in content
+    assert "Catches the key assumptions issue" in content
+    assert "Misses one minor exposition gap" in content
+
+
+def test_save_quality_report_panel_mode(tmp_path):
+    """save_quality_report records mode=panel when using panel evaluation."""
+    dimensions = [DimensionScore(dimension="coverage", score=3.0, reasoning="OK.")]
+    report = QualityReport(overall_score=3.0, dimensions=dimensions, strengths=[], weaknesses=[])
+
+    out = tmp_path / "quality_panel.md"
+    save_quality_report(report, out, "/ref.md", mode="panel")
+
+    content = out.read_text(encoding="utf-8")
+    assert "panel" in content

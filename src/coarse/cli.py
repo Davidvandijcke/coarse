@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -20,7 +21,7 @@ from coarse.config import (
     resolve_api_key,
     save_config,
 )
-from coarse.models import CHEAP_MODELS
+from coarse.models import CHEAP_MODELS, QUALITY_MODEL
 from coarse.pipeline import review_paper
 
 app = typer.Typer(
@@ -99,6 +100,15 @@ def review(
     no_agentic: bool = typer.Option(
         False, "--no-agentic", help="Disable coding agents (faster, less thorough)"
     ),
+    eval_ref: Optional[Path] = typer.Option(
+        None, "--eval", help="Path to reference review markdown for quality scoring"
+    ),
+    eval_panel: bool = typer.Option(
+        False, "--eval-panel", help="Use 3-judge panel evaluation (default: single judge)"
+    ),
+    eval_model: Optional[str] = typer.Option(
+        None, "--eval-model", help=f"Model for quality evaluation (default: {QUALITY_MODEL})"
+    ),
 ) -> None:
     """Review a PDF paper and write a markdown report."""
 
@@ -146,7 +156,7 @@ def review(
     console.print(f"[bold]Reviewing[/bold] {pdf.name} with {resolved_model}")
 
     with Status("Running review pipeline...", console=console):
-        review_obj, markdown, _ = review_paper(
+        review_obj, markdown, paper_text = review_paper(
             pdf_path=pdf,
             model=resolved_model,
             skip_cost_gate=yes,
@@ -160,3 +170,32 @@ def review(
         f"[green]Review written to {out_path}[/green] "
         f"({n_issues} issues, {n_comments} detailed comments)"
     )
+
+    if eval_ref is not None:
+        from coarse.llm import LLMClient
+        from coarse.quality import evaluate_review, evaluate_review_panel, save_quality_report
+
+        reference_text = eval_ref.read_text(encoding="utf-8")
+        quality_model = eval_model or QUALITY_MODEL
+        quality_client = LLMClient(model=quality_model)
+        mode = "panel" if eval_panel else "single"
+
+        with Status(f"Running quality evaluation ({mode})...", console=console):
+            if eval_panel:
+                report, _ = evaluate_review_panel(
+                    markdown, reference_text, client=quality_client,
+                    paper_text=paper_text.full_markdown,
+                )
+            else:
+                report = evaluate_review(
+                    markdown, reference_text, client=quality_client,
+                    paper_text=paper_text.full_markdown,
+                )
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        quality_path = out_path.parent / f"{pdf.stem}_quality_{timestamp}.md"
+        save_quality_report(report, quality_path, str(eval_ref), model=quality_model, mode=mode)
+        console.print(
+            f"[green]Quality report written to {quality_path}[/green] "
+            f"(overall: {report.overall_score:.2f}/5.0)"
+        )
