@@ -124,6 +124,39 @@ def test_detailed_comment_status_default():
     assert c.status == "Pending"
 
 
+def test_detailed_comment_confidence_default():
+    c = DetailedComment(number=1, title="Issue", quote="Quote text.", feedback="Feedback text.")
+    assert c.confidence == "medium"
+
+
+def test_detailed_comment_confidence_values():
+    for conf in ("high", "medium", "low"):
+        c = DetailedComment(
+            number=1, title="Issue", quote="Quote text.",
+            feedback="Feedback text.", confidence=conf,
+        )
+        assert c.confidence == conf
+
+
+def test_detailed_comment_confidence_invalid():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        DetailedComment(
+            number=1, title="Issue", quote="Quote text.",
+            feedback="Feedback text.", confidence="very_high",
+        )
+
+
+def test_paper_text_garble_ratio_default():
+    pt = PaperText(full_markdown="text", token_estimate=1)
+    assert pt.garble_ratio == 0.0
+
+
+def test_paper_text_garble_ratio_set():
+    pt = PaperText(full_markdown="text", token_estimate=1, garble_ratio=0.05)
+    assert pt.garble_ratio == 0.05
+
+
 def test_detailed_comment_status_invalid():
     with pytest.raises(ValidationError):
         DetailedComment(

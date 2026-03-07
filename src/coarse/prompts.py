@@ -26,6 +26,34 @@ Only claim an error if you can show the correct derivation step-by-step in your 
 If you cannot, phrase as a question: "It is not clear how X follows from Y."
 """
 
+_ENGAGEMENT_PATTERN = """
+For each potential issue, describe your thought process:
+1. What you initially expected or found confusing when reading the passage
+2. How you resolved the confusion (or why you could not resolve it)
+3. Whether the issue is an actual error, an ambiguity, or a clarity problem
+
+This ensures you only flag genuine issues and your feedback is constructive.
+"""
+
+_CONFIDENCE_CALIBRATION = """
+For each comment, set the confidence field:
+- "high": You can demonstrate the error with a derivation or concrete cross-reference
+- "medium": You believe there is an issue but cannot fully verify it
+- "low": You are not sure this is an error; it may reflect your own misunderstanding
+
+Be honest about your uncertainty. A "low" confidence comment phrased as a question is \
+more valuable than a "high" confidence comment that turns out to be wrong.
+"""
+
+_REMEDIATION_SPECIFICITY = """
+Your feedback MUST end with a concrete fix in one of these forms:
+- "Rewrite [quoted text] as [corrected text] because [reason]"
+- "Add [specific content] after [location] to address [gap]"
+- "Remove [quoted text] because [reason]"
+Do NOT end feedback with vague suggestions like "It would be helpful to discuss..." \
+or "The authors should clarify..." — state the exact change needed.
+"""
+
 # ---------------------------------------------------------------------------
 # OpenRouter extraction (used by file-parser plugin OCR path)
 # ---------------------------------------------------------------------------
@@ -234,7 +262,7 @@ version of each issue.
 SECTION_SYSTEM = """\
 You are an expert peer reviewer. Your task is to find concrete errors and \
 inconsistencies in a single section of a research paper.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + """
 For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words) describing the exact problem
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
@@ -267,12 +295,46 @@ Requirements:
 - Produce 1 to 5 comments per section (only as many as genuinely warranted)
 - Every comment MUST include a verbatim quote directly copied from the section text
 - Quote must be a substring of the actual section text; do not invent text
-- For each issue: state what is wrong, explain why it matters, and suggest a specific \
-fix — "rewrite X as Y because Z" not "clarify this" or "add more discussion"
+- For each issue: state what is wrong, explain why it matters, and suggest a specific fix.
+""" + _REMEDIATION_SPECIFICITY + """
 - Do NOT request additional analyses or experiments. Focus on what is already written.
 
 If the section has no substantive issues, produce 1 comment on the most improvable aspect.
 """
+
+
+def _build_notation_context(
+    current_section: "SectionInfo",
+    all_sections: "list[SectionInfo] | None",
+) -> str:
+    """Build a notation/definitions summary from other sections for cross-referencing.
+
+    Collects definitions from all sections except the current one, providing
+    the section agent with cross-section context it would otherwise lack.
+    """
+    if not all_sections:
+        return ""
+
+    defs: list[str] = []
+    for s in all_sections:
+        if s.number == current_section.number:
+            continue
+        for d in s.definitions:
+            defs.append(f"- [{s.title}] {d}")
+
+    if not defs:
+        return ""
+
+    # Cap at 30 definitions to avoid overwhelming the context
+    if len(defs) > 30:
+        defs = defs[:30]
+
+    return (
+        "\n**Notation & Definitions from Other Sections** "
+        "(for cross-reference — check consistency):\n"
+        + "\n".join(defs)
+        + "\n"
+    )
 
 
 def section_user(
@@ -281,11 +343,14 @@ def section_user(
     overview: "OverviewFeedback | None" = None,
     calibration: "DomainCalibration | None" = None,
     literature_context: str = "",
+    all_sections: "list[SectionInfo] | None" = None,
 ) -> str:
     """User prompt for a single section review.
 
     If overview is provided, includes macro-level issues as context so the
     section agent can connect its findings to broader paper concerns.
+    If all_sections is provided, includes notation/definitions from other
+    sections for cross-referencing.
     """
     claims_block = ""
     if section.claims:
@@ -296,6 +361,8 @@ def section_user(
     if section.definitions:
         defs_list = "\n".join(f"- {d}" for d in section.definitions)
         defs_block = f"\n**Definitions**:\n{defs_list}"
+
+    notation_block = _build_notation_context(section, all_sections)
 
     context_block = ""
     if overview and overview.issues:
@@ -323,7 +390,7 @@ Review the following section of "{paper_title}" and produce detailed comments.
 
 **Section {section.number}: {section.title}**
 **Type**: {section.section_type.value}
-{claims_block}{defs_block}{context_block}{cal_block}{lit_block}
+{claims_block}{defs_block}{notation_block}{context_block}{cal_block}{lit_block}
 
 **Section Text**:
 {section.text}
@@ -342,7 +409,7 @@ requests for additional work.
 SECTION_PROOF_SYSTEM = """\
 You are an expert mathematical proof checker. Your job is to VERIFY the mathematics \
 in this section by working through it yourself, not just reading it passively.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + """
 For each theorem, proposition, lemma, or corollary:
 
 1. STATE the claim precisely.
@@ -373,16 +440,15 @@ The quote MUST include the COMPLETE passage — NEVER \
 truncate mid-sentence or mid-equation. If a passage spans multiple lines or \
 contains multi-line equations, include ALL of it. A truncated quote is a critical error.
 - feedback: Show your re-derivation or calculation that reveals the error (3-8 \
-sentences). Write out the correct version of the equation/expression. Be specific: \
-"equation X should read Y because Z" not "this should be checked."
-
+sentences). Write out the correct version of the equation/expression.
+""" + _REMEDIATION_SPECIFICITY + """
 Report 0-5 issues. Only report errors you can demonstrate through calculation, not \
 stylistic preferences. If you find no errors after careful verification, report 0 issues.
 """
 
 SECTION_METHODOLOGY_SYSTEM = """\
 You are an expert methodologist reviewing a methodology section of a research paper.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + """
 Focus on:
 
 1. Does the method actually identify or estimate the stated target quantity? \
@@ -407,8 +473,8 @@ truncate mid-sentence or mid-equation. If a passage spans multiple lines or \
 contains multi-line equations, include ALL of it. A truncated quote is a critical error.
 - feedback: Explain the methodological concern with specifics (3-8 sentences). If an \
 assumption is contradicted, cite the specific assumption and the specific evidence \
-against it. Suggest a concrete fix, not "discuss this further."
-
+against it.
+""" + _REMEDIATION_SPECIFICITY + """
 Prioritize issues that affect the validity of the paper's main claims. Do NOT \
 request additional analyses — focus on errors in what is already written. \
 Report 1-5 comments.
@@ -563,6 +629,14 @@ that is contradicted by the paper's own data
 the evidence presented
 - "minor": notation inconsistency, ambiguous definition, exposition that obscures \
 the actual claim
+
+Assign confidence:
+- "high": the error is demonstrated with a derivation or concrete cross-reference
+- "medium": you believe there is an issue but cannot fully verify it
+- "low": you are not sure this is an error; it may reflect a misunderstanding
+
+REMOVE comments with "low" confidence unless they identify a genuinely important \
+ambiguity. Prefer fewer high-confidence comments over many uncertain ones.
 
 Return the final revised set of comments renumbered from 1. \
 Aim for {comment_target} total comments. It is better to have 8 comments that each \

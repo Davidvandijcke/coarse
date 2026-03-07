@@ -41,6 +41,7 @@ class SectionAgent(ReviewAgent):
         calibration: "DomainCalibration | None" = None,
         focus: str = "general",
         literature_context: str = "",
+        all_sections: "list[SectionInfo] | None" = None,
     ) -> list[DetailedComment]:
         # Truncate very long sections to avoid token overflow
         if len(section.text) > self.MAX_SECTION_CHARS:
@@ -54,6 +55,7 @@ class SectionAgent(ReviewAgent):
         user_text = section_user(
             paper_title, truncated, overview=overview, calibration=calibration,
             literature_context=literature_context,
+            all_sections=all_sections,
         )
         messages = [
             {"role": "system", "content": system_prompt},

@@ -1,7 +1,7 @@
 """Tests for coarse.quote_verify."""
 from __future__ import annotations
 
-from coarse.quote_verify import _trim_to_best_match, verify_quotes
+from coarse.quote_verify import _passage_garble_score, _trim_to_best_match, verify_quotes
 from coarse.types import DetailedComment
 
 
@@ -112,3 +112,21 @@ def test_trim_to_best_match_expands_truncated_quote():
     assert len(result) > len(truncated_quote)
     # Should include the closing bracket that was truncated
     assert "}" in result
+
+
+# --- Passage garble scoring ---
+
+
+def test_passage_garble_score_clean():
+    """Clean passage should have zero garble score."""
+    assert _passage_garble_score("The finite integral over (a, b)") == 0.0
+
+
+def test_passage_garble_score_garbled():
+    """Passage with OCR artifacts should have nonzero garble score."""
+    score = _passage_garble_score("The ®nite integral /C40a, b/C41")
+    assert score > 0.0
+
+
+def test_passage_garble_score_empty():
+    assert _passage_garble_score("") == 0.0

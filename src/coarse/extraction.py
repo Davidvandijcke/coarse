@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from coarse.types import PaperText
@@ -157,6 +158,54 @@ def _extract_docling(path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Garble detection and normalization
+# ---------------------------------------------------------------------------
+
+# Common OCR garble patterns from older PDFs (pre-2005, non-standard encodings)
+_GARBLE_REPLACEMENTS: list[tuple[str, str]] = [
+    ("®nite", "finite"),
+    ("in®nite", "infinite"),
+    ("de®ne", "define"),
+    ("de®ned", "defined"),
+    ("de®nition", "definition"),
+    ("/C40", "("),
+    ("/C41", ")"),
+    ("naõÈve", "naïve"),
+    ("naõève", "naïve"),
+    ("\u00ae", "fi"),  # ® used as ligature for fi
+]
+
+# Regex matching non-standard characters that suggest OCR garbling
+_GARBLE_CHARS = re.compile(
+    r"[\u00ae\u00f5\u00c8\u00c0\u00c1\ufffd\ufffe\uffff]"
+    r"|/C[0-9]{2}"
+)
+
+
+def compute_garble_ratio(text: str) -> float:
+    """Compute the ratio of garbled characters to total characters.
+
+    Returns a float in [0, 1]. Values above ~0.005 suggest OCR quality issues.
+    """
+    if not text:
+        return 0.0
+    matches = _GARBLE_CHARS.findall(text)
+    return len(matches) / len(text)
+
+
+def normalize_ocr_garble(text: str) -> str:
+    """Apply known OCR garble fixes to extracted text.
+
+    Fixes common character encoding issues from older PDFs without
+    altering correctly-encoded content.
+    """
+    result = text
+    for garbled, clean in _GARBLE_REPLACEMENTS:
+        result = result.replace(garbled, clean)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -210,9 +259,17 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
             "pip install coarse[docling]"
         )
 
+    # Detect and normalize OCR garble from older PDFs
+    garble = compute_garble_ratio(full_markdown)
+    if garble > 0.001:
+        logger.info("Garble ratio %.4f detected, applying OCR normalization", garble)
+        full_markdown = normalize_ocr_garble(full_markdown)
+        garble = compute_garble_ratio(full_markdown)  # recompute after normalization
+
     paper_text = PaperText(
         full_markdown=full_markdown,
         token_estimate=_estimate_tokens(full_markdown),
+        garble_ratio=garble,
     )
 
     # Cache for next time

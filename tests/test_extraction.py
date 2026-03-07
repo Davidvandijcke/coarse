@@ -7,7 +7,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from coarse.extraction import _estimate_tokens, extract_text
+from coarse.extraction import (
+    _estimate_tokens,
+    compute_garble_ratio,
+    extract_text,
+    normalize_ocr_garble,
+)
 from coarse.types import PaperText
 
 
@@ -131,3 +136,59 @@ def test_all_backends_fail(minimal_pdf: Path) -> None:
         ):
             with pytest.raises(ValueError, match="no extraction backend"):
                 extract_text(minimal_pdf, use_cache=False)
+
+
+# --- Garble detection and normalization ---
+
+
+def test_compute_garble_ratio_clean_text():
+    """Clean text should have zero garble ratio."""
+    assert compute_garble_ratio("This is clean text with LaTeX $x^2$.") == 0.0
+
+
+def test_compute_garble_ratio_garbled_text():
+    """Text with OCR artifacts should have nonzero garble ratio."""
+    garbled = "The ®nite case shows /C40x/C41 is naõÈve"
+    ratio = compute_garble_ratio(garbled)
+    assert ratio > 0.0
+
+
+def test_compute_garble_ratio_empty():
+    assert compute_garble_ratio("") == 0.0
+
+
+def test_normalize_ocr_garble_fixes_known_patterns():
+    """Known garble patterns should be fixed by normalization."""
+    garbled = "The ®nite integral over /C40a, b/C41 is naõÈve"
+    result = normalize_ocr_garble(garbled)
+    assert "finite" in result
+    assert "(" in result
+    assert ")" in result
+    assert "naïve" in result
+    assert "®nite" not in result
+    assert "/C40" not in result
+
+
+def test_normalize_ocr_garble_preserves_clean_text():
+    """Clean text should not be altered by normalization."""
+    clean = "The finite integral over (a, b) is well-defined."
+    assert normalize_ocr_garble(clean) == clean
+
+
+def test_extract_text_sets_garble_ratio(minimal_pdf: Path, mock_ocr_pages) -> None:
+    """Extraction should compute and store garble ratio."""
+    with patch("litellm.ocr", return_value=_mock_ocr_response(mock_ocr_pages)):
+        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+            result = extract_text(minimal_pdf, use_cache=False)
+    assert hasattr(result, "garble_ratio")
+    assert result.garble_ratio == 0.0  # clean mock data
+
+
+def test_extract_text_normalizes_garbled_ocr(minimal_pdf: Path) -> None:
+    """Garbled OCR output should be auto-normalized."""
+    garbled_pages = ["The ®nite case shows /C40x/C41"]
+    with patch("litellm.ocr", return_value=_mock_ocr_response(garbled_pages)):
+        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+            result = extract_text(minimal_pdf, use_cache=False)
+    assert "finite" in result.full_markdown
+    assert "®nite" not in result.full_markdown

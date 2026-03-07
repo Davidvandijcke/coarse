@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import difflib
 import logging
+import re
 
 from coarse.types import DetailedComment
 
@@ -14,6 +15,20 @@ logger = logging.getLogger(__name__)
 
 # Minimum fuzzy match ratio to accept a corrected quote
 _MIN_MATCH_RATIO = 0.70
+
+# Characters that suggest OCR garbling in the matched source passage
+_GARBLE_CHARS = re.compile(
+    r"[\u00ae\u00f5\u00c8\u00c0\u00c1\ufffd\ufffe\uffff]"
+    r"|/C[0-9]{2}"
+)
+
+
+def _passage_garble_score(passage: str) -> float:
+    """Score how garbled a source passage is (0 = clean, higher = more garbled)."""
+    if not passage:
+        return 0.0
+    matches = _GARBLE_CHARS.findall(passage)
+    return len(matches) / max(len(passage), 1)
 
 
 def verify_quotes(
@@ -29,18 +44,24 @@ def verify_quotes(
     - If drop_unverified=True and ratio < threshold: DROP the comment entirely
     - If drop_unverified=False and ratio < threshold: prefix with "[approximate] "
 
+    Logs summary statistics about quote quality, including garble artifacts
+    in matched source passages.
+
     Returns a new list of DetailedComment with corrected quotes.
     """
     paper_lower = paper_text.lower()
     result = []
+    stats = {"exact": 0, "fuzzy": 0, "dropped": 0, "empty": 0, "garbled_source": 0}
 
     for comment in comments:
         if not comment.quote or not comment.quote.strip():
+            stats["empty"] += 1
             result.append(comment)
             continue
 
         # Exact substring match (case-insensitive)
         if comment.quote.lower() in paper_lower:
+            stats["exact"] += 1
             result.append(comment)
             continue
 
@@ -48,9 +69,19 @@ def verify_quotes(
         best_match, ratio = _find_nearest_passage(comment.quote, paper_text)
 
         if ratio >= _MIN_MATCH_RATIO and best_match:
+            stats["fuzzy"] += 1
+            # Track if the matched source passage itself is garbled
+            if _passage_garble_score(best_match) > 0.005:
+                stats["garbled_source"] += 1
+                logger.warning(
+                    "Comment '%s' matched garbled source passage (garble_score=%.3f)",
+                    comment.title,
+                    _passage_garble_score(best_match),
+                )
             corrected = comment.model_copy(update={"quote": best_match})
             result.append(corrected)
         elif drop_unverified:
+            stats["dropped"] += 1
             logger.info(
                 "Dropping comment '%s' — quote not found in paper (ratio=%.2f)",
                 comment.title, ratio,
@@ -60,6 +91,12 @@ def verify_quotes(
                 update={"quote": f"[approximate] {comment.quote}"}
             )
             result.append(flagged)
+
+    logger.info(
+        "Quote verification: %d exact, %d fuzzy-corrected, %d dropped, "
+        "%d garbled-source matches",
+        stats["exact"], stats["fuzzy"], stats["dropped"], stats["garbled_source"],
+    )
 
     return result
 

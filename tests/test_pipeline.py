@@ -164,6 +164,7 @@ def test_review_paper_skips_references_section():
     def fake_section_run(
         section, title, overview=None, calibration=None,
         focus="general", literature_context="",
+        all_sections=None,
     ):
         called_sections.append(section)
         return [_make_comment(section.number)]
@@ -513,7 +514,8 @@ def test_hybrid_dispatch_routes_methodology_to_coding():
         return [_make_comment(section.number)]
 
     def fake_standard_run(section, title, overview=None, calibration=None,
-                          focus="general", literature_context=""):
+                          focus="general", literature_context="",
+                          all_sections=None):
         standard_called.append(section.section_type)
         return [_make_comment(section.number)]
 
@@ -571,7 +573,8 @@ def test_max_coding_sections_cap():
         return [_make_comment(section.number)]
 
     def fake_standard_run(section, title, overview=None, calibration=None,
-                          focus="general", literature_context=""):
+                          focus="general", literature_context="",
+                          all_sections=None):
         standard_count[0] += 1
         return [_make_comment(section.number)]
 

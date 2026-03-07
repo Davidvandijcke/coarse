@@ -196,3 +196,56 @@ def test_section_prompts_include_latex_preservation_instruction():
 
 def test_assumption_relevant_types_includes_introduction():
     assert SectionType.INTRODUCTION in _ASSUMPTION_RELEVANT_TYPES
+
+
+# --- Engagement pattern & confidence calibration ---
+
+def test_section_prompts_include_engagement_pattern():
+    """All section system prompts should include the engagement pattern."""
+    for prompt in (SECTION_SYSTEM, SECTION_PROOF_SYSTEM, SECTION_METHODOLOGY_SYSTEM):
+        assert "thought process" in prompt
+        assert "initially expected" in prompt.lower() or "found confusing" in prompt.lower()
+
+
+def test_section_prompts_include_confidence_calibration():
+    """Section prompts should instruct on confidence levels."""
+    for prompt in (SECTION_SYSTEM, SECTION_PROOF_SYSTEM, SECTION_METHODOLOGY_SYSTEM):
+        assert '"high"' in prompt
+        assert '"medium"' in prompt
+        assert '"low"' in prompt
+
+
+def test_section_prompts_include_remediation_specificity():
+    """Section prompts should require concrete fix forms."""
+    for prompt in (SECTION_SYSTEM, SECTION_PROOF_SYSTEM, SECTION_METHODOLOGY_SYSTEM):
+        assert "Rewrite [quoted text]" in prompt or "Rewrite" in prompt
+
+
+def test_critique_system_includes_confidence_filtering():
+    """Critique system should instruct to remove low-confidence comments."""
+    assert "low" in CRITIQUE_SYSTEM.lower()
+    assert "confidence" in CRITIQUE_SYSTEM.lower()
+
+
+# --- Cross-section notation context ---
+
+def test_section_user_with_all_sections_includes_notation():
+    """section_user should include notation from other sections when all_sections is passed."""
+    sec = make_section(definitions=["c = 0.5: the cutoff value"])
+    other_sec = SectionInfo(
+        number=1, title="Model Setup", text="Define theta.",
+        section_type=SectionType.INTRODUCTION,
+        definitions=["theta: model parameter", "beta: treatment effect"],
+    )
+    result = section_user("Test Paper", sec, all_sections=[other_sec, sec])
+    assert "theta: model parameter" in result
+    assert "Notation & Definitions" in result
+    # Should NOT include definitions from the current section in the notation block
+    assert result.count("c = 0.5: the cutoff value") == 1  # only in own defs block
+
+
+def test_section_user_without_all_sections_no_notation():
+    """section_user without all_sections should not have notation block."""
+    sec = make_section()
+    result = section_user("Test Paper", sec)
+    assert "Notation & Definitions from Other Sections" not in result

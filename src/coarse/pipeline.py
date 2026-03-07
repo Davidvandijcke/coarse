@@ -162,7 +162,16 @@ def review_paper(
 
     paper_text = extract_text(pdf_path)
 
-    if config.extraction_qa:
+    # Auto-trigger extraction QA if garble detected or explicitly enabled
+    run_qa = config.extraction_qa
+    if not run_qa and paper_text.garble_ratio > 0.001:
+        logger.info(
+            "High garble ratio (%.4f) detected — auto-enabling extraction QA",
+            paper_text.garble_ratio,
+        )
+        run_qa = True
+
+    if run_qa:
         from coarse.extraction import _save_cache
         from coarse.extraction_qa import run_extraction_qa
 
@@ -278,6 +287,7 @@ def review_paper(
                         overview, calibration,
                         focus,
                         literature_context,
+                        all_sections=structure.sections,
                     )
                 )
 

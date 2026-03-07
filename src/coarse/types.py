@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 class PaperText(BaseModel):
     full_markdown: str
     token_estimate: int
+    garble_ratio: float = 0.0
 
 
 class SectionType(str, Enum):
@@ -74,6 +75,7 @@ class DetailedComment(BaseModel):
     feedback: str
     status: Literal["Pending"] = "Pending"
     severity: Literal["critical", "major", "minor"] = "major"
+    confidence: Literal["high", "medium", "low"] = "medium"
 
 
 class Review(BaseModel):
