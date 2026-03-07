@@ -33,7 +33,8 @@ OPENROUTER_EXTRACTION_MODEL = "google/gemini-3-flash-preview"
 AGENT_MODEL = "moonshotai/kimi-k2.5"
 
 # Model used for quality evaluation (dev-only, single-judge or panel)
-QUALITY_MODEL = "google/gemini-3-flash-preview"
+# litellm uses gemini/ prefix for Google AI Studio (not google/ which is Vertex AI)
+QUALITY_MODEL = "gemini/gemini-3-flash-preview"
 
 # Model families that need JSON mode instead of tool-calling
 JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini")
