@@ -1,8 +1,18 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
 export const maxDuration = 30;
+
+function getMailer() {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) return null;
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: { user, pass },
+  });
+}
 
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -16,17 +26,20 @@ export async function POST(request: NextRequest) {
   }
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
-  const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+  const mailer = getMailer();
+
   // Parse multipart form
   let pdf: File | null = null;
   let email = "";
   let apiKey = "";
+  let model = "";
 
   try {
     const form = await request.formData();
     pdf = form.get("pdf") as File | null;
     email = ((form.get("email") as string | null) ?? "").trim();
     apiKey = ((form.get("api_key") as string | null) ?? "").trim();
+    model = ((form.get("model") as string | null) ?? "").trim();
   } catch {
     return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
   }
@@ -83,6 +96,7 @@ export async function POST(request: NextRequest) {
         pdf_storage_path: pdfPath,
         user_api_key: apiKey,
         email,
+        model: model || undefined,
       }),
     });
 
@@ -97,9 +111,9 @@ export async function POST(request: NextRequest) {
 
   // Send confirmation email
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://coarse.ai";
-  if (resend) {
-    await resend.emails.send({
-      from: "coarse <reviews@coarse.ai>",
+  if (mailer) {
+    await mailer.sendMail({
+      from: `coarse <${process.env.GMAIL_USER}>`,
       to: email,
       subject: `Your paper "${pdf.name}" is being reviewed`,
       html: [

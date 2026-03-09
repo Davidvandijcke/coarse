@@ -45,7 +45,7 @@ export const papers: Record<PaperId, PaperData> = {
     comparisons: {
       refine: { content: readFile(path.join(cosetDir, "reference_review.md")), pdfPath: null },
       stanford: { content: readFile(path.join(cosetDir, "reference_review_stanford.md")), pdfPath: null },
-      reviewer3: { content: null, pdfPath: "/compare/reviewer3.pdf" },
+      reviewer3: { content: readFile(path.join(cosetDir, "review_reviewer3.md")), pdfPath: null },
     },
   },
   targeting_interventions: {
@@ -58,7 +58,7 @@ export const papers: Record<PaperId, PaperData> = {
     comparisons: {
       refine: { content: readFile(path.join(targetDir, "reference_review.md")), pdfPath: null },
       stanford: { content: readFile(path.join(targetDir, "reference_review_stanford.md")), pdfPath: null },
-      reviewer3: { content: null, pdfPath: "/compare/targeting_reviewer3.pdf" },
+      reviewer3: { content: readFile(path.join(targetDir, "reviewer3_review.md")), pdfPath: null },
     },
   },
 };

@@ -234,6 +234,23 @@ body::after {
 .review-content .katex { font-size: 1em; }
 .review-content .katex-display { margin: 1rem 0; overflow-x: auto; overflow-y: hidden; }
 
+/* ── Review page: hide sidebar on mobile ───────────────────── */
+@media (max-width: 768px) {
+  .review-sidebar { display: none !important; }
+  .review-main { max-width: 100% !important; }
+}
+
+/* ── Print styles ──────────────────────────────────────────── */
+@media print {
+  body, html { background: white !important; color: #111 !important; }
+  body::after { display: none !important; }
+  .review-sidebar, .review-header, .page-marks { display: none !important; }
+  .review-main { max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
+  .review-content { color: #111 !important; }
+  .review-content blockquote { border-left-color: #888 !important; color: #555 !important; background: #f5f5f5 !important; }
+  .review-content h2, .review-content h3 { color: #111 !important; border-bottom-color: #ccc !important; }
+}
+
 /* ── Compare page mobile override ──────────────────────────── */
 @media (max-width: 768px) {
   .compare-root {

@@ -8,17 +8,14 @@ Deploy:  modal deploy deploy/modal_worker.py
 Secrets: Create in Modal dashboard:
   coarse-supabase     SUPABASE_URL, SUPABASE_SERVICE_KEY
   coarse-webhook      MODAL_WEBHOOK_SECRET
-Optional (add later for email notifications / operator-provided API keys):
-  coarse-resend       RESEND_API_KEY, SITE_URL
-  coarse-openrouter   OPENROUTER_API_KEY (fallback if no user key provided)
-  coarse-mistral      MISTRAL_API_KEY
-  coarse-gemini       GEMINI_API_KEY
+  coarse-gmail        GMAIL_USER, GMAIL_APP_PASSWORD
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 import modal
+from pydantic import BaseModel
 
 app = modal.App("coarse-review")
 
@@ -37,12 +34,42 @@ image = (
         "pymupdf>=1.24",
         "python-dotenv>=1.0",
         "supabase>=2.0",
-        "resend>=0.6",
         "requests>=2.31",
         "fastapi[standard]",
     )
     .add_local_dir(_repo_root / "src" / "coarse", remote_path="/root/coarse")
 )
+
+
+def _send_email(to: str, subject: str, html: str) -> None:
+    """Send email via Gmail SMTP. No-op if credentials are missing."""
+    import os
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    user = os.environ.get("GMAIL_USER")
+    password = os.environ.get("GMAIL_APP_PASSWORD")
+    if not user or not password:
+        return
+
+    msg = MIMEMultipart("alternative")
+    msg["From"] = f"coarse <{user}>"
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.attach(MIMEText(html, "html"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(user, password)
+        server.send_message(msg)
+
+
+class ReviewRequest(BaseModel):
+    job_id: str
+    pdf_storage_path: str
+    user_api_key: str | None = None
+    email: str | None = None
+    model: str | None = None
 
 
 @app.function(
@@ -52,36 +79,29 @@ image = (
     secrets=[
         modal.Secret.from_name("coarse-supabase"),
         modal.Secret.from_name("coarse-webhook"),
+        modal.Secret.from_name("coarse-gmail"),
     ],
 )
 @modal.fastapi_endpoint(method="POST")
-def run_review(
-    job_id: str,
-    pdf_storage_path: str,
-    user_api_key: str | None = None,
-    email: str | None = None,
-):
-    """Run a paper review for a web submission.
-
-    Args:
-        job_id: UUID of the review record in Supabase.
-        pdf_storage_path: Path to the PDF in Supabase Storage (e.g., "{job_id}.pdf").
-        user_api_key: User's OpenRouter API key. Required — we don't cover costs.
-        email: User's email for completion notification.
-    """
+def run_review(req: ReviewRequest):
+    """Run a paper review for a web submission."""
     import os
     import tempfile
     import time
     from datetime import datetime, timezone
 
-    import resend
     from supabase import create_client
+
+    job_id = req.job_id
+    pdf_storage_path = req.pdf_storage_path
+    user_api_key = req.user_api_key
+    email = req.email
+    model = req.model
 
     supabase_url = os.environ["SUPABASE_URL"]
     supabase_key = os.environ["SUPABASE_SERVICE_KEY"]
     db = create_client(supabase_url, supabase_key)
 
-    resend.api_key = os.environ.get("RESEND_API_KEY", "")
     site_url = os.environ.get("SITE_URL", "https://coarse.ai")
 
     # Update status to running
@@ -108,7 +128,7 @@ def run_review(
 
         config = CoarseConfig(use_coding_agents=False, extraction_qa=True)
         review, markdown, _paper_text = review_paper(
-            pdf_path, skip_cost_gate=True, config=config
+            pdf_path, model=model, skip_cost_gate=True, config=config
         )
 
         duration = int(time.time() - start)
@@ -123,19 +143,18 @@ def run_review(
         }).eq("id", job_id).execute()
 
         # Send completion email
-        if email and resend.api_key:
-            resend.Emails.send({
-                "from": "coarse <reviews@coarse.ai>",
-                "to": email,
-                "subject": "Your paper review is ready",
-                "html": (
+        if email:
+            _send_email(
+                to=email,
+                subject="Your paper review is ready",
+                html=(
                     f"<p>Your review is ready.</p>"
                     f'<p><a href="{site_url}/review/{job_id}">View your review →</a></p>'
                     f"<p><strong>Review key:</strong> <code>{job_id}</code><br>"
                     f"Save this key to return to your review later.</p>"
                     f"<p>— coarse</p>"
                 ),
-            })
+            )
 
     except Exception as e:
         duration = int(time.time() - start)

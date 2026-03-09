@@ -1,0 +1,73 @@
+# Study Design Reviewer Feedback
+
+The manuscript presents a rigorous mean-field analysis of a cortical network model, proposing that a "balanced state" of excitation and inhibition explains the temporal irregularity observed in vivo. While the theoretical derivation of the balanced state is compelling, further validation of the model's dynamic stability and functional claims—specifically regarding tracking speed and robustness against biological constraints—is required to fully support the conclusions.
+
+# Comments
+
+1. Confounding of Neuron Model and Network Architecture in Tracking Analysis In Section 9 (Figures 14 and 15), the authors attribute the "fast tracking" capability to the balanced network architecture. However, the control comparison is made against an "unbalanced network of threshold linear neurons." This introduces a confounding variable: the single-unit dynamics (binary vs. threshold-linear). Binary neurons have an inherently faster (instantaneous) state switch compared to linear integrators. To logically support the claim that the balanced state (and not the binary neuron model) is responsible for the fast tracking, I recommend performing a control simulation using an unbalanced network composed of the same binary units used in the primary model, or conversely, a balanced network of threshold-linear units.
+
+2. **Missing Control for Synaptic Delays** The study relies on instantaneous interactions (or Poisson update steps) to demonstrate the stability of the asynchronous chaotic state. However, the proposed mechanism involves strong inhibitory feedback ($O(\sqrt{K})$). In control theory, systems with high gain and negative feedback are extremely sensitive to time delays, which often induce global oscillations (synchrony). Since biological circuits possess finite transmission delays, the absence of delays in the model may artificially stabilize the asynchronous state. I suggest adding a simulation that includes realistic synaptic delays to determine if the "asynchronous" nature of the balanced state is robust or if it collapses into synchronous oscillations.
+
+3. **Validation of Correlation Scaling** The authors claim in Section 10.1 that the state is "asynchronous" because spatial cross-correlations are weak and vanish in the limit of large network size ($N$). While this is stated theoretically, it is not empirically demonstrated in the simulation results. To substantiate this major claim, I recommend providing a quantitative analysis (e.g., a plot) showing the scaling of the average cross-correlation coefficient as a function of network size ($N$). If correlations do not decrease as $1/N$ (or similar), the claim of an asynchronous state in the thermodynamic limit may need revision.
+
+<!-- PAGE BREAK -->
+
+4. Sensitivity of Rate Distributions to Threshold Assumptions In Section 7 (Figure 11), the authors argue that the model reproduces the skewed, long-tailed firing rate distributions observed in experiments. However, the simulation assumes a specific Gaussian or bounded distribution of local thresholds. It is unclear whether the resulting log-normal-like rate distribution is a fundamental property of the balanced state or merely a transformation of the specific input heterogeneity chosen. I recommend testing the model against a different distribution of local thresholds (e.g., a bimodal or highly peaked distribution) to demonstrate whether the skewed output rate distribution is a robust feature of the network dynamics or a direct reflection of the parameter choice.
+
+5. Comparison of Tracking Speed in Weak vs. Strong Coupling Regimes The discussion argues that the "Strong Synapse" scaling ( $1 / \sqrt{K}$ ) is distinct from "Weak Synapse" scaling ( $1 / K$ ) and implies functional advantages. However, the functional advantage of fast tracking (Section 9) is not explicitly tested against the weak synapse scenario. It is possible that the fast tracking is simply a result of the large number of inputs, regardless of the precise scaling balance. I suggest repeating the tracking simulation (Figure 13 or 14) using the "Weak Synapse" scaling parameters to explicitly demonstrate that the rapid response time is unique to the balanced, strong-coupling regime.
+
+6. Clarification of "Chaos" vs. Discrete State Divergence In Section 8, the chaotic nature of the state is defined by the divergence of trajectories (Lyapunov exponent). Given that the system utilizes discrete binary states, "divergence" can be immediate and saturated simply due to a single bit-flip, which differs from the standard definition of chaos in continuous systems. The authors should clarify if the calculated divergence rate scales with the system size or update frequency in a way that implies true dynamic instability rather than stochastic switching inherent to the update rule. A control calculation using a continuous-variable approximation (e.g., rate model) would strengthen the claim that this is dynamic chaos.
+
+# Reproducibility Reviewer Feedback
+
+The manuscript presents a rigorous mean-field analysis of a network model exhibiting a "balanced state," offering significant theoretical insights into the origins of irregular firing in cortical circuits. However, to meet the standards of reproducibility and statistical robustness required for a high-impact publication, the manuscript requires more explicit reporting of simulation parameters, code availability, and quantitative validation of the fit between theoretical predictions and numerical results.
+
+# Comments
+
+<!-- PAGE BREAK -->
+
+1. Missing simulation parameters and statistical reporting. While the analytical derivations are detailed, the descriptions of the numerical simulations used to validate these derivations (Figures 3–17) lack critical details necessary for replication. Specifically:
+
+- The total network size ($N$) is frequently omitted, with the text often referring only to the connectivity index $K$ (e.g., $K = 1000$). Please explicitly state $N$ (or the ratio $N/K$) for every simulation figure to allow assessment of finite-size effects.
+- The duration of the simulations and the specific time-step resolution (or update schedule details for the deterministic cases) must be reported.
+- Please clarify whether the data points and traces in the figures represent single simulation realizations or averages over multiple trials. If they are single realizations, please provide evidence (e.g., variance or error bars from multiple seeds) that these are representative of the general system behavior.
+
+2. Code and Data Availability. Given that the core findings rely on specific computational implementations of binary networks with sparse connectivity and specific update rules (stochastic vs. deterministic), the absence of a code availability statement is a critical gap. Please provide a link to a permanent repository (e.g., GitHub, Zenodo) containing the code used to generate the figures and the Lyapunov exponent calculations. This is essential to verify the implementation of the "infinitesimal" perturbation method described in Section 8.3.
+
+3. Quantitative assessment of goodness-of-fit. In several instances, the manuscript relies on visual inspection to claim agreement between the mean-field theory and numerical simulations. For example:
+
+- Figure 7 (Interspike Interval Distribution): The text states the theoretical curve is a "very good approximation." Please quantify this fit using a statistical metric (e.g., Kolmogorov-Smirnov test or Kullback-Leibler divergence) rather than visual overlay alone.
+- Figure 11 (Rate Distributions): Similarly, please provide a quantitative measure of the agreement between the theoretical density (Eq. 7.12/7.17) and the numerical histograms.
+
+4. Confounded benchmarking in tracking experiments. In Section 9 (Figures 14 and 15), the tracking capability of the balanced network is compared against an "unbalanced network." However, the unbalanced network utilizes "threshold linear neurons," whereas the balanced network utilizes binary units. This comparison conflates the network state (balanced vs. unbalanced) with the single-neuron dynamics (binary vs. threshold-linear). To support the claim that the balanced state is responsible for fast tracking, the authors should ideally compare the balanced binary network against an unbalanced binary network (tuned to similar rates if possible), or explicitly discuss how the change in neuron model influences the tracking speed independent of the balance mechanism.
+
+<!-- PAGE BREAK -->
+
+5. Robustness of the Lyapunov Exponent calculation. The calculation of the Lyapunov exponent (Section 8) in a system with discrete states (binary neurons) is methodologically challenging. The text defines a distance metric $D_{k}(t)$ and relies on mean-field assumptions.
+
+- Please clarify if the numerical validation in Figure 12 represents an average over many pairs of trajectories or a single pair.
+- Given the discrete nature of the units, the "infinitesimal" perturbation is effectively a single spin flip. Please demonstrate that the divergence rate is robust across different initial state pairs and not dependent on which specific neuron is perturbed.
+
+6. Clarification of Histogram Binning. For the probability density figures (e.g., Figures 4, 7, 11), please report the bin width and the total number of events/samples used to construct the histograms. This is necessary to assess whether the smoothness of the empirical curves is a result of sufficient sampling or data smoothing techniques.
+
+7. Justification of "Large K" approximation in Finite N simulations. The theory relies on the limit $1 \ll K \ll N$. In the simulations where $K = 1000$, if $N$ is not sufficiently larger than $K$, the sparse connectivity assumption may be violated by finite-size correlations. Please discuss or demonstrate (perhaps in a supplementary figure) how the results scale as the ratio $N / K$ is varied, to ensure the simulations are truly in the regime where the mean-field theory applies.
+
+# Limitations & Context Reviewer Feedback
+
+The manuscript presents a rigorous and potentially transformative mean-field theory describing the emergence of a "balanced state" in cortical networks, offering a compelling deterministic explanation for the irregularity of in vivo neuronal firing. However, to ensure the findings are properly contextualized within the broader scope of cortical physiology, the authors should address specific limitations regarding the biological plausibility of the scaling assumptions and the simplified neuron model.
+
+# Comments
+
+1. Biological Plausibility of Synaptic Scaling: A central mathematical tenet of the proposed model is that synaptic connection strengths scale as  $1 / \sqrt{K}$  (where  $K$  is the number of connections). While this scaling is essential for the mean-field solution to remain non-trivial in the limit of large  $K$ , the authors should explicitly discuss the biological realism of this assumption. Specifically, does this scaling imply that for realistic cortical connectivity numbers (where  $K$  is large but finite), the unitary postsynaptic potentials would be unphysiologically large? A discussion on the range of  $K$  for which this approximation holds without violating physiological constraints on synaptic efficacy would strengthen the model's applicability.
+
+<!-- PAGE BREAK -->
+
+2. Limitations of Current-Based Binary Models: The study utilizes binary neurons with current-based synaptic summation. However, in biological cortex, synaptic inputs act as conductance changes, which effectively alter the membrane time constant and reduce the driving force as the potential approaches the reversal potential (shunting inhibition). The authors should discuss how the "balanced state" and, crucially, the "fast tracking" capabilities might be altered in a conductance-based model. Does the decrease in effective membrane time constant during high-conductance states facilitate the fast tracking observed here, or does the shunting effect introduce non-linearities that complicate the linear response derived in Equation 4.3?
+
+3. Generalizability to Spatially Structured Networks: The model assumes sparse, random connectivity. However, cortical circuits exhibit significant spatial structure (e.g., distance-dependent connectivity, columnar organization). The authors claim that the balanced state is accompanied by weak spatial cross-correlations that vanish in the large $N$ limit. The discussion should address whether this asynchronous state is expected to persist in networks with local spatial clustering, or if such structure would induce non-vanishing correlations that undermine the mean-field assumptions.
+
+4. Contextualization of "Chaos" in Discrete Systems: The characterization of the state as "chaotic" relies on the divergence of trajectories in a system with discrete degrees of freedom (binary states). While the authors address this by examining the large $N$ limit and "infinitesimal" perturbations via the two-network method (Section 8), they should discuss the limitations of this definition for finite-size biological networks. Specifically, how does the "infinitely high microscopic gain" described in the large $N$ limit translate to finite networks where the gain is bounded?
+
+5. Robustness of Rate Distributions: The manuscript shows that inhomogeneous thresholds lead to skewed, long-tailed rate distributions (Figure 11), which aligns well with experimental data. However, the authors should clarify if this result is specific to the choice of a Gaussian or unbounded threshold distribution. It would be beneficial to discuss whether other sources of heterogeneity (e.g., heterogeneity in the number of inputs $K$ per neuron, or variance in synaptic weights $J$) would produce similar skewed rate distributions, or if the result is uniquely sensitive to threshold variance.
+
+6. Interaction with Short-Term Plasticity: In Section 10.4, the authors briefly mention synaptic depression and facilitation. Given the paper's strong claim regarding the network's ability to "fast track" time-dependent inputs, the authors should expand the discussion on how short-term synaptic dynamics might interfere with this tracking. Specifically, would synaptic depression act as a temporal filter that degrades the network's ability to track high-frequency changes in external input, thereby limiting the functional bandwidth suggested by the static-synapse model?

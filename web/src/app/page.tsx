@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { useRouter } from "next/navigation";
 import { CharcoalRule, HeroMarks } from "@/components/charcoal";
+import ModelPicker from "@/components/ModelPicker";
 
 /* ── Split-flap AI name display ────────────────────────────── */
 const AI_NAMES = ["Claude,", "Gemini,", "Qwen,", "ChatGPT,", "DeepSeek,", "Kimi,", "Grok,", "MiniMax,", "Mistral,", "Llama,"];
@@ -159,6 +160,7 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState("anthropic/claude-sonnet-4-6");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lookupKey, setLookupKey] = useState("");
@@ -184,6 +186,7 @@ export default function Home() {
       form.append("pdf", file);
       form.append("email", email);
       form.append("api_key", apiKey);
+      form.append("model", model);
       const resp = await fetch("/api/submit", { method: "POST", body: form });
       if (!resp.ok) {
         const data = await resp.json();
@@ -510,6 +513,9 @@ export default function Home() {
                 </p>
               </div>
             </div>
+
+            {/* Model picker */}
+            <ModelPicker value={model} onChange={setModel} />
 
             {error && (
               <div
