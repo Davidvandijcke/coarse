@@ -175,7 +175,7 @@ def test_assumption_check_system_has_four_steps():
 
 
 def test_assumption_check_system_lists_common_mismatches():
-    for pattern in ("i.i.d.", "panel", "continuity", "discrete", "stationarity"):
+    for pattern in ("panel", "cross-section", "assumption"):
         assert pattern.lower() in ASSUMPTION_CHECK_SYSTEM.lower()
 
 

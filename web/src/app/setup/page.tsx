@@ -486,8 +486,161 @@ export default function SetupPage() {
             </ChalkSketch>
           </Step>
 
-          {/* Step 4 */}
-          <Step number={4} title="Paste into coarse">
+          {/* Step 4 — Per-key spend limit */}
+          <Step number={4} title="Set a spending limit on the key">
+            <p
+              style={{
+                fontFamily: "Georgia, serif",
+                fontSize: "0.9375rem",
+                lineHeight: 1.7,
+                color: "var(--chalk)",
+                margin: "0 0 0.75rem",
+              }}
+            >
+              On the{" "}
+              <a
+                href="https://openrouter.ai/settings/keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: "var(--blue-chalk)",
+                  textDecoration: "underline",
+                  textUnderlineOffset: "2px",
+                }}
+              >
+                Keys page
+              </a>
+              , click the{" "}
+              <strong style={{ color: "var(--chalk-bright)" }}>&#8942;</strong>
+              {" "}menu next to your new key and choose &ldquo;Edit&rdquo;. Set a
+              credit limit (e.g. $5). The key stops working once the limit is
+              hit — zero risk of surprise charges.
+            </p>
+
+            <ChalkSketch annotation="key menu">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <MockLabel>coarse</MockLabel>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-space-mono), monospace",
+                      fontSize: "0.85rem",
+                      color: "var(--dust)",
+                    }}
+                  >
+                    sk-or-v1-abc...def
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-chalk)",
+                      fontSize: "1.25rem",
+                      color: "var(--chalk)",
+                      cursor: "pointer",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    &#8942;
+                  </span>
+                  <div
+                    style={{
+                      background: "var(--board-surface)",
+                      border: "1px solid var(--tray)",
+                      borderRadius: "2px",
+                      padding: "0.25rem 0",
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: "0.35rem 0.75rem",
+                        fontFamily: "var(--font-chalk)",
+                        fontSize: "0.9rem",
+                        color: "var(--yellow-chalk)",
+                      }}
+                    >
+                      Edit
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style={{ marginTop: "1rem" }}>
+                <MockLabel>Credit limit for this key</MockLabel>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "1rem",
+                    marginTop: "0.25rem",
+                  }}
+                >
+                  <div
+                    style={{
+                      borderBottom: "1px solid var(--yellow-chalk)",
+                      padding: "0.375rem 0",
+                      fontFamily: "var(--font-space-mono), monospace",
+                      fontSize: "0.9rem",
+                      color: "var(--yellow-chalk)",
+                      width: "80px",
+                    }}
+                  >
+                    $5.00
+                  </div>
+                  <MockButton highlight>Save</MockButton>
+                </div>
+              </div>
+            </ChalkSketch>
+
+            <div
+              style={{
+                marginTop: "1rem",
+                padding: "0.75rem 1rem",
+                background: "rgba(123, 167, 188, 0.06)",
+                borderLeft: "3px solid var(--blue-chalk)",
+                borderRadius: "0 2px 2px 0",
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: "Georgia, serif",
+                  fontSize: "0.875rem",
+                  lineHeight: 1.6,
+                  color: "var(--chalk)",
+                  margin: 0,
+                }}
+              >
+                <strong style={{ color: "var(--chalk-bright)" }}>
+                  Why this matters:
+                </strong>{" "}
+                coarse is open-source — you can{" "}
+                <a
+                  href="https://github.com/Davidvandijcke/coarse"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "var(--blue-chalk)",
+                    textDecoration: "underline",
+                    textUnderlineOffset: "2px",
+                  }}
+                >
+                  read every line of code
+                </a>
+                . Your key is sent directly to OpenRouter to run the review, then
+                discarded — it is never stored. But you don&apos;t have to trust
+                us: the per-key limit guarantees it can never spend more than you
+                allow, even in the worst case.
+              </p>
+            </div>
+          </Step>
+
+          {/* Step 5 */}
+          <Step number={5} title="Paste into coarse">
             <p
               style={{
                 fontFamily: "Georgia, serif",

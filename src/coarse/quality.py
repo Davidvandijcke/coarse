@@ -136,6 +136,7 @@ def evaluate_review(
     client: LLMClient | None = None,
     paper_text: str = "",
     model: str = QUALITY_MODEL,
+    max_tokens: int = 16384,
 ) -> QualityReport:
     """LLM-judge evaluation of a generated review against a reference.
 
@@ -156,7 +157,7 @@ def evaluate_review(
         {"role": "user", "content": _judge_user(reference, generated, paper_text)},
     ]
 
-    result: _JudgeOutput = client.complete(messages, _JudgeOutput, max_tokens=4096)
+    result: _JudgeOutput = client.complete(messages, _JudgeOutput, max_tokens=max_tokens)
 
     overall_score = sum(d.score for d in result.dimensions) / len(result.dimensions)
 

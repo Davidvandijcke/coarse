@@ -438,12 +438,11 @@ For example, if the paper claims a change-of-variables yields expression X, perf
 the change-of-variables yourself and verify you get X. If you get something different, \
 that is an error worth reporting.
 3. CHECK for specific error types:
-   - Sign errors or missing factors (e.g., a missing Jacobian determinant, wrong exponent)
-   - Subscript/index errors (e.g., K/N_k where it should be K/N_l)
+   - Sign errors or missing factors 
+   - Subscript/index errors 
    - Equations that contradict the paper's own definitions from earlier sections
    - Boundary/degenerate cases the proof does not handle
-   - Numerical values that do not match (e.g., paper claims tau_L > tau_G but the \
-stated values show the opposite)
+   - Numerical values that do not match
 4. CROSS-REFERENCE: Check that notation and definitions used here match how they \
 were defined elsewhere in the paper. Flag any inconsistency.
 5. SUBSTITUTE concrete values from the paper's own examples, tables, or simulations \
@@ -759,13 +758,6 @@ applied before estimation.
 
 **STEP 3 — Cross-check each assumption against the data.**
 For each assumption from Step 1, check whether the data from Step 2 satisfies it. \
-Pay special attention to these common mismatch patterns:
-- i.i.d. assumption vs panel/clustered/repeated-measures data
-- Continuity/smoothness assumption vs discrete running variable or outcome
-- Random sampling vs observational/administrative data
-- Stationarity vs trending or structural-break data
-- Asymptotic rate requirements vs actual sample size
-- Independence across units vs spatial or network dependence
 
 **STEP 4 — Evaluate defenses.**
 If the paper acknowledges a mismatch and offers a justification (e.g. clustering \

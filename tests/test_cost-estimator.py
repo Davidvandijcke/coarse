@@ -33,10 +33,8 @@ def test_build_cost_estimate_returns_all_stages():
     assert len(section_stages) == 8
     assert "extraction_qa" in names
     assert "pdf_extraction" in names
-    # Coding agent stages included by default (use_coding_agents=True):
-    # coding_section_1..3 + coding_critique = 4 extra
-    # Total: pdf_extraction + metadata + overview + 8 sections + crossref + critique + extraction_qa + 4 coding = 18
-    assert len(estimate.stages) == 18
+    # Total: pdf_extraction + metadata + overview + 8 sections + crossref + critique + extraction_qa = 14
+    assert len(estimate.stages) == 14
 
 
 def test_build_cost_estimate_zero_cost_unknown_model():

@@ -170,7 +170,7 @@ export default function StatusPage() {
               }}
             >
               {isRunning
-                ? "Running the review pipeline. Usually 1–3 minutes."
+                ? "Running the review pipeline (usually 30–60 minutes)."
                 : "Your review is queued and will start shortly."}
             </p>
 

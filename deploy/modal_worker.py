@@ -74,7 +74,7 @@ class ReviewRequest(BaseModel):
 
 @app.function(
     image=image,
-    timeout=600,
+    timeout=3600,
     memory=512,
     secrets=[
         modal.Secret.from_name("coarse-supabase"),

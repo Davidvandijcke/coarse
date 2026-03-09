@@ -82,10 +82,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to upload PDF" }, { status: 500 });
   }
 
-  // Trigger Modal worker
+  // Trigger Modal worker (fire-and-forget — the worker updates Supabase directly)
   const modalUrl = process.env.MODAL_FUNCTION_URL;
   if (modalUrl) {
-    const resp = await fetch(modalUrl, {
+    fetch(modalUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -98,15 +98,13 @@ export async function POST(request: NextRequest) {
         email,
         model: model || undefined,
       }),
-    });
-
-    if (!resp.ok) {
-      await supabaseAdmin
+    }).catch(() => {
+      // Worker failed to start — mark as failed in background
+      supabaseAdmin
         .from("reviews")
         .update({ status: "failed", error_message: "Failed to start review worker" })
         .eq("id", id);
-      return NextResponse.json({ error: "Failed to start review" }, { status: 502 });
-    }
+    });
   }
 
   // Send confirmation email
@@ -118,7 +116,7 @@ export async function POST(request: NextRequest) {
       subject: `Your paper "${pdf.name}" is being reviewed`,
       html: [
         `<p>Hi,</p>`,
-        `<p>Your paper <strong>${pdf.name}</strong> is being reviewed. We'll email you when it's done (usually 1–3 minutes).</p>`,
+        `<p>Your paper <strong>${pdf.name}</strong> is being reviewed. We'll email you when it's done (usually 30–60 minutes).</p>`,
         `<p>Track progress: <a href="${siteUrl}/status/${id}">${siteUrl}/status/${id}</a></p>`,
         `<p><strong>Save your review key:</strong> <code>${id}</code></p>`,
         `<p>— coarse</p>`,

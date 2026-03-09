@@ -1,14 +1,11 @@
 # coarse
 
-[![CI](https://github.com/Davidvandijcke/coarse/actions/workflows/ci.yml/badge.svg)](https://github.com/Davidvandijcke/coarse/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/coarse)](https://pypi.org/project/coarse/)
-[![Python](https://img.shields.io/pypi/pyversions/coarse)](https://pypi.org/project/coarse/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/github/license/Davidvandijcke/coarse)](LICENSE)
 
-Free, open-source AI academic paper reviewer. The rough alternative to refine.ink.
+Free, open-source AI academic paper reviewer that outperforms popular paid AI reviewers.
 
-You provide your own API key and pay the LLM provider directly — typically **$2-5 per review**
-vs refine.ink's ~$50.
+You provide your own API key and pay the LLM provider directly — typically **under $1 per review**.
 
 ## Quickstart
 
@@ -117,8 +114,8 @@ coarse estimates cost before running and asks for confirmation.
 
 | Paper length    | Typical cost  |
 |-----------------|---------------|
-| Short (< 20pp)  | $1 - $2       |
-| Long (30+ pp)   | $2 - $5       |
+| Short (< 20pp)  | $0.25 - $0.50 |
+| Long (30+ pp)   | $0.50 - $1    |
 
 The default spending cap is **$10 per review** (`max_cost_usd` in config). Use `--yes` to skip the
 confirmation prompt. Use `--no-qa` to skip the post-extraction quality check (vision LLM).
@@ -126,7 +123,7 @@ Scanned PDFs are supported via Docling's built-in OCR (`pip install coarse[docli
 
 ## Output format
 
-The review is written as a markdown file matching the refine.ink format:
+The review is written as a structured markdown file:
 
 ```
 # Paper Title

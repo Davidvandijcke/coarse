@@ -170,7 +170,7 @@ export default function ReviewPage() {
             }}
           >
             {review.status === "running"
-              ? "Usually 1\u20133 minutes. This page updates automatically."
+              ? "Usually 30\u201360 minutes. This page updates automatically."
               : "Processing begins shortly."}
           </p>
         </div>

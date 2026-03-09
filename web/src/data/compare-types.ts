@@ -8,11 +8,11 @@ export type QualityScores = {
 
 export type ModelId = "claude" | "kimi" | "qwen";
 export type ComparisonId = "refine" | "stanford" | "reviewer3";
-export type PaperId = "coset_codes" | "targeting_interventions";
+export type PaperId = "cortical_circuits" | "coset_codes" | "population_genetics" | "targeting_interventions";
 
 export type ModelEntry = {
   review: string;
-  scores: QualityScores;
+  scores: Record<ComparisonId, QualityScores>;
 };
 
 export type ComparisonEntry = {
@@ -22,6 +22,7 @@ export type ComparisonEntry = {
 
 export type PaperData = {
   title: string;
+  citation: string;
   pdfPath: string;
   models: Partial<Record<ModelId, ModelEntry>>;
   comparisons: Record<ComparisonId, ComparisonEntry>;
@@ -37,4 +38,10 @@ export const COMPARISON_LABELS: Record<ComparisonId, string> = {
   refine: "refine.ink",
   stanford: "Stanford Agentic",
   reviewer3: "Reviewer 3",
+};
+
+export const COMPARISON_URLS: Record<ComparisonId, string> = {
+  refine: "https://refine.ink",
+  stanford: "https://paperreview.ai",
+  reviewer3: "https://reviewer3.com",
 };
