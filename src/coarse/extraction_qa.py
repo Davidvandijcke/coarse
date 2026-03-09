@@ -123,11 +123,13 @@ def _select_qa_pages(num_pages: int, page_chunks: list[str]) -> list[int]:
     if num_pages <= 5:
         return list(range(1, num_pages + 1))
 
-    # Score each page by complexity (math, tables, short content)
+    # Score each page by complexity (math, tables, short content, garble)
     scored: list[tuple[int, float]] = []
     for i, chunk in enumerate(page_chunks):
         page_num = i + 1
         score = 0.0
+        if "glyph[" in chunk or "formula-not-decoded" in chunk:
+            score += 3.0  # highest priority: garbled formulas
         if "$$" in chunk or "\\begin{" in chunk:
             score += 2.0
         if "|" in chunk and chunk.count("|") > 4:

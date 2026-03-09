@@ -119,20 +119,29 @@ def test_overview_feedback_count_constraint():
 
 # --- DetailedComment ---
 
+_LONG_QUOTE = "This is a verbatim quote from the paper text."
+
+
 def test_detailed_comment_status_default():
-    c = DetailedComment(number=1, title="Issue", quote="Quote text.", feedback="Feedback text.")
+    c = DetailedComment(
+        number=1, title="Issue",
+        quote=_LONG_QUOTE, feedback="Feedback text.",
+    )
     assert c.status == "Pending"
 
 
 def test_detailed_comment_confidence_default():
-    c = DetailedComment(number=1, title="Issue", quote="Quote text.", feedback="Feedback text.")
+    c = DetailedComment(
+        number=1, title="Issue",
+        quote=_LONG_QUOTE, feedback="Feedback text.",
+    )
     assert c.confidence == "medium"
 
 
 def test_detailed_comment_confidence_values():
     for conf in ("high", "medium", "low"):
         c = DetailedComment(
-            number=1, title="Issue", quote="Quote text.",
+            number=1, title="Issue", quote=_LONG_QUOTE,
             feedback="Feedback text.", confidence=conf,
         )
         assert c.confidence == conf
@@ -142,7 +151,7 @@ def test_detailed_comment_confidence_invalid():
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
         DetailedComment(
-            number=1, title="Issue", quote="Quote text.",
+            number=1, title="Issue", quote=_LONG_QUOTE,
             feedback="Feedback text.", confidence="very_high",
         )
 
@@ -162,7 +171,7 @@ def test_detailed_comment_status_invalid():
         DetailedComment(
             number=1,
             title="Issue",
-            quote="Quote text.",
+            quote=_LONG_QUOTE,
             feedback="Feedback text.",
             status="Approved",  # type: ignore[arg-type]
         )
@@ -188,3 +197,27 @@ def test_cost_estimate_total_matches_sum():
     total = sum(s.estimated_cost_usd for s in stages)
     est = CostEstimate(stages=stages, total_cost_usd=total)
     assert math.isclose(est.total_cost_usd, 0.06, rel_tol=1e-9)
+
+
+# --- Quote min_length ---
+
+def test_detailed_comment_rejects_short_quote():
+    """Quotes shorter than 20 characters should be rejected by Pydantic validation."""
+    with pytest.raises(ValidationError):
+        DetailedComment(
+            number=1,
+            title="Issue",
+            quote="Too short.",
+            feedback="Feedback text.",
+        )
+
+
+def test_detailed_comment_accepts_long_quote():
+    """Quotes with 20+ characters should be accepted."""
+    c = DetailedComment(
+        number=1,
+        title="Issue",
+        quote="This is a sufficiently long quote from the paper.",
+        feedback="Feedback text.",
+    )
+    assert len(c.quote) >= 20

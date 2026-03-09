@@ -53,6 +53,52 @@ _TYPE_KEYWORDS: dict[str, SectionType] = {
 # Regex for markdown headings: # through ####
 _HEADING_RE = re.compile(r"^(#{1,4})\s+(.+)$", re.MULTILINE)
 
+# Regex to detect a formal statement header at the start of a paragraph
+_FORMAL_HEADER_RE = re.compile(
+    r"\*{0,2}"
+    r"\b(Theorem|Lemma|Proposition|Corollary|Claim|Result"
+    r"|Definition|Assumption|Condition|Axiom|Conjecture|Hypothesis)\b"
+    r"\s*\*{0,2}"
+    r"\s*"
+    r"([A-Z]?\d*[a-z]?(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+
+
+def _extract_claims_and_definitions(text: str) -> tuple[list[str], list[str]]:
+    """Extract formal claims and definitions from section text via regex.
+
+    Splits text into paragraphs, finds formal statement headers, and
+    extracts the statement body. Zero LLM cost — pure regex extraction.
+    Returns (claims, definitions).
+    """
+    claims: list[str] = []
+    definitions: list[str] = []
+
+    paragraphs = re.split(r"\n\s*\n", text)
+    for para in paragraphs:
+        m = _FORMAL_HEADER_RE.search(para)
+        if not m:
+            continue
+
+        kind = m.group(1).lower()
+        label = m.group(2).strip()
+
+        # Statement = everything after the header in this paragraph
+        statement = para[m.end():].strip()
+        # Strip leading punctuation, bold markers, whitespace
+        statement = re.sub(r"^[.*:)\s]+", "", statement)
+
+        short = statement[:200] + ("..." if len(statement) > 200 else "")
+        entry = f"{m.group(1)} {label}: {short}".strip()
+
+        if kind in ("definition", "axiom"):
+            definitions.append(entry)
+        else:
+            claims.append(entry)
+
+    return claims, definitions
+
 
 def analyze_structure(paper_text: PaperText, client: LLMClient) -> PaperStructure:
     """Extract paper structure by parsing markdown headings + cheap LLM metadata call.
@@ -108,12 +154,15 @@ def _parse_sections_from_markdown(markdown: str) -> list[SectionInfo]:
         number: int | float | str = i + 1
 
         section_type = _classify_section_type(title)
+        sec_claims, sec_defs = _extract_claims_and_definitions(text)
 
         sections.append(SectionInfo(
             number=number,
             title=title,
             text=text,
             section_type=section_type,
+            claims=sec_claims,
+            definitions=sec_defs,
         ))
 
     return sections

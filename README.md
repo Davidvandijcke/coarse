@@ -1,39 +1,72 @@
 # coarse
 
+[![CI](https://github.com/Davidvandijcke/coarse/actions/workflows/ci.yml/badge.svg)](https://github.com/Davidvandijcke/coarse/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/coarse)](https://pypi.org/project/coarse/)
+[![Python](https://img.shields.io/pypi/pyversions/coarse)](https://pypi.org/project/coarse/)
+[![License](https://img.shields.io/github/license/Davidvandijcke/coarse)](LICENSE)
+
 Free, open-source AI academic paper reviewer. The rough alternative to refine.ink.
 
 You provide your own API key and pay the LLM provider directly — typically **$2-5 per review**
 vs refine.ink's ~$50.
 
-## Install
-
-```bash
-pip install coarse
-```
-
-```bash
-pipx install coarse
-```
-
-```bash
-uvx coarse paper.pdf
-```
-
 ## Quickstart
 
-Configure your API key once:
+Get an API key from [OpenRouter](https://openrouter.ai/keys) (free to sign up), then:
 
 ```bash
-coarse setup
+uvx coarse review paper.pdf --api-key sk-or-v1-YOUR_KEY
 ```
 
-Review a paper:
+That's it. The review is written to `paper_review.md` in the current directory.
+
+### Prerequisites
+
+coarse requires Python 3.12+. If you don't have `uvx`, install [uv](https://docs.astral.sh/uv/) first:
 
 ```bash
-coarse review paper.pdf
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-The review is written to `paper_review.md` in the current directory.
+`uvx` runs coarse in a temporary environment with no permanent install. To install permanently:
+
+```bash
+uv tool install coarse    # or: pip install coarse
+```
+
+### Save your API key
+
+To avoid passing `--api-key` every time, create a `.env` file in your working directory:
+
+```
+OPENROUTER_API_KEY=sk-or-v1-YOUR_KEY
+```
+
+Or run `coarse setup` to store keys in `~/.coarse/config.toml`.
+
+## How it works
+
+```
+paper.pdf
+  -> Mistral OCR (Docling fallback)      Extract text as markdown
+  -> Vision LLM spot-check               Optional quality check
+  -> Structure analysis                   Parse sections, classify domain
+  -> Overview + section agents            Run in parallel: 4-6 macro issues + 15-25 detailed comments
+  -> Cross-reference agent                Deduplicate, validate consistency
+  -> Quote verification                   Fuzzy-match quotes against paper text
+  -> Self-critique agent                  Quality gate, revise weak comments
+  -> Quote re-verification               Fix any quotes garbled during critique
+  -> Synthesis                            Render final paper_review.md
+```
+
+The pipeline extracts text via OCR, classifies the paper's domain and structure, then runs
+multiple review agents in parallel. A cross-reference pass deduplicates comments and a
+self-critique agent acts as a quality gate. All quotes are programmatically verified against
+the source text.
 
 ## Model selection
 
@@ -45,26 +78,26 @@ coarse review paper.pdf --model anthropic/claude-3-5-sonnet-20241022
 coarse review paper.pdf --model gemini/gemini-3-flash
 ```
 
-The default model is `qwen/qwen3.5-plus-02-15` (via OpenRouter). Any model supported by
-[litellm](https://docs.litellm.ai/docs/providers) works here.
+The default model is `qwen/qwen3.5-plus-02-15` routed via [OpenRouter](https://openrouter.ai).
+Any model supported by [litellm](https://docs.litellm.ai/docs/providers) works.
+With only `OPENROUTER_API_KEY` set, all models (including vision QA) route through OpenRouter automatically.
 
 ## API keys
 
-Set the environment variable for your provider before running:
+Only `OPENROUTER_API_KEY` is needed. For direct provider access (lower latency), set the
+provider-specific key instead:
 
-| Provider  | Environment variable  |
-|-----------|-----------------------|
-| OpenAI    | `OPENAI_API_KEY`      |
-| Anthropic | `ANTHROPIC_API_KEY`   |
-| Google    | `GEMINI_API_KEY`      |
-| Google    | `GOOGLE_API_KEY`      |
-| Cohere    | `COHERE_API_KEY`      |
-| Mistral   | `MISTRAL_API_KEY`     |
-| Groq      | `GROQ_API_KEY`        |
-| Together  | `TOGETHER_API_KEY`    |
-| Azure     | `AZURE_API_KEY`       |
-
-Alternatively, run `coarse setup` to store keys in `~/.coarse/config.toml`.
+| Provider   | Environment variable   |
+|------------|------------------------|
+| OpenRouter | `OPENROUTER_API_KEY`   |
+| OpenAI     | `OPENAI_API_KEY`       |
+| Anthropic  | `ANTHROPIC_API_KEY`    |
+| Google     | `GEMINI_API_KEY`       |
+| Mistral    | `MISTRAL_API_KEY`      |
+| Groq       | `GROQ_API_KEY`         |
+| Together   | `TOGETHER_API_KEY`     |
+| Cohere     | `COHERE_API_KEY`       |
+| Azure      | `AZURE_API_KEY`        |
 
 ## Agentic mode
 
@@ -74,7 +107,7 @@ For deeper analysis of proof-heavy, methodology, or results sections, enable cod
 coarse review paper.pdf --agentic
 ```
 
-Coding agents use the [OpenHands SDK](https://github.com/All-Hands-AI/openhands) to autonomously
+Coding agents use the [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) to autonomously
 read the full paper, cross-reference sections, and run Python to verify math. Adds ~$2-3 and takes
 3-10 minutes (vs ~30s for standard mode). Falls back to standard LLM agents on failure.
 
@@ -89,7 +122,7 @@ coarse estimates cost before running and asks for confirmation.
 
 The default spending cap is **$10 per review** (`max_cost_usd` in config). Use `--yes` to skip the
 confirmation prompt. Use `--no-qa` to skip the post-extraction quality check (vision LLM).
-Scanned PDFs are supported via Docling's built-in OCR.
+Scanned PDFs are supported via Docling's built-in OCR (`pip install coarse[docling]`).
 
 ## Output format
 
@@ -141,7 +174,7 @@ Settings are stored in `~/.coarse/config.toml`:
 
 ```toml
 default_model = "qwen/qwen3.5-plus-02-15"
-vision_model = "gemini/gemini-3-flash"
+vision_model = "gemini/gemini-3-flash-preview"
 extraction_qa = true
 max_cost_usd = 10.0
 
@@ -151,6 +184,19 @@ anthropic = "sk-ant-..."
 ```
 
 Run `coarse setup` for an interactive prompt that writes this file.
+
+## Development
+
+```bash
+git clone https://github.com/Davidvandijcke/coarse.git
+cd coarse
+uv sync --extra dev
+uv run pytest tests/ -v
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, project structure, and guidelines.
 
 ## Version
 

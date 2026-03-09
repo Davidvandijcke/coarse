@@ -28,7 +28,11 @@ def _make_review() -> Review:
             issues=[OverviewIssue(title=f"Issue {i}", body=f"Body {i}.") for i in range(1, 5)]
         ),
         detailed_comments=[
-            DetailedComment(number=1, title="Comment 1", quote="Some quote.", feedback="Feedback.")
+            DetailedComment(
+                number=1, title="Comment 1",
+                quote="Some verbatim quote from the paper text.",
+                feedback="Feedback.",
+            )
         ],
     )
 

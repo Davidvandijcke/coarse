@@ -32,10 +32,9 @@ def test_readme_exists_and_nonempty():
 
 
 def test_readme_install_commands_present():
-    """README.md contains the three install commands."""
+    """README.md contains install commands."""
     content = README.read_text(encoding="utf-8")
     assert "pip install coarse" in content
-    assert "pipx install coarse" in content
     assert "uvx coarse" in content
 
 

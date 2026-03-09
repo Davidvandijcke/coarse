@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import difflib
 import logging
-import re
 
 from coarse.types import DetailedComment
 
@@ -16,19 +15,7 @@ logger = logging.getLogger(__name__)
 # Minimum fuzzy match ratio to accept a corrected quote
 _MIN_MATCH_RATIO = 0.70
 
-# Characters that suggest OCR garbling in the matched source passage
-_GARBLE_CHARS = re.compile(
-    r"[\u00ae\u00f5\u00c8\u00c0\u00c1\ufffd\ufffe\uffff]"
-    r"|/C[0-9]{2}"
-)
-
-
-def _passage_garble_score(passage: str) -> float:
-    """Score how garbled a source passage is (0 = clean, higher = more garbled)."""
-    if not passage:
-        return 0.0
-    matches = _GARBLE_CHARS.findall(passage)
-    return len(matches) / max(len(passage), 1)
+from coarse.garble import garble_ratio as _passage_garble_score  # noqa: E402, F401
 
 
 def verify_quotes(

@@ -4,7 +4,6 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from coarse.agents.base import ReviewAgent
-from coarse.llm import LLMClient
 from coarse.prompts import (
     SECTION_SYSTEM,
     SECTION_SYSTEM_MAP,

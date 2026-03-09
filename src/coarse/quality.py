@@ -22,12 +22,12 @@ logger = logging.getLogger(__name__)
 
 class DimensionScore(BaseModel):
     dimension: str
-    score: float  # 1.0-5.0, half-point increments (1, 1.5, 2, ..., 5)
+    score: float  # 1.0-6.0 (5+ means exceeds reference quality)
     reasoning: str
 
 
 class QualityReport(BaseModel):
-    overall_score: float  # 1.0-5.0, weighted average
+    overall_score: float  # 1.0-6.0 (5+ means exceeds reference)
     dimensions: list[DimensionScore]
     strengths: list[str]
     weaknesses: list[str]
@@ -39,26 +39,41 @@ original paper, a reference review written by another reviewer, and a \
 generated review. Your task is to assess the generated review's quality \
 primarily against the paper itself, using the reference for calibration.
 
-Score each dimension from 1.0 (very poor) to 5.0 (excellent) in half-point \
-increments (1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5). Use half-points to \
-distinguish minor issues from major ones — e.g., one truncated quote out of \
-19 is a 4.5, not a 4:
+Score each dimension from 1.0 to 6.0 in half-point increments \
+(1, 1.5, 2, ..., 5, 5.5, 6). Use half-points to distinguish minor issues \
+from major ones — e.g., one truncated quote out of 19 is a 4.5, not a 4.
 
+The scale:
+- 1.0-4.5: Below reference quality (various degrees of deficiency)
+- 5.0: Matches the reference review in quality
+- 5.5: Exceeds the reference — catches valid issues the reference missed, \
+or provides deeper analysis on shared issues
+- 6.0: Substantially exceeds the reference — identifies important errors or \
+insights the reference missed entirely, with stronger evidence and reasoning
+
+Award 5+ scores when the generated review demonstrably surpasses the reference. \
+This is not grade inflation — it requires concrete evidence (e.g., the generated \
+review found a real error the reference overlooked, provided a re-derivation \
+where the reference only noted concern, or identified a cross-section \
+inconsistency the reference missed).
+
+Dimensions:
 1. **coverage**: Does the generated review identify the paper's most important \
 issues? Evaluate this against the paper itself — what are the real strengths, \
 weaknesses, and gaps? The reference review may help calibrate what matters, but \
 it is not the answer key. Credit the generated review fully for finding valid \
 issues the reference missed, and do not penalize it for omitting issues that \
-are minor or debatable. Score 5 if the review catches the paper's major issues, \
-1 if most important issues are missing.
+are minor or debatable.
 2. **specificity**: Are comments precise, with correct verbatim quotes from the \
 paper and actionable guidance? Verify quotes against the paper text. Score 5 if \
 every comment has an accurate quote and clear fix, 1 if comments are vague or \
-quotes are fabricated.
+quotes are fabricated. Score 5+ if quotes are more precise and fixes more \
+concrete than the reference.
 3. **depth**: Is the analysis substantive and technically rigorous? Does it \
 engage with the paper's methodology, proofs, and assumptions at a deep level, \
-or does it stay surface-level (notation complaints, formatting issues)? Score 5 \
-for deep methodological insight, 1 for shallow observations.
+or does it stay surface-level (notation complaints, formatting issues)? Score \
+5+ if the analysis provides deeper technical engagement than the reference \
+(e.g., re-derivations, concrete counterexamples, numerical verification).
 4. **format**: Does the generated review adhere to the refine.ink structure \
 (header block, Overall Feedback with titled issues, Detailed Comments with \
 numbered entries, each with Quote and Feedback sections)? Score 5 for perfect \
@@ -98,12 +113,14 @@ source of truth and the reference review for calibration (not as an answer key).
 </generated>
 
 Score the generated review on: coverage, specificity, depth, and format \
-(each 1.0-5.0 in half-point increments).
+(each 1.0-6.0 in half-point increments, where 5.0 = matches reference, \
+5.5-6.0 = exceeds reference).
 Verify quotes against the paper text. Assess coverage and depth against the \
 paper itself — does the generated review find the paper's real issues and \
 engage with its actual methodology and assumptions? Credit valid issues the \
-reference missed. Provide reasoning for each score, plus 2-3 strengths and \
-2-3 weaknesses.
+reference missed — if the generated review catches real errors the reference \
+overlooked, that warrants a score above 5.0. Provide reasoning for each score, \
+plus 2-3 strengths and 2-3 weaknesses.
 """
 
 
@@ -189,10 +206,9 @@ communication).
 
 Your task:
 1. For each dimension (coverage, specificity, depth, format), determine a final \
-consensus score (1.0-5.0 in half-point increments) that FAITHFULLY reflects \
-the panel's actual scores. Your score must stay within the range of the \
-judges' scores — if all judges gave 5, the consensus is 5; if judges gave \
-4.5, 4.5, 5, the consensus is 4.5 or 5. Do NOT introduce your own \
+consensus score (1.0-6.0 in half-point increments, where 5+ means exceeds \
+the reference) that FAITHFULLY reflects the panel's actual scores. Your score \
+must stay within the range of the judges' scores. Do NOT introduce your own \
 independent assessment or dock points for issues the judges did not penalize. \
 When judges disagree, weight toward the more critical judge.
 2. Synthesize 3-5 key strengths from across all judges' reports (deduplicate).
@@ -213,7 +229,7 @@ def _synthesis_user(reports: list[QualityReport]) -> str:
     for i, report in enumerate(reports):
         label = ["Methodology Judge", "Empirical Judge", "Communication Judge"][i]
         dims = "\n".join(
-            f"  - {d.dimension}: {d.score}/5 — {d.reasoning}"
+            f"  - {d.dimension}: {d.score}/6 — {d.reasoning}"
             for d in report.dimensions
         )
         strengths = "\n".join(f"  + {s}" for s in report.strengths)
@@ -324,7 +340,7 @@ def save_quality_report(
     timestamp = datetime.datetime.now().isoformat(timespec="seconds")
 
     dim_rows = "\n".join(
-        f"| {d.dimension} | {d.score}/5 | {d.reasoning} |"
+        f"| {d.dimension} | {d.score}/6 | {d.reasoning} |"
         for d in report.dimensions
     )
     strengths = "\n".join(f"- {s}" for s in report.strengths)
@@ -338,7 +354,7 @@ def save_quality_report(
 **Model**: {model}
 **Mode**: {mode}
 
-## Overall Score: {report.overall_score:.2f}/5.0
+## Overall Score: {report.overall_score:.2f}/6.0
 
 ## Dimensions
 

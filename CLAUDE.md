@@ -5,7 +5,7 @@
 Free, open-source AI academic paper reviewer. The rough alternative to refine.ink.
 Users provide their own API keys and pay only the LLM provider directly (~$2-5 per review vs refine.ink's ~$50).
 
-**Package:** `coarse` (Python 3.12+, Pydantic, litellm, instructor, openhands-sdk)
+**Package:** `coarse` (Python 3.12+, Pydantic, litellm, instructor, openai-agents)
 **Install:** `pip install coarse` / `pipx install coarse` / `uvx coarse paper.pdf`
 
 ## Python Environment
@@ -33,7 +33,7 @@ paper.pdf
     → [quote_verify.py]  Programmatic → re-verify quotes (critique re-garbles via JSON)
     → [synthesis.py]     Deterministic → paper_review.md (refine.ink format)
 
-With `--agentic`: proof/methodology/results sections use CodingSectionAgent (OpenHands SDK),
+With `--agentic`: proof/methodology/results sections use CodingSectionAgent (OpenAI Agents SDK),
 critique uses CodingCritiqueAgent. Agents read full paper, cross-reference sections, verify math.
 Transparent fallback to standard LLM agents on failure.
 ```
@@ -52,7 +52,8 @@ src/coarse/
 ├── structure.py             # PaperText → PaperStructure (heading parse + LLM metadata)
 ├── quote_verify.py          # Post-processing quote verification
 ├── models.py                # Model manifest — single source of truth for all model IDs
-├── coding_agent.py          # OpenHands SDK wrapper (run_agent, run_agent_sync)
+├── coding_agent.py          # OpenAI Agents SDK wrapper (run_agent, run_agent_sync)
+├── garble.py                # OCR garble detection and normalization
 ├── llm.py                   # litellm wrapper, model registry, cost tracking
 ├── prompts.py               # All prompt templates
 ├── types.py                 # Pydantic models
@@ -64,10 +65,10 @@ src/coarse/
     ├── base.py              # ReviewAgent + CodingReviewAgent ABCs
     ├── overview.py          # Macro-level feedback (4-6 issues)
     ├── section.py           # Per-section detailed review
-    ├── coding_section.py    # CodingSectionAgent (OpenHands, proof/methodology/results)
+    ├── coding_section.py    # CodingSectionAgent (OpenAI Agents SDK, proof/methodology/results)
     ├── crossref.py          # Cross-reference consistency
     ├── critique.py          # Self-critique quality gate
-    ├── coding_critique.py   # CodingCritiqueAgent (OpenHands, quote/claim verification)
+    ├── coding_critique.py   # CodingCritiqueAgent (OpenAI Agents SDK, quote/claim verification)
     └── literature.py        # arXiv literature search (agentic loop)
 ```
 
@@ -90,7 +91,8 @@ Auto-detects API keys from env vars or `~/.coarse/config.toml`.
 
 ### Dependencies
 
-Core: litellm, instructor, docling, pydantic, typer, rich, tomli-w, pymupdf, openhands-sdk
+Core: litellm, instructor, pydantic, typer, rich, tomli-w, pymupdf, python-dotenv
+Optional: docling (OCR fallback), openai-agents[litellm] (coding agents)
 Dev: pytest, ruff
 
 ## Reference Review

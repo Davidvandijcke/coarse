@@ -3,12 +3,22 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Type
+from typing import TYPE_CHECKING, Type
 
 from pydantic import BaseModel
 
 from coarse.config import CoarseConfig
 from coarse.llm import LLMClient
+
+if TYPE_CHECKING:
+    from coarse.types import SectionInfo
+
+
+def section_filename(s: SectionInfo) -> str:
+    """Generate a safe filename from a section number and title."""
+    slug = s.title.lower().replace(" ", "_")[:40]
+    prefix = f"{s.number:02}" if isinstance(s.number, int) else str(s.number)
+    return f"{prefix}_{slug}.md"
 
 
 class ReviewAgent(ABC):
@@ -23,7 +33,7 @@ class ReviewAgent(ABC):
 
 
 class CodingReviewAgent(ABC):
-    """Base class for coding agents that use OpenHands SDK for deep analysis.
+    """Base class for coding agents that use OpenAI Agents SDK for deep analysis.
 
     Concrete subclasses implement prepare_workspace() and output_schema() to
     define the workspace layout and expected output format. The run() method

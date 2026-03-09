@@ -1,79 +1,616 @@
-import Link from "next/link";
+"use client";
 
-export default function Home() {
+import { useState, useCallback, useEffect } from "react";
+import { useDropzone } from "react-dropzone";
+import { useRouter } from "next/navigation";
+import { CharcoalRule, HeroMarks } from "@/components/charcoal";
+
+/* ── Split-flap AI name display ────────────────────────────── */
+const AI_NAMES = ["Claude,", "Gemini,", "Qwen,", "ChatGPT,", "DeepSeek,", "Kimi,", "Grok,", "MiniMax,", "Mistral,", "Llama,"];
+const CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function SplitFlap() {
+  const [index, setIndex] = useState(0);
+  const [display, setDisplay] = useState(AI_NAMES[0]);
+
+  useEffect(() => {
+    const cycle = setInterval(() => {
+      setIndex((i) => (i + 1) % AI_NAMES.length);
+    }, 2600);
+    return () => clearInterval(cycle);
+  }, []);
+
+  useEffect(() => {
+    const target = AI_NAMES[index];
+    const maxLen = Math.max(...AI_NAMES.map((w) => w.length));
+    let tick = 0;
+    const steps = 14;
+    const scramble = setInterval(() => {
+      tick++;
+      setDisplay(
+        target
+          .padEnd(maxLen)
+          .split("")
+          .map((ch, i) => {
+            const settled = tick > steps - (maxLen - i) * 1.1;
+            if (settled || ch === " ") return ch;
+            return CHARSET[Math.floor(Math.random() * CHARSET.length)];
+          })
+          .join("")
+      );
+      if (tick >= steps) clearInterval(scramble);
+    }, 45);
+    return () => clearInterval(scramble);
+  }, [index]);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center px-4">
-      <div className="max-w-2xl text-center">
-        <h1 className="text-5xl font-bold tracking-tight">coarse</h1>
-        <p className="mt-4 text-xl text-gray-600">
-          Free AI paper reviewer. Get detailed feedback on your academic paper in
-          minutes.
-        </p>
+    <span
+      style={{
+        fontFamily: "var(--font-space-mono), monospace",
+        display: "inline-block",
+        minWidth: "8ch",
+        color: "var(--yellow-chalk)",
+        letterSpacing: "0.05em",
+      }}
+    >
+      {display}
+    </span>
+  );
+}
 
-        <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:justify-center">
-          <Link
-            href="/review/new"
-            className="rounded-lg bg-black px-6 py-3 text-lg font-medium text-white hover:bg-gray-800"
-          >
-            Review a paper
-          </Link>
-          <a
-            href="https://github.com/Davidvandijcke/coarse"
-            className="rounded-lg border border-gray-300 px-6 py-3 text-lg font-medium hover:bg-gray-100"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            View on GitHub
-          </a>
-        </div>
-
-        <div className="mt-16 grid gap-8 text-left sm:grid-cols-3">
-          <div>
-            <h3 className="font-semibold">$2-5 per review</h3>
-            <p className="mt-1 text-sm text-gray-600">
-              Pay only the LLM provider cost. No markup, no subscription.
-              Compare to $50 on refine.ink.
-            </p>
-          </div>
-          <div>
-            <h3 className="font-semibold">20+ detailed comments</h3>
-            <p className="mt-1 text-sm text-gray-600">
-              Verbatim quotes from your paper with specific, actionable feedback
-              on every section.
-            </p>
-          </div>
-          <div>
-            <h3 className="font-semibold">Open source</h3>
-            <p className="mt-1 text-sm text-gray-600">
-              Run it locally with your own API key, or use our hosted version
-              for free.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-16 rounded-lg border border-gray-200 bg-white p-6 text-left">
-          <h2 className="text-lg font-semibold">Two ways to use coarse</h2>
-          <div className="mt-4 space-y-4">
-            <div>
-              <h3 className="font-medium">
-                Free tier — help advance AI review research
-              </h3>
-              <p className="text-sm text-gray-600">
-                We cover the API costs. In exchange, your paper and review are
-                shared (with your consent) for academic research on AI-assisted
-                peer review.
-              </p>
-            </div>
-            <div>
-              <h3 className="font-medium">Bring your own key (BYOK)</h3>
-              <p className="text-sm text-gray-600">
-                Provide your OpenRouter API key. Your data stays private. No
-                rate limits.
-              </p>
-            </div>
-          </div>
-        </div>
+/* ── Header ───────────────────────────────────────────────── */
+function Header() {
+  return (
+    <header
+      style={{
+        padding: "1rem 2.5rem",
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        background: "var(--board)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: "1.25rem" }}>
+        <span
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: "1.25rem",
+            fontWeight: 400,
+            letterSpacing: "-0.01em",
+            color: "var(--chalk-bright)",
+          }}
+        >
+          &lsquo;coarse
+        </span>
+        <span
+          style={{
+            fontFamily: "var(--font-chalk)",
+            fontSize: "1.1rem",
+            color: "var(--dust)",
+          }}
+        >
+          peer review is a public good.
+        </span>
       </div>
-    </main>
+      <div style={{ display: "flex", alignItems: "baseline", gap: "1.5rem" }}>
+        <a
+          href="/setup"
+          style={{
+            fontFamily: "var(--font-chalk)",
+            fontSize: "1.05rem",
+            color: "var(--dust)",
+            textDecoration: "none",
+            transition: "color 0.2s",
+          }}
+        >
+          setup
+        </a>
+        <a
+          href="/compare"
+          style={{
+            fontFamily: "var(--font-chalk)",
+            fontSize: "1.05rem",
+            color: "var(--dust)",
+            textDecoration: "none",
+            transition: "color 0.2s",
+          }}
+        >
+          side-by-side
+        </a>
+        <a
+          href="https://github.com/Davidvandijcke/coarse"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            fontFamily: "var(--font-chalk)",
+            fontSize: "1.05rem",
+            color: "var(--dust)",
+            textDecoration: "none",
+            transition: "color 0.2s",
+          }}
+        >
+          github ↗
+        </a>
+      </div>
+    </header>
+  );
+}
+
+/* ── Label above a field ───────────────────────────────────── */
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      style={{
+        display: "block",
+        fontFamily: "var(--font-chalk)",
+        fontSize: "1.15rem",
+        color: "var(--dust)",
+        marginBottom: "0.5rem",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/* ── Page ──────────────────────────────────────────────────── */
+export default function Home() {
+  const router = useRouter();
+  const [file, setFile] = useState<File | null>(null);
+  const [email, setEmail] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lookupKey, setLookupKey] = useState("");
+
+  const onDrop = useCallback((accepted: File[]) => {
+    if (accepted[0]) setFile(accepted[0]);
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: { "application/pdf": [".pdf"] },
+    maxSize: 50 * 1024 * 1024,
+    maxFiles: 1,
+  });
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file || !email || !apiKey) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("pdf", file);
+      form.append("email", email);
+      form.append("api_key", apiKey);
+      const resp = await fetch("/api/submit", { method: "POST", body: form });
+      if (!resp.ok) {
+        const data = await resp.json();
+        throw new Error(data.error || "Submission failed");
+      }
+      const { id } = await resp.json();
+      router.push(`/status/${id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Submission failed");
+      setSubmitting(false);
+    }
+  }
+
+  const canSubmit = !!file && !!email && !!apiKey && !submitting;
+
+  return (
+    <div style={{ background: "var(--board)", minHeight: "100vh" }}>
+      <Header />
+
+      <main
+        style={{
+          maxWidth: "720px",
+          margin: "0 auto",
+          padding: "0 2.5rem 6rem",
+        }}
+      >
+        {/* ── Hero ──────────────────────────────────────────── */}
+        <section style={{ padding: "4.5rem 0 3.5rem", position: "relative" }}>
+          <HeroMarks />
+
+          <p
+            style={{
+              fontFamily: "var(--font-chalk)",
+              fontSize: "1.1rem",
+              color: "var(--dust)",
+              margin: "0 0 1.25rem",
+            }}
+          >
+            Hey <SplitFlap /> can you review this paper?
+          </p>
+
+          <h1
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: "clamp(3.5rem, 9vw, 6rem)",
+              fontWeight: 400,
+              lineHeight: 1.0,
+              letterSpacing: "-0.02em",
+              margin: 0,
+              color: "var(--chalk-bright)",
+            }}
+          >
+            &lsquo;coarse!
+          </h1>
+
+          <p
+            style={{
+              marginTop: "1.75rem",
+              fontSize: "1.1rem",
+              lineHeight: 1.6,
+              color: "var(--chalk)",
+              maxWidth: "520px",
+            }}
+          >
+            AI agents review your paper and write a referee report.
+            You pay the API cost directly. No account.
+          </p>
+          <p
+            style={{
+              marginTop: "0.75rem",
+              fontSize: "1rem",
+              lineHeight: 1.7,
+              color: "var(--dust)",
+              fontStyle: "italic",
+              maxWidth: "500px",
+            }}
+          >
+            Academic peer review runs on unpaid academic labor.
+            Others decided to make a business out of that. We didn&apos;t like that.
+          </p>
+
+          {/* Score preview */}
+          <div style={{ marginTop: "2.25rem" }}>
+            <div style={{ display: "flex", gap: "2.5rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+              {/* Big score */}
+              <div style={{ transform: "rotate(-1.5deg)" }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-chalk)",
+                    fontSize: "2.75rem",
+                    fontWeight: 700,
+                    color: "var(--yellow-chalk)",
+                    lineHeight: 1,
+                  }}
+                >
+                  5<span style={{ fontSize: "1.5rem", verticalAlign: "super", lineHeight: 0 }}>+</span>
+                  <span style={{ fontSize: "1.1rem", fontWeight: 400, color: "var(--dust)" }}> / 5</span>
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-chalk)",
+                    fontSize: "1.1rem",
+                    color: "var(--dust)",
+                    display: "block",
+                    marginTop: "0.25rem",
+                  }}
+                >
+                  vs. other AI reviewers
+                </span>
+              </div>
+
+              {/* Stats */}
+              {[
+                ["< $1", "per review"],
+                ["20+", "detailed comments"],
+                ["MIT", "open source"],
+              ].map(([num, label]) => (
+                <div key={label}>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-serif)",
+                      fontSize: "1.5rem",
+                      fontWeight: 400,
+                      display: "block",
+                      lineHeight: 1,
+                      color: "var(--chalk-bright)",
+                    }}
+                  >
+                    {num}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-chalk)",
+                      fontSize: "1.1rem",
+                      color: "var(--dust)",
+                      display: "block",
+                      marginTop: "0.25rem",
+                    }}
+                  >
+                    {label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Competitive comparison */}
+            <p
+              style={{
+                marginTop: "1.25rem",
+                fontFamily: "Georgia, serif",
+                fontSize: "1.05rem",
+                lineHeight: 1.7,
+                color: "var(--chalk)",
+                maxWidth: "520px",
+              }}
+            >
+              Blind-evaluated against{" "}
+              <span style={{ color: "var(--chalk-bright)" }}>refine.ink</span>,{" "}
+              <span style={{ color: "var(--chalk-bright)" }}>Stanford Agentic Reviewer</span>, and{" "}
+              <span style={{ color: "var(--chalk-bright)" }}>reviewer3.com</span>.
+              Scores higher on coverage, specificity, and depth.
+            </p>
+
+            <a
+              href="/compare"
+              style={{
+                display: "inline-block",
+                marginTop: "0.75rem",
+                fontFamily: "var(--font-chalk)",
+                fontSize: "1.05rem",
+                color: "var(--blue-chalk)",
+                textDecoration: "none",
+              }}
+            >
+              See the side-by-side →
+            </a>
+          </div>
+        </section>
+
+        <CharcoalRule />
+
+        {/* ── Form ──────────────────────────────────────────── */}
+        <section style={{ padding: "2.5rem 0 3rem" }}>
+          <p
+            style={{
+              fontFamily: "var(--font-chalk)",
+              fontSize: "1.1rem",
+              color: "var(--dust)",
+              marginBottom: "2.25rem",
+            }}
+          >
+            Submit a paper
+          </p>
+
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+            {/* Drop zone */}
+            <div>
+              <FieldLabel>Paper (PDF)</FieldLabel>
+              <div
+                {...getRootProps()}
+                style={{
+                  border: `1.5px dashed ${isDragActive ? "var(--yellow-chalk)" : "var(--tray)"}`,
+                  padding: "2.25rem 2rem",
+                  textAlign: "center",
+                  cursor: "pointer",
+                  background: isDragActive ? "rgba(212, 168, 67, 0.06)" : "var(--board-surface)",
+                  transition: "border-color 0.2s, background 0.2s",
+                  borderRadius: "2px",
+                }}
+              >
+                <input {...getInputProps()} />
+                {file ? (
+                  <>
+                    <p
+                      style={{
+                        fontFamily: "var(--font-space-mono), monospace",
+                        fontSize: "1rem",
+                        fontWeight: 700,
+                        margin: 0,
+                        color: "var(--chalk-bright)",
+                      }}
+                    >
+                      {file.name}
+                    </p>
+                    <p
+                      style={{
+                        fontFamily: "var(--font-chalk)",
+                        fontSize: "1.1rem",
+                        color: "var(--dust)",
+                        margin: "0.375rem 0 0",
+                      }}
+                    >
+                      {(file.size / 1024 / 1024).toFixed(1)} MB — click or drop to replace
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p
+                      style={{
+                        fontFamily: "Georgia, serif",
+                        fontSize: "1.05rem",
+                        color: "var(--chalk)",
+                        margin: 0,
+                      }}
+                    >
+                      Drop your PDF here, or{" "}
+                      <span style={{ textDecoration: "underline", textUnderlineOffset: "2px" }}>browse</span>
+                    </p>
+                    <p
+                      style={{
+                        fontFamily: "var(--font-chalk)",
+                        fontSize: "1.1rem",
+                        color: "var(--dust)",
+                        margin: "0.375rem 0 0",
+                      }}
+                    >
+                      Up to 50 MB
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Email + API key */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "2rem",
+              }}
+            >
+              <div>
+                <FieldLabel>Email</FieldLabel>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@university.edu"
+                  className="field-line"
+                />
+                <p
+                  style={{
+                    fontFamily: "var(--font-chalk)",
+                    fontSize: "1.1rem",
+                    color: "var(--dust)",
+                    marginTop: "0.4rem",
+                  }}
+                >
+                  We&apos;ll email you when it&apos;s done.
+                </p>
+              </div>
+
+              <div>
+                <FieldLabel>
+                  OpenRouter key{" "}
+                  <a
+                    href="/setup"
+                    style={{
+                      color: "var(--blue-chalk)",
+                      textDecoration: "none",
+                    }}
+                  >
+                    get one →
+                  </a>
+                </FieldLabel>
+                <input
+                  type="password"
+                  required
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-or-v1-…"
+                  className="field-line-mono"
+                />
+                <p
+                  style={{
+                    fontFamily: "var(--font-chalk)",
+                    fontSize: "1.1rem",
+                    color: "var(--dust)",
+                    marginTop: "0.4rem",
+                  }}
+                >
+                  Used once. Never stored.
+                </p>
+              </div>
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  borderLeft: "3px solid var(--red-chalk)",
+                  paddingLeft: "1rem",
+                  color: "var(--red-chalk)",
+                  fontFamily: "Georgia, serif",
+                  fontSize: "1.05rem",
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            <div>
+              <button
+                type="submit"
+                disabled={!canSubmit}
+                style={{
+                  background: canSubmit ? "var(--yellow-chalk)" : "var(--tray)",
+                  color: canSubmit ? "var(--board)" : "var(--dust)",
+                  border: "none",
+                  padding: "0.9375rem 2.5rem",
+                  fontFamily: "var(--font-chalk)",
+                  fontSize: "1.1rem",
+                  fontWeight: 600,
+                  cursor: canSubmit ? "pointer" : "not-allowed",
+                  transition: "background 0.2s, color 0.2s",
+                  borderRadius: "2px",
+                }}
+              >
+                {submitting ? "Submitting..." : "Review my paper"}
+              </button>
+              <p
+                style={{
+                  fontFamily: "var(--font-chalk)",
+                  fontSize: "1.1rem",
+                  color: "var(--dust)",
+                  marginTop: "0.9rem",
+                }}
+              >
+                PDF deleted after processing. Your review key retrieves it for 90 days. Usually under a dollar.
+              </p>
+            </div>
+          </form>
+        </section>
+
+        <CharcoalRule />
+
+        {/* ── Retrieve ──────────────────────────────────────── */}
+        <section style={{ padding: "2.5rem 0 0" }}>
+          <p
+            style={{
+              fontFamily: "var(--font-chalk)",
+              fontSize: "1.1rem",
+              color: "var(--dust)",
+              marginBottom: "1.25rem",
+            }}
+          >
+            Find a review
+          </p>
+
+          <div style={{ display: "flex", gap: "0.875rem", alignItems: "flex-end" }}>
+            <input
+              type="text"
+              value={lookupKey}
+              onChange={(e) => setLookupKey(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && lookupKey.trim())
+                  router.push(`/review/${lookupKey.trim()}`);
+              }}
+              placeholder="Paste your review key..."
+              className="field-line-mono"
+              style={{ maxWidth: "480px" }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const k = lookupKey.trim();
+                if (k) router.push(`/review/${k}`);
+              }}
+              disabled={!lookupKey.trim()}
+              style={{
+                background: "transparent",
+                border: `1px solid ${lookupKey.trim() ? "var(--chalk)" : "var(--tray)"}`,
+                color: lookupKey.trim() ? "var(--chalk)" : "var(--dust)",
+                padding: "0.5rem 1.25rem",
+                fontFamily: "var(--font-chalk)",
+                fontSize: "1rem",
+                cursor: lookupKey.trim() ? "pointer" : "not-allowed",
+                whiteSpace: "nowrap",
+                transition: "border-color 0.2s, color 0.2s",
+                borderRadius: "2px",
+              }}
+            >
+              Find
+            </button>
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }

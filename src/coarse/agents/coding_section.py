@@ -1,4 +1,4 @@
-"""Coding section agent — uses OpenHands SDK for deep section analysis.
+"""Coding section agent — uses OpenAI Agents SDK for deep section analysis.
 
 Routes proof, methodology, and results sections to a coding agent that can
 cross-reference other sections, verify math with Python, and read the full paper.
@@ -13,14 +13,12 @@ import tempfile
 from pathlib import Path
 from typing import Type
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from coarse.agents.base import CodingReviewAgent
+from coarse.agents.base import CodingReviewAgent, section_filename
 from coarse.agents.section import SectionAgent, _SectionComments
-from coarse.coding_agent import DEFAULT_AGENT_TOOLS, run_agent_sync
-from coarse.config import CoarseConfig
-from coarse.llm import LLMClient
-from coarse.prompts import SECTION_SYSTEM_MAP, SECTION_SYSTEM
+from coarse.coding_agent import run_agent_sync
+from coarse.prompts import SECTION_SYSTEM, SECTION_SYSTEM_MAP
 from coarse.types import (
     DetailedComment,
     DomainCalibration,
@@ -29,6 +27,13 @@ from coarse.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Agent resource limits
+_PROOF_TURNS = 40
+_DEFAULT_TURNS = 30
+_PROOF_TIMEOUT = 600.0
+_DEFAULT_TIMEOUT = 300.0
+_MAX_BUDGET_USD = 5.00
 
 # Self-contained script dropped into agent workspaces for quote verification.
 # Uses the same fuzzy matching logic as coarse/quote_verify.py but with no
@@ -106,38 +111,23 @@ def _build_section_index(all_sections: list[SectionInfo]) -> dict:
 
 
 _TASK_TEMPLATE = """\
-You are reviewing section "{section_title}" of the paper "{paper_title}".
+Review section "{section_title}" of "{paper_title}". Produce 1-5 comments.
 
-Your workspace contains:
-- `paper.md` — the full paper text (QA-corrected)
-- `section.md` — the section you are reviewing (with metadata header)
-- `other_sections/` — each other section as a numbered file
-- `context.json` — overview issues, calibration, literature context
-- `section_index.json` — keyword → section number mapping for cross-references
-- `verify_quote.py` — quote verification script (see below)
-- `example_output.json` — example of valid output format
+Workspace files: `section.md` (target section), `paper.md` (full paper), \
+`other_sections/` (other sections), `context.json` (overview issues).
 
-Instructions:
-1. Read `section.md` first to understand the section content.
-2. Use grep to cross-reference claims, definitions, and equations:
-   - `grep -n "search term" paper.md` — shows line numbers for precise location
-   - `grep -i -C 3 "search term" paper.md` — case-insensitive with 3 lines of context
-   - `grep -n "definition" other_sections/*.md` — search across all sections
-   - Check `section_index.json` first to find which section defines a term.
-3. If the section contains equations, verify them using Python (stdlib math only —
-   do NOT assume numpy or sympy are installed).
-4. For each issue found, include an EXACT verbatim quote from section.md.
-   Do NOT modify, paraphrase, or reconstruct quotes.
-   Verify each quote: `python verify_quote.py "your quote here"`
-5. Write your output to `_review_output.json` following the schema in
-   `example_output.json`.
+Steps:
+1. Read `section.md`.
+2. Cross-reference key claims: `run_command('grep -i -C 2 "term" paper.md')`.
+3. For each issue, call `add_comment(number, title, quote, feedback, severity)` \
+with an EXACT verbatim quote from the paper.
 
-Produce 1-5 comments. Focus on concrete errors you can demonstrate.
+IMPORTANT: Call `add_comment()` for each issue found. Do NOT write JSON files manually.
 """
 
 
 class CodingSectionAgent(CodingReviewAgent):
-    """Deep section reviewer using OpenHands SDK.
+    """Deep section reviewer using OpenAI Agents SDK.
 
     Falls back to standard SectionAgent on any failure.
     """
@@ -179,8 +169,7 @@ class CodingSectionAgent(CodingReviewAgent):
         for s in all_sections:
             if s.number == section.number and s.title == section.title:
                 continue
-            filename = f"{s.number:02}_{s.title.lower().replace(' ', '_')[:40]}.md" if isinstance(s.number, int) else f"{s.number}_{s.title.lower().replace(' ', '_')[:40]}.md"
-            (other_dir / filename).write_text(
+            (other_dir / section_filename(s)).write_text(
                 f"# Section {s.number}: {s.title}\n\n{s.text}", encoding="utf-8"
             )
 
@@ -212,25 +201,6 @@ class CodingSectionAgent(CodingReviewAgent):
             json.dumps(section_index, indent=2), encoding="utf-8"
         )
 
-        # Example output (concrete example helps agents produce valid JSON)
-        example = {
-            "comments": [
-                {
-                    "number": 1,
-                    "title": "Sign error in change-of-variables",
-                    "quote": "Applying the substitution u = 1 - t, we obtain the integral equals 2pi.",
-                    "feedback": (
-                        "The substitution u = 1 - t gives du = -dt, so the limits reverse. "
-                        "The correct result is -2pi, not 2pi. This affects Theorem 3.2 downstream."
-                    ),
-                    "severity": "critical",
-                }
-            ]
-        }
-        (workspace / "example_output.json").write_text(
-            json.dumps(example, indent=2), encoding="utf-8"
-        )
-
         return _TASK_TEMPLATE.format(
             section_title=section.title, paper_title=paper_title,
         )
@@ -255,7 +225,7 @@ class CodingSectionAgent(CodingReviewAgent):
         system_prompt = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
 
         # Proof/methodology sections need more turns for derivation checking
-        turns = 25 if focus == "proof" else 15
+        turns = _PROOF_TURNS if focus == "proof" else _DEFAULT_TURNS
 
         try:
             with tempfile.TemporaryDirectory(prefix="coarse_section_") as tmpdir:
@@ -276,11 +246,10 @@ class CodingSectionAgent(CodingReviewAgent):
                     system_prompt=system_prompt,
                     output_schema=_SectionComments,
                     working_directory=workspace,
-                    allowed_tools=DEFAULT_AGENT_TOOLS,
                     max_turns=turns,
                     model=self.config.agent_model,
-                    max_budget_usd=0.50,
-                    timeout=120.0,
+                    max_budget_usd=_MAX_BUDGET_USD,
+                    timeout=_PROOF_TIMEOUT if focus == "proof" else _DEFAULT_TIMEOUT,
                     config=self.config,
                 )
                 return result.comments

@@ -29,9 +29,15 @@ dependencies = [
     "python-dotenv>=1.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Davidvandijcke/coarse"
+Repository = "https://github.com/Davidvandijcke/coarse"
+Issues = "https://github.com/Davidvandijcke/coarse/issues"
+Changelog = "https://github.com/Davidvandijcke/coarse/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 docling = ["docling>=2.0"]
-agentic = ["openhands-sdk>=0.1", "openhands-tools>=0.1"]
+agentic = ["openai-agents[litellm]>=0.1"]
 all = ["coarse[docling,agentic]"]
 dev = ["pytest>=8.0", "ruff>=0.4"]
 

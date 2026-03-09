@@ -14,7 +14,7 @@ import litellm
 from pydantic import BaseModel
 
 from coarse.config import CoarseConfig, load_config
-from coarse.models import JSON_MODE_PREFIXES
+from coarse.models import JSON_MODE_PREFIXES, MARKDOWN_JSON_PREFIXES
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class LLMClient:
             config = load_config()
         self._model = model or config.default_model
         self._model = _normalize_model(self._model)
-        mode = instructor.Mode.JSON if _needs_json_mode(self._model) else instructor.Mode.TOOLS
+        mode = _select_instructor_mode(self._model)
         self._client = instructor.from_litellm(_sanitized_completion, mode=mode)
         self._cost_usd: float = 0.0
 
@@ -78,12 +78,18 @@ class LLMClient:
         response_model: type[BaseModel],
         max_tokens: int = 4096,
         temperature: float = 0.3,
-        timeout: int = 300,
+        timeout: int = 600,
         **kwargs,
     ) -> BaseModel:
         """Single structured LLM call. Returns parsed Pydantic model."""
         # Clamp max_tokens to model's known limit
         clamped = _clamp_max_tokens(self._model, max_tokens)
+
+        # Kimi: reasoning model — needs higher max_tokens (reasoning chain
+        # consumes output budget) and low temperature to avoid repetition
+        if any(p in self._model.lower() for p in MARKDOWN_JSON_PREFIXES):
+            temperature = min(temperature, 0.1)
+            clamped = max(clamped, 16384)
 
         response, completion = self._client.chat.completions.create_with_completion(
             model=self._model,
@@ -138,25 +144,38 @@ def _normalize_model(model: str) -> str:
     # If OPENROUTER_API_KEY is set and model has a slash (like qwen/qwen3.5-plus),
     # route through OpenRouter
     if "/" in model and os.environ.get("OPENROUTER_API_KEY"):
+        # litellm uses gemini/ for Google AI Studio, but OpenRouter uses google/
+        if model.startswith("gemini/"):
+            model = "google/" + model.removeprefix("gemini/")
         return f"openrouter/{model}"
     return model
 
 
-def _needs_json_mode(model: str) -> bool:
-    """Check if the model needs JSON mode instead of tool-calling.
-
-    OpenRouter-proxied models and several open-source model families
-    don't reliably support tool-calling / function-calling mode.
-    """
+def _select_instructor_mode(model: str) -> instructor.Mode:
+    """Select the best instructor mode for the model."""
     lower = model.lower()
-    # Anything routed through OpenRouter
+    # Kimi/Moonshot: no response_format support, unreliable tool-calling
+    for prefix in MARKDOWN_JSON_PREFIXES:
+        if prefix in lower:
+            return instructor.Mode.MD_JSON
+    # OpenRouter-proxied models
     if lower.startswith("openrouter/"):
-        return True
+        return instructor.Mode.JSON
     # Known model families that work better with JSON mode
     for prefix in JSON_MODE_PREFIXES:
         if prefix in lower:
-            return True
-    return False
+            return instructor.Mode.JSON
+    return instructor.Mode.TOOLS
+
+
+def _lookup_model_cost(model: str) -> dict | None:
+    """Look up model info in litellm's cost registry, trying prefix variants."""
+    info = litellm.model_cost.get(model)
+    if info is None and "/" in model:
+        info = litellm.model_cost.get(model.split("/", 1)[1])
+    if info is None and model.startswith("openrouter/"):
+        info = litellm.model_cost.get(model.removeprefix("openrouter/"))
+    return info
 
 
 def _clamp_max_tokens(model: str, requested: int) -> int:
@@ -165,13 +184,7 @@ def _clamp_max_tokens(model: str, requested: int) -> int:
     Many models error on max_tokens > their actual output window.
     Falls back to a safe default of 4096 if model isn't in litellm's registry.
     """
-    info = litellm.model_cost.get(model)
-    if info is None and "/" in model:
-        # Try without provider prefix
-        info = litellm.model_cost.get(model.split("/", 1)[1])
-    if info is None and model.startswith("openrouter/"):
-        # Try without openrouter/ prefix
-        info = litellm.model_cost.get(model.removeprefix("openrouter/"))
+    info = _lookup_model_cost(model)
 
     if info is not None:
         model_max = info.get("max_output_tokens") or info.get("max_tokens") or 4096
@@ -188,9 +201,7 @@ def model_cost_per_token(model: str) -> tuple[float, float]:
     Accepts litellm model strings (e.g. 'openai/gpt-4o' or 'gpt-4o').
     Returns (0.0, 0.0) if model not found.
     """
-    costs = litellm.model_cost.get(model)
-    if costs is None and "/" in model:
-        costs = litellm.model_cost.get(model.split("/", 1)[1])
+    costs = _lookup_model_cost(model)
     if costs is None:
         return (0.0, 0.0)
     return (

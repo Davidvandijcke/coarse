@@ -1,0 +1,12 @@
+name: Keep Supabase alive
+on:
+  schedule:
+    - cron: '0 0 */5 * *'
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -sf "${{ secrets.SUPABASE_URL }}/rest/v1/reviews?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"

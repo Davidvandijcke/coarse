@@ -1,4 +1,4 @@
-"""Coding critique agent — uses OpenHands SDK to verify comments against paper text.
+"""Coding critique agent — uses OpenAI Agents SDK to verify comments against paper text.
 
 The critique agent can grep the paper for quoted text, verify claims are accurate,
 and check math equations. Falls back to standard CritiqueAgent on failure.
@@ -15,54 +15,40 @@ from typing import Type
 
 from pydantic import BaseModel
 
-from coarse.agents.base import CodingReviewAgent
+from coarse.agents.base import CodingReviewAgent, section_filename
 from coarse.agents.coding_section import _VERIFY_QUOTE_SCRIPT
 from coarse.agents.critique import CritiqueAgent, _RevisedComments
-from coarse.coding_agent import DEFAULT_AGENT_TOOLS, run_agent_sync
-from coarse.config import CoarseConfig
-from coarse.llm import LLMClient
+from coarse.coding_agent import run_agent_sync
 from coarse.prompts import CRITIQUE_SYSTEM, critique_system
 from coarse.types import DetailedComment, OverviewFeedback, SectionInfo
 
 logger = logging.getLogger(__name__)
 
+# Agent resource limits
+_MAX_TURNS = 30
+_MAX_BUDGET_USD = 5.00
+_TIMEOUT = 600.0
+
 
 _TASK_TEMPLATE = """\
-You are performing a final quality evaluation of review comments for a research paper.
+Evaluate review comments for a research paper. Target ~{comment_target} comments.
 
-Your workspace contains:
-- `paper.md` — the full paper text
-- `overview.json` — the overview feedback (macro-level issues)
-- `comments.json` — the comments to evaluate
-- `sections/` — individual section files with headings
-- `verify_quote.py` — quote verification script (see below)
-- `example_output.json` — example of valid output format
+Workspace: `paper.md` (full paper), `comments.json` (comments to evaluate), \
+`overview.json` (overview).
 
-Instructions:
-1. For EACH comment in `comments.json`:
-   a. Verify the quote: `python verify_quote.py "quoted text from comment"`
-      This uses fuzzy matching and reports whether the quote exists in paper.md.
-   b. Alternatively use grep directly:
-      - `grep -n -i "key phrase" paper.md` — find with line numbers
-      - `grep -C 3 "key phrase" paper.md` — show surrounding context
-   c. Read surrounding context to verify the claim is accurate.
-   d. If the comment claims a math error, check the equations using Python
-      (stdlib math only — do NOT assume numpy or sympy are installed).
-2. Do NOT modify the `quote` field unless you find the exact verbatim passage
-   and the current quote is a paraphrase. In that case, replace with the real text.
-3. Remove comments that are:
-   - Based on quotes not found in the paper
-   - Making inaccurate claims about the paper's content
-   - Generic advice that could apply to any paper
-   - Requesting additional analyses rather than identifying errors
-4. Assign severity: critical / major / minor
-5. Target approximately {comment_target} comments total.
-6. Write your output to `_review_output.json`.
+Steps:
+1. Read `comments.json`.
+2. For each comment, verify the quote exists: `run_command('grep -i -c "key phrase" paper.md')`.
+3. Remove comments with fabricated quotes, inaccurate claims, or generic advice.
+4. For each surviving comment, call `add_comment(number, title, quote, feedback, severity)` \
+with the corrected quote and severity (critical/major/minor).
+
+IMPORTANT: Call `add_comment()` for each surviving comment. Do NOT write JSON files manually.
 """
 
 
 class CodingCritiqueAgent(CodingReviewAgent):
-    """Deep critique agent using OpenHands SDK.
+    """Deep critique agent using OpenAI Agents SDK.
 
     Verifies each comment's quote and claims against the actual paper text.
     Falls back to standard CritiqueAgent on any failure.
@@ -99,32 +85,12 @@ class CodingCritiqueAgent(CodingReviewAgent):
             sections_dir = workspace / "sections"
             sections_dir.mkdir(exist_ok=True)
             for s in all_sections:
-                filename = f"{s.number:02}_{s.title.lower().replace(' ', '_')[:40]}.md" if isinstance(s.number, int) else f"{s.number}_{s.title.lower().replace(' ', '_')[:40]}.md"
-                (sections_dir / filename).write_text(
+                (sections_dir / section_filename(s)).write_text(
                     f"# Section {s.number}: {s.title}\n\n{s.text}", encoding="utf-8"
                 )
 
         # Quote verification script
         (workspace / "verify_quote.py").write_text(_VERIFY_QUOTE_SCRIPT, encoding="utf-8")
-
-        # Example output
-        example = {
-            "comments": [
-                {
-                    "number": 1,
-                    "title": "Sign error in Theorem 3.2",
-                    "quote": "The integral evaluates to 2pi by the substitution u = 1 - t.",
-                    "feedback": (
-                        "Verified: this quote appears on page 7. The substitution u = 1-t "
-                        "gives du = -dt, reversing limits. Correct result is -2pi."
-                    ),
-                    "severity": "critical",
-                }
-            ]
-        }
-        (workspace / "example_output.json").write_text(
-            json.dumps(example, indent=2), encoding="utf-8"
-        )
 
         # Compute target
         comment_target = max(6, len(comments) // 2)
@@ -159,11 +125,10 @@ class CodingCritiqueAgent(CodingReviewAgent):
                     system_prompt=critique_system(comment_target) if comment_target else CRITIQUE_SYSTEM,
                     output_schema=_RevisedComments,
                     working_directory=workspace,
-                    allowed_tools=DEFAULT_AGENT_TOOLS,
-                    max_turns=20,
+                    max_turns=_MAX_TURNS,
                     model=self.config.agent_model,
-                    max_budget_usd=1.00,
-                    timeout=180.0,
+                    max_budget_usd=_MAX_BUDGET_USD,
+                    timeout=_TIMEOUT,
                     config=self.config,
                 )
                 return result.comments

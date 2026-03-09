@@ -11,21 +11,19 @@
 
 ### Changed
 
-- **Optional heavy dependencies** — `docling` and `openhands-sdk` moved to optional extras (`pip install coarse[docling]`, `pip install coarse[agentic]`). Core install is now lightweight (~500MB Docker image vs ~1.5GB).
-
-### Fixed
-
-- **LaTeX garbling in review quotes** — Added `verify_quotes` call after critique agent (which re-garbles LaTeX via JSON round-trip). Added LaTeX preservation instructions to all section prompts.
-- **Quality scorer synthesizer overriding judges** — Synthesis prompt now faithfully aggregates panel scores instead of re-evaluating independently. Scoring changed from integer 1-5 to half-point increments (1.0-5.0) for finer granularity.
-
-### Changed
-
+- **Coding agents: OpenHands SDK replaced with OpenAI Agents SDK** — `openhands-sdk` dependency replaced with `openai-agents[litellm]`. Agents now use tool-based output (`add_comment()`) with file-based JSON fallback. Four workspace-scoped tools (read_file, run_command, list_files, write_file) plus `add_comment` replace OpenHands' terminal and file_editor. No change to review quality or output format.
+- **Optional heavy dependencies** — `docling` and `openai-agents` moved to optional extras (`pip install coarse[docling]`, `pip install coarse[agentic]`). Core install is now lightweight (~500MB Docker image vs ~1.5GB).
 - **Structured assumption cross-check** — Rewrote `ASSUMPTION_CHECK_SYSTEM` with a 4-step procedure (extract assumptions → characterize data → cross-check with common mismatch patterns → evaluate defenses). Added INTRODUCTION sections to assumption-relevant types so data descriptions are visible. Adds `_TONE_BLOCK` to assumption prompt.
 - **Appendix proof coverage** — Appendix sections classified as "proof" are now reviewed instead of skipped, catching proof errors in covariance calculations, sign errors, Fubini-Tonelli applications, etc.
 - **Anti-redundancy prompts** — Section agents instructed not to restate overview issues; crossref dedup now removes comments whose core point duplicates an overview issue even if they add a quote.
 - **Anti-truncation quote instructions** — Replaced weak "2 full sentences" guidance with strict "NEVER truncate mid-equation" rule in all section prompts.
 - **Section agent max_tokens** — Increased from 8192 to 16384 to prevent quote truncation in math-heavy sections.
 - **Quote verify expansion** — `_trim_to_best_match` now uses a 1.5x window to expand truncated quotes instead of re-truncating correct matches.
+
+### Fixed
+
+- **LaTeX garbling in review quotes** — Added `verify_quotes` call after critique agent (which re-garbles LaTeX via JSON round-trip). Added LaTeX preservation instructions to all section prompts.
+- **Quality scorer synthesizer overriding judges** — Synthesis prompt now faithfully aggregates panel scores instead of re-evaluating independently. Scoring changed from integer 1-5 to half-point increments (1.0-6.0) for finer granularity.
 
 ### Added
 

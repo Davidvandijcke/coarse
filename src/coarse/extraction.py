@@ -10,6 +10,7 @@ Priority order:
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
 import re
@@ -175,22 +176,26 @@ _GARBLE_REPLACEMENTS: list[tuple[str, str]] = [
     ("\u00ae", "fi"),  # ® used as ligature for fi
 ]
 
-# Regex matching non-standard characters that suggest OCR garbling
-_GARBLE_CHARS = re.compile(
-    r"[\u00ae\u00f5\u00c8\u00c0\u00c1\ufffd\ufffe\uffff]"
-    r"|/C[0-9]{2}"
-)
+# Mistral OCR glyph[...] artifact → Unicode mapping
+_GLYPH_MAP: dict[str, str] = {
+    "lscript": "ℓ", "epsilon1": "ε", "negationslash": "≠", "square": "□",
+    "element": "∈", "arrowright": "→", "lessequal": "≤", "greaterequal": "≥",
+    "infinity": "∞", "summation": "Σ", "integral": "∫", "partialdiff": "∂",
+}
+_GLYPH_RE = re.compile(r"glyph\[(\w+)\]")
 
 
-def compute_garble_ratio(text: str) -> float:
-    """Compute the ratio of garbled characters to total characters.
+def normalize_mistral_artifacts(text: str) -> str:
+    """Normalize Mistral OCR artifacts (glyph[...], /lscript, HTML entities, etc.)."""
+    result = text
+    result = _GLYPH_RE.sub(lambda m: _GLYPH_MAP.get(m.group(1), m.group(0)), result)
+    result = result.replace("/lscript", "ℓ")
+    result = result.replace("<!-- formula-not-decoded -->", "")
+    result = html.unescape(result)
+    return result
 
-    Returns a float in [0, 1]. Values above ~0.005 suggest OCR quality issues.
-    """
-    if not text:
-        return 0.0
-    matches = _GARBLE_CHARS.findall(text)
-    return len(matches) / len(text)
+
+from coarse.garble import garble_ratio as compute_garble_ratio  # noqa: E402, F401
 
 
 def normalize_ocr_garble(text: str) -> str:
@@ -258,6 +263,9 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
             "Set MISTRAL_API_KEY or OPENROUTER_API_KEY, or install offline extraction: "
             "pip install coarse[docling]"
         )
+
+    # Normalize Mistral OCR artifacts unconditionally
+    full_markdown = normalize_mistral_artifacts(full_markdown)
 
     # Detect and normalize OCR garble from older PDFs
     garble = compute_garble_ratio(full_markdown)

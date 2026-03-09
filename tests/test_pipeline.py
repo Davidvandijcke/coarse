@@ -64,7 +64,7 @@ def _make_comment(number: int = 1) -> DetailedComment:
     return DetailedComment(
         number=number,
         title=f"Comment {number}",
-        quote="Some quote.",
+        quote="Some verbatim quote from the paper text.",
         feedback="Some feedback.",
     )
 
@@ -405,7 +405,9 @@ def test_renumber_comments_sequential():
 def test_renumber_comments_preserves_content():
     """Renumbering only changes .number, not other fields."""
     comment = DetailedComment(
-        number=99, title="Test", quote="q", feedback="f", severity="critical"
+        number=99, title="Test",
+        quote="Verbatim quote from the paper.",
+        feedback="f", severity="critical",
     )
     result = _renumber_comments([comment])
     assert result[0].number == 1

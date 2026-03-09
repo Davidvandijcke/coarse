@@ -239,7 +239,7 @@ def test_section_user_with_all_sections_includes_notation():
     )
     result = section_user("Test Paper", sec, all_sections=[other_sec, sec])
     assert "theta: model parameter" in result
-    assert "Notation & Definitions" in result
+    assert "Claims & Definitions" in result
     # Should NOT include definitions from the current section in the notation block
     assert result.count("c = 0.5: the cutoff value") == 1  # only in own defs block
 
@@ -248,4 +248,102 @@ def test_section_user_without_all_sections_no_notation():
     """section_user without all_sections should not have notation block."""
     sec = make_section()
     result = section_user("Test Paper", sec)
-    assert "Notation & Definitions from Other Sections" not in result
+    assert "Claims & Definitions from Other Sections" not in result
+
+
+# --- OCR artifact notice ---
+
+def test_section_prompts_include_ocr_artifact_notice():
+    """All section system prompts should warn about OCR artifacts."""
+    for prompt in (SECTION_SYSTEM, SECTION_PROOF_SYSTEM, SECTION_METHODOLOGY_SYSTEM):
+        assert "OCR" in prompt
+        assert "NOT author errors" in prompt
+
+
+def test_critique_system_includes_ocr_removal_criterion():
+    """Critique system should remove comments that flag OCR artifacts."""
+    assert "OCR artifact" in CRITIQUE_SYSTEM
+
+
+# --- Boundary / robustness probing ---
+
+def test_proof_system_includes_boundary_cases():
+    """Proof system prompt should instruct boundary case checking."""
+    assert "BOUNDARY CASES" in SECTION_PROOF_SYSTEM
+    assert "strict inequality" in SECTION_PROOF_SYSTEM
+
+
+def test_methodology_system_includes_robustness():
+    """Methodology system prompt should instruct robustness scenario construction."""
+    assert "ROBUSTNESS" in SECTION_METHODOLOGY_SYSTEM
+    assert "simplest concrete scenario" in SECTION_METHODOLOGY_SYSTEM
+
+
+# --- Waste filter anti-patterns ---
+
+def test_section_system_expanded_waste_filter():
+    """Section system should filter typographical errors and notation convention comments."""
+    assert "typographical errors" in SECTION_SYSTEM
+    assert "wasted slot" in SECTION_SYSTEM
+
+
+def test_proof_system_includes_waste_filter():
+    """Proof system should include waste filter for formatting/notation."""
+    assert "Do NOT comment on" in SECTION_PROOF_SYSTEM
+    assert "typographical errors" in SECTION_PROOF_SYSTEM
+
+
+def test_methodology_system_includes_waste_filter():
+    """Methodology system should include waste filter."""
+    assert "Do NOT comment on" in SECTION_METHODOLOGY_SYSTEM
+    assert "typographical errors" in SECTION_METHODOLOGY_SYSTEM
+
+
+# --- Concrete instantiation ---
+
+def test_section_system_requires_instantiation():
+    """Section system should require concrete instantiation of claimed errors."""
+    assert "INSTANTIATE" in SECTION_SYSTEM
+
+
+# --- Quote length ---
+
+def test_section_prompts_require_minimum_quote_length():
+    """Section prompts should require at least 2 full sentences."""
+    for prompt in (SECTION_SYSTEM, SECTION_PROOF_SYSTEM, SECTION_METHODOLOGY_SYSTEM):
+        assert "at least 2 full sentences" in prompt
+
+
+# --- Cross-section context includes claims ---
+
+def test_notation_context_includes_claims():
+    """_build_notation_context should include claims from other sections."""
+    from coarse.prompts import _build_notation_context
+
+    current = SectionInfo(
+        number=2, title="Results", text="Results text.",
+        section_type=SectionType.RESULTS,
+    )
+    other = SectionInfo(
+        number=1, title="Theory", text="Theory text.",
+        section_type=SectionType.METHODOLOGY,
+        claims=["Theorem 1: Consistency result"],
+        definitions=["Delta: treatment effect"],
+    )
+    result = _build_notation_context(current, [other, current])
+    assert "Theorem 1: Consistency result" in result
+    assert "Delta: treatment effect" in result
+    assert "Claims & Definitions" in result
+
+
+# --- Crossref waste strengthening ---
+
+def test_crossref_system_removes_typo_comments():
+    """Crossref system should instruct removal of typographical error comments."""
+    assert "typographical errors" in CROSSREF_SYSTEM
+    assert "spelling" in CROSSREF_SYSTEM
+
+
+def test_crossref_system_downgrades_unsupported_comments():
+    """Crossref system should downgrade comments without concrete evidence."""
+    assert "DOWNGRADE" in CROSSREF_SYSTEM

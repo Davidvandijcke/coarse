@@ -11,6 +11,7 @@ from coarse.extraction import (
     _estimate_tokens,
     compute_garble_ratio,
     extract_text,
+    normalize_mistral_artifacts,
     normalize_ocr_garble,
 )
 from coarse.types import PaperText
@@ -192,3 +193,70 @@ def test_extract_text_normalizes_garbled_ocr(minimal_pdf: Path) -> None:
             result = extract_text(minimal_pdf, use_cache=False)
     assert "finite" in result.full_markdown
     assert "®nite" not in result.full_markdown
+
+
+# --- Mistral artifact normalization ---
+
+
+def test_normalize_mistral_glyph_mapping():
+    """Known glyph[...] patterns should be replaced with Unicode."""
+    text = "Let glyph[lscript] be a loss, glyph[epsilon1] > 0, glyph[element] S"
+    result = normalize_mistral_artifacts(text)
+    assert "ℓ" in result
+    assert "ε" in result
+    assert "∈" in result
+    assert "glyph[" not in result
+
+
+def test_normalize_mistral_unknown_glyph_preserved():
+    """Unknown glyph names should be left as-is."""
+    text = "glyph[unknownsymbol] stays"
+    result = normalize_mistral_artifacts(text)
+    assert "glyph[unknownsymbol]" in result
+
+
+def test_normalize_mistral_lscript():
+    """/lscript should become ℓ."""
+    assert normalize_mistral_artifacts("the /lscript norm") == "the ℓ norm"
+
+
+def test_normalize_mistral_html_entities():
+    """HTML entities should be unescaped."""
+    text = "x &gt; 0 and y &lt; 1 and &amp; done"
+    result = normalize_mistral_artifacts(text)
+    assert "x > 0" in result
+    assert "y < 1" in result
+    assert "& done" in result
+
+
+def test_normalize_mistral_formula_not_decoded():
+    """<!-- formula-not-decoded --> markers should be removed."""
+    text = "see equation <!-- formula-not-decoded --> above"
+    result = normalize_mistral_artifacts(text)
+    assert "formula-not-decoded" not in result
+    assert "see equation  above" in result
+
+
+def test_normalize_mistral_clean_text_preserved():
+    """Clean text should not be altered."""
+    clean = "The finite integral over (a, b) is well-defined."
+    assert normalize_mistral_artifacts(clean) == clean
+
+
+def test_garble_ratio_detects_mistral_artifacts():
+    """Garble ratio should detect glyph[...] and /lscript patterns."""
+    text = "Let glyph[lscript] be /lscript norm"
+    ratio = compute_garble_ratio(text)
+    assert ratio > 0.0
+
+
+def test_extract_text_normalizes_mistral_artifacts(minimal_pdf: Path) -> None:
+    """Mistral OCR artifacts should be normalized during extraction."""
+    pages = ["Let glyph[lscript] &gt; 0 with <!-- formula-not-decoded --> here"]
+    with patch("litellm.ocr", return_value=_mock_ocr_response(pages)):
+        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+            result = extract_text(minimal_pdf, use_cache=False)
+    assert "ℓ" in result.full_markdown
+    assert "> 0" in result.full_markdown
+    assert "glyph[" not in result.full_markdown
+    assert "formula-not-decoded" not in result.full_markdown

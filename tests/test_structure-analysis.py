@@ -6,6 +6,7 @@ import pytest
 from coarse.structure import (
     _classify_section_type,
     _extract_abstract,
+    _extract_claims_and_definitions,
     _extract_title,
     _parse_sections_from_markdown,
     analyze_structure,
@@ -14,7 +15,6 @@ from coarse.types import (
     PaperMetadata,
     PaperStructure,
     PaperText,
-    SectionInfo,
     SectionType,
 )
 
@@ -255,3 +255,101 @@ def test_analyze_structure_propagates_llm_error(mock_client):
     # Should still return a structure with default metadata
     assert result.domain == "unknown"
     assert result.taxonomy == "academic/research_paper"
+
+
+# ---------------------------------------------------------------------------
+# _extract_claims_and_definitions tests
+# ---------------------------------------------------------------------------
+
+def test_extract_claims_theorem():
+    """Extracts theorems as claims."""
+    text = """
+**Theorem 1.** If X is compact and f is continuous, then f attains its maximum.
+
+Some other text here.
+"""
+    claims, defs = _extract_claims_and_definitions(text)
+    assert len(claims) == 1
+    assert "Theorem 1" in claims[0]
+    assert "compact" in claims[0]
+    assert len(defs) == 0
+
+
+def test_extract_claims_definition():
+    """Extracts definitions into the definitions list."""
+    text = """
+**Definition 2.** A set S is called open if for every point x in S there exists epsilon > 0.
+
+More text.
+"""
+    claims, defs = _extract_claims_and_definitions(text)
+    assert len(defs) == 1
+    assert "Definition 2" in defs[0]
+    assert len(claims) == 0
+
+
+def test_extract_claims_assumption():
+    """Extracts assumptions as claims."""
+    text = """
+Assumption A1. The error terms are independently and identically distributed.
+
+Further discussion follows.
+"""
+    claims, defs = _extract_claims_and_definitions(text)
+    assert len(claims) == 1
+    assert "Assumption" in claims[0]
+    assert "A1" in claims[0]
+
+
+def test_extract_claims_multiple():
+    """Extracts multiple formal statements from one section."""
+    text = """
+**Theorem 1.** Result about convergence rates.
+
+**Lemma 2.** A supporting technical result.
+
+**Definition 3.** We define the operator T as follows.
+
+**Assumption 1.** The data generating process satisfies regularity conditions.
+"""
+    claims, defs = _extract_claims_and_definitions(text)
+    assert len(claims) == 3  # theorem, lemma, assumption
+    assert len(defs) == 1    # definition
+
+
+def test_extract_claims_empty_text():
+    """No formal statements yields empty lists."""
+    claims, defs = _extract_claims_and_definitions("Just plain text with no theorems.")
+    assert claims == []
+    assert defs == []
+
+
+def test_extract_claims_truncates_long_statements():
+    """Statements over 200 chars are truncated with ellipsis."""
+    long_statement = "x " * 150  # 300 chars
+    text = f"\nTheorem 1. {long_statement}\n\n"
+    claims, defs = _extract_claims_and_definitions(text)
+    assert len(claims) == 1
+    assert claims[0].endswith("...")
+
+
+def test_parse_sections_populates_claims_and_definitions(mock_client):
+    """_parse_sections_from_markdown should populate claims/definitions fields."""
+    md = """\
+# Paper Title
+
+## Theory
+
+**Theorem 1.** The estimator is consistent under regularity conditions.
+
+**Definition 1.** A function f is Lipschitz if there exists L > 0 such that condition holds.
+
+## Results
+
+The main finding is significant.
+"""
+    paper_text = PaperText(full_markdown=md, token_estimate=100)
+    result = analyze_structure(paper_text, mock_client)
+    theory = next(s for s in result.sections if s.title == "Theory")
+    assert len(theory.claims) >= 1
+    assert len(theory.definitions) >= 1

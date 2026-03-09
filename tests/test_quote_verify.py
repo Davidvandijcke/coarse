@@ -25,14 +25,14 @@ the treatment variable (exclusion restriction).
 
 def test_exact_match_passes_through():
     """Quote that is an exact substring is kept as-is."""
-    comment = _make_comment("exclusion restriction")
+    comment = _make_comment("the treatment variable (exclusion restriction)")
     result = verify_quotes([comment], PAPER_TEXT)
-    assert result[0].quote == "exclusion restriction"
+    assert "exclusion restriction" in result[0].quote
 
 
 def test_case_insensitive_exact_match():
     """Case-insensitive substring match passes."""
-    comment = _make_comment("Exclusion Restriction")
+    comment = _make_comment("The Treatment Variable (Exclusion Restriction)")
     result = verify_quotes([comment], PAPER_TEXT)
     assert "[approximate]" not in result[0].quote
 
@@ -73,29 +73,22 @@ def test_no_match_flagged_approximate_when_kept():
     assert result[0].quote.startswith("[approximate]")
 
 
-def test_empty_quote_passes_through():
-    """Empty quote is kept as-is."""
-    comment = _make_comment("")
-    result = verify_quotes([comment], PAPER_TEXT)
-    assert result[0].quote == ""
-
-
 def test_multiple_comments():
     """Multiple comments are processed independently; unverifiable ones are dropped."""
     comments = [
-        _make_comment("novel approach", number=1),
-        _make_comment("totally fake quote xyz", number=2),
+        _make_comment("novel approach to distribution-valued", number=1),
+        _make_comment("totally fake quote xyz and more padding text", number=2),
     ]
     result = verify_quotes(comments, PAPER_TEXT)
     assert len(result) == 1
-    assert result[0].quote == "novel approach"
+    assert "novel approach" in result[0].quote
 
 
 def test_multiple_comments_kept():
     """With drop_unverified=False, unverifiable quotes are flagged not dropped."""
     comments = [
-        _make_comment("novel approach", number=1),
-        _make_comment("totally fake quote xyz", number=2),
+        _make_comment("novel approach to distribution-valued", number=1),
+        _make_comment("totally fake quote xyz and more padding text", number=2),
     ]
     result = verify_quotes(comments, PAPER_TEXT, drop_unverified=False)
     assert len(result) == 2

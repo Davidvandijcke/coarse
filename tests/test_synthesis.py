@@ -25,7 +25,7 @@ def _make_review(
             DetailedComment(
                 number=1,
                 title="Comment One",
-                quote="Some quoted text.",
+                quote="Some quoted text from the paper for testing purposes.",
                 feedback="Some feedback.",
             )
         ]
@@ -88,7 +88,11 @@ def test_render_review_overall_feedback():
 
 def test_render_review_detailed_comments_count():
     comments = [
-        DetailedComment(number=i, title=f"C{i}", quote=f"q{i}", feedback=f"f{i}")
+        DetailedComment(
+            number=i, title=f"C{i}",
+            quote=f"Verbatim quote text from section {i} of the paper.",
+            feedback=f"f{i}",
+        )
         for i in range(1, 6)
     ]
     review = _make_review(comments=comments)
@@ -100,16 +104,19 @@ def test_render_review_no_severity_labels():
     """Severity labels like [CRITICAL] or [MINOR] must not appear in output."""
     comments = [
         DetailedComment(
-            number=1, title="A critical issue", quote="q1", feedback="f1",
-            severity="critical",
+            number=1, title="A critical issue",
+            quote="Verbatim quote text from section one of the paper.",
+            feedback="f1", severity="critical",
         ),
         DetailedComment(
-            number=2, title="A minor issue", quote="q2", feedback="f2",
-            severity="minor",
+            number=2, title="A minor issue",
+            quote="Verbatim quote text from section two of the paper.",
+            feedback="f2", severity="minor",
         ),
         DetailedComment(
-            number=3, title="A major issue", quote="q3", feedback="f3",
-            severity="major",
+            number=3, title="A major issue",
+            quote="Verbatim quote text from section three of the paper.",
+            feedback="f3", severity="major",
         ),
     ]
     review = _make_review(comments=comments)
@@ -123,9 +130,21 @@ def test_render_review_no_severity_labels():
 def test_render_review_pipeline_order_preserved():
     """Comments should appear in pipeline order, not sorted by severity."""
     comments = [
-        DetailedComment(number=1, title="Minor First", quote="q1", feedback="f1", severity="minor"),
-        DetailedComment(number=2, title="Critical Second", quote="q2", feedback="f2", severity="critical"),
-        DetailedComment(number=3, title="Major Third", quote="q3", feedback="f3", severity="major"),
+        DetailedComment(
+            number=1, title="Minor First",
+            quote="Verbatim quote from section one.",
+            feedback="f1", severity="minor",
+        ),
+        DetailedComment(
+            number=2, title="Critical Second",
+            quote="Verbatim quote from section two.",
+            feedback="f2", severity="critical",
+        ),
+        DetailedComment(
+            number=3, title="Major Third",
+            quote="Verbatim quote from section three.",
+            feedback="f3", severity="major",
+        ),
     ]
     review = _make_review(comments=comments)
     result = render_review(review)
@@ -205,7 +224,11 @@ def test_render_review_multiline_quote():
 
 def test_render_review_separator_count():
     comments = [
-        DetailedComment(number=i, title=f"C{i}", quote=f"q{i}", feedback=f"f{i}")
+        DetailedComment(
+            number=i, title=f"C{i}",
+            quote=f"Verbatim quote text from section {i} of the paper.",
+            feedback=f"f{i}",
+        )
         for i in range(1, 4)
     ]
     review = _make_review(comments=comments)

@@ -38,3 +38,6 @@ QUALITY_MODEL = "gemini/gemini-3-flash-preview"
 
 # Model families that need JSON mode instead of tool-calling
 JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini")
+
+# Models needing MARKDOWN_JSON_MODE (no response_format support, unreliable tool-calling)
+MARKDOWN_JSON_PREFIXES = ("moonshotai", "kimi")

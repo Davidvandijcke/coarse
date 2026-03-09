@@ -152,22 +152,7 @@ class TestPrepareWorkspace:
         assert ctx["section_claims"] == ["Method converges in O(n) time"]
         assert ctx["section_definitions"] == ["X := the input space"]
 
-    def test_writes_example_output(self, tmp_path):
-        agent = CodingSectionAgent(_make_config())
-        section = _make_section()
-        agent.prepare_workspace(
-            tmp_path,
-            section=section,
-            paper_markdown="paper",
-            all_sections=[section],
-            paper_title="Test Paper",
-        )
-        example = json.loads((tmp_path / "example_output.json").read_text())
-        assert "comments" in example
-        assert len(example["comments"]) == 1
-        assert "title" in example["comments"][0]
-
-    def test_returns_task_prompt(self, tmp_path):
+    def test_returns_task_prompt_with_add_comment(self, tmp_path):
         agent = CodingSectionAgent(_make_config())
         section = _make_section()
         prompt = agent.prepare_workspace(
@@ -179,6 +164,7 @@ class TestPrepareWorkspace:
         )
         assert "Methodology" in prompt
         assert "Test Paper" in prompt
+        assert "add_comment" in prompt
 
 
 class TestCodingSectionRun:

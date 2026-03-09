@@ -41,9 +41,9 @@ logger = logging.getLogger(__name__)
 
 
 def _coding_agents_available() -> bool:
-    """Check if openhands-sdk is installed."""
+    """Check if openai-agents SDK is installed."""
     try:
-        import openhands.sdk  # noqa: F401
+        import agents  # noqa: F401
         return True
     except ImportError:
         return False
@@ -70,10 +70,17 @@ _PROOF_KEYWORDS = frozenset([
 _CODING_AGENT_FOCUSES = frozenset(["proof", "methodology", "results"])
 
 
+_SECTION_WEIGHT = 1.5   # comments-per-section multiplier
+_TOKEN_WEIGHT = 0.3     # comments-per-1k-token multiplier
+_MIN_COMMENTS = 6
+_MAX_COMMENTS = 25
+
+
 def _compute_comment_target(structure: PaperStructure, paper_text: PaperText) -> int:
     """Compute a dynamic comment count target based on paper size.
 
-    Formula: clamp(n_sections * 1.5 + token_k * 0.3, 6, 25)
+    Formula: clamp(n_sections * _SECTION_WEIGHT + token_k * _TOKEN_WEIGHT,
+                   _MIN_COMMENTS, _MAX_COMMENTS)
     where token_k = token_estimate / 1000.
     """
     n_sections = len([
@@ -81,8 +88,8 @@ def _compute_comment_target(structure: PaperStructure, paper_text: PaperText) ->
         if s.section_type not in (SectionType.REFERENCES, SectionType.APPENDIX)
     ])
     token_k = paper_text.token_estimate / 1000.0
-    raw = n_sections * 1.5 + token_k * 0.3
-    return max(6, min(25, int(round(raw))))
+    raw = n_sections * _SECTION_WEIGHT + token_k * _TOKEN_WEIGHT
+    return max(_MIN_COMMENTS, min(_MAX_COMMENTS, int(round(raw))))
 
 
 def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]:
@@ -172,9 +179,20 @@ def review_paper(
         run_qa = True
 
     if run_qa:
+        from coarse.config import resolve_api_key
         from coarse.extraction import _save_cache
         from coarse.extraction_qa import run_extraction_qa
 
+        vision_key = resolve_api_key(config.vision_model, config)
+        if vision_key is None:
+            logger.warning(
+                "No API key for vision model %s — skipping extraction QA. "
+                "Set GEMINI_API_KEY or use --no-qa to silence this warning.",
+                config.vision_model,
+            )
+            run_qa = False
+
+    if run_qa:
         vision_client = LLMClient(model=config.vision_model, config=config)
         corrected = run_extraction_qa(Path(pdf_path), paper_text, vision_client)
         if corrected is not paper_text:
@@ -213,7 +231,7 @@ def review_paper(
     # Determine if coding agents should be used
     use_coding = config.use_coding_agents and _coding_agents_available()
     if config.use_coding_agents and not use_coding:
-        logger.warning("Coding agents requested but openhands-sdk not installed; using standard agents")
+        logger.warning("Coding agents requested but openai-agents not installed; using standard agents")
 
     overview_agent = OverviewAgent(client)
     section_agent = SectionAgent(client)

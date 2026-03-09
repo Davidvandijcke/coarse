@@ -89,6 +89,7 @@ def test_resolve_api_key_env_var(monkeypatch):
 
 def test_resolve_api_key_config_file(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     cfg = CoarseConfig(api_keys={"anthropic": "sk-ant-from-config"})
     result = resolve_api_key("anthropic", cfg)
     assert result == "sk-ant-from-config"
@@ -103,8 +104,18 @@ def test_resolve_api_key_env_priority(monkeypatch):
 
 def test_resolve_api_key_missing(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     result = resolve_api_key("openai", CoarseConfig())
     assert result is None
+
+
+def test_resolve_api_key_openrouter_fallback(monkeypatch):
+    """When only OPENROUTER_API_KEY is set, it serves as fallback for any provider."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    result = resolve_api_key("gemini/gemini-3-flash-preview", CoarseConfig())
+    assert result == "sk-or-test"
 
 
 def test_resolve_api_key_model_prefix_stripped(monkeypatch):

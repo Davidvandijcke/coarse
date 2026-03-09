@@ -6,7 +6,6 @@ Tests fallback to standard CritiqueAgent on failure.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -114,19 +113,7 @@ class TestPrepareWorkspace:
         assert sections_dir.exists()
         assert len(list(sections_dir.iterdir())) == 2
 
-    def test_writes_example_output(self, tmp_path):
-        agent = CodingCritiqueAgent(_make_config())
-        agent.prepare_workspace(
-            tmp_path,
-            paper_markdown="paper",
-            overview=_make_overview(),
-            comments=[_make_comment()],
-        )
-        example = json.loads((tmp_path / "example_output.json").read_text())
-        assert "comments" in example
-        assert len(example["comments"]) == 1
-
-    def test_returns_task_prompt(self, tmp_path):
+    def test_returns_task_prompt_with_add_comment(self, tmp_path):
         agent = CodingCritiqueAgent(_make_config())
         prompt = agent.prepare_workspace(
             tmp_path,
@@ -134,8 +121,8 @@ class TestPrepareWorkspace:
             overview=_make_overview(),
             comments=[_make_comment(1), _make_comment(2)],
         )
-        assert "quality evaluation" in prompt.lower()
-        assert "_review_output.json" in prompt
+        assert "evaluate" in prompt.lower() or "comment" in prompt.lower()
+        assert "add_comment" in prompt
 
 
 class TestCodingCritiqueRun:

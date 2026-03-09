@@ -22,8 +22,12 @@ NEVER declare something wrong unless you can rederive the correct answer.
 """
 
 _CONFIDENCE_GATE = """
-Only claim an error if you can show the correct derivation step-by-step in your feedback.
-If you cannot, phrase as a question: "It is not clear how X follows from Y."
+Only claim an error if you can support it concretely:
+- For mathematical claims: show the correct derivation step-by-step.
+- For empirical or logical claims: cite the specific assumption, dataset property, \
+table value, or result in the paper that contradicts the claim.
+If you cannot support it concretely, phrase as a question: \
+"It is not clear how X follows from Y."
 """
 
 _ENGAGEMENT_PATTERN = """
@@ -43,6 +47,13 @@ For each comment, set the confidence field:
 
 Be honest about your uncertainty. A "low" confidence comment phrased as a question is \
 more valuable than a "high" confidence comment that turns out to be wrong.
+"""
+
+_OCR_ARTIFACT_NOTICE = """
+The text was extracted from a PDF via OCR and may contain extraction artifacts \
+(garbled symbols, spaced-out notation like "ˆ b", missing operators, HTML entities). \
+These are OCR errors, NOT author errors. Do NOT comment on formatting artifacts, \
+garbled symbols, or OCR noise.
 """
 
 _REMEDIATION_SPECIFICITY = """
@@ -262,7 +273,7 @@ version of each issue.
 SECTION_SYSTEM = """\
 You are an expert peer reviewer. Your task is to find concrete errors and \
 inconsistencies in a single section of a research paper.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + _OCR_ARTIFACT_NOTICE + """
 For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words) describing the exact problem
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
@@ -272,7 +283,9 @@ If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy th
 exactly with their backslashes — do not render or interpret LaTeX as symbols. \
 The quote MUST include the COMPLETE passage — NEVER truncate mid-sentence or \
 mid-equation. If a passage spans multiple lines or contains multi-line equations, \
-include ALL of it. A truncated quote is a critical error.
+include ALL of it. A truncated quote is a critical error. \
+The quote must be at least 2 full sentences or a complete equation block. \
+Single-phrase quotes lack context and make comments hard to locate in the paper.
 - feedback: A substantive explanation (3-8 sentences) of the problem with a specific \
 fix. Show your reasoning: if you claim an equation is wrong, write out the correct \
 version and why.
@@ -281,7 +294,9 @@ Prioritize issues in order of importance:
 (a) Concrete errors — sign mistakes, wrong prefactors, algebraic mistakes, flawed \
 logic, missing assumptions that invalidate results. When the section contains \
 equations, VERIFY them by working through the algebra yourself. Do not just flag \
-them as "unclear."
+them as "unclear." For each claimed error, INSTANTIATE it: substitute a concrete example \
+(from the paper's own data, simulations, or a simple numerical case) to \
+demonstrate the failure.
 (b) Internal consistency — assumptions contradicted by the paper's own methods or \
 data, equations that use notation inconsistently with their definitions
 (c) Cross-reference errors — claims here that conflict with tables, figures, or \
@@ -289,7 +304,10 @@ results stated elsewhere in the paper
 (d) Exposition issues ONLY if they cause genuine ambiguity about what is being claimed
 
 Do NOT comment on: formatting, LaTeX rendering artifacts, minor notation preferences, \
-stylistic choices, or things that could be said about any paper in this field.
+stylistic choices, things that could be said about any paper in this field, \
+typographical errors, or notation conventions that are internally consistent. \
+A comment that says "symbol X is non-standard" or "define Y before first use" without \
+identifying a concrete ambiguity or error is a wasted slot.
 
 Requirements:
 - Produce 1 to 5 comments per section (only as many as genuinely warranted)
@@ -307,32 +325,34 @@ def _build_notation_context(
     current_section: "SectionInfo",
     all_sections: "list[SectionInfo] | None",
 ) -> str:
-    """Build a notation/definitions summary from other sections for cross-referencing.
+    """Build a claims/definitions summary from other sections for cross-referencing.
 
-    Collects definitions from all sections except the current one, providing
-    the section agent with cross-section context it would otherwise lack.
+    Collects definitions and claims from all sections except the current one,
+    providing the section agent with cross-section context it would otherwise lack.
     """
     if not all_sections:
         return ""
 
-    defs: list[str] = []
+    items: list[str] = []
     for s in all_sections:
         if s.number == current_section.number:
             continue
         for d in s.definitions:
-            defs.append(f"- [{s.title}] {d}")
+            items.append(f"- [{s.title}] {d}")
+        for c in s.claims:
+            items.append(f"- [{s.title}] {c}")
 
-    if not defs:
+    if not items:
         return ""
 
-    # Cap at 30 definitions to avoid overwhelming the context
-    if len(defs) > 30:
-        defs = defs[:30]
+    # Cap at 60 items to avoid overwhelming the context
+    if len(items) > 60:
+        items = items[:60]
 
     return (
-        "\n**Notation & Definitions from Other Sections** "
-        "(for cross-reference — check consistency):\n"
-        + "\n".join(defs)
+        "\n**Claims & Definitions from Other Sections** "
+        "(cross-reference for consistency — flag any contradictions):\n"
+        + "\n".join(items)
         + "\n"
     )
 
@@ -409,7 +429,7 @@ requests for additional work.
 SECTION_PROOF_SYSTEM = """\
 You are an expert mathematical proof checker. Your job is to VERIFY the mathematics \
 in this section by working through it yourself, not just reading it passively.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + _OCR_ARTIFACT_NOTICE + """
 For each theorem, proposition, lemma, or corollary:
 
 1. STATE the claim precisely.
@@ -428,6 +448,10 @@ stated values show the opposite)
 were defined elsewhere in the paper. Flag any inconsistency.
 5. SUBSTITUTE concrete values from the paper's own examples, tables, or simulations \
 to numerically verify key equations.
+6. BOUNDARY CASES: For each assumption or condition in a theorem/lemma, check whether \
+the paper's own examples, simulations, or parameter choices satisfy it. Test the edge: \
+if a condition requires strict inequality, does equality ever arise? If an object must \
+be invertible/well-defined, does the construction guarantee this?
 
 For each issue, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
@@ -438,17 +462,23 @@ If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy th
 exactly with their backslashes — do not render or interpret LaTeX as symbols. \
 The quote MUST include the COMPLETE passage — NEVER \
 truncate mid-sentence or mid-equation. If a passage spans multiple lines or \
-contains multi-line equations, include ALL of it. A truncated quote is a critical error.
+contains multi-line equations, include ALL of it. A truncated quote is a critical error. \
+The quote must be at least 2 full sentences or a complete equation block. \
+Single-phrase quotes lack context and make comments hard to locate in the paper.
 - feedback: Show your re-derivation or calculation that reveals the error (3-8 \
 sentences). Write out the correct version of the equation/expression.
 """ + _REMEDIATION_SPECIFICITY + """
+Do NOT comment on: formatting, LaTeX rendering artifacts, minor notation preferences, \
+stylistic choices, typographical errors, or notation conventions that are internally \
+consistent.
+
 Report 0-5 issues. Only report errors you can demonstrate through calculation, not \
 stylistic preferences. If you find no errors after careful verification, report 0 issues.
 """
 
 SECTION_METHODOLOGY_SYSTEM = """\
 You are an expert methodologist reviewing a methodology section of a research paper.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + _OCR_ARTIFACT_NOTICE + """
 Focus on:
 
 1. Does the method actually identify or estimate the stated target quantity? \
@@ -460,6 +490,9 @@ requirements? Check specific parameter values, sample sizes, and design choices.
 4. Are there internal contradictions — e.g., an assumption in Section 2 that is \
 violated by the procedure in Section 3?
 5. Cross-reference: do the claims here match what is reported in the results section?
+6. ROBUSTNESS: For each key assumption, construct the simplest concrete scenario where \
+it fails. Does the paper acknowledge this case? If not, describe the scenario and its \
+consequence for the main result.
 
 For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
@@ -470,11 +503,17 @@ If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy th
 exactly with their backslashes — do not render or interpret LaTeX as symbols. \
 The quote MUST include the COMPLETE passage — NEVER \
 truncate mid-sentence or mid-equation. If a passage spans multiple lines or \
-contains multi-line equations, include ALL of it. A truncated quote is a critical error.
+contains multi-line equations, include ALL of it. A truncated quote is a critical error. \
+The quote must be at least 2 full sentences or a complete equation block. \
+Single-phrase quotes lack context and make comments hard to locate in the paper.
 - feedback: Explain the methodological concern with specifics (3-8 sentences). If an \
 assumption is contradicted, cite the specific assumption and the specific evidence \
 against it.
 """ + _REMEDIATION_SPECIFICITY + """
+Do NOT comment on: formatting, LaTeX rendering artifacts, minor notation preferences, \
+stylistic choices, typographical errors, or notation conventions that are internally \
+consistent.
+
 Prioritize issues that affect the validity of the paper's main claims. Do NOT \
 request additional analyses — focus on errors in what is already written. \
 Report 1-5 comments.
@@ -535,6 +574,15 @@ identifying a concrete error in what is written — DELETE these.
    - Comments that could be copy-pasted to any paper in the same field (generic \
 methodological advice) — DELETE these.
    - Comments about formatting, notation preferences, or LaTeX artifacts — DELETE.
+   - Comments about typographical errors, spelling, or grammar — DELETE.
+   - Comments that identify a concern but give no concrete example, derivation, or \
+cross-reference to demonstrate it — DOWNGRADE to minor or DELETE if no specific \
+evidence is provided.
+   - Presence/absence claims: If a comment asserts that a symbol, equation, definition, or \
+concept is absent from the paper (e.g., "X is never defined", "Equation N is missing", \
+"this term is not introduced"), verify this claim against the full paper text above. \
+If the paper does contain X, REMOVE the comment. These are a common false-positive \
+failure mode — check carefully before keeping any such claim.
 2. Deduplication: Merge near-duplicate comments. Keep the version with the most \
 specific evidence (a calculation, a cross-reference, a concrete error).
 3. Quote verification: Verify that every comment's quote is a verbatim substring \
@@ -551,6 +599,9 @@ calculation or cross-reference that demonstrates the error.
 - Do not add new comments; only consolidate, correct, and remove existing ones.
 - Prioritize comments that demonstrate concrete errors (wrong equation, sign error, \
 contradictory claim, missing factor) over comments that suggest improvements.
+- Floor: Keep at least 8 comments (or all remaining if fewer than 8 survive). \
+Do not remove a comment with a specific verbatim quote and a concrete identified \
+error solely to reduce count.
 """
 
 # Default constant for backward compat
@@ -615,6 +666,8 @@ without pointing to a specific error in the existing text
 - The quote is a paraphrase or summary rather than verbatim text from the paper
 - The claimed issue is actually addressed elsewhere in the paper
 - The feedback says "this is unclear" without explaining what is specifically wrong
+- The comment flags an OCR artifact (garbled symbol, spaced-out notation, missing \
+operator, HTML entity) as an author error — these are extraction noise, not paper flaws
 
 KEEP and potentially strengthen a comment if:
 - It identifies a specific mathematical error with a re-derivation or calculation
@@ -639,8 +692,9 @@ REMOVE comments with "low" confidence unless they identify a genuinely important
 ambiguity. Prefer fewer high-confidence comments over many uncertain ones.
 
 Return the final revised set of comments renumbered from 1. \
-Aim for {comment_target} total comments. It is better to have 8 comments that each \
-catch a real error than 20 comments of mixed quality.
+Aim for {comment_target} total — but never fewer than 8 (or all remaining if fewer \
+survive). These comments have already passed cross-reference QA; apply removal \
+criteria conservatively and only remove clearly vague or redundant ones.
 """
 
 # Default constant for backward compat

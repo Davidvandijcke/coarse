@@ -130,7 +130,7 @@ def test_evaluate_review_creates_default_client():
 
 
 def test_dimension_scores_in_valid_range():
-    """After mocked evaluate_review, assert all DimensionScore.score values in [1,5] and overall_score in [1.0, 5.0]."""
+    """After mocked evaluate_review, assert all DimensionScore.score values in [1,6] and overall_score in [1.0, 6.0]."""
     scores = [2, 3, 4, 5]
     client = _make_mock_client(scores)
 
@@ -143,7 +143,7 @@ def test_dimension_scores_in_valid_range():
     for dim in result.dimensions:
         assert 1 <= dim.score <= 5
 
-    assert 1.0 <= result.overall_score <= 5.0
+    assert 1.0 <= result.overall_score <= 6.0
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +177,7 @@ def test_save_quality_report_creates_file(tmp_path):
     assert ref_path in content
     assert QUALITY_MODEL in content
     assert "single" in content
-    assert "4.25/5.0" in content
+    assert "4.25/6.0" in content
     assert "coverage" in content
     assert "Catches the key assumptions issue" in content
     assert "Misses one minor exposition gap" in content

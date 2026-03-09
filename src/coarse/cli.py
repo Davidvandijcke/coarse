@@ -1,6 +1,7 @@
 """CLI for coarse — AI academic paper reviewer."""
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -89,13 +90,19 @@ def review(
     model: Optional[str] = typer.Option(
         None, "--model", "-m", help="LiteLLM model string (e.g. openai/gpt-4o)"
     ),
+    api_key: Optional[str] = typer.Option(
+        None, "--api-key", help="OpenRouter API key (sets OPENROUTER_API_KEY for this run)"
+    ),
+    env_file: Optional[Path] = typer.Option(
+        None, "--env-file", help="Path to a .env file to load (e.g. ~/keys.env)"
+    ),
     cheap: bool = typer.Option(
         False, "--cheap", help="Use cheapest available model"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation prompt"),
     no_qa: bool = typer.Option(False, "--no-qa", help="Skip post-extraction quality check"),
     agentic: bool = typer.Option(
-        False, "--agentic", help="(default now — kept for backwards compat)"
+        False, "--agentic", help="Enable coding agents for deeper analysis of proofs/methodology"
     ),
     no_agentic: bool = typer.Option(
         False, "--no-agentic", help="Disable coding agents (faster, less thorough)"
@@ -111,6 +118,12 @@ def review(
     ),
 ) -> None:
     """Review a PDF paper and write a markdown report."""
+
+    # Load env file / API key before anything else so config picks them up
+    if env_file is not None:
+        load_dotenv(env_file, override=True)
+    if api_key is not None:
+        os.environ["OPENROUTER_API_KEY"] = api_key
 
     config = load_config()
     if no_qa:
@@ -134,21 +147,32 @@ def review(
     else:
         resolved_model = model or config.default_model
 
-    # Propagate -m to coding agents so they use the same model
-    if model:
-        config = config.model_copy(update={"agent_model": resolved_model})
+    # Don't propagate -m to coding agents — agent models need tool-calling
+    # support and have different requirements than the main review model.
 
     # Check API key; run setup inline if missing
     if resolve_api_key(resolved_model, config) is None:
         provider = resolved_model.split("/")[0] if "/" in resolved_model else resolved_model
         console.print(f"[yellow]No API key found for provider '{provider}'.[/yellow]")
+        console.print(
+            "\n[dim]Quickest fix:[/dim]\n"
+            f"  coarse review {pdf} [bold]--api-key YOUR_OPENROUTER_KEY[/bold]\n\n"
+            "[dim]Or load from a .env file:[/dim]\n"
+            f"  coarse review {pdf} [bold]--env-file path/to/.env[/bold]\n\n"
+            "[dim]Or configure once:[/dim]\n"
+            "  coarse setup\n\n"
+            "[dim]Get a free OpenRouter key at:[/dim] https://openrouter.ai/keys\n"
+        )
         if not sys.stdin.isatty():
-            console.print(
-                "[red]stdin is not a TTY. "
-                "Set the appropriate API key environment variable or run 'coarse setup'.[/red]"
-            )
             raise typer.Exit(code=1)
         config = _run_setup(config)
+
+    # Warn if vision QA is enabled but no vision model key is available
+    if config.extraction_qa and resolve_api_key(config.vision_model, config) is None:
+        console.print(
+            f"[dim]No API key for vision model ({config.vision_model}) — "
+            "extraction QA will be skipped. Set GEMINI_API_KEY to enable it.[/dim]"
+        )
 
     # Determine output path
     out_path = output or Path(f"{pdf.stem}_review.md")
@@ -193,7 +217,8 @@ def review(
                 )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        quality_path = out_path.parent / f"{pdf.stem}_quality_{timestamp}.md"
+        model_slug = resolved_model.replace("/", "_").replace(":", "_")
+        quality_path = out_path.parent / f"{pdf.stem}_quality_{model_slug}_{timestamp}.md"
         save_quality_report(report, quality_path, str(eval_ref), model=quality_model, mode=mode)
         console.print(
             f"[green]Quality report written to {quality_path}[/green] "

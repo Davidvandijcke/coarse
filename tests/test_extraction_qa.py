@@ -107,6 +107,16 @@ def test_select_qa_pages_large_pdf():
     assert len(result) <= 15
 
 
+def test_select_qa_pages_garbled_formula_pages_prioritized():
+    """Pages with glyph[...] or formula-not-decoded should always be selected."""
+    chunks = ["plain text content here"] * 20
+    chunks[3] = "See glyph[lscript] and glyph[epsilon1] in this formula"
+    chunks[15] = "The result is <!-- formula-not-decoded --> which simplifies"
+    result = _select_qa_pages(20, chunks)
+    assert 4 in result   # chunks[3] → page 4
+    assert 16 in result  # chunks[15] → page 16
+
+
 # ---------------------------------------------------------------------------
 # Unit tests: _apply_corrections
 # ---------------------------------------------------------------------------

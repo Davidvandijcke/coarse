@@ -38,7 +38,7 @@ class CoarseConfig(BaseModel):
     max_cost_usd: float = 10.0
     api_keys: dict[str, str] = Field(default_factory=dict)
     # Coding agent settings (opt-in via --agentic)
-    use_coding_agents: bool = True
+    use_coding_agents: bool = False
     agent_model: str = AGENT_MODEL
     agent_budget_usd: float = 2.0
     max_coding_sections: int = 3
@@ -105,13 +105,16 @@ def resolve_api_key(provider: str, config: CoarseConfig | None = None) -> str | 
         if google_key:
             return google_key
 
-    # For unknown providers (e.g. qwen/, deepseek/), fall back to OpenRouter key
-    if name not in PROVIDER_ENV_VARS:
-        or_key = os.environ.get("OPENROUTER_API_KEY")
-        if or_key:
-            return or_key
-
     # Fall back to config file
     if config is None:
         config = load_config()
-    return config.api_keys.get(name) or None
+    cfg_key = config.api_keys.get(name)
+    if cfg_key:
+        return cfg_key
+
+    # Last resort: OpenRouter can proxy most providers
+    or_key = os.environ.get("OPENROUTER_API_KEY")
+    if or_key:
+        return or_key
+
+    return None
