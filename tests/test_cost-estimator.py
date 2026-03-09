@@ -26,20 +26,22 @@ def test_build_cost_estimate_returns_all_stages():
     estimate = build_cost_estimate(_paper(), _config(), section_count=8)
     names = [s.name for s in estimate.stages]
     assert "metadata" in names
-    assert "overview" in names
+    # 3 overview judges + synthesis
+    overview_stages = [n for n in names if n.startswith("overview_")]
+    assert len(overview_stages) == 4  # 3 judges + 1 synthesis
     assert "crossref" in names
     assert "critique" in names
     section_stages = [n for n in names if n.startswith("section_")]
     assert len(section_stages) == 8
     assert "extraction_qa" in names
     assert "pdf_extraction" in names
-    # Total: pdf_extraction + metadata + overview + 8 sections + crossref + critique + extraction_qa = 14
-    assert len(estimate.stages) == 14
+    # Total: pdf_extraction + metadata + 3 overview judges + overview_synthesis + 8 sections + crossref + critique + extraction_qa = 17
+    assert len(estimate.stages) == 17
 
 
 def test_build_cost_estimate_zero_cost_unknown_model():
     config = _config(model="unknown/totally-fake-model")
-    config = config.model_copy(update={"extraction_qa": False, "use_coding_agents": False})
+    config = config.model_copy(update={"extraction_qa": False})
     estimate = build_cost_estimate(_paper(), config)
     assert len(estimate.stages) > 0
     # pdf_extraction stage has fixed cost; all LLM stages should be zero for unknown model

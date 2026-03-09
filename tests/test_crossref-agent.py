@@ -4,18 +4,11 @@ from unittest.mock import MagicMock
 from coarse.agents.crossref import CrossrefAgent, _ConsolidatedComments
 from coarse.llm import LLMClient
 from coarse.prompts import CROSSREF_SYSTEM
-from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, PaperText
+from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue
 
 
 def _make_client() -> LLMClient:
     return MagicMock(spec=LLMClient)
-
-
-def _make_paper_text(markdown: str = "Full paper text here.") -> PaperText:
-    return PaperText(
-        full_markdown=markdown,
-        token_estimate=100,
-    )
 
 
 def _make_overview() -> OverviewFeedback:
@@ -48,7 +41,7 @@ def test_crossref_returns_detailed_comments():
     client.complete.return_value = _make_consolidated([1, 2, 3])
 
     agent = CrossrefAgent(client)
-    result = agent.run(_make_paper_text(), _make_overview(), [_make_comment(1)])
+    result = agent.run(_make_overview(), [_make_comment(1)])
 
     assert isinstance(result, list)
     assert len(result) == 3
@@ -62,25 +55,26 @@ def test_crossref_comments_renumbered_sequentially():
 
     input_comments = [_make_comment(2), _make_comment(5), _make_comment(7)]
     agent = CrossrefAgent(client)
-    result = agent.run(_make_paper_text(), _make_overview(), input_comments)
+    result = agent.run(_make_overview(), input_comments)
 
     assert [c.number for c in result] == [1, 2, 3]
 
 
-def test_crossref_passes_full_paper_text():
-    """Capture messages passed to LLMClient.complete and assert paper_text.full_markdown appears in user message."""
+def test_crossref_no_paper_text_in_prompt():
+    """Verify that the user message does NOT contain full paper text (removed for cost savings)."""
     client = _make_client()
     client.complete.return_value = _make_consolidated([1])
 
-    paper_markdown = "This is the unique paper content for verification."
     agent = CrossrefAgent(client)
-    agent.run(_make_paper_text(paper_markdown), _make_overview(), [_make_comment(1)])
+    agent.run(_make_overview(), [_make_comment(1)])
 
     call_args = client.complete.call_args
     messages = call_args[0][0]
     user_msgs = [m for m in messages if m["role"] == "user"]
     assert len(user_msgs) == 1
-    assert paper_markdown in user_msgs[0]["content"]
+    # Should not contain paper text markers
+    assert "<paper>" not in user_msgs[0]["content"]
+    assert "Full Paper Text" not in user_msgs[0]["content"]
 
 
 def test_crossref_passes_overview_issues():
@@ -90,7 +84,7 @@ def test_crossref_passes_overview_issues():
 
     overview = _make_overview()
     agent = CrossrefAgent(client)
-    agent.run(_make_paper_text(), overview, [_make_comment(1)])
+    agent.run(overview, [_make_comment(1)])
 
     call_args = client.complete.call_args
     messages = call_args[0][0]
@@ -107,7 +101,7 @@ def test_crossref_empty_comments_list():
     client.complete.return_value = _ConsolidatedComments(comments=[])
 
     agent = CrossrefAgent(client)
-    result = agent.run(_make_paper_text(), _make_overview(), [])
+    result = agent.run(_make_overview(), [])
 
     assert result == []
 
@@ -118,7 +112,7 @@ def test_crossref_uses_crossref_system_prompt():
     client.complete.return_value = _make_consolidated([1])
 
     agent = CrossrefAgent(client)
-    agent.run(_make_paper_text(), _make_overview(), [_make_comment(1)])
+    agent.run(_make_overview(), [_make_comment(1)])
 
     call_args = client.complete.call_args
     messages = call_args[0][0]

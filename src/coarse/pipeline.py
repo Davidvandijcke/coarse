@@ -16,7 +16,7 @@ load_dotenv()
 from coarse.agents.critique import CritiqueAgent
 from coarse.agents.crossref import CrossrefAgent
 from coarse.agents.literature import search_literature
-from coarse.agents.overview import OverviewAgent, check_assumptions, merge_overview
+from coarse.agents.overview import OverviewAgent
 from coarse.agents.section import SectionAgent
 from coarse.config import CoarseConfig, load_config
 from coarse.cost import run_cost_gate
@@ -40,15 +40,6 @@ from coarse.types import (
 logger = logging.getLogger(__name__)
 
 
-def _coding_agents_available() -> bool:
-    """Check if openai-agents SDK is installed."""
-    try:
-        import agents  # noqa: F401
-        return True
-    except ImportError:
-        return False
-
-
 def _check_extraction_quality(structure: "PaperStructure") -> bool:
     """Check whether extraction produced usable output.
 
@@ -65,9 +56,6 @@ _PROOF_KEYWORDS = frozenset([
     "theorem", "proof", "lemma", "proposition", "corollary", "q.e.d", "qed",
     "∎", "□", "we prove", "we show that", "it follows that",
 ])
-
-# Section focuses routed to coding agents (when agentic mode is on)
-_CODING_AGENT_FOCUSES = frozenset(["proof", "methodology", "results"])
 
 
 _SECTION_WEIGHT = 1.5   # comments-per-section multiplier
@@ -228,25 +216,9 @@ def review_paper(
     # Compute dynamic comment target based on paper size
     comment_target = _compute_comment_target(structure, paper_text)
 
-    # Determine if coding agents should be used
-    use_coding = config.use_coding_agents and _coding_agents_available()
-    if config.use_coding_agents and not use_coding:
-        logger.warning("Coding agents requested but openai-agents not installed; using standard agents")
-
     overview_agent = OverviewAgent(client)
     section_agent = SectionAgent(client)
     crossref_agent = CrossrefAgent(client)
-
-    # Prepare coding agents if enabled
-    coding_section_agent = None
-    coding_critique_agent = None
-    if use_coding:
-        from coarse.agents.coding_critique import CodingCritiqueAgent
-        from coarse.agents.coding_section import CodingSectionAgent
-
-        coding_section_agent = CodingSectionAgent(config, fallback_client=client)
-        coding_critique_agent = CodingCritiqueAgent(config, fallback_client=client)
-        logger.info("Agentic mode: proof/methodology/results sections use coding agents")
 
     # Review main body sections + appendix proof sections; skip references.
     # Cap at 25 sections to keep total comment count manageable for crossref.
@@ -258,56 +230,29 @@ def review_paper(
     ]
     non_ref_sections = reviewable_sections[:25]
 
-    # --- Phase 1: Multi-judge overview panel + assumption checker (blocking) ---
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        overview_future = executor.submit(
-            overview_agent.run_panel, structure, calibration, literature_context
-        )
-        assumption_future = executor.submit(
-            check_assumptions, structure, client, calibration
-        )
-
-        overview = overview_future.result()
-        try:
-            assumption_issues = assumption_future.result()
-        except Exception:
-            logger.warning("Assumption checker failed, skipping")
-            assumption_issues = []
-
-    overview = merge_overview(overview, assumption_issues)
+    # --- Phase 1: Multi-judge overview panel (blocking) ---
+    # Assumption checking is folded into the methodology overview persona.
+    overview = overview_agent.run_panel(structure, calibration, literature_context)
 
     # --- Phase 2: Section agents (parallel, text-only with overview context) ---
-    # Route proof/methodology/results to coding agents (capped at max_coding_sections)
-    coding_count = 0
     with ThreadPoolExecutor(max_workers=10) as executor:
         section_futures = []
+        # Only pass literature context to sections that benefit from it
+        _LIT_RELEVANT = {SectionType.INTRODUCTION, SectionType.RELATED_WORK}
         for section in non_ref_sections:
             focus = detect_section_focus(section)
-            if (
-                use_coding
-                and coding_section_agent is not None
-                and focus in _CODING_AGENT_FOCUSES
-                and coding_count < config.max_coding_sections
-            ):
-                coding_count += 1
-                section_futures.append(
-                    executor.submit(
-                        coding_section_agent.run, section, structure.title,
-                        overview, calibration, focus, literature_context,
-                        paper_markdown=paper_text.full_markdown,
-                        all_sections=structure.sections,
-                    )
+            sec_lit = literature_context if (
+                section.section_type in _LIT_RELEVANT or focus == "literature"
+            ) else ""
+            section_futures.append(
+                executor.submit(
+                    section_agent.run, section, structure.title,
+                    overview, calibration,
+                    focus,
+                    sec_lit,
+                    all_sections=structure.sections,
                 )
-            else:
-                section_futures.append(
-                    executor.submit(
-                        section_agent.run, section, structure.title,
-                        overview, calibration,
-                        focus,
-                        literature_context,
-                        all_sections=structure.sections,
-                    )
-                )
+            )
 
         section_comments: list[DetailedComment] = []
         for i, future in enumerate(section_futures):
@@ -319,25 +264,17 @@ def review_paper(
                 logger.warning("Section agent failed for '%s', skipping", sec_title)
 
     deduped_comments = crossref_agent.run(
-        paper_text, overview, section_comments, comment_target=comment_target
+        overview, section_comments, comment_target=comment_target
     )
     # Final quote verification against full paper text
     verified_comments = verify_quotes(
         deduped_comments, paper_text.full_markdown, drop_unverified=True,
     )
 
-    # Critique — coding agent when agentic mode is on
-    if use_coding and coding_critique_agent is not None:
-        final_comments = coding_critique_agent.run(
-            overview, verified_comments, comment_target=comment_target,
-            paper_markdown=paper_text.full_markdown,
-            all_sections=structure.sections,
-        )
-    else:
-        critique_agent = CritiqueAgent(client)
-        final_comments = critique_agent.run(
-            overview, verified_comments, comment_target=comment_target
-        )
+    critique_agent = CritiqueAgent(client)
+    final_comments = critique_agent.run(
+        overview, verified_comments, comment_target=comment_target
+    )
 
     # Re-verify quotes after critique (critique re-emits through JSON, re-garbling LaTeX)
     final_comments = verify_quotes(

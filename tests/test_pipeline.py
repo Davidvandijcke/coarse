@@ -79,7 +79,7 @@ def _make_config() -> CoarseConfig:
 
 def test_review_paper_calls_stages_in_order():
     """Verify each stage is called once in the correct order."""
-    config = CoarseConfig(default_model="openai/gpt-4o-mini", use_coding_agents=False)
+    config = CoarseConfig(default_model="openai/gpt-4o-mini")
     paper_text = _make_paper_text()
     structure = _make_structure()
     overview = _make_overview()
@@ -109,7 +109,7 @@ def test_review_paper_calls_stages_in_order():
         call_order.append(f"section_{section.number}")
         return [_make_comment(section.number)]
 
-    def fake_crossref_run(pt, ov, cmts, comment_target=None):
+    def fake_crossref_run(ov, cmts, comment_target=None):
         call_order.append("crossref")
         return deduped
 
@@ -130,8 +130,6 @@ def test_review_paper_calls_stages_in_order():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
-        patch("coarse.pipeline.check_assumptions", return_value=[]),
-        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", side_effect=fake_render),
     ):
@@ -178,8 +176,6 @@ def test_review_paper_skips_references_section():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
-        patch("coarse.pipeline.check_assumptions", return_value=[]),
-        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -210,8 +206,6 @@ def test_review_paper_date_format():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
-        patch("coarse.pipeline.check_assumptions", return_value=[]),
-        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
         patch("coarse.pipeline.datetime") as mock_dt,
@@ -240,8 +234,6 @@ def _patch_pipeline_deps(overview: OverviewFeedback):
     mock_sec = stack.enter_context(patch("coarse.pipeline.SectionAgent"))
     mock_cr = stack.enter_context(patch("coarse.pipeline.CrossrefAgent"))
     mock_ct = stack.enter_context(patch("coarse.pipeline.CritiqueAgent"))
-    stack.enter_context(patch("coarse.pipeline.check_assumptions", return_value=[]))
-    stack.enter_context(patch("coarse.pipeline.merge_overview", return_value=overview))
     stack.enter_context(patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c))
     stack.enter_context(patch("coarse.pipeline.render_review", return_value="md"))
 
@@ -286,8 +278,6 @@ def test_review_paper_returns_review_and_markdown():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
-        patch("coarse.pipeline.check_assumptions", return_value=[]),
-        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value=expected_markdown),
     ):
@@ -317,7 +307,7 @@ def test_review_paper_section_comments_flattened():
 
     crossref_received: list[DetailedComment] = []
 
-    def fake_crossref_run(pt, ov, cmts, comment_target=None):
+    def fake_crossref_run(ov, cmts, comment_target=None):
         crossref_received.extend(cmts)
         return [_make_comment(1)]
 
@@ -330,8 +320,6 @@ def test_review_paper_section_comments_flattened():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
-        patch("coarse.pipeline.check_assumptions", return_value=[]),
-        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -368,8 +356,6 @@ def test_review_paper_uses_provided_config():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
-        patch("coarse.pipeline.check_assumptions", return_value=[]),
-        patch("coarse.pipeline.merge_overview", return_value=overview),
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -464,148 +450,3 @@ def test_compute_comment_target_excludes_references():
     target = _compute_comment_target(structure, paper_text)
     # 2 reviewable sections * 1.5 + 5*0.3 = 3 + 1.5 = 4.5 → clamped to 6
     assert target == 6
-
-
-# ---------------------------------------------------------------------------
-# Tests: coding agent hybrid dispatch
-# ---------------------------------------------------------------------------
-
-def test_coding_agents_disabled_explicitly():
-    """use_coding_agents=False → no coding agents instantiated."""
-    config = CoarseConfig(default_model="openai/gpt-4o-mini", use_coding_agents=False)
-    assert config.use_coding_agents is False
-
-    overview = _make_overview()
-    with _patch_pipeline_deps(overview) as stack:
-        with patch("coarse.pipeline._coding_agents_available", return_value=True):
-            review_paper("paper.pdf", skip_cost_gate=True, config=config)
-
-    # No coding agent imports should have been triggered
-    # (the standard agents were used; if this ran without error, coding agents were not used)
-
-
-def test_coding_agents_unavailable_silent_fallback():
-    """use_coding_agents=True + SDK not installed → silent fallback to standard."""
-    config = CoarseConfig(default_model="openai/gpt-4o-mini", use_coding_agents=True)
-    overview = _make_overview()
-
-    with _patch_pipeline_deps(overview):
-        with patch("coarse.pipeline._coding_agents_available", return_value=False):
-            review, _, _pt = review_paper("paper.pdf", skip_cost_gate=True, config=config)
-
-    assert isinstance(review, Review)
-
-
-def test_hybrid_dispatch_routes_methodology_to_coding():
-    """Methodology sections → CodingSectionAgent when agentic mode on."""
-    config = CoarseConfig(default_model="openai/gpt-4o-mini", use_coding_agents=True)
-    sections = [
-        _make_section(1, SectionType.INTRODUCTION),
-        _make_section(2, SectionType.METHODOLOGY),
-    ]
-    structure = _make_structure(sections=sections)
-    overview = _make_overview()
-
-    coding_called = []
-    standard_called = []
-
-    def fake_coding_run(section, title, overview=None, calibration=None,
-                        focus="general", literature_context="",
-                        paper_markdown="", all_sections=None):
-        coding_called.append(section.section_type)
-        return [_make_comment(section.number)]
-
-    def fake_standard_run(section, title, overview=None, calibration=None,
-                          focus="general", literature_context="",
-                          all_sections=None):
-        standard_called.append(section.section_type)
-        return [_make_comment(section.number)]
-
-    MockCodingSection = MagicMock()
-    MockCodingSection.return_value.run.side_effect = fake_coding_run
-    MockCodingCritique = MagicMock()
-    MockCodingCritique.return_value.run.return_value = [_make_comment(1)]
-
-    with (
-        patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
-        patch("coarse.pipeline.analyze_structure", return_value=structure),
-        patch("coarse.pipeline.calibrate_domain", return_value=None),
-        patch("coarse.pipeline.search_literature", return_value=""),
-        patch("coarse.pipeline.OverviewAgent") as MockOverview,
-        patch("coarse.pipeline.SectionAgent") as MockSection,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.check_assumptions", return_value=[]),
-        patch("coarse.pipeline.merge_overview", return_value=overview),
-        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
-        patch("coarse.pipeline.render_review", return_value="md"),
-        patch("coarse.pipeline._coding_agents_available", return_value=True),
-        patch("coarse.agents.coding_section.CodingSectionAgent", MockCodingSection),
-        patch("coarse.agents.coding_critique.CodingCritiqueAgent", MockCodingCritique),
-    ):
-        MockOverview.return_value.run_panel.return_value = overview
-        MockSection.return_value.run.side_effect = fake_standard_run
-        MockCrossref.return_value.run.return_value = [_make_comment(1)]
-
-        review_paper("paper.pdf", skip_cost_gate=True, config=config)
-
-    # Introduction → standard, Methodology → coding
-    assert SectionType.INTRODUCTION in standard_called
-    assert SectionType.METHODOLOGY in coding_called
-
-
-def test_max_coding_sections_cap():
-    """max_coding_sections limits how many sections go to coding agents."""
-    config = CoarseConfig(
-        default_model="openai/gpt-4o-mini",
-        use_coding_agents=True,
-        max_coding_sections=1,
-    )
-    # Create 3 methodology sections — only 1 should go to coding
-    sections = [_make_section(i, SectionType.METHODOLOGY) for i in range(1, 4)]
-    structure = _make_structure(sections=sections)
-    overview = _make_overview()
-
-    coding_count = [0]
-    standard_count = [0]
-
-    def fake_coding_run(section, title, overview=None, calibration=None,
-                        focus="general", literature_context="",
-                        paper_markdown="", all_sections=None):
-        coding_count[0] += 1
-        return [_make_comment(section.number)]
-
-    def fake_standard_run(section, title, overview=None, calibration=None,
-                          focus="general", literature_context="",
-                          all_sections=None):
-        standard_count[0] += 1
-        return [_make_comment(section.number)]
-
-    MockCodingSection = MagicMock()
-    MockCodingSection.return_value.run.side_effect = fake_coding_run
-    MockCodingCritique = MagicMock()
-    MockCodingCritique.return_value.run.return_value = [_make_comment(1)]
-
-    with (
-        patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
-        patch("coarse.pipeline.analyze_structure", return_value=structure),
-        patch("coarse.pipeline.calibrate_domain", return_value=None),
-        patch("coarse.pipeline.search_literature", return_value=""),
-        patch("coarse.pipeline.OverviewAgent") as MockOverview,
-        patch("coarse.pipeline.SectionAgent") as MockSection,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.check_assumptions", return_value=[]),
-        patch("coarse.pipeline.merge_overview", return_value=overview),
-        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
-        patch("coarse.pipeline.render_review", return_value="md"),
-        patch("coarse.pipeline._coding_agents_available", return_value=True),
-        patch("coarse.agents.coding_section.CodingSectionAgent", MockCodingSection),
-        patch("coarse.agents.coding_critique.CodingCritiqueAgent", MockCodingCritique),
-    ):
-        MockOverview.return_value.run_panel.return_value = overview
-        MockSection.return_value.run.side_effect = fake_standard_run
-        MockCrossref.return_value.run.return_value = [_make_comment(1)]
-
-        review_paper("paper.pdf", skip_cost_gate=True, config=config)
-
-    assert coding_count[0] == 1
-    assert standard_count[0] == 2

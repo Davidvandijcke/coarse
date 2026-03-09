@@ -28,6 +28,11 @@ Only claim an error if you can support it concretely:
 table value, or result in the paper that contradicts the claim.
 If you cannot support it concretely, phrase as a question: \
 "It is not clear how X follows from Y."
+
+Before flagging notation or definitions as "wrong" or "non-standard":
+- Consider whether this is a field convention you may not be familiar with.
+- If the notation is used consistently throughout the paper, it is likely intentional.
+- Only flag if the convention creates a concrete mathematical error or ambiguity.
 """
 
 _ENGAGEMENT_PATTERN = """
@@ -54,6 +59,23 @@ The text was extracted from a PDF via OCR and may contain extraction artifacts \
 (garbled symbols, spaced-out notation like "ˆ b", missing operators, HTML entities). \
 These are OCR errors, NOT author errors. Do NOT comment on formatting artifacts, \
 garbled symbols, or OCR noise.
+"""
+
+_TABLE_VERIFICATION = """
+When commenting on tables, figures, or numerical results:
+- Quote the COMPLETE row or entry, including all columns — never quote isolated values.
+- Before claiming a value is wrong, state what it SHOULD be and show the calculation.
+- Before claiming a row is duplicated or missing, list ALL rows you see in the table.
+- Do NOT reconstruct table values from memory — copy them character-for-character from the text.
+"""
+
+_NUMERICAL_CLAIMS = """
+When asserting a numerical value (volume, order, determinant, dimension, rank):
+- You MUST show the full derivation from definitions in the paper.
+- State the formula, substitute the values, compute the result step-by-step.
+- If you cannot derive the value from the paper's own definitions, do not assert it.
+- Never state "X = Y" without a calculation — unsupported numerical claims are a common \
+hallucination.
 """
 
 _REMEDIATION_SPECIFICITY = """
@@ -157,7 +179,11 @@ OVERVIEW_PERSONAS = [
     "You are an expert in research design and applied methodology. "
     "Focus especially on whether the paper's implementation matches "
     "its theoretical claims, and whether experiments or simulations test "
-    "the right properties.",
+    "the right properties. "
+    "Additionally, for each formal assumption in the paper, check whether "
+    "the data structure, sampling design, and implementation actually satisfy it. "
+    "When assumptions are violated, evaluate whether the paper's defenses "
+    "(if any) address the violation.",
     "You are an expert in scientific communication and research impact. "
     "Focus especially on whether the most important issues are identified, "
     "whether the contribution is clearly articulated, and whether the paper "
@@ -273,7 +299,9 @@ version of each issue.
 SECTION_SYSTEM = """\
 You are an expert peer reviewer. Your task is to find concrete errors and \
 inconsistencies in a single section of a research paper.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + _OCR_ARTIFACT_NOTICE + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + (
+    _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION
+) + """
 For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words) describing the exact problem
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
@@ -429,7 +457,9 @@ requests for additional work.
 SECTION_PROOF_SYSTEM = """\
 You are an expert mathematical proof checker. Your job is to VERIFY the mathematics \
 in this section by working through it yourself, not just reading it passively.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + _OCR_ARTIFACT_NOTICE + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + (
+    _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION + _NUMERICAL_CLAIMS
+) + """
 For each theorem, proposition, lemma, or corollary:
 
 1. STATE the claim precisely.
@@ -438,8 +468,8 @@ For example, if the paper claims a change-of-variables yields expression X, perf
 the change-of-variables yourself and verify you get X. If you get something different, \
 that is an error worth reporting.
 3. CHECK for specific error types:
-   - Sign errors or missing factors 
-   - Subscript/index errors 
+   - Sign errors or missing factors
+   - Subscript/index errors
    - Equations that contradict the paper's own definitions from earlier sections
    - Boundary/degenerate cases the proof does not handle
    - Numerical values that do not match
@@ -477,7 +507,9 @@ stylistic preferences. If you find no errors after careful verification, report 
 
 SECTION_METHODOLOGY_SYSTEM = """\
 You are an expert methodologist reviewing a methodology section of a research paper.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + _OCR_ARTIFACT_NOTICE + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + (
+    _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION
+) + """
 Focus on:
 
 1. Does the method actually identify or estimate the stated target quantity? \
@@ -579,15 +611,13 @@ cross-reference to demonstrate it — DOWNGRADE to minor or DELETE if no specifi
 evidence is provided.
    - Presence/absence claims: If a comment asserts that a symbol, equation, definition, or \
 concept is absent from the paper (e.g., "X is never defined", "Equation N is missing", \
-"this term is not introduced"), verify this claim against the full paper text above. \
-If the paper does contain X, REMOVE the comment. These are a common false-positive \
-failure mode — check carefully before keeping any such claim.
+"this term is not introduced"), treat these with skepticism — they are a common \
+false-positive failure mode. REMOVE such comments unless the evidence is overwhelming.
 2. Deduplication: Merge near-duplicate comments. Keep the version with the most \
 specific evidence (a calculation, a cross-reference, a concrete error).
-3. Quote verification: Verify that every comment's quote is a verbatim substring \
-of the paper text. If a quote is paraphrased or hallucinated, find the closest \
-matching real passage in the paper text, or REMOVE the comment entirely if no \
-suitable passage exists. Quotes that are summaries or rewordings are NOT acceptable.
+3. If a quote looks paraphrased or hallucinated (not a verbatim substring), flag \
+the comment for removal. A downstream verification step will check quotes \
+programmatically — focus your effort on dedup and quality filtering.
 4. Renumber the surviving comments sequentially from 1.
 
 Requirements:
@@ -613,11 +643,10 @@ def crossref_system(comment_target: int | str = "10-15") -> str:
 
 
 def crossref_user(
-    paper_text: str,
     overview: "OverviewFeedback",
     comments: "list[DetailedComment]",
 ) -> str:
-    """User prompt for cross-reference. Embeds paper text, overview, and all draft comments."""
+    """User prompt for cross-reference. Embeds overview and all draft comments."""
     overview_block = "\n".join(
         f"**{issue.title}**: {issue.body}" for issue in overview.issues
     )
@@ -635,16 +664,11 @@ Consolidate the following draft detailed comments for a research paper.
 ## Overview Issues (for context)
 {overview_block}
 
-## Full Paper Text (for quote verification)
-<paper>
-{paper_text}
-</paper>
-
 ## Draft Detailed Comments
 {comments_block}
 
-Deduplicate near-identical comments, verify all quotes are verbatim substrings of \
-the paper text, and return the consolidated list renumbered from 1.
+Deduplicate near-identical comments, remove low-value comments, and return \
+the consolidated list renumbered from 1.
 """
 
 
@@ -667,6 +691,11 @@ without pointing to a specific error in the existing text
 - The feedback says "this is unclear" without explaining what is specifically wrong
 - The comment flags an OCR artifact (garbled symbol, spaced-out notation, missing \
 operator, HTML entity) as an author error — these are extraction noise, not paper flaws
+- The comment asserts a specific numerical value (volume, order, rank, dimension, \
+determinant) without showing a derivation from the paper's definitions — unsupported \
+numerical claims are a common hallucination pattern
+- The comment claims a table entry is wrong, duplicated, or missing, but the quote does \
+not include the complete table row(s) needed to verify the claim
 
 KEEP and potentially strengthen a comment if:
 - It identifies a specific mathematical error with a re-derivation or calculation

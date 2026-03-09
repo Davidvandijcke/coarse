@@ -104,20 +104,20 @@ def test_section_user_with_claims_and_defs():
 # --- crossref_user ---
 
 def test_crossref_user_embeds_all_comments():
-    paper = "We exploit a sharp RD design around the threshold c = 0.5."
     overview = make_overview()
     comments = make_comments()
-    result = crossref_user(paper, overview, comments)
+    result = crossref_user(overview, comments)
     assert "Undefined bandwidth selector" in result
     assert "Missing continuity assumption" in result
 
 
-def test_crossref_user_embeds_paper_text():
-    paper = "Unique paper content for verification purposes."
+def test_crossref_user_no_paper_text():
     overview = make_overview()
     comments = make_comments()
-    result = crossref_user(paper, overview, comments)
-    assert paper in result
+    result = crossref_user(overview, comments)
+    # Paper text removed from crossref for cost savings
+    assert "<paper>" not in result
+    assert "Full Paper Text" not in result
 
 
 # --- critique_user ---

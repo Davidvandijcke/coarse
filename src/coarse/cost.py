@@ -13,18 +13,28 @@ from coarse.llm import estimate_call_cost
 from coarse.models import OCR_MODEL
 from coarse.types import CostEstimate, CostStage, PaperText
 
-_DEFAULT_SECTION_COUNT = 8
+
+def _estimate_section_count(total_tokens: int) -> int:
+    """Estimate number of reviewable sections from paper token count.
+
+    Academic papers average ~1,200 tokens per section after OCR extraction.
+    """
+    return max(4, min(40, total_tokens // 1200))
 
 
 def build_cost_estimate(
     paper_text: PaperText,
     config: CoarseConfig,
-    section_count: int = _DEFAULT_SECTION_COUNT,
+    section_count: int | None = None,
 ) -> CostEstimate:
     """Return a CostEstimate with per-stage breakdowns using heuristic token budgets."""
     model = config.default_model
     total_tokens = paper_text.token_estimate
-    section_tokens = max(1, total_tokens // section_count)
+    if section_count is None:
+        section_count = _estimate_section_count(total_tokens)
+    section_text_tokens = max(1, total_tokens // section_count)
+    # Each section prompt includes ~1,500 tokens of system prompt + cross-ref context
+    section_input = section_text_tokens + 1500
 
     # OCR extraction cost (Mistral OCR: ~$0.002/page)
     est_pages = max(1, total_tokens // 250)
@@ -38,12 +48,18 @@ def build_cost_estimate(
         ),
     ]
 
+    # Overview: 3 judges each read full paper, then a synthesis call
+    _NUM_OVERVIEW_JUDGES = 3
     stage_defs: list[tuple[str, int, int]] = [
         ("metadata", 500, 100),
-        ("overview", total_tokens, 1200),
-        *[(f"section_{i + 1}", section_tokens, 600) for i in range(section_count)],
-        ("crossref", total_tokens, 1000),
-        ("critique", total_tokens, 800),
+        *[
+            (f"overview_judge_{i + 1}", total_tokens, 1500)
+            for i in range(_NUM_OVERVIEW_JUDGES)
+        ],
+        ("overview_synthesis", 5000, 1500),
+        *[(f"section_{i + 1}", section_input, 3500) for i in range(section_count)],
+        ("crossref", 8000, 3000),
+        ("critique", 8000, 3500),
     ]
 
     for name, tokens_in, tokens_out in stage_defs:
@@ -68,30 +84,6 @@ def build_cost_estimate(
                 estimated_tokens_in=qa_tokens_in,
                 estimated_tokens_out=1000,
                 estimated_cost_usd=qa_cost,
-            )
-        )
-
-    if config.use_coding_agents:
-        # Coding section agents: ~$0.50 each, up to max_coding_sections
-        n_coding = min(config.max_coding_sections, section_count)
-        for i in range(n_coding):
-            stages.append(
-                CostStage(
-                    name=f"coding_section_{i + 1}",
-                    model=config.agent_model,
-                    estimated_tokens_in=total_tokens,
-                    estimated_tokens_out=2000,
-                    estimated_cost_usd=0.50,
-                )
-            )
-        # Coding critique agent: ~$1.00
-        stages.append(
-            CostStage(
-                name="coding_critique",
-                model=config.agent_model,
-                estimated_tokens_in=total_tokens,
-                estimated_tokens_out=3000,
-                estimated_cost_usd=1.00,
             )
         )
 
@@ -148,7 +140,7 @@ def confirm_or_abort(estimate: CostEstimate, max_cost_usd: float) -> None:
 def run_cost_gate(
     paper_text: PaperText,
     config: CoarseConfig,
-    section_count: int = _DEFAULT_SECTION_COUNT,
+    section_count: int | None = None,
 ) -> CostEstimate:
     """Build estimate, display it, prompt for confirmation. Returns CostEstimate."""
     estimate = build_cost_estimate(paper_text, config, section_count=section_count)
