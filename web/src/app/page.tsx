@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import { useRouter } from "next/navigation";
 import { CharcoalRule, HeroMarks } from "@/components/charcoal";
 import ModelPicker from "@/components/ModelPicker";
+import { estimateTokensFromPdf, getModelPricing, estimateReviewCost } from "@/lib/estimateCost";
 
 /* ── Split-flap AI name display ────────────────────────────── */
 const AI_NAMES = ["Claude,", "Gemini,", "Qwen,", "ChatGPT,", "DeepSeek,", "Kimi,", "Grok,", "MiniMax,", "Mistral,", "Llama,"];
@@ -160,14 +161,54 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("anthropic/claude-sonnet-4-6");
+  const [model, setModel] = useState("anthropic/claude-sonnet-4.6");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lookupKey, setLookupKey] = useState("");
+  const [costEstimate, setCostEstimate] = useState<number | null>(null);
+  const [costLoading, setCostLoading] = useState(false);
+  const tokenCacheRef = useRef<{ name: string; size: number; tokens: number } | null>(null);
 
   const onDrop = useCallback((accepted: File[]) => {
     if (accepted[0]) setFile(accepted[0]);
   }, []);
+
+  // Compute cost estimate when file or model changes
+  useEffect(() => {
+    if (!file) { setCostEstimate(null); return; }
+    let cancelled = false;
+    setCostLoading(true);
+
+    (async () => {
+      try {
+        // Cache token count so model switches don't re-parse the PDF
+        let tokens: number;
+        const cached = tokenCacheRef.current;
+        if (cached && cached.name === file.name && cached.size === file.size) {
+          tokens = cached.tokens;
+        } else {
+          tokens = await estimateTokensFromPdf(file);
+          tokenCacheRef.current = { name: file.name, size: file.size, tokens };
+        }
+
+        const pricing = await getModelPricing(model);
+        if (cancelled) return;
+
+        if (pricing) {
+          setCostEstimate(estimateReviewCost(tokens, pricing));
+        } else {
+          setCostEstimate(null);
+        }
+      } catch (err) {
+        console.error("Cost estimation failed:", err);
+        if (!cancelled) setCostEstimate(null);
+      } finally {
+        if (!cancelled) setCostLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [file, model]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -517,6 +558,24 @@ export default function Home() {
             {/* Model picker */}
             <ModelPicker value={model} onChange={setModel} />
 
+            {/* Cost estimate */}
+            {file && (
+              <p
+                style={{
+                  fontFamily: "var(--font-space-mono), monospace",
+                  fontSize: "0.9rem",
+                  color: costEstimate !== null ? "var(--yellow-chalk)" : "var(--dust)",
+                  margin: "-0.5rem 0 0",
+                }}
+              >
+                {costLoading
+                  ? "Estimating cost..."
+                  : costEstimate !== null
+                    ? `Estimated API cost: $${costEstimate < 0.01 ? costEstimate.toFixed(4) : costEstimate.toFixed(2)}`
+                    : "Cost estimate unavailable for this model"}
+              </p>
+            )}
+
             {error && (
               <div
                 style={{
@@ -615,6 +674,39 @@ export default function Home() {
               Find
             </button>
           </div>
+        </section>
+
+        <CharcoalRule />
+
+        {/* ── Supported by ────────────────────────────────────── */}
+        <section style={{ padding: "2rem 0 0", textAlign: "center" }}>
+          <p
+            style={{
+              fontFamily: "var(--font-chalk)",
+              fontSize: "0.95rem",
+              color: "var(--dust)",
+              marginBottom: "1rem",
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+            }}
+          >
+            Supported by
+          </p>
+          <a
+            href="https://esoc.princeton.edu/"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ display: "inline-block", opacity: 0.7, transition: "opacity 0.2s" }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/esoc-logo.svg"
+              alt="ESOC — Empirical Studies of Conflict"
+              style={{ height: "60px", width: "auto" }}
+            />
+          </a>
         </section>
       </main>
     </div>

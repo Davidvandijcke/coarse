@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 100" fill="none">
+  <!-- Overlapping squares icon -->
+  <g transform="translate(0, 10)">
+    <rect x="0" y="28" width="28" height="28" stroke="#999" stroke-width="2.5" fill="none" opacity="0.4"/>
+    <rect x="10" y="18" width="28" height="28" stroke="#999" stroke-width="2.5" fill="none" opacity="0.6"/>
+    <rect x="20" y="8" width="28" height="28" stroke="#bbb" stroke-width="2.5" fill="none" opacity="0.8"/>
+    <rect x="30" y="0" width="28" height="28" stroke="#ccc" stroke-width="2.5" fill="none" opacity="1"/>
+  </g>
+  <!-- ESOC text -->
+  <text x="72" y="52" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="48" font-weight="700" fill="#ccc" letter-spacing="2">ESOC</text>
+  <!-- Subtitle -->
+  <text x="4" y="90" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#ccc" letter-spacing="0.5">Empirical Studies of Conflict</text>
+</svg>

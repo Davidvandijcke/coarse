@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 /* ── Default model options ─────────────────────────────────── */
 const DEFAULT_MODELS = [
-  { id: "anthropic/claude-sonnet-4-6", label: "Sonnet 4.6", provider: "Anthropic" },
+  { id: "anthropic/claude-sonnet-4.6", label: "Sonnet 4.6", provider: "Anthropic" },
   { id: "openai/gpt-5-mini", label: "GPT-5 Mini", provider: "OpenAI" },
   { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash", provider: "Google" },
   { id: "qwen/qwen3.5-plus-02-15", label: "Qwen 3.5 Plus", provider: "Qwen" },
