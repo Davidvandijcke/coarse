@@ -93,17 +93,32 @@ export function estimateReviewCost(
   const { promptCostPerToken: inp, completionCostPerToken: out } = pricing;
   const sections = sectionCount ?? estimateSectionCount(tokenEstimate);
   const sectionTextTokens = Math.max(1, Math.floor(tokenEstimate / sections));
-  // Each section prompt includes ~1,500 tokens of system prompt + cross-ref context
-  const sectionInput = sectionTextTokens + 1500;
+  // Each section prompt includes ~5,000 tokens of overhead:
+  // system prompt (~1200) + overview context (~2500) + calibration (~500) + notation (~800)
+  const sectionInput = sectionTextTokens + 5000;
 
   // OCR: ~$0.002/page, estimate pages from tokens
   const estPages = Math.max(1, Math.floor(tokenEstimate / 250));
   let total = estPages * 0.002;
 
+  // Estimated raw comments from section agents (each produces 1-5, avg ~3)
+  const nRawComments = sections * 3;
+
+  // Crossref reads all raw comments, emits deduplicated set as JSON
+  const crossrefIn = nRawComments * 350 + 3500;
+  const crossrefOut = Math.floor(nRawComments * 0.6) * 600;
+
+  // Critique reads deduped comments, emits revised set as JSON
+  const nDeduped = Math.floor(nRawComments * 0.6);
+  const critiqueIn = nDeduped * 350 + 3500;
+  const critiqueOut = Math.floor(nDeduped * 0.9) * 600;
+
   // Pipeline stages: [name, tokens_in, tokens_out]
   const NUM_OVERVIEW_JUDGES = 3;
   const stages: [string, number, number][] = [
     ["metadata", 500, 100],
+    ["calibration", 1000, 2000],
+    ["literature_search", 2000, 2560],
     // 3 overview judges each read full paper
     ...Array.from(
       { length: NUM_OVERVIEW_JUDGES },
@@ -114,13 +129,19 @@ export function estimateReviewCost(
       { length: sections },
       (_, i) => [`section_${i + 1}`, sectionInput, 3500] as [string, number, number],
     ),
-    ["crossref", 8000, 3000],
-    ["critique", 8000, 3500],
+    ["crossref", crossrefIn, crossrefOut],
+    ["critique", critiqueIn, critiqueOut],
   ];
 
   for (const [, tokIn, tokOut] of stages) {
     total += inp * tokIn + out * tokOut;
   }
+
+  // Fixed cost for extraction QA (Gemini Flash, always enabled by modal worker)
+  total += 0.02;
+
+  // Conservative buffer — better to overestimate
+  total *= 1.15;
 
   return total;
 }
