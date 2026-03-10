@@ -56,10 +56,8 @@ class SectionAgent(ReviewAgent):
             literature_context=literature_context,
             all_sections=all_sections,
         )
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text},
-        ]
+
+        messages = self._build_messages(system_prompt, user_text)
 
         result = self.client.complete(
             messages, _SectionComments, max_tokens=16384, temperature=0.3

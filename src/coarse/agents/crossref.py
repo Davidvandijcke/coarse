@@ -34,10 +34,8 @@ class CrossrefAgent(ReviewAgent):
     ) -> list[DetailedComment]:
         user_content = crossref_user(overview, comments)
         sys_prompt = crossref_system(comment_target) if comment_target else CROSSREF_SYSTEM
-        messages = [
-            {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": user_content},
-        ]
+
+        messages = self._build_messages(sys_prompt, user_content)
         result = self.client.complete(
             messages, _ConsolidatedComments, max_tokens=32768, temperature=0.1
         )

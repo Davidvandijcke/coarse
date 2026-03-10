@@ -14,7 +14,9 @@ from coarse.types import (
 
 
 def _make_client() -> LLMClient:
-    return MagicMock(spec=LLMClient)
+    client = MagicMock(spec=LLMClient)
+    client.supports_prompt_caching = False
+    return client
 
 
 def _make_structure() -> PaperStructure:
@@ -222,3 +224,73 @@ def test_build_sections_summary_empty_text():
     ]
     result = _build_sections_summary(sections)
     assert "(empty)" in result
+
+
+def test_overview_agent_prompt_caching_layout():
+    """With supports_prompt_caching=True, system content is a list with 2 blocks:
+    first has cache_control and paper context, second has OVERVIEW_SYSTEM."""
+    client = _make_client()
+    client.supports_prompt_caching = True
+    client.complete.return_value = _make_feedback()
+
+    agent = OverviewAgent(client)
+    agent.run(_make_structure())
+
+    messages = client.complete.call_args[0][0]
+    system_msg = [m for m in messages if m["role"] == "system"][0]
+
+    # System content must be a list of 2 content blocks
+    assert isinstance(system_msg["content"], list)
+    assert len(system_msg["content"]) == 2
+
+    # First block: paper context with cache_control
+    first = system_msg["content"][0]
+    assert first["type"] == "text"
+    assert first["cache_control"] == {"type": "ephemeral"}
+    # Paper context should contain title and abstract
+    assert "Test Paper Title" in first["text"]
+    assert "abstract of the test paper" in first["text"]
+
+    # Second block: OVERVIEW_SYSTEM (no cache_control)
+    second = system_msg["content"][1]
+    assert second["type"] == "text"
+    assert second["text"] == OVERVIEW_SYSTEM
+    assert "cache_control" not in second
+
+
+def test_overview_agent_prompt_caching_with_persona():
+    """With caching + persona, second system block contains persona + OVERVIEW_SYSTEM."""
+    client = _make_client()
+    client.supports_prompt_caching = True
+    client.complete.return_value = _make_feedback()
+
+    agent = OverviewAgent(client)
+    persona = "You are a domain expert in econometrics."
+    agent.run(_make_structure(), persona=persona)
+
+    messages = client.complete.call_args[0][0]
+    system_msg = [m for m in messages if m["role"] == "system"][0]
+    second = system_msg["content"][1]
+
+    assert persona in second["text"]
+    assert OVERVIEW_SYSTEM in second["text"]
+
+
+def test_overview_agent_prompt_caching_short_user_message():
+    """With caching, user message is a short trigger (paper content is in system)."""
+    client = _make_client()
+    client.supports_prompt_caching = True
+    client.complete.return_value = _make_feedback()
+
+    structure = _make_structure()
+    agent = OverviewAgent(client)
+    agent.run(structure)
+
+    messages = client.complete.call_args[0][0]
+    user_msg = [m for m in messages if m["role"] == "user"][0]
+
+    # User message should be short — no sections summary or abstract embedded
+    assert isinstance(user_msg["content"], str)
+    assert len(user_msg["content"]) < 300
+    # Should not contain full section text
+    assert "Methodology text here." not in user_msg["content"]

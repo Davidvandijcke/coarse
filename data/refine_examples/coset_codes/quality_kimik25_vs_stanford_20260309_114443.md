@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review substantially exceeds the reference by identifying numerous real mathematical, typographical, and tabular errors in the paper (e.g., D_k instead of D_4, incorrect state/branch count formulas, algebraic inconsistencies) that the reference missed entirely. |
 | specificity | 6.0/6 | Comments are exceptionally precise, with accurate verbatim quotes and concrete, mathematically exact fixes for the identified errors. |
 | depth | 6.0/6 | The analysis is technically rigorous, verifying the paper's algebraic derivations, table entries, and theoretical assumptions (such as geometric uniformity and regular labelings) at a much deeper level than the reference review. |
-| format | 5.0/6 | The review perfectly adheres to the requested refine.ink structure, including the header block, titled overall feedback, and structured detailed comments. |
+| format | 5.0/6 | The review perfectly adheres to the requested standard review structure, including the header block, titled overall feedback, and structured detailed comments. |
 
 ## Strengths
 

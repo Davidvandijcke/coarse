@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review covers both high-level methodological issues (e.g., shaping gain, distance invariance) and an impressive array of specific mathematical and typographical errors in the paper, far exceeding the reference review's coverage. |
 | specificity | 6.0/6 | Every comment is accompanied by a precise, accurate quote from the text. The feedback is highly specific, pointing out exact algebraic inconsistencies, incorrect variable substitutions, and definitional mismatches. |
 | depth | 6.0/6 | The review demonstrates exceptional mathematical rigor. It catches subtle algebraic errors (e.g., the volume equality chain), incorrect exponents in formulas, and correctly identifies that the matrix R includes a reflection rather than being a pure rotation. |
-| format | 5.0/6 | The generated review perfectly adheres to the refine.ink format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
+| format | 5.0/6 | The generated review perfectly adheres to the standard review format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
 
 ## Strengths
 

@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review identifies almost all the conceptual issues raised by the reference review (e.g., corner cases, distinct eigenvalues, Property A) and adds a massive number of valid mathematical and logical issues from the appendices that the reference missed entirely. |
 | specificity | 6.0/6 | Every comment includes perfectly accurate verbatim quotes from the paper and provides exact, actionable mathematical corrections. |
 | depth | 6.0/6 | The technical depth is astounding. The review catches subtle errors in matrix algebra, calculus, integration, and convexity arguments within the proofs, far exceeding the surface-level checks of the reference review. |
-| format | 5.0/6 | The review perfectly adheres to the requested refine.ink format, including the header block, Overall Feedback, and Detailed Comments with Quote and Feedback sections. |
+| format | 5.0/6 | The review perfectly adheres to the requested standard review format, including the header block, Overall Feedback, and Detailed Comments with Quote and Feedback sections. |
 
 ## Strengths
 

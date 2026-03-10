@@ -74,7 +74,7 @@ engage with the paper's methodology, proofs, and assumptions at a deep level, \
 or does it stay surface-level (notation complaints, formatting issues)? Score \
 5+ if the analysis provides deeper technical engagement than the reference \
 (e.g., re-derivations, concrete counterexamples, numerical verification).
-4. **format**: Does the generated review adhere to the refine.ink structure \
+4. **format**: Does the generated review adhere to the standard review structure \
 (header block, Overall Feedback with titled issues, Detailed Comments with \
 numbered entries, each with Quote and Feedback sections)? Score 5 for perfect \
 adherence, 1 for major structural deviation.

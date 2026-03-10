@@ -11,6 +11,7 @@ from coarse.prompts import (
     OVERVIEW_SYNTHESIS_SYSTEM,
     OVERVIEW_SYSTEM,
     assumption_check_user,
+    overview_paper_context,
     overview_synthesis_user,
     overview_user,
 )
@@ -99,18 +100,36 @@ class OverviewAgent(ReviewAgent):
         literature_context: str = "",
     ) -> OverviewFeedback:
         sections_summary = _build_sections_summary(structure.sections)
-        system = (persona + "\n\n" + OVERVIEW_SYSTEM) if persona else OVERVIEW_SYSTEM
-        messages = [
-            {"role": "system", "content": system},
-            {
-                "role": "user",
-                "content": overview_user(
+
+        if self.client.supports_prompt_caching:
+            # Caching layout: shared paper context (cached) + persona (uncached)
+            paper_context = overview_paper_context(
+                structure.title, structure.abstract, sections_summary,
+                calibration=calibration, literature_context=literature_context,
+            )
+            persona_block = (persona + "\n\n" + OVERVIEW_SYSTEM) if persona else OVERVIEW_SYSTEM
+            messages = [
+                {"role": "system", "content": [
+                    {"type": "text", "text": paper_context,
+                     "cache_control": {"type": "ephemeral"}},
+                    {"type": "text", "text": persona_block},
+                ]},
+                {"role": "user", "content": overview_user(
+                    structure.title, structure.abstract, sections_summary,
+                    cache_mode=True,
+                )},
+            ]
+        else:
+            system = (persona + "\n\n" + OVERVIEW_SYSTEM) if persona else OVERVIEW_SYSTEM
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": overview_user(
                     structure.title, structure.abstract,
                     sections_summary, calibration=calibration,
                     literature_context=literature_context,
-                ),
-            },
-        ]
+                )},
+            ]
+
         return self.client.complete(  # type: ignore[return-value]
             messages, OverviewFeedback, max_tokens=4096, temperature=0.3
         )
@@ -121,22 +140,38 @@ class OverviewAgent(ReviewAgent):
         calibration: DomainCalibration | None = None,
         literature_context: str = "",
     ) -> OverviewFeedback:
-        """Run 3 judges in parallel with different personas, then synthesize."""
-        from concurrent.futures import ThreadPoolExecutor
+        """Run 3 judges with different personas, then synthesize.
 
+        When the model supports prompt caching, judges run sequentially so
+        judge 1's cache write completes before judges 2 and 3 read from it.
+        Otherwise judges run in parallel.
+        """
         overviews: list[OverviewFeedback] = []
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [
-                executor.submit(
-                    self.run, structure, calibration, persona, literature_context
-                )
-                for persona in OVERVIEW_PERSONAS
-            ]
-            for i, future in enumerate(futures):
+
+        if self.client.supports_prompt_caching:
+            # Sequential execution for cache sharing
+            for i, persona in enumerate(OVERVIEW_PERSONAS):
                 try:
-                    overviews.append(future.result())
+                    overviews.append(
+                        self.run(structure, calibration, persona, literature_context)
+                    )
                 except Exception:
                     logger.warning("Overview judge %d failed, skipping", i)
+        else:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = [
+                    executor.submit(
+                        self.run, structure, calibration, persona, literature_context
+                    )
+                    for persona in OVERVIEW_PERSONAS
+                ]
+                for i, future in enumerate(futures):
+                    try:
+                        overviews.append(future.result())
+                    except Exception:
+                        logger.warning("Overview judge %d failed, skipping", i)
 
         if not overviews:
             raise RuntimeError("All overview judges failed")

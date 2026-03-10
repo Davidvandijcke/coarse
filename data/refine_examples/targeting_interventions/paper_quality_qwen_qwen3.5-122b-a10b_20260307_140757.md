@@ -14,7 +14,7 @@
 | coverage | 2.5/5 | The Overall Feedback touches on some valid high-level points (e.g., spectral gaps, static vs. dynamic), but the Detailed Comments entirely miss the core theoretical contributions and weaknesses of the paper, focusing almost exclusively on typographical and OCR errors. |
 | specificity | 4.5/5 | The review provides accurate verbatim quotes and specific, actionable fixes for every point, though the fixes are largely addressing PDF parsing artifacts rather than actual author errors. |
 | depth | 1.5/5 | The analysis in the Detailed Comments is extremely shallow, consisting almost entirely of pedantic corrections to missing underlines, missing fraction bars, and missing 'not equal' signs caused by OCR extraction, rather than engaging with the paper's methodology or proofs. |
-| format | 5.0/5 | The generated review perfectly adheres to the requested refine.ink format, including the header block, Overall Feedback, and numbered Detailed Comments with Quote and Feedback sections. |
+| format | 5.0/5 | The generated review perfectly adheres to the requested standard review format, including the header block, Overall Feedback, and numbered Detailed Comments with Quote and Feedback sections. |
 
 ## Strengths
 

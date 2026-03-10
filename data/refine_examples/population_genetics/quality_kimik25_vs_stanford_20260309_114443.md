@@ -14,7 +14,7 @@
 | coverage | 5.5/6 | The generated review identifies several critical issues missed by the reference, most notably the demographic assumption mismatch in the empirical evaluation (applying a panmictic model to the structured NSE dataset) and the theoretical gap in applying the PIM-derived approximation to the stepwise mutation model. |
 | specificity | 4.5/6 | While the quotes are perfectly accurate, the specificity score is reduced because a few detailed comments provide mathematically incorrect or misguided feedback (e.g., misunderstanding the unordered sample combinatorics in the Griffiths-Tavaré recursion and misreading the text regarding the MCMC proposal's optimality). |
 | depth | 5.0/6 | The review demonstrates profound technical engagement, particularly in its critique of the generalized Pareto distribution bootstrap (noting its failure if variance is infinite) and the distinction between labeled histories and unranked topologies, though this is slightly offset by the technical errors in a few comments. |
-| format | 5.0/6 | The generated review perfectly adheres to the requested refine.ink format, including the Overall Feedback section with titled issues and the Detailed Comments section with numbered entries containing Quote and Feedback blocks. |
+| format | 5.0/6 | The generated review perfectly adheres to the requested standard review format, including the Overall Feedback section with titled issues and the Detailed Comments section with numbered entries containing Quote and Feedback blocks. |
 
 ## Strengths
 

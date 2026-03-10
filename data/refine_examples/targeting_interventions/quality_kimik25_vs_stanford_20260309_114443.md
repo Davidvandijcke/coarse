@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review covers all the high-level conceptual issues identified by the reference review (e.g., symmetry, Property A, non-negativity constraints) and adds a brilliant insight regarding the circle network example violating the distinct eigenvalues assumption. It also exhaustively covers mathematical errors throughout the main text and appendix. |
 | specificity | 6.0/6 | The specificity is flawless. Every single one of the 22 detailed comments includes a perfectly accurate verbatim quote from the paper and provides an exact, actionable mathematical correction. |
 | depth | 6.0/6 | The depth of analysis is astounding and substantially exceeds the reference review. The generated review re-derives first-order conditions, checks Lagrangian formulations, and verifies topological arguments in the proofs, identifying numerous real errors that were completely overlooked by the reference. |
-| format | 5.0/6 | The review perfectly adheres to the requested refine.ink format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered entries containing Status, Quote, and Feedback. |
+| format | 5.0/6 | The review perfectly adheres to the requested standard review format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered entries containing Status, Quote, and Feedback. |
 
 ## Strengths
 

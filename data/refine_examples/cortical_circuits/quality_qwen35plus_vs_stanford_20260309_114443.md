@@ -14,7 +14,7 @@
 | coverage | 5.5/6 | The review identifies crucial issues with the paper's mathematical derivations, scaling assumptions, and the validity of the mean-field limits. It covers both high-level conceptual issues and low-level mathematical details, exceeding the reference review in identifying internal inconsistencies. |
 | specificity | 6.0/6 | Every comment includes an exact verbatim quote and points to a specific equation or claim, providing clear and actionable corrections. The precision of the mathematical corrections is exceptional. |
 | depth | 5.5/6 | The review engages with the paper's math at a profound level, correctly identifying a missing Jacobian factor in a probability transformation, a dimensional error in a scaling law, and algebraic typos. Although it makes a few mathematical errors of its own, the depth of analysis far surpasses the reference review. |
-| format | 5.0/6 | The review perfectly follows the required refine.ink format, including the header block, Overall Feedback, and Detailed Comments with Quote and Feedback sections. |
+| format | 5.0/6 | The review perfectly follows the required standard review format, including the header block, Overall Feedback, and Detailed Comments with Quote and Feedback sections. |
 
 ## Strengths
 

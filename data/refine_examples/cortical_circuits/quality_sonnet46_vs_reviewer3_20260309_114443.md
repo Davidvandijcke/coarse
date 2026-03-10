@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review provides exhaustive coverage of the paper's mathematical framework, identifying critical flaws in derivations, approximations, and stability conditions that the reference review completely missed. It successfully addresses almost every section of the paper with highly relevant critiques. |
 | specificity | 6.0/6 | The specificity is flawless. The review pinpoints exact equations, quotes the text accurately, and provides precise algebraic corrections (e.g., correcting the ramp formula in Eq 9.13, catching the typo in the tracking time scale, and identifying the dropped logarithmic term in Eq 4.14). |
 | depth | 6.0/6 | The depth is exceptional, far exceeding the reference review. The reviewer re-derives equations to find non-trivial errors (e.g., proving that the width of the rate distribution in Eq 5.14 scales as m_k/sqrt(|log m_k|) rather than m_k^{3/2}) and rigorously challenges the paper's definition of chaos based on a divergent Lyapunov exponent. |
-| format | 5.0/6 | The generated review perfectly adheres to the requested refine.ink format, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Status, Quote, and Feedback sections. |
+| format | 5.0/6 | The generated review perfectly adheres to the requested standard review format, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Status, Quote, and Feedback sections. |
 
 ## Strengths
 

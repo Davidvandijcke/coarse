@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review covers an impressive breadth of the paper, including the main text, appendices, and even the post-publication discussion. It identifies numerous valid issues, ranging from high-level assumptions to specific typographical and mathematical errors, far exceeding the reference review. |
 | specificity | 6.0/6 | The review provides exact, accurate quotes for every point. The feedback is highly actionable and precise, catching subtle notational errors (like the typo of \pi_0 instead of \theta_0) and referencing specific equation numbers. |
 | depth | 6.0/6 | The technical depth is outstanding. The review correctly identifies that a combinatorial formula computes labeled histories rather than topologies, catches a logical error in the boundary condition description, and mathematically proves that the geometric distribution parameter in Appendix A is inverted. |
-| format | 5.0/6 | The generated review perfectly follows the refine.ink format, including the Overall Feedback section with titled issues and the Detailed Comments section with numbered entries containing Quote and Feedback. |
+| format | 5.0/6 | The generated review perfectly follows the standard review format, including the Overall Feedback section with titled issues and the Detailed Comments section with numbered entries containing Quote and Feedback. |
 
 ## Strengths
 

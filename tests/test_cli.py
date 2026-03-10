@@ -227,11 +227,11 @@ def test_main_module_entrypoint():
 # ---------------------------------------------------------------------------
 
 def test_init_exports():
-    """coarse package exports review_paper callable and __version__ == '0.1.0'."""
+    """coarse package exports review_paper callable and __version__."""
     import coarse
 
     assert callable(coarse.review_paper)
-    assert coarse.__version__ == "0.1.0"
+    assert coarse.__version__ == "1.0.0"
 
 
 # ---------------------------------------------------------------------------

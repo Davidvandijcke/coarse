@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from coarse.agents.overview import OverviewAgent, synthesize_overviews
+from coarse.llm import LLMClient
 from coarse.prompts import OVERVIEW_PERSONAS, OVERVIEW_SYNTHESIS_SYSTEM
 from coarse.types import (
     OverviewFeedback,
@@ -44,7 +45,8 @@ def test_three_personas_defined():
 
 def test_run_panel_calls_three_judges():
     """run_panel makes 3 parallel calls with different personas."""
-    mock_client = MagicMock()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.supports_prompt_caching = False
     agent = OverviewAgent(mock_client)
 
     overview = _make_overview()
@@ -63,7 +65,8 @@ def test_run_panel_calls_three_judges():
 
 def test_run_panel_single_judge_fallback():
     """If only 1 judge succeeds, return its result directly."""
-    mock_client = MagicMock()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.supports_prompt_caching = False
     agent = OverviewAgent(mock_client)
 
     overview = _make_overview()
@@ -84,7 +87,8 @@ def test_run_panel_single_judge_fallback():
 
 def test_run_panel_all_fail_raises():
     """If all judges fail, RuntimeError is raised."""
-    mock_client = MagicMock()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.supports_prompt_caching = False
     agent = OverviewAgent(mock_client)
 
     with patch.object(agent, "run", side_effect=RuntimeError("fail")):

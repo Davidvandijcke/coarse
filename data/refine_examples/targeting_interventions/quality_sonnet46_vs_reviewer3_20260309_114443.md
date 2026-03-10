@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review identifies profound mathematical and logical issues in the paper's core theorems, proofs, and examples, far exceeding the reference review's high-level critiques. It catches critical unstated assumptions and structural flaws that undermine some of the paper's claims. |
 | specificity | 6.0/6 | The review provides 25 highly specific, actionable comments with perfectly accurate quotes. It pinpoints exact algebraic errors, incorrect subscripts, and flawed formulas with remarkable precision. |
 | depth | 6.0/6 | The technical depth is astonishing. The reviewer re-derived first-order conditions, checked matrix algebra, verified integrals, and found subtle flaws in the proofs (e.g., division by zero, incorrect covariance rotations, and invalid convexity arguments). |
-| format | 5.0/6 | The generated review flawlessly follows the requested refine.ink format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered Quote and Feedback sections. |
+| format | 5.0/6 | The generated review flawlessly follows the requested standard review format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered Quote and Feedback sections. |
 
 ## Strengths
 

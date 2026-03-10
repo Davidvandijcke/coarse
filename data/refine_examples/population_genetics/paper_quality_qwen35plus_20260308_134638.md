@@ -14,7 +14,7 @@
 | coverage | 4.0/5 | The generated review covers a wide range of issues, including some valid conceptual points (e.g., stationarity assumptions, multi-population data). However, it focuses heavily on minor notational inconsistencies or misinterpretations of standard terminology (e.g., topologies vs. histories, zero probability claims) rather than the core methodological contributions and their empirical validation, which the reference review captures better. |
 | specificity | 4.5/5 | The review provides specific quotes and points to exact sections and equations. However, some of its critiques are based on misreadings of the text or standard conventions (e.g., misunderstanding the MCMC reweighting description, or the definition of topologies in this context), making the actionable feedback less relevant. |
 | depth | 4.0/5 | While the review attempts to engage deeply with the math (e.g., checking the recurrence relation, variance properties, and quadrature approximations), some of its technical critiques are flawed or pedantic. It misses the deeper theoretical significance of the conditional sampling distribution approximation that the reference review highlights. |
-| format | 5.0/5 | The generated review perfectly follows the required refine.ink format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
+| format | 5.0/5 | The generated review perfectly follows the required standard review format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
 
 ## Strengths
 

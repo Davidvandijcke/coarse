@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review covers a vast array of mathematical, conceptual, and methodological issues, identifying many real gaps and errors (e.g., the non-standard definition of chaos, missing terms in equations, algebraic typos) that the reference review completely missed. |
 | specificity | 6.0/6 | Every point is supported by a perfectly accurate, verbatim quote from the paper, followed by a highly detailed and actionable recommendation for how to fix the issue. |
 | depth | 5.5/6 | The review engages with the paper's derivations at an exceptionally deep level, catching subtle algebraic errors (e.g., Point 19) and boundary condition issues (e.g., Point 11). However, it makes a few mathematical errors of its own (e.g., missing the $1/\sqrt{K}$ suppression in Point 12 and the Poisson splitting theorem in Point 25), which keeps it from a perfect 6.0. |
-| format | 5.0/6 | The generated review perfectly adheres to the requested refine.ink format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered entries containing Quote and Feedback. |
+| format | 5.0/6 | The generated review perfectly adheres to the requested standard review format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered entries containing Quote and Feedback. |
 
 ## Strengths
 

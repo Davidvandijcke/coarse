@@ -63,7 +63,6 @@ def run_review(paper_name: str, model: str, model_label: str) -> tuple[str, str,
     """Run review, return (review_path, review_markdown, paper_text_markdown)."""
     pdf_path = PAPERS[paper_name]
     config = load_config()
-    config.use_coding_agents = False
 
     print(f"\n{'='*60}")
     print(f"REVIEW: {paper_name} with {model_label} ({model})")

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "coarse"
-version = "0.1.0"
-description = "Free, open-source AI academic paper reviewer. The rough alternative to refine.ink."
+version = "1.0.0"
+description = "Free, open-source AI academic paper reviewer. BYOK — bring your own key."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
@@ -37,8 +37,7 @@ Changelog = "https://github.com/Davidvandijcke/coarse/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 docling = ["docling>=2.0"]
-agentic = ["openai-agents[litellm]>=0.1"]
-all = ["coarse[docling,agentic]"]
+all = ["coarse[docling]"]
 dev = ["pytest>=8.0", "ruff>=0.4"]
 
 [project.scripts]
