@@ -1,4 +1,4 @@
-"""Synthesis — converts a Review object to refine.ink-format markdown.
+"""Synthesis — converts a Review object to structured review markdown.
 
 Date field is emitted as-is from Review.date (no reformatting) to preserve fidelity.
 """
@@ -8,7 +8,7 @@ from coarse.types import Review
 
 
 def render_review(review: Review) -> str:
-    """Convert a Review to a refine.ink-format markdown string.
+    """Convert a Review to a structured review markdown string.
 
     Pure deterministic function; makes no LLM calls.
     """

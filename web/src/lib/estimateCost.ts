@@ -2,13 +2,12 @@
  * Client-side cost estimation for coarse reviews.
  *
  * Mirrors the heuristic from src/coarse/cost.py:
- *   OCR + metadata + overview + N sections + crossref + critique
+ *   OCR + metadata + 3 overview judges + synthesis + N sections + crossref + critique
  *
  * Token estimate: extract text via pdf.js (loaded from CDN to avoid webpack issues).
  * Pricing: fetched from OpenRouter /api/v1/models.
  */
 
-const DEFAULT_SECTION_COUNT = 8;
 const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs";
 const PDFJS_WORKER_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs";
 
@@ -77,6 +76,11 @@ export async function estimateTokensFromPdf(file: File): Promise<number> {
   return Math.max(500, Math.round(totalChars / 4));
 }
 
+/** Estimate section count from token count (~1,200 tokens per section). */
+function estimateSectionCount(tokenEstimate: number): number {
+  return Math.max(4, Math.min(40, Math.floor(tokenEstimate / 1200)));
+}
+
 /**
  * Estimate total review cost in USD.
  * Mirrors build_cost_estimate() from cost.py.
@@ -84,22 +88,34 @@ export async function estimateTokensFromPdf(file: File): Promise<number> {
 export function estimateReviewCost(
   tokenEstimate: number,
   pricing: ModelPricing,
-  sectionCount: number = DEFAULT_SECTION_COUNT,
+  sectionCount?: number,
 ): number {
   const { promptCostPerToken: inp, completionCostPerToken: out } = pricing;
-  const sectionTokens = Math.max(1, Math.floor(tokenEstimate / sectionCount));
+  const sections = sectionCount ?? estimateSectionCount(tokenEstimate);
+  const sectionTextTokens = Math.max(1, Math.floor(tokenEstimate / sections));
+  // Each section prompt includes ~1,500 tokens of system prompt + cross-ref context
+  const sectionInput = sectionTextTokens + 1500;
 
   // OCR: ~$0.002/page, estimate pages from tokens
   const estPages = Math.max(1, Math.floor(tokenEstimate / 250));
   let total = estPages * 0.002;
 
   // Pipeline stages: [name, tokens_in, tokens_out]
+  const NUM_OVERVIEW_JUDGES = 3;
   const stages: [string, number, number][] = [
     ["metadata", 500, 100],
-    ["overview", tokenEstimate, 1200],
-    ...Array.from({ length: sectionCount }, (_, i) => [`section_${i + 1}`, sectionTokens, 600] as [string, number, number]),
-    ["crossref", tokenEstimate, 1000],
-    ["critique", tokenEstimate, 800],
+    // 3 overview judges each read full paper
+    ...Array.from(
+      { length: NUM_OVERVIEW_JUDGES },
+      (_, i) => [`overview_judge_${i + 1}`, tokenEstimate, 1500] as [string, number, number],
+    ),
+    ["overview_synthesis", 5000, 1500],
+    ...Array.from(
+      { length: sections },
+      (_, i) => [`section_${i + 1}`, sectionInput, 3500] as [string, number, number],
+    ),
+    ["crossref", 8000, 3000],
+    ["critique", 8000, 3500],
   ];
 
   for (const [, tokIn, tokOut] of stages) {

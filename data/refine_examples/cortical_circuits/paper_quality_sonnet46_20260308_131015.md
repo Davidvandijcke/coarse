@@ -14,7 +14,7 @@
 | coverage | 5.5/5 | The generated review covers the most critical issues in the paper, including the divergent Lyapunov exponent, the unverified global stability approximation, and the lack of quantitative validation for tracking. It identifies several important gaps that the reference review missed or only touched upon lightly. |
 | specificity | 6.0/5 | The generated review is exceptionally specific, providing 25 detailed comments with accurate verbatim quotes from the paper. It pinpoints exact equations, terms, and assumptions (e.g., the missing derivative term in Eq 6.2, the algebraic error in the tracking time scale, the non-causal integral in Eq 5.17) with concrete, actionable fixes. |
 | depth | 6.0/5 | The technical depth is outstanding. The reviewer re-derives equations (e.g., the log approximation in Eq 4.14, the variance scaling from Eq 5.14, the missing chain rule term in Eq 6.2) and identifies subtle but critical flaws in the paper's mathematical arguments that the reference review completely missed. |
-| format | 5.0/5 | The review perfectly follows the required refine.ink format, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
+| format | 5.0/5 | The review perfectly follows the required standard review format, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
 
 ## Strengths
 

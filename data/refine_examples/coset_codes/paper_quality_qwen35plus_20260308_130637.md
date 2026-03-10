@@ -14,7 +14,7 @@
 | coverage | 5.5/5 | The generated review identifies several highly specific and valid mathematical/notational issues in the paper (e.g., the determinant of the rotation operator R, the index formula for negative integers, the exponent errors in the complex code formulas for Barnes-Wall and Leech lattices, and the dimensional mismatch in Table VI). These are concrete errors that the reference review missed, demonstrating excellent coverage of the technical details. |
 | specificity | 5.5/5 | The comments are extremely precise, quoting the exact problematic text or table entries and providing highly actionable and specific fixes (e.g., correcting exponents, fixing indices, adjusting table entries). The quotes are accurate and the feedback is directly tied to the text. |
 | depth | 6.0/5 | The depth of analysis is outstanding. The generated review engages deeply with the mathematical definitions, catching subtle errors in lattice theory (e.g., the determinant of R, the algebraic structure of formal power series vs. Laurent series, the cardinality mismatch in coset representatives, and the calculation of squared Euclidean distance vs. Hamming distance). This level of technical rigor substantially exceeds the reference review. |
-| format | 5.0/5 | The generated review perfectly follows the required refine.ink format, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
+| format | 5.0/5 | The generated review perfectly follows the required standard review format, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
 
 ## Strengths
 

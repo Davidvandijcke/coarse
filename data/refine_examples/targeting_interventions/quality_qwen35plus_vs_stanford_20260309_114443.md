@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review identifies an extraordinary number of substantive issues, ranging from high-level conceptual limitations (e.g., the pedagogical examples violating the distinct eigenvalues assumption) to deep mathematical errors in the proofs and derivations that the reference review completely missed. |
 | specificity | 6.0/6 | Every comment is backed by an exact, accurate quote from the paper. The feedback is highly precise, pointing out exactly which terms are missing squares, which coefficients are miscalculated, and how the domain bounds are incorrectly stated. |
 | depth | 6.0/6 | The depth of technical engagement is exceptional. The generated review re-derives first-order conditions, checks the Lagrangian formulation, verifies the variance inequalities in the proofs, and cross-references welfare coefficients against earlier examples to find actual mathematical errors. |
-| format | 5.0/6 | The generated review perfectly follows the requested refine.ink format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
+| format | 5.0/6 | The generated review perfectly follows the requested standard review format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
 
 ## Strengths
 

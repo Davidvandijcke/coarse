@@ -238,14 +238,58 @@ the paper's main claims, (c) suggest a specific fix (not "discuss further" but \
 """
 
 
-def overview_user(
+def overview_paper_context(
     title: str,
     abstract: str,
     sections_summary: str,
     calibration: "DomainCalibration | None" = None,
     literature_context: str = "",
 ) -> str:
-    """User prompt for overview. Embeds title, abstract, and condensed section summary."""
+    """Cacheable paper context block for overview prompts.
+
+    Contains the paper content that is shared across all overview judges.
+    Used as the first system content block when prompt caching is enabled.
+    """
+    cal_block = ""
+    if calibration:
+        cal_block = "\n" + _format_calibration(calibration) + "\n"
+
+    lit_block = ""
+    if literature_context:
+        lit_block = f"\n**Related Literature (from arXiv)**:\n{literature_context}\n"
+
+    return f"""\
+**Paper Under Review**
+
+**Title**: {title}
+
+**Abstract**:
+{abstract}
+{cal_block}{lit_block}
+**Section Summary**:
+{sections_summary}
+"""
+
+
+def overview_user(
+    title: str,
+    abstract: str,
+    sections_summary: str,
+    calibration: "DomainCalibration | None" = None,
+    literature_context: str = "",
+    cache_mode: bool = False,
+) -> str:
+    """User prompt for overview.
+
+    When cache_mode=True, paper content is in the system message, so this returns
+    only the short instruction trigger. Otherwise embeds full content as before.
+    """
+    if cache_mode:
+        return f"""\
+Review the paper "{title}" provided in the system context and identify 4-6 major \
+high-level issues. Focus on the domain-specific concerns listed above.
+"""
+
     cal_block = ""
     if calibration:
         cal_block = "\n" + _format_calibration(calibration) + "\n"

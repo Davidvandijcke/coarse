@@ -30,10 +30,8 @@ class CritiqueAgent(ReviewAgent):
     ) -> list[DetailedComment]:
         user_content = critique_user(overview, comments)
         sys_prompt = critique_system(comment_target) if comment_target else CRITIQUE_SYSTEM
-        messages = [
-            {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": user_content},
-        ]
+
+        messages = self._build_messages(sys_prompt, user_content)
         result = self.client.complete(
             messages, _RevisedComments, max_tokens=16384, temperature=0.1
         )

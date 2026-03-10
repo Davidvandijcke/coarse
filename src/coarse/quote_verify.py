@@ -13,7 +13,7 @@ from coarse.types import DetailedComment
 logger = logging.getLogger(__name__)
 
 # Minimum fuzzy match ratio to accept a corrected quote
-_MIN_MATCH_RATIO = 0.70
+_MIN_MATCH_RATIO = 0.80
 
 from coarse.garble import garble_ratio as _passage_garble_score  # noqa: E402, F401
 

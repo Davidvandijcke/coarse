@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review substantially exceeds the reference by identifying both the high-level conceptual limitations (e.g., Property A reliance, cost convexity, measurement error) and a massive number of specific technical errors in the proofs and appendices that the reference missed entirely. |
 | specificity | 6.0/6 | Every comment includes a precise, verbatim quote from the text and a highly specific, actionable fix, often providing the exact corrected mathematical expression. |
 | depth | 6.0/6 | The technical rigor is outstanding. The review re-derives equations (such as the beauty contest FOC and the utility threshold) to find actual algebraic errors, demonstrating a level of technical engagement far beyond the reference review. |
-| format | 5.0/6 | The review perfectly adheres to the requested refine.ink format, including the header block, Overall Feedback, and Detailed Comments with Quote and Feedback sections. |
+| format | 5.0/6 | The review perfectly adheres to the requested standard review format, including the header block, Overall Feedback, and Detailed Comments with Quote and Feedback sections. |
 
 ## Strengths
 

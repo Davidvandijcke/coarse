@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review identifies crucial mathematical, notational, and biological issues that the reference review missed entirely, including the violation of the panmixia assumption in the NSE dataset and errors in the boundary condition logic. |
 | specificity | 6.0/6 | Every comment includes an accurate, verbatim quote from the text, and the feedback is highly targeted to specific equations, terms, and typos (e.g., catching the \pi_0 typo). |
 | depth | 5.5/6 | The analysis demonstrates exceptional technical engagement, successfully identifying a parameterization error in the geometric distribution and a combinatorial mislabeling. However, it includes a few incorrect technical critiques regarding the definition of the typed history. |
-| format | 5.0/6 | The review perfectly follows the requested refine.ink structure, including the header block, Overall Feedback with titled issues, and Detailed Comments with Status, Quote, and Feedback sections. |
+| format | 5.0/6 | The review perfectly follows the requested standard review structure, including the header block, Overall Feedback with titled issues, and Detailed Comments with Status, Quote, and Feedback sections. |
 
 ## Strengths
 

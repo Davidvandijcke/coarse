@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review identifies critical mathematical errors, scaling violations, and theoretical inconsistencies that the reference review completely missed, while also covering shared high-level issues like the definition of chaos and finite-size effects. |
 | specificity | 6.0/6 | Every comment includes an exact quote from the paper and provides a highly specific, actionable correction, often pinpointing exactly which variables or terms in an equation need to be replaced. |
 | depth | 6.0/6 | The analysis is exceptionally rigorous. The review verifies dimensional consistency (catching a real error in Eq 7.11), re-derives expected values for connection probabilities, and checks the asymptotic scaling of the equations. |
-| format | 5.0/6 | The generated review perfectly adheres to the requested refine.ink structure, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
+| format | 5.0/6 | The generated review perfectly adheres to the requested standard review structure, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
 
 ## Strengths
 

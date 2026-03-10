@@ -14,7 +14,7 @@
 | coverage | 6.0/6 | The generated review identifies an extraordinary number of critical issues, ranging from high-level conceptual limitations (e.g., non-negativity constraints, distinct eigenvalue assumptions) to deep mathematical errors in the appendix that the reference review completely missed. |
 | specificity | 6.0/6 | Every single comment is grounded in a precise, verbatim quote from the text. The review provides exact mathematical corrections for every typo, sign error, and coefficient mistake it identifies. |
 | depth | 6.0/6 | The technical depth is unparalleled. The review re-derives first-order conditions, recalculates welfare weights for the general externalities extension, performs implicit differentiation to correct a lemma, and provides a valid strict-convexity argument to replace a flawed proof in the appendix. |
-| format | 5.0/6 | The review perfectly adheres to the requested refine.ink format, including the header block, titled overall feedback sections, and numbered detailed comments with Quote and Feedback sections. |
+| format | 5.0/6 | The review perfectly adheres to the requested standard review format, including the header block, titled overall feedback sections, and numbered detailed comments with Quote and Feedback sections. |
 
 ## Strengths
 

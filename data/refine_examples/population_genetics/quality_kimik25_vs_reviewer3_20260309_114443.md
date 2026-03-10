@@ -14,7 +14,7 @@
 | coverage | 5.5/6 | The generated review covers the most critical aspects of the paper and identifies valid, deep issues that the reference review missed, such as the violation of the panmixia assumption for the NSE dataset and the application of the PIM-derived approximation to the stepwise mutation model. |
 | specificity | 5.0/6 | The review consistently uses accurate, verbatim quotes from the paper and provides highly specific, actionable feedback for each point. |
 | depth | 5.5/6 | The technical depth is exceptional. The review correctly distinguishes between labeled histories and unranked topologies, identifies the finite variance requirement (ξ < 1/2) for the GPD parametric bootstrap, and rigorously analyzes the theoretical limitations of the π̂ approximation. |
-| format | 5.0/6 | The generated review perfectly adheres to the requested refine.ink format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered Quote and Feedback blocks. |
+| format | 5.0/6 | The generated review perfectly adheres to the requested standard review format, including the header block, Overall Feedback with titled sections, and Detailed Comments with numbered Quote and Feedback blocks. |
 
 ## Strengths
 

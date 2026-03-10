@@ -14,7 +14,7 @@
 | coverage | 5.5/6 | The generated review identifies numerous valid issues that the reference review completely missed, including several real mathematical typos, duplicate table rows, and algebraic inconsistencies. While it misses some of the broader contextual analysis present in the reference, its coverage of the paper's actual content is exceptionally thorough. |
 | specificity | 3.0/6 | While most comments are highly precise and point to real issues with accurate quotes, the review hallucinates quotes in 4 out of 21 comments (Comments 5, 13, 14, and 21) to invent errors that do not exist in the source text. This significantly impacts the reliability of the feedback. |
 | depth | 6.0/6 | The technical depth is outstanding and substantially exceeds the reference review. It engages deeply with the paper's mathematics, correctly distinguishing between formal power series and Laurent series, identifying the discrepancy between Hamming and Euclidean distance for mapped cosets, and catching subtle algebraic errors in the volume equations. |
-| format | 5.0/6 | The generated review perfectly adheres to the requested refine.ink format, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
+| format | 5.0/6 | The generated review perfectly adheres to the requested standard review format, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
 
 ## Strengths
 

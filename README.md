@@ -8,6 +8,8 @@ Free, open-source AI academic paper reviewer that outperforms popular paid AI re
 
 You provide your own API key and pay the LLM provider directly — typically **under $1 per review**.
 
+Don't want to run it locally? Use the [web interface](https://coarse.vercel.app/) instead.
+
 ## Quickstart
 
 Get an API key from [OpenRouter](https://openrouter.ai/keys) (free to sign up), then:
@@ -82,8 +84,9 @@ With only `OPENROUTER_API_KEY` set, all models (including vision QA) route throu
 
 ## API keys
 
-Only `OPENROUTER_API_KEY` is needed. For direct provider access (lower latency), set the
-provider-specific key instead:
+Only `OPENROUTER_API_KEY` is needed. For step-by-step setup instructions, see the
+[API key guide](https://coarse.vercel.app/setup). For direct provider access (lower latency),
+set the provider-specific key instead:
 
 | Provider   | Environment variable   |
 |------------|------------------------|
@@ -96,18 +99,6 @@ provider-specific key instead:
 | Together   | `TOGETHER_API_KEY`     |
 | Cohere     | `COHERE_API_KEY`       |
 | Azure      | `AZURE_API_KEY`        |
-
-## Agentic mode
-
-For deeper analysis of proof-heavy, methodology, or results sections, enable coding agents:
-
-```bash
-coarse review paper.pdf --agentic
-```
-
-Coding agents use the [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) to autonomously
-read the full paper, cross-reference sections, and run Python to verify math. Adds ~$2-3 and takes
-3-10 minutes (vs ~30s for standard mode). Falls back to standard LLM agents on failure.
 
 ## Cost
 
@@ -198,7 +189,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, project structure,
 
 ## Version
 
-0.1.0
+1.0.0
 
 ## License
 

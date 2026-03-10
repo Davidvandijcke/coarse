@@ -1,56 +1,39 @@
 # Changelog
 
-## [Unreleased]
+## v1.0.0 — 2026-03-09
+
+First public release.
 
 ### Added
 
 - **Web hosting infrastructure** — Vercel (Next.js) + Supabase (auth/DB/storage) + Modal (serverless compute) architecture for hosted web version. Two tiers: free (data-sharing consent for research) and BYOK (user's own OpenRouter key).
-- **Modal worker** (`deploy/modal_worker.py`) — Serverless function wrapping `review_paper()` with Supabase integration, BYOK key isolation, and webhook auth.
-- **Supabase schema** (`deploy/supabase_schema.sql`) — PostgreSQL schema with profiles, reviews, RLS policies, rate limiting, and storage bucket configuration.
-- **Next.js frontend** (`web/`) — Landing page, auth (Google/GitHub/magic link), dashboard with realtime status, PDF upload with drag-and-drop, review viewer with markdown rendering, settings page, and shareable review links.
+- **Mistral OCR extraction** — Primary PDF extraction uses Mistral OCR via litellm (94% math accuracy). Docling kept as offline fallback. Priority: MISTRAL_API_KEY direct → OpenRouter file-parser plugin → Docling.
+- **Post-extraction QA** (`extraction_qa.py`) — Vision LLM spot-checks extraction output against page images for papers with figures/tables.
+- **Model manifest** (`models.py`) — Single source of truth for all model IDs.
+- **Quote verification** (`quote_verify.py`) — Post-processing fuzzy match of comment quotes against paper text; drops or flags unverifiable quotes.
+- **Domain calibration** — Generates domain-specific review criteria from paper content.
+- **Literature search** — arXiv-based literature context for review agents.
+- **CI pipeline** (`.github/workflows/ci.yml`) — Ruff lint (advisory), pytest (blocking), version consistency check on every PR.
+- **Evaluation data** (`data/refine_examples/`) — Reference reviews and papers for quality scoring.
 
 ### Changed
 
-- **Coding agents: OpenHands SDK replaced with OpenAI Agents SDK** — `openhands-sdk` dependency replaced with `openai-agents[litellm]`. Agents now use tool-based output (`add_comment()`) with file-based JSON fallback. Four workspace-scoped tools (read_file, run_command, list_files, write_file) plus `add_comment` replace OpenHands' terminal and file_editor. No change to review quality or output format.
-- **Optional heavy dependencies** — `docling` and `openai-agents` moved to optional extras (`pip install coarse[docling]`, `pip install coarse[agentic]`). Core install is now lightweight (~500MB Docker image vs ~1.5GB).
-- **Structured assumption cross-check** — Rewrote `ASSUMPTION_CHECK_SYSTEM` with a 4-step procedure (extract assumptions → characterize data → cross-check with common mismatch patterns → evaluate defenses). Added INTRODUCTION sections to assumption-relevant types so data descriptions are visible. Adds `_TONE_BLOCK` to assumption prompt.
-- **Appendix proof coverage** — Appendix sections classified as "proof" are now reviewed instead of skipped, catching proof errors in covariance calculations, sign errors, Fubini-Tonelli applications, etc.
-- **Anti-redundancy prompts** — Section agents instructed not to restate overview issues; crossref dedup now removes comments whose core point duplicates an overview issue even if they add a quote.
-- **Anti-truncation quote instructions** — Replaced weak "2 full sentences" guidance with strict "NEVER truncate mid-equation" rule in all section prompts.
-- **Section agent max_tokens** — Increased from 8192 to 16384 to prevent quote truncation in math-heavy sections.
-- **Quote verify expansion** — `_trim_to_best_match` now uses a 1.5x window to expand truncated quotes instead of re-truncating correct matches.
+- **Anthropic prompt caching** — Overview panel judges share cached paper context via `cache_control`, reducing input token costs ~90% on cache hits. Judges run sequentially for Anthropic models to ensure cache sharing. Section/crossref/critique agents also annotate system prompts for caching.
+- **Structured assumption cross-check** — 4-step procedure for cross-checking theoretical assumptions against empirical methodology.
+- **Appendix proof coverage** — Appendix sections classified as "proof" are now reviewed instead of skipped.
+- **Anti-redundancy prompts** — Section agents instructed not to restate overview issues; crossref dedup removes comments that duplicate overview issues.
+- **Anti-truncation quote instructions** — Strict "NEVER truncate mid-equation" rule in all section prompts.
+- **Quote verify expansion** — `_trim_to_best_match` uses a 1.5x window to expand truncated quotes instead of re-truncating correct matches.
+- **Optional heavy dependencies** — `docling` moved to optional extra (`pip install coarse[docling]`). Core install is lightweight.
 
 ### Fixed
 
 - **LaTeX garbling in review quotes** — Added `verify_quotes` call after critique agent (which re-garbles LaTeX via JSON round-trip). Added LaTeX preservation instructions to all section prompts.
-- **Quality scorer synthesizer overriding judges** — Synthesis prompt now faithfully aggregates panel scores instead of re-evaluating independently. Scoring changed from integer 1-5 to half-point increments (1.0-6.0) for finer granularity.
-
-### Added
-
-- **Coding agents** (`coding_agent.py`, `agents/coding_section.py`, `agents/coding_critique.py`) — OpenHands SDK integration for autonomous paper analysis. Coding agents can read full paper text, cross-reference sections, and run Python to verify math. Opt-in via `--agentic` CLI flag with transparent fallback to standard LLM agents on failure.
-- **CodingReviewAgent ABC** (`agents/base.py`) — Abstract base class for file-workspace-based coding agents with `prepare_workspace()` and `output_schema()`.
-- **`--agentic` CLI flag** — Enables coding agents for proof/methodology/results sections and critique pass (~$2-3 extra, 3-10 min vs ~30s).
-- **Coding agent config** — `use_coding_agents`, `agent_model`, `agent_budget_usd`, `max_coding_sections` on `CoarseConfig`.
-- **AGENT_MODEL constant** (`models.py`) — `moonshotai/kimi-k2.5` for coding agent LLM.
-- **Coding agent tests** — `test_coding_agent.py` (12 tests), `test_coding_section.py` (10 tests), `test_coding_critique.py` (10 tests).
-- **Model manifest** (`models.py`) — Single source of truth for all model IDs, replacing scattered constants in cli.py, config.py, llm.py.
-- **Quote verification** (`quote_verify.py`) — Post-processing fuzzy match of comment quotes against paper text; drops or flags unverifiable quotes.
-- **Post-extraction QA** (`extraction_qa.py`) — Vision LLM spot-checks Docling output against page images for papers with figures/tables.
-- **CI pipeline** (`.github/workflows/ci.yml`) — Ruff lint (advisory), pytest (blocking), version consistency check on every PR.
-- **Pre-PR command** (`.claude/commands/pre-pr.md`) — 5-agent parallel code review integrated into push workflow.
-- **Evaluation data** (`data/refine_examples/`) — Reference reviews and papers for quality scoring.
-- **New tests** — `test_quote_verify.py`, `test_domain_calibration.py`, `test_multi_judge.py`, `test_section_routing.py`.
-
-- **Mistral OCR extraction** — Primary PDF extraction now uses Mistral OCR via litellm (94% math accuracy). Docling kept as offline fallback. Priority: MISTRAL_API_KEY direct → OpenRouter file-parser plugin → Docling.
-- **Python 3.12+ required** — Upgraded from 3.11+ to support `openhands-sdk` dependency.
-- **`openhands-sdk` is a core dependency** — Moved from optional to required for coding agent support.
-- **Pipeline hybrid dispatch** — `review_paper()` routes proof/methodology/results sections to coding agents when `--agentic` enabled, capped at `max_coding_sections` (default 3). Other sections use standard LLM agents.
-- **Cost estimation** — Pre-flight estimate includes coding agent costs (~$0.50/section + $1.00/critique) when agentic mode enabled.
-- **Replace PDF pipeline with Docling** — Single-pass document conversion replaces the 3-source pymupdf4llm/fitz/vision-LLM stack. Section text is now a substring of full_markdown, fixing quote verification mismatches. Structure extraction via markdown heading parsing instead of vision-LLM (~$0.05-0.10/paper → free). Scanned PDFs now supported via Docling OCR.
 
 ### Removed
 
-- **Vision-based structure extraction** — Removed `--vision` CLI flag and vision-LLM structure extraction pipeline. `vision_model` config field kept for post-extraction QA. Page rendering repurposed for QA spot-checks.
+- **Agentic mode** — Removed `--agentic` CLI flag, coding agents, and `openai-agents` dependency. Standard LLM agents provide comparable quality with simpler architecture.
+- **Vision-based structure extraction** — Removed `--vision` CLI flag. Structure extraction via markdown heading parsing instead.
 - **pymupdf4llm dependency** — Replaced by `docling>=2.0`. pymupdf kept for extraction QA page rendering.
 
 ## v0.1.0 — 2026-03-03
@@ -73,7 +56,7 @@ Initial release.
   comments as a quality gate.
 - **Pipeline** (`pipeline.py`): Orchestrates extraction, structure analysis, all agents, and
   synthesis into a single `review_paper()` call.
-- **Synthesis** (`synthesis.py`): Deterministically renders a `Review` object to the refine.ink
+- **Synthesis** (`synthesis.py`): Deterministically renders a `Review` object to structured
   markdown format.
 - **LLM layer** (`llm.py`): litellm wrapper with instructor for structured Pydantic output; tracks
   per-call cost.
@@ -82,7 +65,7 @@ Initial release.
 - **Config management** (`config.py`): Reads and writes `~/.coarse/config.toml`; resolves API
   keys from environment variables or the config file.
 - **CLI** (`cli.py`): `coarse setup` for interactive configuration; `coarse review paper.pdf` for
-  reviewing a paper; `--model`, `--output`, `--vision`, and `--yes` flags.
+  reviewing a paper; `--model`, `--output`, and `--yes` flags.
 - **Quality eval** (`quality.py`): Developer-only tool that scores a generated review against a
   reference review using an LLM judge.
 - **Type definitions** (`types.py`): All shared Pydantic models (`PaperText`, `PaperStructure`,

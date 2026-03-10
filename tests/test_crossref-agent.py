@@ -8,7 +8,9 @@ from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue
 
 
 def _make_client() -> LLMClient:
-    return MagicMock(spec=LLMClient)
+    client = MagicMock(spec=LLMClient)
+    client.supports_prompt_caching = False
+    return client
 
 
 def _make_overview() -> OverviewFeedback:
@@ -119,3 +121,28 @@ def test_crossref_uses_crossref_system_prompt():
     system_msgs = [m for m in messages if m["role"] == "system"]
     assert len(system_msgs) == 1
     assert system_msgs[0]["content"] == CROSSREF_SYSTEM
+
+
+def test_crossref_prompt_caching():
+    """With supports_prompt_caching=True, system content is a list with cache_control."""
+    client = _make_client()
+    client.supports_prompt_caching = True
+    client.complete.return_value = _make_consolidated([1])
+
+    agent = CrossrefAgent(client)
+    agent.run(_make_overview(), [_make_comment(1)])
+
+    messages = client.complete.call_args[0][0]
+    system_msg = [m for m in messages if m["role"] == "system"][0]
+
+    # System content must be a list with one text block bearing cache_control
+    assert isinstance(system_msg["content"], list)
+    assert len(system_msg["content"]) == 1
+    block = system_msg["content"][0]
+    assert block["type"] == "text"
+    assert block["cache_control"] == {"type": "ephemeral"}
+    assert CROSSREF_SYSTEM in block["text"]
+
+    # User message is still a plain string
+    user_msg = [m for m in messages if m["role"] == "user"][0]
+    assert isinstance(user_msg["content"], str)

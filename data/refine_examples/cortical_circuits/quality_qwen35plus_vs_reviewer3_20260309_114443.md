@@ -14,7 +14,7 @@
 | coverage | 5.5/6 | The generated review covers the paper's core mathematical claims, the exactness of the limits, the threshold distributions, and the tracking capabilities. It misses some of the high-level biological context raised by the reference review (e.g., synaptic delays), but compensates by deeply engaging with the paper's mathematical derivations. |
 | specificity | 5.5/6 | The feedback is highly specific, quoting exact equations and providing step-by-step mathematical derivations to support its critiques. The level of detail in the mathematical checks exceeds that of the reference review. |
 | depth | 6.0/6 | The depth is exceptional. The generated review successfully re-derived several equations and found three real, non-trivial mathematical/typographical errors in the published paper (the missing Jacobian factor in Eq 7.15, the incorrect $(m_k)^{3/2}$ scaling claim, and the inverted timescale typo in Section 9). This level of technical engagement vastly exceeds the reference review. |
-| format | 5.0/6 | The generated review perfectly adheres to the requested refine.ink format, including the header block, Overall Feedback, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
+| format | 5.0/6 | The generated review perfectly adheres to the requested standard review format, including the header block, Overall Feedback, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
 
 ## Strengths
 

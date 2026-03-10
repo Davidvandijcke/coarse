@@ -14,7 +14,7 @@
 | coverage | 5.5/6 | The generated review comprehensively covers the paper's theoretical derivations, biological assumptions, and finite-size effects. It identifies critical issues missed by the reference review, such as the breakdown of the Gaussian approximation for low firing rates and the biological implausibility of instantaneous synapses for the fast-tracking result. |
 | specificity | 5.0/6 | Quotes are perfectly accurate and the feedback is highly actionable, providing exact mathematical corrections. While it brilliantly catches several real typos, a few of its specific corrections (e.g., Comments 8, 9, and 12) are based on misinterpretations of the paper's notation, balancing the score to match the reference. |
 | depth | 5.5/6 | The level of mathematical engagement substantially exceeds the reference review. The generated review successfully re-derives equations, checks scaling limits, and catches subtle but genuine errors in the paper's mean-field derivation (e.g., connection probability scaling, variance summation, and product notation scope). |
-| format | 5.0/6 | The generated review perfectly adheres to the requested refine.ink format, including the header block, Overall Feedback with titled sections, and Detailed Comments with Status, Quote, and Feedback. |
+| format | 5.0/6 | The generated review perfectly adheres to the requested standard review format, including the header block, Overall Feedback with titled sections, and Detailed Comments with Status, Quote, and Feedback. |
 
 ## Strengths
 

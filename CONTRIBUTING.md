@@ -40,16 +40,13 @@ src/coarse/
 ├── prompts.py          # All LLM prompt templates
 ├── types.py            # Pydantic models
 ├── cost.py             # Cost estimation + user approval
-├── coding_agent.py     # OpenAI Agents SDK wrapper
 ├── garble.py           # OCR garble detection and normalization
 └── agents/
-    ├── base.py             # ReviewAgent + CodingReviewAgent ABCs
+    ├── base.py             # ReviewAgent ABC
     ├── overview.py         # Macro-level feedback (4-6 issues)
     ├── section.py          # Per-section detailed review
-    ├── coding_section.py   # Deep section review (coding agents)
     ├── crossref.py         # Cross-reference deduplication
     ├── critique.py         # Self-critique quality gate
-    ├── coding_critique.py  # Deep critique (coding agents)
     └── literature.py       # arXiv literature search
 ```
 

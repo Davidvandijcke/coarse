@@ -14,7 +14,7 @@ import litellm
 from pydantic import BaseModel
 
 from coarse.config import CoarseConfig, load_config
-from coarse.models import JSON_MODE_PREFIXES, MARKDOWN_JSON_PREFIXES
+from coarse.models import JSON_MODE_PREFIXES
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +30,6 @@ _CUSTOM_MODEL_INFO: dict[str, dict] = {
         "max_output_tokens": 65_536,
         "input_cost_per_token": 0.26e-6,
         "output_cost_per_token": 1.56e-6,
-    },
-    "moonshotai/kimi-k2.5": {
-        "max_tokens": 131_072,
-        "max_output_tokens": 32_768,
-        "input_cost_per_token": 0.35e-6,
-        "output_cost_per_token": 0.7e-6,
     },
 }
 for _model_id, _info in _CUSTOM_MODEL_INFO.items():
@@ -85,12 +79,6 @@ class LLMClient:
         # Clamp max_tokens to model's known limit
         clamped = _clamp_max_tokens(self._model, max_tokens)
 
-        # Kimi: reasoning model — needs higher max_tokens (reasoning chain
-        # consumes output budget) and low temperature to avoid repetition
-        if any(p in self._model.lower() for p in MARKDOWN_JSON_PREFIXES):
-            temperature = min(temperature, 0.1)
-            clamped = max(clamped, 16384)
-
         response, completion = self._client.chat.completions.create_with_completion(
             model=self._model,
             messages=messages,
@@ -114,6 +102,16 @@ class LLMClient:
     def cost_usd(self) -> float:
         """Total USD spent across all complete() calls this session."""
         return self._cost_usd
+
+    @property
+    def supports_prompt_caching(self) -> bool:
+        """Whether the model supports Anthropic-style prompt caching.
+
+        Only True for direct Anthropic API calls (not OpenRouter-proxied),
+        since OpenRouter does not forward cache_control to Anthropic.
+        """
+        lower = self._model.lower()
+        return "anthropic" in lower and not lower.startswith("openrouter/")
 
 
 def _normalize_model(model: str) -> str:
@@ -154,10 +152,6 @@ def _normalize_model(model: str) -> str:
 def _select_instructor_mode(model: str) -> instructor.Mode:
     """Select the best instructor mode for the model."""
     lower = model.lower()
-    # Kimi/Moonshot: no response_format support, unreliable tool-calling
-    for prefix in MARKDOWN_JSON_PREFIXES:
-        if prefix in lower:
-            return instructor.Mode.MD_JSON
     # OpenRouter-proxied models
     if lower.startswith("openrouter/"):
         return instructor.Mode.JSON

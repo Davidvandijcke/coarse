@@ -101,12 +101,6 @@ def review(
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation prompt"),
     no_qa: bool = typer.Option(False, "--no-qa", help="Skip post-extraction quality check"),
-    agentic: bool = typer.Option(
-        False, "--agentic", help="Enable coding agents for deeper analysis of proofs/methodology"
-    ),
-    no_agentic: bool = typer.Option(
-        False, "--no-agentic", help="Disable coding agents (faster, less thorough)"
-    ),
     eval_ref: Optional[Path] = typer.Option(
         None, "--eval", help="Path to reference review markdown for quality scoring"
     ),
@@ -128,15 +122,6 @@ def review(
     config = load_config()
     if no_qa:
         config = config.model_copy(update={"extraction_qa": False})
-    if no_agentic:
-        config = config.model_copy(update={"use_coding_agents": False})
-        console.print("[dim]Coding agents disabled[/dim]")
-    elif agentic or config.use_coding_agents:
-        console.print(
-            "[dim]Agentic mode: proof/methodology/results sections use coding agents "
-            "(~3-10 min vs ~30s)[/dim]"
-        )
-
     # Resolve model: --cheap > --model > config default
     if cheap:
         resolved_model = _pick_cheap_model()
@@ -146,9 +131,6 @@ def review(
         console.print(f"[dim]Using cheap model: {resolved_model}[/dim]")
     else:
         resolved_model = model or config.default_model
-
-    # Don't propagate -m to coding agents — agent models need tool-calling
-    # support and have different requirements than the main review model.
 
     # Check API key; run setup inline if missing
     if resolve_api_key(resolved_model, config) is None:

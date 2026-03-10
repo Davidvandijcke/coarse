@@ -5,7 +5,7 @@
 Free, open-source AI academic paper reviewer. The rough alternative to refine.ink.
 Users provide their own API keys and pay only the LLM provider directly (~$2-5 per review vs refine.ink's ~$50).
 
-**Package:** `coarse` (Python 3.12+, Pydantic, litellm, instructor, openai-agents)
+**Package:** `coarse` (Python 3.12+, Pydantic, litellm, instructor)
 **Install:** `pip install coarse` / `pipx install coarse` / `uvx coarse paper.pdf`
 
 ## Python Environment
@@ -32,10 +32,6 @@ paper.pdf
     → [critique agent]   LLM → self-critique quality gate, revise weak comments
     → [quote_verify.py]  Programmatic → re-verify quotes (critique re-garbles via JSON)
     → [synthesis.py]     Deterministic → paper_review.md (refine.ink format)
-
-With `--agentic`: proof/methodology/results sections use CodingSectionAgent (OpenAI Agents SDK),
-critique uses CodingCritiqueAgent. Agents read full paper, cross-reference sections, verify math.
-Transparent fallback to standard LLM agents on failure.
 ```
 
 ### Package Structure
@@ -52,7 +48,6 @@ src/coarse/
 ├── structure.py             # PaperText → PaperStructure (heading parse + LLM metadata)
 ├── quote_verify.py          # Post-processing quote verification
 ├── models.py                # Model manifest — single source of truth for all model IDs
-├── coding_agent.py          # OpenAI Agents SDK wrapper (run_agent, run_agent_sync)
 ├── garble.py                # OCR garble detection and normalization
 ├── llm.py                   # litellm wrapper, model registry, cost tracking
 ├── prompts.py               # All prompt templates
@@ -62,13 +57,11 @@ src/coarse/
 ├── quality.py               # Quality eval against reference (dev only)
 └── agents/
     ├── __init__.py
-    ├── base.py              # ReviewAgent + CodingReviewAgent ABCs
+    ├── base.py              # ReviewAgent ABC + _build_messages helper
     ├── overview.py          # Macro-level feedback (4-6 issues)
     ├── section.py           # Per-section detailed review
-    ├── coding_section.py    # CodingSectionAgent (OpenAI Agents SDK, proof/methodology/results)
     ├── crossref.py          # Cross-reference consistency
     ├── critique.py          # Self-critique quality gate
-    ├── coding_critique.py   # CodingCritiqueAgent (OpenAI Agents SDK, quote/claim verification)
     └── literature.py        # arXiv literature search (agentic loop)
 ```
 
@@ -92,7 +85,7 @@ Auto-detects API keys from env vars or `~/.coarse/config.toml`.
 ### Dependencies
 
 Core: litellm, instructor, pydantic, typer, rich, tomli-w, pymupdf, python-dotenv
-Optional: docling (OCR fallback), openai-agents[litellm] (coding agents)
+Optional: docling (OCR fallback)
 Dev: pytest, ruff
 
 ## Reference Review
@@ -201,8 +194,6 @@ Current models (verified 2026-03-04):
 - **OpenRouter Extraction**: `google/gemini-3-flash-preview` — fallback extraction via OpenRouter file-parser plugin
 - **Cheap (OpenAI)**: `openai/gpt-5.1-codex-mini` ($0.25/2.00)
 - **Cheap (Anthropic)**: `anthropic/claude-haiku-4.5` ($1.00/5.00)
-- **Agent**: `moonshotai/kimi-k2.5` (via OpenRouter) — used by coding agents (`--agentic`)
-
 **Hard rules:**
 - NEVER write a model ID string literal outside `models.py`. Import the constant.
 - Tests that reference models must `from coarse.models import ...`, not hardcode strings.

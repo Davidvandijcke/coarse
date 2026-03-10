@@ -29,9 +29,6 @@ OCR_MODEL = "mistral/mistral-ocr-latest"
 # Model used by OpenRouter extraction fallback (google/ prefix for OpenRouter API)
 OPENROUTER_EXTRACTION_MODEL = "google/gemini-3-flash-preview"
 
-# Coding agent model (used by CodingSectionAgent / CodingCritiqueAgent)
-AGENT_MODEL = "moonshotai/kimi-k2.5"
-
 # Model used for quality evaluation (dev-only, single-judge or panel)
 # litellm uses gemini/ prefix for Google AI Studio (not google/ which is Vertex AI)
 QUALITY_MODEL = "gemini/gemini-3-flash-preview"
@@ -39,5 +36,3 @@ QUALITY_MODEL = "gemini/gemini-3-flash-preview"
 # Model families that need JSON mode instead of tool-calling
 JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini")
 
-# Models needing MARKDOWN_JSON_MODE (no response_format support, unreliable tool-calling)
-MARKDOWN_JSON_PREFIXES = ("moonshotai", "kimi")

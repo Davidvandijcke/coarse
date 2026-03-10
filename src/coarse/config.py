@@ -13,7 +13,7 @@ from pathlib import Path
 import tomli_w
 from pydantic import BaseModel, Field
 
-from coarse.models import AGENT_MODEL, DEFAULT_MODEL, VISION_MODEL
+from coarse.models import DEFAULT_MODEL, VISION_MODEL
 
 # Maps provider name -> environment variable name.
 # Extensible: add entries as more providers are supported.
@@ -37,11 +37,6 @@ class CoarseConfig(BaseModel):
     extraction_qa: bool = True
     max_cost_usd: float = 10.0
     api_keys: dict[str, str] = Field(default_factory=dict)
-    # Coding agent settings (opt-in via --agentic)
-    use_coding_agents: bool = False
-    agent_model: str = AGENT_MODEL
-    agent_budget_usd: float = 2.0
-    max_coding_sections: int = 3
 
 
 def get_config_path() -> Path:

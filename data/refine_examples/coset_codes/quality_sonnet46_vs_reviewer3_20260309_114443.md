@@ -14,7 +14,7 @@
 | coverage | 5.5/6 | The generated review provides excellent coverage of the paper's core issues, identifying several critical errors in tables, formulas, and assumptions. It catches real mathematical and typographical errors that the reference review missed entirely, such as the incorrect complex code formulas in Table I and the mislabeled partition in Table III. |
 | specificity | 4.5/6 | While the generated review is highly specific and provides actionable feedback, it hallucinates two quotes (Comment 5 and Comment 12), changing the paper's text to fabricate errors. However, the majority of its specific catches (e.g., Comments 6, 8, 11, 14, 22) are incredibly precise and accurate. |
 | depth | 6.0/6 | The depth of analysis is exceptional. The generated review engages deeply with the lattice theory, re-deriving formulas, checking the validity of the dual lattice definitions, verifying the complex code formulas against the general rule, and scrutinizing the error coefficient calculations. It substantially exceeds the reference review in technical rigor. |
-| format | 5.0/6 | The generated review perfectly adheres to the requested refine.ink format, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
+| format | 5.0/6 | The generated review perfectly adheres to the requested standard review format, including the header block, Overall Feedback with titled issues, and Detailed Comments with numbered entries containing Quote and Feedback sections. |
 
 ## Strengths
 
