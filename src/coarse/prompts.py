@@ -256,7 +256,7 @@ def overview_paper_context(
 
     lit_block = ""
     if literature_context:
-        lit_block = f"\n**Related Literature (from arXiv)**:\n{literature_context}\n"
+        lit_block = f"\n**Literature Context**:\n{literature_context}\n"
 
     return f"""\
 **Paper Under Review**
@@ -296,7 +296,7 @@ high-level issues. Focus on the domain-specific concerns listed above.
 
     lit_block = ""
     if literature_context:
-        lit_block = f"\n**Related Literature (from arXiv)**:\n{literature_context}\n"
+        lit_block = f"\n**Literature Context**:\n{literature_context}\n"
 
     return f"""\
 Review the following research paper and identify 4-6 major high-level issues.
@@ -475,7 +475,7 @@ to this section that are NOT captured in the overview:
 
     lit_block = ""
     if literature_context:
-        lit_block = f"\n**Related Literature (from arXiv)**:\n{literature_context}\n"
+        lit_block = f"\n**Literature Context**:\n{literature_context}\n"
 
     return f"""\
 Review the following section of "{paper_title}" and produce detailed comments.

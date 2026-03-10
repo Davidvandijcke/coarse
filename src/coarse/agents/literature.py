@@ -1,23 +1,22 @@
-"""Literature search agent — finds related papers on arXiv to ground the review.
+"""Literature search agent — finds related papers to ground the review.
 
-Uses the arXiv API (free, no auth) with an agentic loop:
-1. Generate search queries from paper title/abstract (LLM call)
-2. Search arXiv API
-3. Rank results for relevance (LLM call)
-4. Optionally refine queries and re-search
-5. Compile top results as structured context
+Primary path: Perplexity Sonar Pro Search via OpenRouter (web-grounded, ~12s, ~$0.03).
+Fallback path: arXiv API + 2 LLM calls (free API, slower, arXiv-only coverage).
 """
 from __future__ import annotations
 
 import logging
+import os
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
+import litellm
 from pydantic import BaseModel, Field
 
 from coarse.llm import LLMClient
+from coarse.models import LITERATURE_SEARCH_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,66 @@ class _RankedResults(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# arXiv API helpers (stdlib only)
+# Perplexity Sonar Pro Search (primary path)
+# ---------------------------------------------------------------------------
+
+_PERPLEXITY_PROMPT = """\
+You are a research librarian. Given a paper's title and abstract, find the most \
+relevant related work and identify open questions in the literature.
+
+**Part 1 — Related Work (8-10 papers)**
+Find 8-10 papers most relevant to this work. Include:
+- Methodological precursors (techniques this paper builds on)
+- Direct competitors (other papers solving the same problem)
+- Foundational citations (seminal papers in this area)
+- Recent extensions or applications of similar methods
+
+For each paper provide: full title, authors, year, venue, and a 1-sentence \
+explanation of its relevance.
+
+**Part 2 — Open Questions & Known Limitations (4-6 items)**
+Based on the existing literature, identify 4-6 open questions, known limitations, \
+or active debates relevant to this paper's contribution. For each, cite the \
+paper(s) that established or discuss the issue.
+
+**Paper title**: {title}
+
+**Abstract**: {abstract}
+"""
+
+
+def _search_perplexity(title: str, abstract: str, client: LLMClient) -> str:
+    """Single Perplexity Sonar Pro Search call via OpenRouter.
+
+    Returns formatted literature context string, or raises on failure.
+    """
+    prompt = _PERPLEXITY_PROMPT.format(title=title, abstract=abstract[:1500])
+
+    response = litellm.completion(
+        model=f"openrouter/{LITERATURE_SEARCH_MODEL}",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=4096,
+        temperature=0.3,
+        timeout=60,
+    )
+
+    content = response.choices[0].message.content
+    if not content or not content.strip():
+        raise ValueError("Perplexity returned empty response")
+
+    # Track cost
+    try:
+        cost = litellm.completion_cost(completion_response=response)
+        if cost:
+            client.add_cost(cost)
+    except Exception:
+        pass
+
+    return content.strip()
+
+
+# ---------------------------------------------------------------------------
+# arXiv API helpers (stdlib only) — fallback path
 # ---------------------------------------------------------------------------
 
 def _search_arxiv(query: str, max_results: int = _MAX_RESULTS_PER_QUERY) -> list[ArxivPaper]:
@@ -124,7 +182,7 @@ def _parse_arxiv_response(xml_data: bytes) -> list[ArxivPaper]:
 
 
 # ---------------------------------------------------------------------------
-# LLM prompt templates
+# LLM prompt templates (arXiv fallback)
 # ---------------------------------------------------------------------------
 
 _QUERY_GEN_SYSTEM = """\
@@ -151,15 +209,15 @@ Also suggest 0-3 refinement queries if important areas of related work are missi
 
 
 # ---------------------------------------------------------------------------
-# Main agent
+# arXiv fallback pipeline
 # ---------------------------------------------------------------------------
 
-def search_literature(
+def _search_arxiv_pipeline(
     title: str,
     abstract: str,
     client: LLMClient,
 ) -> str:
-    """Run the literature search agentic loop.
+    """Run the arXiv-based literature search (fallback path).
 
     Returns a formatted context block of related papers, or "" if search fails.
     """
@@ -198,6 +256,31 @@ def search_literature(
 
     # Step 5: Compile top results
     return _compile_context(ranked[:_TOP_K], all_papers)
+
+
+# ---------------------------------------------------------------------------
+# Main dispatcher
+# ---------------------------------------------------------------------------
+
+def search_literature(
+    title: str,
+    abstract: str,
+    client: LLMClient,
+) -> str:
+    """Run the literature search. Signature unchanged for pipeline.py.
+
+    Uses Perplexity Sonar Pro Search if OPENROUTER_API_KEY is set,
+    falling back to the arXiv pipeline on failure or missing key.
+    """
+    if os.environ.get("OPENROUTER_API_KEY"):
+        try:
+            result = _search_perplexity(title, abstract, client)
+            logger.info("Literature search completed via Perplexity")
+            return result
+        except Exception:
+            logger.warning("Perplexity search failed, falling back to arXiv")
+
+    return _search_arxiv_pipeline(title, abstract, client)
 
 
 def _generate_queries(title: str, abstract: str, client: LLMClient) -> list[str]:

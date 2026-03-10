@@ -35,24 +35,28 @@ def test_build_cost_estimate_returns_all_stages():
     assert len(section_stages) == 8
     assert "extraction_qa" in names
     assert "pdf_extraction" in names
-    # Total: pdf_extraction + metadata + 3 overview judges + overview_synthesis + 8 sections + crossref + critique + extraction_qa = 17
-    assert len(estimate.stages) == 17
+    assert "calibration" in names
+    assert "literature_search" in names
+    # Total: pdf_extraction + metadata + calibration + literature_search + 3 overview judges + overview_synthesis + 8 sections + crossref + critique + extraction_qa = 19
+    assert len(estimate.stages) == 19
 
 
 def test_build_cost_estimate_zero_cost_unknown_model():
     config = _config(model="unknown/totally-fake-model")
     config = config.model_copy(update={"extraction_qa": False})
-    estimate = build_cost_estimate(_paper(), config)
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}, clear=False):
+        estimate = build_cost_estimate(_paper(), config)
     assert len(estimate.stages) > 0
     # pdf_extraction stage has fixed cost; all LLM stages should be zero for unknown model
     llm_stages = [s for s in estimate.stages if s.name != "pdf_extraction"]
     assert all(s.estimated_cost_usd == 0.0 for s in llm_stages)
 
 
-def test_total_cost_matches_sum():
+def test_total_cost_matches_sum_with_buffer():
     estimate = build_cost_estimate(_paper(), _config())
-    expected = sum(s.estimated_cost_usd for s in estimate.stages)
-    assert abs(estimate.total_cost_usd - expected) < 1e-10
+    stage_sum = sum(s.estimated_cost_usd for s in estimate.stages)
+    # total_cost_usd includes 1.15x conservative buffer
+    assert abs(estimate.total_cost_usd - stage_sum * 1.15) < 1e-10
 
 
 def test_section_count_respected():
@@ -121,7 +125,9 @@ def test_run_cost_gate_returns_estimate():
         result = run_cost_gate(paper, config)
     assert isinstance(result, CostEstimate)
     assert len(result.stages) > 0
-    assert abs(result.total_cost_usd - sum(s.estimated_cost_usd for s in result.stages)) < 1e-10
+    stage_sum = sum(s.estimated_cost_usd for s in result.stages)
+    # total_cost_usd includes 1.15x conservative buffer
+    assert abs(result.total_cost_usd - stage_sum * 1.15) < 1e-10
 
 
 # ---------------------------------------------------------------------------

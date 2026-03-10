@@ -98,6 +98,10 @@ class LLMClient:
             pass
         return response
 
+    def add_cost(self, cost_usd: float) -> None:
+        """Register an external cost (e.g. from a direct litellm.completion call)."""
+        self._cost_usd += cost_usd
+
     @property
     def cost_usd(self) -> float:
         """Total USD spent across all complete() calls this session."""

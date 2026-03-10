@@ -4,13 +4,15 @@ No LLM calls here — purely heuristic token budgets + pricing lookup.
 """
 from __future__ import annotations
 
+import os
+
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from coarse.config import CoarseConfig
 from coarse.llm import estimate_call_cost
-from coarse.models import OCR_MODEL
+from coarse.models import LITERATURE_SEARCH_MODEL, OCR_MODEL
 from coarse.types import CostEstimate, CostStage, PaperText
 
 
@@ -33,8 +35,9 @@ def build_cost_estimate(
     if section_count is None:
         section_count = _estimate_section_count(total_tokens)
     section_text_tokens = max(1, total_tokens // section_count)
-    # Each section prompt includes ~1,500 tokens of system prompt + cross-ref context
-    section_input = section_text_tokens + 1500
+    # Each section prompt includes ~5,000 tokens of overhead:
+    # system prompt (~1200) + overview context (~2500) + calibration (~500) + notation (~800)
+    section_input = section_text_tokens + 5000
 
     # OCR extraction cost (Mistral OCR: ~$0.002/page)
     est_pages = max(1, total_tokens // 250)
@@ -48,18 +51,47 @@ def build_cost_estimate(
         ),
     ]
 
+    # Estimated raw comments from section agents (each produces 1-5, avg ~3)
+    n_raw_comments = section_count * 3
+
+    # Crossref reads all raw comments, emits deduplicated set as JSON
+    crossref_in = n_raw_comments * 350 + 3500  # comments + overview + system
+    crossref_out = int(n_raw_comments * 0.6) * 600  # ~60% survive dedup, JSON format
+
+    # Critique reads deduped comments, emits revised set as JSON
+    n_deduped = int(n_raw_comments * 0.6)
+    critique_in = n_deduped * 350 + 3500
+    critique_out = int(n_deduped * 0.9) * 600  # ~90% survive critique
+
     # Overview: 3 judges each read full paper, then a synthesis call
     _NUM_OVERVIEW_JUDGES = 3
+    # Literature search: Perplexity flat fee if OpenRouter key available, else token-based
+    if os.environ.get("OPENROUTER_API_KEY"):
+        stages.append(
+            CostStage(
+                name="literature_search",
+                model=LITERATURE_SEARCH_MODEL,
+                estimated_tokens_in=0,
+                estimated_tokens_out=0,
+                estimated_cost_usd=0.03,
+            )
+        )
+        lit_stage: list[tuple[str, int, int]] = []
+    else:
+        lit_stage = [("literature_search", 2000, 2560)]
+
     stage_defs: list[tuple[str, int, int]] = [
         ("metadata", 500, 100),
+        ("calibration", 1000, 2000),
+        *lit_stage,
         *[
             (f"overview_judge_{i + 1}", total_tokens, 1500)
             for i in range(_NUM_OVERVIEW_JUDGES)
         ],
         ("overview_synthesis", 5000, 1500),
         *[(f"section_{i + 1}", section_input, 3500) for i in range(section_count)],
-        ("crossref", 8000, 3000),
-        ("critique", 8000, 3500),
+        ("crossref", crossref_in, crossref_out),
+        ("critique", critique_in, critique_out),
     ]
 
     for name, tokens_in, tokens_out in stage_defs:
@@ -88,6 +120,7 @@ def build_cost_estimate(
         )
 
     total = sum(s.estimated_cost_usd for s in stages)
+    total *= 1.15  # Conservative buffer — better to overestimate
     return CostEstimate(stages=stages, total_cost_usd=total)
 
 

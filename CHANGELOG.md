@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Literature search: Perplexity Sonar Pro** — Primary literature search now uses `perplexity/sonar-pro-search` via OpenRouter for web-grounded results with real citations (~12s, ~$0.03). Returns both related work and open questions/known limitations. arXiv pipeline kept as automatic fallback when OPENROUTER_API_KEY is unavailable or Perplexity fails.
+
 ## v1.0.0 — 2026-03-09
 
 First public release.

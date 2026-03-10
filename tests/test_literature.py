@@ -1,4 +1,4 @@
-"""Tests for coarse.agents.literature — arXiv search agent."""
+"""Tests for coarse.agents.literature — literature search agent."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -9,6 +9,7 @@ from coarse.agents.literature import (
     _parse_arxiv_response,
     _RankedResult,
     _RankedResults,
+    _search_perplexity,
     _SearchQueries,
     search_literature,
 )
@@ -94,11 +95,11 @@ def test_compile_context_empty():
 
 
 # ---------------------------------------------------------------------------
-# Tests: search_literature integration (mocked HTTP + LLM)
+# Tests: search_literature integration (mocked HTTP + LLM) — arXiv fallback
 # ---------------------------------------------------------------------------
 
-def test_search_literature_end_to_end():
-    """Full pipeline with mocked arXiv API and LLM calls."""
+def test_search_literature_arxiv_end_to_end():
+    """Full arXiv pipeline with mocked arXiv API and LLM calls (no OPENROUTER_API_KEY)."""
     mock_client = MagicMock()
 
     # First LLM call: query generation
@@ -117,18 +118,24 @@ def test_search_literature_end_to_end():
         ),
     ]
 
-    with patch("coarse.agents.literature._search_arxiv") as mock_search:
-        mock_search.return_value = [
-            ArxivPaper(
-                arxiv_id="2301.12345v1", title="Causal Paper",
-                authors=["Alice"], abstract="Abstract", published="2023-01-15",
-            ),
-            ArxivPaper(
-                arxiv_id="2302.67890v2", title="IV Review",
-                authors=["Bob"], abstract="Abstract", published="2023-02-20",
-            ),
-        ]
-        result = search_literature("My Paper", "My abstract", mock_client)
+    with (
+        patch("coarse.agents.literature._search_arxiv") as mock_search,
+        patch.dict("os.environ", {}, clear=False),
+    ):
+        # Ensure no OPENROUTER_API_KEY so we hit arXiv path
+        env = dict(__builtins__=None)  # noqa: F841
+        with patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}, clear=False):
+            mock_search.return_value = [
+                ArxivPaper(
+                    arxiv_id="2301.12345v1", title="Causal Paper",
+                    authors=["Alice"], abstract="Abstract", published="2023-01-15",
+                ),
+                ArxivPaper(
+                    arxiv_id="2302.67890v2", title="IV Review",
+                    authors=["Bob"], abstract="Abstract", published="2023-02-20",
+                ),
+            ]
+            result = search_literature("My Paper", "My abstract", mock_client)
 
     assert "Causal Paper" in result
     assert "IV Review" in result
@@ -148,7 +155,10 @@ def test_search_literature_query_generation_fails():
         ),
     ]
 
-    with patch("coarse.agents.literature._search_arxiv") as mock_search:
+    with (
+        patch("coarse.agents.literature._search_arxiv") as mock_search,
+        patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}, clear=False),
+    ):
         mock_search.return_value = [
             ArxivPaper(
                 arxiv_id="2301.12345v1", title="Fallback Paper",
@@ -166,7 +176,106 @@ def test_search_literature_no_results():
     mock_client = MagicMock()
     mock_client.complete.return_value = _SearchQueries(queries=["nonexistent topic xyz"])
 
-    with patch("coarse.agents.literature._search_arxiv", return_value=[]):
+    with (
+        patch("coarse.agents.literature._search_arxiv", return_value=[]),
+        patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}, clear=False),
+    ):
         result = search_literature("Nonexistent", "Nothing", mock_client)
 
     assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# Tests: Perplexity path
+# ---------------------------------------------------------------------------
+
+def test_search_perplexity_happy_path():
+    """_search_perplexity returns content and tracks cost."""
+    mock_client = MagicMock()
+
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "## Related Work\n1. Paper A by Author (2020)"
+
+    with patch("coarse.agents.literature.litellm") as mock_litellm:
+        mock_litellm.completion.return_value = mock_response
+        mock_litellm.completion_cost.return_value = 0.025
+
+        result = _search_perplexity("Test Title", "Test abstract", mock_client)
+
+    assert "Paper A" in result
+    mock_client.add_cost.assert_called_once_with(0.025)
+
+
+def test_search_perplexity_empty_response_raises():
+    """_search_perplexity raises ValueError on empty response."""
+    mock_client = MagicMock()
+
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = ""
+
+    with patch("coarse.agents.literature.litellm") as mock_litellm:
+        mock_litellm.completion.return_value = mock_response
+
+        try:
+            _search_perplexity("Test", "Abstract", mock_client)
+            assert False, "Should have raised ValueError"
+        except ValueError:
+            pass
+
+
+def test_dispatcher_uses_perplexity_when_key_set():
+    """search_literature dispatches to Perplexity when OPENROUTER_API_KEY is set."""
+    mock_client = MagicMock()
+
+    with (
+        patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-test-key"}, clear=False),
+        patch(
+            "coarse.agents.literature._search_perplexity",
+            return_value="Perplexity results",
+        ) as mock_perp,
+        patch("coarse.agents.literature._search_arxiv_pipeline") as mock_arxiv,
+    ):
+        result = search_literature("Title", "Abstract", mock_client)
+
+    assert result == "Perplexity results"
+    mock_perp.assert_called_once()
+    mock_arxiv.assert_not_called()
+
+
+def test_dispatcher_falls_back_on_perplexity_failure():
+    """search_literature falls back to arXiv when Perplexity raises."""
+    mock_client = MagicMock()
+
+    with (
+        patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-test-key"}, clear=False),
+        patch("coarse.agents.literature._search_perplexity", side_effect=Exception("API error")),
+        patch(
+            "coarse.agents.literature._search_arxiv_pipeline",
+            return_value="arXiv results",
+        ) as mock_arxiv,
+    ):
+        result = search_literature("Title", "Abstract", mock_client)
+
+    assert result == "arXiv results"
+    mock_arxiv.assert_called_once()
+
+
+def test_dispatcher_uses_arxiv_when_no_key():
+    """search_literature uses arXiv when OPENROUTER_API_KEY is not set."""
+    mock_client = MagicMock()
+
+    with (
+        patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}, clear=False),
+        patch("coarse.agents.literature._search_perplexity") as mock_perp,
+        patch(
+            "coarse.agents.literature._search_arxiv_pipeline",
+            return_value="arXiv results",
+        ) as mock_arxiv,
+    ):
+        result = search_literature("Title", "Abstract", mock_client)
+
+    assert result == "arXiv results"
+    mock_perp.assert_not_called()
+    mock_arxiv.assert_called_once()

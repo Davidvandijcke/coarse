@@ -33,6 +33,9 @@ OPENROUTER_EXTRACTION_MODEL = "google/gemini-3-flash-preview"
 # litellm uses gemini/ prefix for Google AI Studio (not google/ which is Vertex AI)
 QUALITY_MODEL = "gemini/gemini-3-flash-preview"
 
+# Literature search via Perplexity Sonar Pro (web-grounded, returns citations)
+LITERATURE_SEARCH_MODEL = "perplexity/sonar-pro-search"
+
 # Model families that need JSON mode instead of tool-calling
 JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini")
 
