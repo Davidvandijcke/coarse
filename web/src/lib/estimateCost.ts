@@ -101,6 +101,9 @@ export function estimateReviewCost(
   const estPages = Math.max(1, Math.floor(tokenEstimate / 250));
   let total = estPages * 0.002;
 
+  // Literature search: Perplexity Sonar Pro flat fee (web app always uses OpenRouter)
+  total += 0.03;
+
   // Estimated raw comments from section agents (each produces 1-5, avg ~3)
   const nRawComments = sections * 3;
 
@@ -118,7 +121,6 @@ export function estimateReviewCost(
   const stages: [string, number, number][] = [
     ["metadata", 500, 100],
     ["calibration", 1000, 2000],
-    ["literature_search", 2000, 2560],
     // 3 overview judges each read full paper
     ...Array.from(
       { length: NUM_OVERVIEW_JUDGES },
