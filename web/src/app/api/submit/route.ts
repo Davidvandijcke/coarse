@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Send confirmation email
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://coarse.ai";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://coarse.vercel.app";
   if (mailer) {
     await mailer.sendMail({
       from: `coarse <${process.env.GMAIL_USER}>`,

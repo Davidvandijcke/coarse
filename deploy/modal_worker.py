@@ -102,7 +102,7 @@ def run_review(req: ReviewRequest):
     supabase_key = os.environ["SUPABASE_SERVICE_KEY"]
     db = create_client(supabase_url, supabase_key)
 
-    site_url = os.environ.get("SITE_URL", "https://coarse.ai")
+    site_url = os.environ.get("SITE_URL", "https://coarse.vercel.app")
 
     # Update status to running
     db.table("reviews").update({"status": "running"}).eq("id", job_id).execute()
