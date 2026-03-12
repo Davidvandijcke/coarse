@@ -44,15 +44,45 @@ for _model_id, _info in _CUSTOM_MODEL_INFO.items():
 
 
 _CTRL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_DEGENERATE_RE = re.compile(r"(.)\1{50,}")  # 50+ consecutive identical chars
+
+
+class DegenerateReasoningError(RuntimeError):
+    """Raised when a model produces degenerate reasoning (e.g. repeated chars)."""
+
+
+def _check_degenerate_reasoning(response) -> None:
+    """Detect reasoning models stuck in repetition loops and fail fast.
+
+    Some reasoning models (e.g. Kimi k2.5) occasionally enter a degenerate
+    state where reasoning_content is just repeated characters, consuming all
+    tokens and producing no useful content. Detecting this early prevents
+    wasting retries and money.
+    """
+    for choice in getattr(response, "choices", []):
+        msg = getattr(choice, "message", None)
+        if msg is None:
+            continue
+        reasoning = getattr(msg, "reasoning_content", None)
+        if not reasoning or msg.content is not None:
+            continue
+        # content is None and reasoning exists — check if reasoning is degenerate
+        if _DEGENERATE_RE.search(reasoning):
+            raise DegenerateReasoningError(
+                f"Model produced degenerate reasoning ({len(reasoning)} chars of "
+                f"repeated characters) with no content output. This is a known "
+                f"failure mode of some reasoning models. Try a different model."
+            )
 
 
 def _sanitized_completion(*args, **kwargs):
-    """Wrap litellm.completion to strip control characters from response content.
+    """Wrap litellm.completion to strip control characters and detect degenerate output.
 
     Some models (e.g. MiMo) emit control characters in JSON output that break
     Pydantic parsing.  Stripping \x00-\x1f (except \t and \n) is safe for JSON.
     """
     response = litellm.completion(*args, **kwargs)
+    _check_degenerate_reasoning(response)
     for choice in getattr(response, "choices", []):
         msg = getattr(choice, "message", None)
         if msg and hasattr(msg, "content") and isinstance(msg.content, str):
