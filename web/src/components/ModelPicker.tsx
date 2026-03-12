@@ -9,7 +9,7 @@ const DEFAULT_MODELS = [
   { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash", provider: "Google" },
   { id: "qwen/qwen3.5-plus-02-15", label: "Qwen 3.5 Plus", provider: "Qwen" },
   { id: "moonshotai/kimi-k2.5", label: "Kimi K2.5", provider: "Moonshot" },
-  { id: "deepseek/deepseek-chat-v3-0324", label: "DeepSeek V3", provider: "DeepSeek" },
+  { id: "deepseek/deepseek-v3.2", label: "DeepSeek V3.2", provider: "DeepSeek" },
   { id: "x-ai/grok-4.1-fast", label: "Grok 4.1 Fast", provider: "xAI" },
   { id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", provider: "Meta" },
 ];
