@@ -19,7 +19,7 @@ export default function ReviewPage() {
     async function load() {
       const { data } = await supabase
         .from("reviews")
-        .select("id, status, paper_title, domain, result_markdown, paper_markdown, cost_usd, duration_seconds, error_message, created_at, completed_at")
+        .select("id, status, paper_filename, paper_title, domain, result_markdown, paper_markdown, cost_usd, duration_seconds, error_message, created_at, completed_at")
         .eq("id", id)
         .single();
 
