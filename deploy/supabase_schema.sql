@@ -7,13 +7,13 @@
 
 create table reviews (
   id uuid primary key default gen_random_uuid(),   -- serves as the unique access key
-  email text not null,
   paper_filename text not null,
   status text not null default 'queued'
     check (status in ('queued', 'running', 'done', 'failed')),
   paper_title text,
   domain text,
   result_markdown text,
+  paper_markdown text,
   cost_usd numeric(8,4),
   duration_seconds int,
   error_message text,
@@ -27,6 +27,19 @@ alter table reviews enable row level security;
 
 create policy "Anyone can view reviews by id"
   on reviews for select using (true);
+
+-- ============================================================================
+-- Review emails (PII separated from public review data)
+-- ============================================================================
+
+create table review_emails (
+  review_id uuid primary key references reviews(id) on delete cascade,
+  email text not null,
+  created_at timestamptz default now()
+);
+
+-- RLS: no anon policy = deny all. Only service_role (which bypasses RLS) can read/write.
+alter table review_emails enable row level security;
 
 -- ============================================================================
 -- Storage buckets

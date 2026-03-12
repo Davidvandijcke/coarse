@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   // Create review record to get the UUID
   const { data: reviewRow, error: insertError } = await supabaseAdmin
     .from("reviews")
-    .insert({ email, paper_filename: pdf.name, status: "queued" })
+    .insert({ paper_filename: pdf.name, status: "queued" })
     .select("id")
     .single();
 
@@ -73,6 +73,15 @@ export async function POST(request: NextRequest) {
   }
 
   const id: string = reviewRow.id;
+
+  // Store email in separate table (not readable by anon key)
+  const { error: emailError } = await supabaseAdmin
+    .from("review_emails")
+    .insert({ review_id: id, email });
+  if (emailError) {
+    await supabaseAdmin.from("reviews").delete().eq("id", id);
+    return NextResponse.json({ error: "Failed to save contact info" }, { status: 500 });
+  }
   const pdfPath = `${id}.pdf`;
 
   // Upload PDF to Supabase Storage

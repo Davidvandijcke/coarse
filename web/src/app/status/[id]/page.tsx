@@ -20,7 +20,7 @@ export default function StatusPage() {
     async function fetchStatus() {
       const { data } = await supabase
         .from("reviews")
-        .select("id, status, error_message, email")
+        .select("id, status, error_message")
         .eq("id", id)
         .single();
 
@@ -174,23 +174,17 @@ export default function StatusPage() {
                 : "Your review is queued and will start shortly."}
             </p>
 
-            {review?.email && (
-              <p
-                style={{
-                  fontFamily: "Georgia, serif",
-                  fontSize: "0.875rem",
-                  color: "var(--muted)",
-                  margin: "0.25rem 0 0",
-                  fontStyle: "italic",
-                }}
-              >
-                We&apos;ll email{" "}
-                <strong style={{ fontStyle: "normal", color: "var(--ink)" }}>
-                  {review.email}
-                </strong>{" "}
-                when it&apos;s done.
-              </p>
-            )}
+            <p
+              style={{
+                fontFamily: "Georgia, serif",
+                fontSize: "0.875rem",
+                color: "var(--muted)",
+                margin: "0.25rem 0 0",
+                fontStyle: "italic",
+              }}
+            >
+              We&apos;ll email you when it&apos;s done.
+            </p>
           </>
         ) : (
           <>

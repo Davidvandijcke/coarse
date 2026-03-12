@@ -1,6 +1,5 @@
 export interface Review {
   id: string;
-  email: string;
   paper_filename: string;
   status: "queued" | "running" | "done" | "failed";
   paper_title: string | null;
