@@ -206,7 +206,3 @@ Current models (verified 2026-03-04):
 - Don't add dependencies without checking pyproject.toml first
 - Don't create config systems beyond `~/.coarse/config.toml`
 - Don't hardcode model names outside models.py
-
-
-paperreview token tPJXuHFvrYEiP4bBfQ1Mw27--mdv9YTICu5by9jy3oM
-look into what we can learn from them https://paperreview.ai/tech-overview

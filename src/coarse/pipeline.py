@@ -206,9 +206,9 @@ def review_paper(
             search_literature, structure.title, structure.abstract, client
         )
 
-        calibration = cal_future.result()
+        calibration = cal_future.result(timeout=900)
         try:
-            literature_context = lit_future.result()
+            literature_context = lit_future.result(timeout=900)
         except Exception:
             logger.warning("Literature search failed, skipping")
             literature_context = ""
@@ -259,29 +259,48 @@ def review_paper(
         section_comments: list[DetailedComment] = []
         for i, future in enumerate(section_futures):
             try:
-                comments = future.result()
+                comments = future.result(timeout=900)
                 section_comments.extend(comments)
             except Exception:
                 sec_title = non_ref_sections[i].title if i < len(non_ref_sections) else "?"
                 logger.warning("Section agent failed for '%s', skipping", sec_title)
 
-    deduped_comments = crossref_agent.run(
-        overview, section_comments, comment_target=comment_target
-    )
+    if not section_comments:
+        logger.error("All section agents failed — review will have no detailed comments")
+
+    try:
+        deduped_comments = crossref_agent.run(
+            overview, section_comments, comment_target=comment_target
+        )
+    except Exception:
+        logger.warning("Crossref agent failed, using raw section comments")
+        deduped_comments = section_comments
+
     # Final quote verification against full paper text
     verified_comments = verify_quotes(
         deduped_comments, paper_text.full_markdown, drop_unverified=True,
     )
+    if deduped_comments and not verified_comments:
+        logger.warning("Quote verification dropped ALL comments — skipping verification")
+        verified_comments = deduped_comments
 
     critique_agent = CritiqueAgent(client)
-    final_comments = critique_agent.run(
-        overview, verified_comments, comment_target=comment_target
-    )
+    try:
+        final_comments = critique_agent.run(
+            overview, verified_comments, comment_target=comment_target
+        )
+    except Exception:
+        logger.warning("Critique agent failed, using verified comments")
+        final_comments = verified_comments
 
     # Re-verify quotes after critique (critique re-emits through JSON, re-garbling LaTeX)
+    final_comments_pre_verify = final_comments
     final_comments = verify_quotes(
         final_comments, paper_text.full_markdown, drop_unverified=True,
     )
+    if final_comments_pre_verify and not final_comments:
+        logger.warning("Quote verification dropped ALL comments — skipping verification")
+        final_comments = final_comments_pre_verify
 
     # Ensure sequential numbering 1..N
     final_comments = _renumber_comments(final_comments)

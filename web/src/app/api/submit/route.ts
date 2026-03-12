@@ -4,6 +4,10 @@ import nodemailer from "nodemailer";
 
 export const maxDuration = 30;
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 function getMailer() {
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
@@ -113,10 +117,10 @@ export async function POST(request: NextRequest) {
     await mailer.sendMail({
       from: `coarse <${process.env.GMAIL_USER}>`,
       to: email,
-      subject: `Your paper "${pdf.name}" is being reviewed`,
+      subject: `Your paper "${escapeHtml(pdf.name)}" is being reviewed`,
       html: [
         `<p>Hi,</p>`,
-        `<p>Your paper <strong>${pdf.name}</strong> is being reviewed. We'll email you when it's done (usually 30–60 minutes).</p>`,
+        `<p>Your paper <strong>${escapeHtml(pdf.name)}</strong> is being reviewed. We'll email you when it's done (usually 30–60 minutes).</p>`,
         `<p>Track progress: <a href="${siteUrl}/status/${id}">${siteUrl}/status/${id}</a></p>`,
         `<p><strong>Save your review key:</strong> <code>${id}</code></p>`,
         `<p>— coarse</p>`,

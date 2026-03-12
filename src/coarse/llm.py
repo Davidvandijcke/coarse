@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 
 import instructor
 import litellm
@@ -101,6 +102,7 @@ class LLMClient:
         mode = _select_instructor_mode(self._model)
         self._client = instructor.from_litellm(_sanitized_completion, mode=mode)
         self._cost_usd: float = 0.0
+        self._lock = threading.Lock()
 
     def complete(
         self,
@@ -133,7 +135,8 @@ class LLMClient:
         try:
             cost = litellm.completion_cost(completion_response=completion)
             if cost is not None:
-                self._cost_usd += cost
+                with self._lock:
+                    self._cost_usd += cost
         except Exception:
             # Unknown model pricing — skip cost tracking silently
             pass
@@ -141,7 +144,8 @@ class LLMClient:
 
     def add_cost(self, cost_usd: float) -> None:
         """Register an external cost (e.g. from a direct litellm.completion call)."""
-        self._cost_usd += cost_usd
+        with self._lock:
+            self._cost_usd += cost_usd
 
     @property
     def cost_usd(self) -> float:

@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import modal
+from fastapi import HTTPException, Request
 from pydantic import BaseModel
 
 app = modal.App("coarse-review")
@@ -63,6 +64,18 @@ def _send_email(to: str, subject: str, html: str) -> None:
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(user, password)
         server.send_message(msg)
+
+
+def _sanitize_error(msg: str) -> str:
+    """Strip potentially sensitive info from error messages."""
+    import re
+
+    # Remove file paths
+    msg = re.sub(r"/[^\s:]+/[^\s:]+", "[path]", msg)
+    # Remove anything that looks like an API key
+    msg = re.sub(r"sk-[a-zA-Z0-9-]{20,}", "[key]", msg)
+    msg = re.sub(r"[a-zA-Z0-9]{32,}", "[redacted]", msg)
+    return msg[:1000]
 
 
 class ReviewRequest(BaseModel):
@@ -172,7 +185,7 @@ def do_review(req_dict: dict):
         duration = int(time.time() - start)
         db.table("reviews").update({
             "status": "failed",
-            "error_message": str(e)[:1000],
+            "error_message": _sanitize_error(str(e)),
             "duration_seconds": duration,
         }).eq("id", job_id).execute()
         raise
@@ -202,12 +215,19 @@ def do_review(req_dict: dict):
     ],
 )
 @modal.fastapi_endpoint(method="POST")
-def run_review(req: ReviewRequest):
+def run_review(request: Request, req: ReviewRequest):
     """Accept a review request and spawn the background worker immediately.
 
     Returns a fast 202 response so the caller (Vercel) doesn't need to hold
     the HTTP connection open for the full 15-50 minute review pipeline.
     """
+    import os
+
+    expected = os.environ.get("MODAL_WEBHOOK_SECRET", "")
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if not expected or not token or token != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     do_review.spawn(req.model_dump())
     return {"status": "accepted", "job_id": req.job_id}
 

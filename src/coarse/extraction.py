@@ -16,7 +16,7 @@ import logging
 import re
 from pathlib import Path
 
-from coarse.types import PaperText
+from coarse.types import ExtractionError, PaperText
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +235,11 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
     path = Path(pdf_path)
     if not path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
+
+    with open(path, "rb") as f:
+        magic = f.read(5)
+    if magic != b"%PDF-":
+        raise ExtractionError(f"File does not appear to be a PDF: {pdf_path}")
 
     # Try loading from cache first
     if use_cache:
