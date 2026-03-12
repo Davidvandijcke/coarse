@@ -244,6 +244,7 @@ def review_paper(
             sec_lit = literature_context if (
                 section.section_type in _LIT_RELEVANT or focus == "literature"
             ) else ""
+            sec_abstract = structure.abstract if focus == "proof" else ""
             section_futures.append(
                 executor.submit(
                     section_agent.run, section, structure.title,
@@ -251,6 +252,7 @@ def review_paper(
                     focus,
                     sec_lit,
                     all_sections=structure.sections,
+                    abstract=sec_abstract,
                 )
             )
 

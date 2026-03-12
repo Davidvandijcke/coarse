@@ -162,7 +162,7 @@ def test_review_paper_skips_references_section():
     def fake_section_run(
         section, title, overview=None, calibration=None,
         focus="general", literature_context="",
-        all_sections=None,
+        all_sections=None, abstract="",
     ):
         called_sections.append(section)
         return [_make_comment(section.number)]

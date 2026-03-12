@@ -89,7 +89,7 @@ def _extract_claims_and_definitions(text: str) -> tuple[list[str], list[str]]:
         # Strip leading punctuation, bold markers, whitespace
         statement = re.sub(r"^[.*:)\s]+", "", statement)
 
-        short = statement[:200] + ("..." if len(statement) > 200 else "")
+        short = statement[:500] + ("..." if len(statement) > 500 else "")
         entry = f"{m.group(1)} {label}: {short}".strip()
 
         if kind in ("definition", "axiom"):

@@ -325,12 +325,14 @@ def test_extract_claims_empty_text():
 
 
 def test_extract_claims_truncates_long_statements():
-    """Statements over 200 chars are truncated with ellipsis."""
-    long_statement = "x " * 150  # 300 chars
+    """Statements over 500 chars are truncated with ellipsis."""
+    long_statement = "x " * 300  # 600 chars
     text = f"\nTheorem 1. {long_statement}\n\n"
     claims, defs = _extract_claims_and_definitions(text)
     assert len(claims) == 1
     assert claims[0].endswith("...")
+    # The claim entry is "Theorem 1: <truncated>...", so the statement portion is 500 chars
+    assert len(claims[0]) <= 520  # "Theorem 1: " prefix + 500 chars + "..."
 
 
 def test_parse_sections_populates_claims_and_definitions(mock_client):

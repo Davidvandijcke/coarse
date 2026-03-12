@@ -175,7 +175,9 @@ Evaluation standards for this field:
 OVERVIEW_PERSONAS = [
     "You are an expert in mathematical and theoretical methodology. "
     "Focus especially on proof correctness, internal consistency, and whether "
-    "the paper's formal results actually support its claims.",
+    "the paper's formal results actually support its claims. "
+    "Pay particular attention to proof steps that are valid only under "
+    "stronger conditions than the theorem claims to cover.",
     "You are an expert in research design and applied methodology. "
     "Focus especially on whether the paper's implementation matches "
     "its theoretical claims, and whether experiments or simulations test "
@@ -436,6 +438,7 @@ def section_user(
     calibration: "DomainCalibration | None" = None,
     literature_context: str = "",
     all_sections: "list[SectionInfo] | None" = None,
+    abstract: str = "",
 ) -> str:
     """User prompt for a single section review.
 
@@ -444,6 +447,13 @@ def section_user(
     If all_sections is provided, includes notation/definitions from other
     sections for cross-referencing.
     """
+    abstract_block = ""
+    if abstract:
+        abstract_block = (
+            f"\n**Paper Abstract** (stated scope — verify proof covers all claimed cases):"
+            f"\n{abstract[:1500]}\n"
+        )
+
     claims_block = ""
     if section.claims:
         claims_list = "\n".join(f"- {c}" for c in section.claims)
@@ -482,7 +492,7 @@ Review the following section of "{paper_title}" and produce detailed comments.
 
 **Section {section.number}: {section.title}**
 **Type**: {section.section_type.value}
-{claims_block}{defs_block}{notation_block}{context_block}{cal_block}{lit_block}
+{abstract_block}{claims_block}{defs_block}{notation_block}{context_block}{cal_block}{lit_block}
 
 **Section Text**:
 {section.text}
@@ -525,6 +535,17 @@ to numerically verify key equations.
 the paper's own examples, simulations, or parameter choices satisfy it. Test the edge: \
 if a condition requires strict inequality, does equality ever arise? If an object must \
 be invertible/well-defined, does the construction guarantee this?
+7. SCOPE-ASSUMPTION MATCH: For each proof step, verify it is valid under ALL conditions \
+the theorem/proposition claims to cover — not just a special case. Specifically:
+   - When a proof invokes a mathematical identity or result, check that the conditions \
+required by that identity are actually satisfied under the theorem's stated assumptions — \
+not just in a restrictive special case.
+   - When a proof relies on a property of a variable, function, or object, check whether \
+that property holds across the full generality the theorem claims, not just in the simplest \
+or most restrictive setting.
+   - If the theorem claims to cover multiple settings or cases, verify the proof handles \
+all of them — not just the easiest one. A proof that works only for the special case is \
+an error if the theorem claims generality.
 
 For each issue, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
