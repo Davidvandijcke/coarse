@@ -6,6 +6,7 @@ export interface Review {
   paper_title: string | null;
   domain: string | null;
   result_markdown: string | null;
+  paper_markdown: string | null;
   cost_usd: number | null;
   duration_seconds: number | null;
   error_message: string | null;

@@ -14,7 +14,7 @@ import litellm
 from pydantic import BaseModel
 
 from coarse.config import CoarseConfig, load_config
-from coarse.models import JSON_MODE_PREFIXES
+from coarse.models import JSON_MODE_PREFIXES, MARKDOWN_JSON_PREFIXES
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,12 @@ _CUSTOM_MODEL_INFO: dict[str, dict] = {
         "max_output_tokens": 65_536,
         "input_cost_per_token": 0.26e-6,
         "output_cost_per_token": 1.56e-6,
+    },
+    "moonshotai/kimi-k2.5": {
+        "max_tokens": 131_072,
+        "max_output_tokens": 32_768,
+        "input_cost_per_token": 0.35e-6,
+        "output_cost_per_token": 0.7e-6,
     },
 }
 for _model_id, _info in _CUSTOM_MODEL_INFO.items():
@@ -78,6 +84,11 @@ class LLMClient:
         """Single structured LLM call. Returns parsed Pydantic model."""
         # Clamp max_tokens to model's known limit
         clamped = _clamp_max_tokens(self._model, max_tokens)
+
+        # MD_JSON models (Kimi) need lower temperature and higher max_tokens
+        if any(p in self._model.lower() for p in MARKDOWN_JSON_PREFIXES):
+            temperature = min(temperature, 0.1)
+            clamped = max(clamped, 16384)
 
         response, completion = self._client.chat.completions.create_with_completion(
             model=self._model,
@@ -158,7 +169,15 @@ def _select_instructor_mode(model: str) -> instructor.Mode:
     lower = model.lower()
     # OpenRouter-proxied models
     if lower.startswith("openrouter/"):
+        # Check if it's a markdown-JSON model first (e.g. Kimi via OpenRouter)
+        for prefix in MARKDOWN_JSON_PREFIXES:
+            if prefix in lower:
+                return instructor.Mode.MD_JSON
         return instructor.Mode.JSON
+    # Markdown-JSON models (Kimi) — need MD_JSON mode
+    for prefix in MARKDOWN_JSON_PREFIXES:
+        if prefix in lower:
+            return instructor.Mode.MD_JSON
     # Known model families that work better with JSON mode
     for prefix in JSON_MODE_PREFIXES:
         if prefix in lower:

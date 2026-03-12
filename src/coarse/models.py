@@ -39,3 +39,8 @@ LITERATURE_SEARCH_MODEL = "perplexity/sonar-pro-search"
 # Model families that need JSON mode instead of tool-calling
 JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini")
 
+# Model families that need markdown-JSON mode (instructor MD_JSON)
+# These models struggle with both tool-calling and raw JSON but handle
+# markdown-wrapped JSON well.  Also need temperature ≤ 0.1 and higher max_tokens.
+MARKDOWN_JSON_PREFIXES = ("moonshotai", "kimi")
+

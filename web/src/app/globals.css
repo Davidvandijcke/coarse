@@ -234,17 +234,34 @@ body::after {
 .review-content .katex { font-size: 1em; }
 .review-content .katex-display { margin: 1rem 0; overflow-x: auto; overflow-y: hidden; }
 
-/* ── Review page: hide sidebar on mobile ───────────────────── */
+/* ── Paper panel highlight animation ────────────────────────── */
+@keyframes paper-highlight-flash {
+  0%   { background: rgba(212, 168, 67, 0.25); }
+  100% { background: transparent; }
+}
+.paper-block-highlight {
+  animation: paper-highlight-flash 2s ease-out forwards;
+  border-radius: 2px;
+}
+
+/* ── Paper panel scrollbar ─────────────────────────────────── */
+.paper-panel::-webkit-scrollbar { width: 4px; }
+.paper-panel::-webkit-scrollbar-track { background: transparent; }
+.paper-panel::-webkit-scrollbar-thumb { background: var(--tray); border-radius: 2px; }
+
+/* ── Review page: hide sidebar + paper panel on mobile ─────── */
 @media (max-width: 768px) {
   .review-sidebar { display: none !important; }
   .review-main { max-width: 100% !important; }
+  .paper-panel { display: none !important; }
+  .show-in-paper-btn { display: none !important; }
 }
 
 /* ── Print styles ──────────────────────────────────────────── */
 @media print {
   body, html { background: white !important; color: #111 !important; }
   body::after { display: none !important; }
-  .review-sidebar, .review-header, .page-marks { display: none !important; }
+  .review-sidebar, .review-header, .page-marks, .paper-panel { display: none !important; }
   .review-main { max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
   .review-content { color: #111 !important; }
   .review-content blockquote { border-left-color: #888 !important; color: #555 !important; background: #f5f5f5 !important; }

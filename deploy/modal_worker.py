@@ -1,8 +1,9 @@
 """Modal worker for coarse web reviews.
 
 Deploys a serverless function that runs paper reviews triggered by the web frontend.
-The function reads PDFs from Supabase Storage, runs review_paper(), writes results
-back to Supabase, deletes the PDF, and emails the user when done.
+The web endpoint accepts requests and immediately spawns a background worker via
+Modal's .spawn(), returning a fast 202 response. The background worker downloads
+the PDF, runs the review pipeline, and writes results back to Supabase.
 
 Deploy:  modal deploy deploy/modal_worker.py
 Secrets: Create in Modal dashboard:
@@ -75,16 +76,15 @@ class ReviewRequest(BaseModel):
 @app.function(
     image=image,
     timeout=3600,
-    memory=512,
+    memory=2048,
     secrets=[
         modal.Secret.from_name("coarse-supabase"),
         modal.Secret.from_name("coarse-webhook"),
         modal.Secret.from_name("coarse-gmail"),
     ],
 )
-@modal.fastapi_endpoint(method="POST")
-def run_review(req: ReviewRequest):
-    """Run a paper review for a web submission."""
+def do_review(req_dict: dict):
+    """Background worker that runs the actual review pipeline."""
     import os
     import tempfile
     import time
@@ -92,11 +92,14 @@ def run_review(req: ReviewRequest):
 
     from supabase import create_client
 
+    req = ReviewRequest(**req_dict)
     job_id = req.job_id
     pdf_storage_path = req.pdf_storage_path
     user_api_key = req.user_api_key
     email = req.email
     model = req.model
+
+    print(f"[{job_id}] Starting review — pdf={pdf_storage_path} model={model}")
 
     supabase_url = os.environ["SUPABASE_URL"]
     supabase_key = os.environ["SUPABASE_SERVICE_KEY"]
@@ -106,6 +109,7 @@ def run_review(req: ReviewRequest):
 
     # Update status to running
     db.table("reviews").update({"status": "running"}).eq("id", job_id).execute()
+    print(f"[{job_id}] Status set to running")
 
     # Use user's key; restore original afterward to prevent leaks across container reuses
     original_key = os.environ.get("OPENROUTER_API_KEY")
@@ -116,6 +120,7 @@ def run_review(req: ReviewRequest):
     pdf_bytes = db.storage.from_("papers").download(pdf_storage_path)
     if not pdf_bytes:
         raise ValueError(f"Storage download returned empty for {pdf_storage_path}")
+    print(f"[{job_id}] Downloaded PDF — {len(pdf_bytes)} bytes")
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
         f.write(pdf_bytes)
@@ -123,13 +128,19 @@ def run_review(req: ReviewRequest):
 
     start = time.time()
     try:
+        print(f"[{job_id}] Importing coarse...")
         from coarse import review_paper
         from coarse.config import CoarseConfig
+        has_or_key = bool(os.environ.get("OPENROUTER_API_KEY"))
+        has_mi_key = bool(os.environ.get("MISTRAL_API_KEY"))
+        print(f"[{job_id}] Import OK — OPENROUTER_API_KEY={'set' if has_or_key else 'MISSING'}, MISTRAL_API_KEY={'set' if has_mi_key else 'MISSING'}")
+        print(f"[{job_id}] Starting pipeline")
 
         config = CoarseConfig(use_coding_agents=False, extraction_qa=True)
-        review, markdown, _paper_text = review_paper(
+        review, markdown, paper_text = review_paper(
             pdf_path, model=model, skip_cost_gate=True, config=config
         )
+        print(f"[{job_id}] Pipeline complete — {len(markdown)} chars")
 
         duration = int(time.time() - start)
 
@@ -138,6 +149,7 @@ def run_review(req: ReviewRequest):
             "paper_title": review.title,
             "domain": review.domain,
             "result_markdown": markdown,
+            "paper_markdown": paper_text.full_markdown,
             "duration_seconds": duration,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", job_id).execute()
@@ -180,6 +192,24 @@ def run_review(req: ReviewRequest):
             db.storage.from_("papers").remove([pdf_storage_path])
         except Exception:
             pass  # Non-critical; don't fail the review
+
+
+@app.function(
+    image=image,
+    timeout=60,
+    secrets=[
+        modal.Secret.from_name("coarse-webhook"),
+    ],
+)
+@modal.fastapi_endpoint(method="POST")
+def run_review(req: ReviewRequest):
+    """Accept a review request and spawn the background worker immediately.
+
+    Returns a fast 202 response so the caller (Vercel) doesn't need to hold
+    the HTTP connection open for the full 15-50 minute review pipeline.
+    """
+    do_review.spawn(req.model_dump())
+    return {"status": "accepted", "job_id": req.job_id}
 
 
 @app.function(image=image, timeout=30)

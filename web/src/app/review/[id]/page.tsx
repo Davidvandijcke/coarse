@@ -236,6 +236,8 @@ export default function ReviewPage() {
         <ReviewDisplay
           parsed={parsed}
           markdown={review.result_markdown}
+          reviewId={review.id}
+          paperMarkdown={review.paper_markdown}
           domain={review.domain}
           durationSeconds={review.duration_seconds}
           costUsd={review.cost_usd}

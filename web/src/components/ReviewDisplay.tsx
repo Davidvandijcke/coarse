@@ -7,11 +7,23 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import type { ParsedReview, DetailedComment } from "@/lib/parseReview";
 import { CharcoalRule } from "@/components/charcoal";
+import {
+  useCommentStatus,
+  type CommentStatus,
+  type CommentFilter,
+} from "@/lib/useCommentStatus";
+import PaperPanel from "@/components/PaperPanel";
 
 const katexOptions = { strict: false, throwOnError: false };
 
-/* ── Quote block with expand/collapse ──────────────────────── */
-function QuoteBlock({ text }: { text: string }) {
+/* ── Quote block with expand/collapse + "Show in paper" ──── */
+function QuoteBlock({
+  text,
+  onShowInPaper,
+}: {
+  text: string;
+  onShowInPaper?: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const lines = text.split("\n");
   const isLong = lines.length > 4 || text.length > 300;
@@ -44,24 +56,95 @@ function QuoteBlock({ text }: { text: string }) {
           {shown}
         </ReactMarkdown>
       </div>
-      {isLong && (
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--blue-chalk)",
-            fontFamily: "var(--font-space-mono), monospace",
-            fontSize: "0.7rem",
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            cursor: "pointer",
-            padding: "0.25rem 0 0",
-          }}
-        >
-          {expanded ? "Show less" : "Show more"}
-        </button>
-      )}
+      <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+        {isLong && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--blue-chalk)",
+              fontFamily: "var(--font-space-mono), monospace",
+              fontSize: "0.7rem",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              cursor: "pointer",
+              padding: "0.25rem 0 0",
+            }}
+          >
+            {expanded ? "Show less" : "Show more"}
+          </button>
+        )}
+        {onShowInPaper && (
+          <button
+            onClick={onShowInPaper}
+            className="show-in-paper-btn"
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--blue-chalk)",
+              fontFamily: "var(--font-space-mono), monospace",
+              fontSize: "0.7rem",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              cursor: "pointer",
+              padding: "0.25rem 0 0",
+            }}
+          >
+            {"\u2190"} Show in paper
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Status action buttons ─────────────────────────────────── */
+const actionBtnStyle: React.CSSProperties = {
+  background: "none",
+  border: "1px solid var(--tray)",
+  borderRadius: "2px",
+  cursor: "pointer",
+  padding: "0.15rem 0.4rem",
+  fontFamily: "var(--font-space-mono), monospace",
+  fontSize: "0.65rem",
+  lineHeight: 1,
+  transition: "all 0.15s",
+};
+
+function StatusButtons({
+  status,
+  onStatusChange,
+}: {
+  status: CommentStatus;
+  onStatusChange: (s: CommentStatus) => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: "0.35rem", marginLeft: "auto", flexShrink: 0 }}>
+      <button
+        onClick={() => onStatusChange(status === "done" ? "active" : "done")}
+        title={status === "done" ? "Mark as active" : "Mark as done"}
+        style={{
+          ...actionBtnStyle,
+          color: status === "done" ? "#6B9E6B" : "var(--dust)",
+          borderColor: status === "done" ? "#6B9E6B" : "var(--tray)",
+        }}
+      >
+        {"\u2713"}
+      </button>
+      <button
+        onClick={() =>
+          onStatusChange(status === "dismissed" ? "active" : "dismissed")
+        }
+        title={status === "dismissed" ? "Mark as active" : "Dismiss"}
+        style={{
+          ...actionBtnStyle,
+          color: status === "dismissed" ? "var(--red-chalk)" : "var(--dust)",
+          borderColor: status === "dismissed" ? "var(--red-chalk)" : "var(--tray)",
+        }}
+      >
+        {"\u00d7"}
+      </button>
     </div>
   );
 }
@@ -70,30 +153,42 @@ function QuoteBlock({ text }: { text: string }) {
 function CommentCard({
   comment,
   id,
+  commentStatus,
+  onStatusChange,
+  onShowInPaper,
 }: {
   comment: DetailedComment;
   id: string;
+  commentStatus: CommentStatus;
+  onStatusChange: (s: CommentStatus) => void;
+  onShowInPaper?: () => void;
 }) {
+  const [showDismissed, setShowDismissed] = useState(false);
+  const isDone = commentStatus === "done";
+  const isDismissed = commentStatus === "dismissed";
+
   return (
     <div
       id={id}
       style={{
         scrollMarginTop: "5rem",
         padding: "1.25rem 0",
+        opacity: isDismissed ? 0.35 : isDone ? 0.6 : 1,
+        transition: "opacity 0.2s",
       }}
     >
-      {/* Number + title */}
+      {/* Number + title + action buttons */}
       <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem" }}>
         <span
           style={{
             fontFamily: "var(--font-chalk)",
             fontSize: "1.5rem",
-            color: "var(--yellow-chalk)",
+            color: isDone ? "#6B9E6B" : "var(--yellow-chalk)",
             lineHeight: 1,
             fontWeight: 700,
           }}
         >
-          #{comment.number}
+          {isDone ? "\u2713" : `#${comment.number}`}
         </span>
         <h3
           style={{
@@ -103,45 +198,146 @@ function CommentCard({
             color: "var(--chalk-bright)",
             margin: 0,
             lineHeight: 1.35,
+            textDecoration: isDone ? "line-through" : "none",
+            flex: 1,
           }}
         >
           {comment.title}
         </h3>
+        <StatusButtons status={commentStatus} onStatusChange={onStatusChange} />
       </div>
 
-      {/* Quote */}
-      {comment.quote && <QuoteBlock text={comment.quote} />}
-
-      {/* Feedback */}
-      <div
-        className="review-content"
-        style={{ fontSize: "0.95rem", lineHeight: 1.7, marginTop: "0.5rem" }}
-      >
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[[rehypeKatex, katexOptions]]}
+      {/* Collapsed content for dismissed */}
+      {isDismissed && !showDismissed ? (
+        <button
+          onClick={() => setShowDismissed(true)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--dust)",
+            fontFamily: "var(--font-space-mono), monospace",
+            fontSize: "0.65rem",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            cursor: "pointer",
+            padding: "0.5rem 0 0",
+          }}
         >
-          {comment.feedback}
-        </ReactMarkdown>
-      </div>
+          Show details
+        </button>
+      ) : (
+        <>
+          {/* Quote */}
+          {comment.quote && (
+            <QuoteBlock text={comment.quote} onShowInPaper={onShowInPaper} />
+          )}
 
-      {/* Status badge */}
-      <span
-        style={{
-          display: "inline-block",
-          marginTop: "0.5rem",
-          fontFamily: "var(--font-space-mono), monospace",
-          fontSize: "0.6rem",
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-          color: "var(--dust)",
-          border: "1px solid var(--tray)",
-          padding: "0.2rem 0.5rem",
-          borderRadius: "2px",
-        }}
-      >
-        {comment.status}
-      </span>
+          {/* Feedback */}
+          <div
+            className="review-content"
+            style={{ fontSize: "0.95rem", lineHeight: 1.7, marginTop: "0.5rem" }}
+          >
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[[rehypeKatex, katexOptions]]}
+            >
+              {comment.feedback}
+            </ReactMarkdown>
+          </div>
+
+          {/* Status badge */}
+          <span
+            style={{
+              display: "inline-block",
+              marginTop: "0.5rem",
+              fontFamily: "var(--font-space-mono), monospace",
+              fontSize: "0.6rem",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: isDone
+                ? "#6B9E6B"
+                : isDismissed
+                  ? "var(--red-chalk)"
+                  : "var(--dust)",
+              border: `1px solid ${isDone ? "#6B9E6B" : isDismissed ? "var(--red-chalk)" : "var(--tray)"}`,
+              padding: "0.2rem 0.5rem",
+              borderRadius: "2px",
+            }}
+          >
+            {isDone ? "Done" : isDismissed ? "Dismissed" : comment.status}
+          </span>
+
+          {/* Collapse button for dismissed */}
+          {isDismissed && showDismissed && (
+            <button
+              onClick={() => setShowDismissed(false)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--dust)",
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.65rem",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+                padding: "0 0 0 0.75rem",
+              }}
+            >
+              Hide
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ── Filter tabs ───────────────────────────────────────────── */
+const FILTERS: { key: CommentFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "active", label: "Active" },
+  { key: "done", label: "Done" },
+  { key: "dismissed", label: "Dismissed" },
+];
+
+function FilterTabs({
+  current,
+  onChange,
+}: {
+  current: CommentFilter;
+  onChange: (f: CommentFilter) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: "0.25rem",
+        padding: "0.25rem 0.5rem 0.5rem",
+        flexWrap: "wrap",
+      }}
+    >
+      {FILTERS.map(({ key, label }) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontFamily: "var(--font-space-mono), monospace",
+            fontSize: "0.55rem",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: current === key ? "var(--yellow-chalk)" : "var(--dust)",
+            padding: "0.15rem 0.3rem",
+            borderBottom:
+              current === key ? "1px solid var(--yellow-chalk)" : "1px solid transparent",
+            transition: "all 0.15s",
+          }}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -151,10 +347,18 @@ function Sidebar({
   parsed,
   activeId,
   onNavigate,
+  getStatus,
+  remaining,
+  filter,
+  onFilterChange,
 }: {
   parsed: ParsedReview;
   activeId: string | null;
   onNavigate: (id: string) => void;
+  getStatus: (n: number) => CommentStatus;
+  remaining: number;
+  filter: CommentFilter;
+  onFilterChange: (f: CommentFilter) => void;
 }) {
   return (
     <nav
@@ -204,7 +408,7 @@ function Sidebar({
         }}
       />
 
-      {/* Comment links */}
+      {/* Comment header with remaining count */}
       <div
         style={{
           fontFamily: "var(--font-space-mono), monospace",
@@ -212,14 +416,27 @@ function Sidebar({
           letterSpacing: "0.08em",
           textTransform: "uppercase",
           color: "var(--dust)",
-          padding: "0.25rem 0.5rem 0.5rem",
+          padding: "0.25rem 0.5rem 0",
         }}
       >
-        Comments ({parsed.detailedComments.length})
+        Comments ({remaining}/{parsed.detailedComments.length} remaining)
       </div>
+
+      {/* Filter tabs */}
+      <FilterTabs current={filter} onChange={onFilterChange} />
+
+      {/* Comment links */}
       {parsed.detailedComments.map((c) => {
         const cid = `comment-${c.number}`;
         const isActive = activeId === cid;
+        const cs = getStatus(c.number);
+
+        // Filter visibility
+        if (filter !== "all" && cs !== filter) return null;
+
+        const isDone = cs === "done";
+        const isDismissed = cs === "dismissed";
+
         return (
           <button
             key={c.number}
@@ -235,16 +452,27 @@ function Sidebar({
               fontFamily: "Georgia, serif",
               fontSize: "0.75rem",
               lineHeight: 1.4,
-              color: isActive ? "var(--chalk-bright)" : "var(--dust)",
+              color: isActive
+                ? "var(--chalk-bright)"
+                : isDismissed
+                  ? "var(--dust)"
+                  : "var(--dust)",
+              opacity: isDismissed ? 0.4 : 1,
               transition: "all 0.15s",
               borderRadius: "2px",
               borderLeft: isActive
                 ? "2px solid var(--yellow-chalk)"
                 : "2px solid transparent",
+              textDecoration: isDone ? "line-through" : "none",
             }}
           >
-            <span style={{ color: "var(--yellow-chalk)", fontWeight: 700 }}>
-              {c.number}.
+            <span
+              style={{
+                color: isDone ? "#6B9E6B" : "var(--yellow-chalk)",
+                fontWeight: 700,
+              }}
+            >
+              {isDone ? "\u2713" : `${c.number}.`}
             </span>{" "}
             {c.title.length > 40 ? c.title.slice(0, 40) + "..." : c.title}
           </button>
@@ -371,23 +599,47 @@ function DownloadMenu({
   );
 }
 
+/* ── Header button style ──────────────────────────────────── */
+const headerBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "1.5px solid var(--chalk)",
+  color: "var(--chalk)",
+  padding: "0.375rem 0.875rem",
+  fontFamily: "var(--font-space-mono), monospace",
+  fontSize: "0.5625rem",
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+  cursor: "pointer",
+};
+
 /* ── Main ReviewDisplay ────────────────────────────────────── */
 export default function ReviewDisplay({
   parsed,
   markdown,
+  reviewId,
+  paperMarkdown,
   domain,
   durationSeconds,
   costUsd,
 }: {
   parsed: ParsedReview;
   markdown: string;
+  reviewId: string;
+  paperMarkdown?: string | null;
   domain?: string | null;
   durationSeconds?: number | null;
   costUsd?: number | null;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [paperPanelOpen, setPaperPanelOpen] = useState(false);
+  const [highlightQuote, setHighlightQuote] = useState<string | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
+
+  const { getStatus, setStatus, remaining, filter, setFilter } =
+    useCommentStatus(reviewId, parsed.detailedComments.length);
+
+  const hasPaper = !!paperMarkdown;
 
   /* ── IntersectionObserver for active sidebar highlight ──── */
   useEffect(() => {
@@ -409,7 +661,7 @@ export default function ReviewDisplay({
 
     sections.forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [parsed]);
+  }, [parsed, paperPanelOpen]);
 
   const navigate = useCallback((id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
@@ -419,6 +671,14 @@ export default function ReviewDisplay({
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleShowInPaper(quote: string) {
+    if (!hasPaper) return;
+    if (!paperPanelOpen) setPaperPanelOpen(true);
+    // Bump the quote to trigger re-search even if same quote clicked twice
+    setHighlightQuote(null);
+    setTimeout(() => setHighlightQuote(quote), 50);
   }
 
   return (
@@ -461,23 +721,20 @@ export default function ReviewDisplay({
               color: "var(--yellow-chalk)",
             }}
           >
-            {parsed.detailedComments.length} comments
+            {remaining}/{parsed.detailedComments.length} remaining
           </span>
 
-          <button
-            onClick={copyLink}
-            style={{
-              background: "transparent",
-              border: "1.5px solid var(--chalk)",
-              color: "var(--chalk)",
-              padding: "0.375rem 0.875rem",
-              fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.5625rem",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              cursor: "pointer",
-            }}
-          >
+          {/* Paper toggle */}
+          {hasPaper && (
+            <button
+              onClick={() => setPaperPanelOpen((v) => !v)}
+              style={headerBtnStyle}
+            >
+              {paperPanelOpen ? "Hide Paper" : "Show Paper"}
+            </button>
+          )}
+
+          <button onClick={copyLink} style={headerBtnStyle}>
             {copied ? "Copied" : "Share"}
           </button>
 
@@ -501,28 +758,48 @@ export default function ReviewDisplay({
         </div>
       </header>
 
-      {/* ── Body: sidebar + main ────────────────────────────── */}
+      {/* ── Body: paper panel + sidebar + main ────────────── */}
       <div
         style={{
           display: "flex",
-          maxWidth: "1100px",
+          maxWidth: paperPanelOpen ? "100%" : "1100px",
           margin: "0 auto",
-          padding: "2rem 2rem 4rem",
-          gap: "2rem",
+          padding: paperPanelOpen ? "0 0 4rem" : "2rem 2rem 4rem",
+          gap: paperPanelOpen ? "0" : "2rem",
+          transition: "max-width 0.2s",
         }}
       >
+        {/* Paper panel */}
+        {paperPanelOpen && paperMarkdown && (
+          <PaperPanel
+            markdown={paperMarkdown}
+            highlightQuote={highlightQuote}
+            onClose={() => setPaperPanelOpen(false)}
+          />
+        )}
+
         {/* Sidebar */}
-        <Sidebar
-          parsed={parsed}
-          activeId={activeId}
-          onNavigate={navigate}
-        />
+        <div style={{ padding: paperPanelOpen ? "2rem 0 0 1.5rem" : "0" }}>
+          <Sidebar
+            parsed={parsed}
+            activeId={activeId}
+            onNavigate={navigate}
+            getStatus={getStatus}
+            remaining={remaining}
+            filter={filter}
+            onFilterChange={setFilter}
+          />
+        </div>
 
         {/* Main content */}
         <main
           ref={mainRef}
           className="review-main"
-          style={{ flex: 1, minWidth: 0 }}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            padding: paperPanelOpen ? "2rem 2rem 0 1.5rem" : "0",
+          }}
         >
           {/* Paper title */}
           <h1
@@ -659,9 +936,28 @@ export default function ReviewDisplay({
 
             {parsed.detailedComments.map((comment) => {
               const cid = `comment-${comment.number}`;
+              const cs = getStatus(comment.number);
+
+              // Filter visibility (hide via display:none to preserve scroll)
+              const visible = filter === "all" || cs === filter;
+
               return (
-                <div key={comment.number} data-nav-id={cid}>
-                  <CommentCard comment={comment} id={cid} />
+                <div
+                  key={comment.number}
+                  data-nav-id={cid}
+                  style={{ display: visible ? "block" : "none" }}
+                >
+                  <CommentCard
+                    comment={comment}
+                    id={cid}
+                    commentStatus={cs}
+                    onStatusChange={(s) => setStatus(comment.number, s)}
+                    onShowInPaper={
+                      hasPaper && comment.quote
+                        ? () => handleShowInPaper(comment.quote)
+                        : undefined
+                    }
+                  />
                   <div
                     style={{
                       height: "1px",

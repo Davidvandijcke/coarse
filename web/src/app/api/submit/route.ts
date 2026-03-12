@@ -98,9 +98,9 @@ export async function POST(request: NextRequest) {
         email,
         model: model || undefined,
       }),
-    }).catch(() => {
+    }).catch(async () => {
       // Worker failed to start — mark as failed in background
-      supabaseAdmin
+      await supabaseAdmin
         .from("reviews")
         .update({ status: "failed", error_message: "Failed to start review worker" })
         .eq("id", id);
