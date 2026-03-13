@@ -234,17 +234,47 @@ export default function Home() {
     setSubmitting(true);
     setError(null);
     try {
-      const form = new FormData();
-      form.append("pdf", file);
-      form.append("email", email);
-      form.append("api_key", apiKey);
-      form.append("model", model);
-      const resp = await fetch("/api/submit", { method: "POST", body: form });
-      if (!resp.ok) {
-        const data = await resp.json();
+      // Step 1: Get a presigned upload URL (small JSON request — no file)
+      const presignResp = await fetch("/api/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      if (!presignResp.ok) {
+        const data = await presignResp.json();
+        throw new Error(data.error || "Failed to prepare upload");
+      }
+      const { id, storagePath, signedUrl, token } = await presignResp.json();
+
+      // Step 2: Upload file directly to Supabase Storage (bypasses Vercel 4.5MB limit)
+      const uploadResp = await fetch(signedUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "x-upsert": "true",
+        },
+        body: file,
+      });
+      if (!uploadResp.ok) {
+        throw new Error("File upload failed — please try again");
+      }
+
+      // Step 3: Submit metadata (no file — just JSON)
+      const submitResp = await fetch("/api/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          email,
+          api_key: apiKey,
+          model,
+          storage_path: storagePath,
+        }),
+      });
+      if (!submitResp.ok) {
+        const data = await submitResp.json();
         throw new Error(data.error || "Submission failed");
       }
-      const { id } = await resp.json();
       router.push(`/status/${id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submission failed");
