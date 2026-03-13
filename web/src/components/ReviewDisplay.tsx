@@ -621,6 +621,7 @@ export default function ReviewDisplay({
   markdown,
   reviewId,
   paperMarkdown,
+  paperTitle,
   model,
   domain,
   durationSeconds,
@@ -630,6 +631,7 @@ export default function ReviewDisplay({
   markdown: string;
   reviewId: string;
   paperMarkdown?: string | null;
+  paperTitle?: string | null;
   model?: string | null;
   domain?: string | null;
   durationSeconds?: number | null;
@@ -823,7 +825,7 @@ export default function ReviewDisplay({
               color: "var(--chalk-bright)",
             }}
           >
-            {parsed.title}
+            Review of {paperTitle || parsed.title}
           </h1>
 
           {/* Meta row */}

@@ -238,6 +238,7 @@ export default function ReviewPage() {
           markdown={review.result_markdown}
           reviewId={review.id}
           paperMarkdown={review.paper_markdown}
+          paperTitle={review.paper_title}
           model={review.model}
           domain={review.domain}
           durationSeconds={review.duration_seconds}
