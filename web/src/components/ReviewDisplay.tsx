@@ -13,6 +13,7 @@ import {
   type CommentFilter,
 } from "@/lib/useCommentStatus";
 import PaperPanel from "@/components/PaperPanel";
+import { preprocessLatex } from "@/lib/preprocessLatex";
 
 const katexOptions = { strict: false, throwOnError: false };
 
@@ -53,7 +54,7 @@ function QuoteBlock({
           remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[[rehypeKatex, katexOptions]]}
         >
-          {shown}
+          {preprocessLatex(shown)}
         </ReactMarkdown>
       </div>
       <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
@@ -241,7 +242,7 @@ function CommentCard({
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[[rehypeKatex, katexOptions]]}
             >
-              {comment.feedback}
+              {preprocessLatex(comment.feedback)}
             </ReactMarkdown>
           </div>
 
@@ -485,10 +486,12 @@ function Sidebar({
 /* ── Download dropdown ─────────────────────────────────────── */
 function DownloadMenu({
   markdown,
-  title,
+  reviewId,
+  model,
 }: {
   markdown: string;
-  title: string;
+  reviewId: string;
+  model?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -502,7 +505,7 @@ function DownloadMenu({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const slug = title
+  const modelSlug = (model || "unknown")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/_+$/, "");
@@ -512,7 +515,7 @@ function DownloadMenu({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${slug}_review.md`;
+    a.download = `coarse_${reviewId}_${modelSlug}.md`;
     a.click();
     URL.revokeObjectURL(url);
     setOpen(false);
@@ -618,6 +621,7 @@ export default function ReviewDisplay({
   markdown,
   reviewId,
   paperMarkdown,
+  model,
   domain,
   durationSeconds,
   costUsd,
@@ -626,14 +630,20 @@ export default function ReviewDisplay({
   markdown: string;
   reviewId: string;
   paperMarkdown?: string | null;
+  model?: string | null;
   domain?: string | null;
   durationSeconds?: number | null;
   costUsd?: number | null;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [paperPanelOpen, setPaperPanelOpen] = useState(false);
+  const [paperPanelOpen, setPaperPanelOpen] = useState(!!paperMarkdown);
   const [highlightQuote, setHighlightQuote] = useState<string | null>(null);
+
+  // Open paper panel by default when paper markdown becomes available
+  useEffect(() => {
+    if (paperMarkdown) setPaperPanelOpen(true);
+  }, [paperMarkdown]);
   const mainRef = useRef<HTMLDivElement>(null);
 
   const { getStatus, setStatus, remaining, filter, setFilter } =
@@ -738,7 +748,7 @@ export default function ReviewDisplay({
             {copied ? "Copied" : "Share"}
           </button>
 
-          <DownloadMenu markdown={markdown} title={parsed.title} />
+          <DownloadMenu markdown={markdown} reviewId={reviewId} model={model} />
 
           <a
             href="https://github.com/Davidvandijcke/coarse"
@@ -873,7 +883,7 @@ export default function ReviewDisplay({
                   remarkPlugins={[remarkGfm, remarkMath]}
                   rehypePlugins={[[rehypeKatex, katexOptions]]}
                 >
-                  {parsed.overallFeedback.summary}
+                  {preprocessLatex(parsed.overallFeedback.summary)}
                 </ReactMarkdown>
               </div>
             )}
@@ -909,7 +919,7 @@ export default function ReviewDisplay({
                     remarkPlugins={[remarkGfm, remarkMath]}
                     rehypePlugins={[[rehypeKatex, katexOptions]]}
                   >
-                    {issue.body}
+                    {preprocessLatex(issue.body)}
                   </ReactMarkdown>
                 </div>
               </div>

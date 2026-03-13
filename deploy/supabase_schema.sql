@@ -11,6 +11,7 @@ create table reviews (
   status text not null default 'queued'
     check (status in ('queued', 'running', 'done', 'failed')),
   paper_title text,
+  model text,
   domain text,
   result_markdown text,
   paper_markdown text,

@@ -160,6 +160,7 @@ def do_review(req_dict: dict):
         db.table("reviews").update({
             "status": "done",
             "paper_title": review.title,
+            "model": model,
             "domain": review.domain,
             "result_markdown": markdown,
             "paper_markdown": paper_text.full_markdown,

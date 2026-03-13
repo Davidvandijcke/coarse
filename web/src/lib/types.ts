@@ -3,6 +3,7 @@ export interface Review {
   paper_filename: string;
   status: "queued" | "running" | "done" | "failed";
   paper_title: string | null;
+  model: string | null;
   domain: string | null;
   result_markdown: string | null;
   paper_markdown: string | null;

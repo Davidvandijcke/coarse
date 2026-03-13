@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   // Create review record to get the UUID
   const { data: reviewRow, error: insertError } = await supabaseAdmin
     .from("reviews")
-    .insert({ paper_filename: pdf.name, status: "queued" })
+    .insert({ paper_filename: pdf.name, status: "queued", model: model || null })
     .select("id")
     .single();
 
