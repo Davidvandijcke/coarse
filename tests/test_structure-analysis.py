@@ -5,6 +5,8 @@ import pytest
 
 from coarse.structure import (
     _classify_section_type,
+    _detect_math_sections,
+    _detect_math_sections_keyword,
     _extract_abstract,
     _extract_claims_and_definitions,
     _extract_title,
@@ -12,12 +14,13 @@ from coarse.structure import (
     analyze_structure,
 )
 from coarse.types import (
+    MathSectionDetection,
     PaperMetadata,
     PaperStructure,
     PaperText,
+    SectionInfo,
     SectionType,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -62,6 +65,24 @@ In conclusion, we find evidence of the effect.
 
 def make_paper_text(markdown: str = SAMPLE_MARKDOWN) -> PaperText:
     return PaperText(full_markdown=markdown, token_estimate=len(markdown) // 4)
+
+
+def _make_mock_client():
+    """Create a mock client that handles both metadata and math detection calls."""
+    client = MagicMock()
+
+    def _side_effect(messages, response_model, **kwargs):
+        if response_model is PaperMetadata:
+            return PaperMetadata(
+                domain="social_sciences/economics",
+                taxonomy="academic/research_paper",
+            )
+        if response_model is MathSectionDetection:
+            return MathSectionDetection(math_section_indices=[])
+        raise ValueError(f"Unexpected response_model: {response_model}")
+
+    client.complete.side_effect = _side_effect
+    return client
 
 
 # ---------------------------------------------------------------------------
@@ -199,12 +220,7 @@ def test_extract_abstract_fallback_no_abstract_section():
 
 @pytest.fixture()
 def mock_client():
-    client = MagicMock()
-    client.complete.return_value = PaperMetadata(
-        domain="social_sciences/economics",
-        taxonomy="academic/research_paper",
-    )
-    return client
+    return _make_mock_client()
 
 
 def test_analyze_structure_returns_paper_structure(mock_client):
@@ -224,27 +240,31 @@ def test_analyze_structure_sections_have_text(mock_client):
     assert has_text
 
 
-def test_analyze_structure_calls_llm_for_metadata(mock_client):
+def test_analyze_structure_calls_llm_twice(mock_client):
+    """LLM is called for both metadata and math section detection."""
     paper_text = make_paper_text()
     analyze_structure(paper_text, mock_client)
-    mock_client.complete.assert_called_once()
-    call_args = mock_client.complete.call_args
-    assert call_args[0][1] is PaperMetadata
+    assert mock_client.complete.call_count == 2
+    # First call: metadata, second call: math detection
+    call_args_list = mock_client.complete.call_args_list
+    assert call_args_list[0][0][1] is PaperMetadata
+    assert call_args_list[1][0][1] is MathSectionDetection
 
 
 def test_analyze_structure_uses_low_temperature(mock_client):
     paper_text = make_paper_text()
     analyze_structure(paper_text, mock_client)
-    call_kwargs = mock_client.complete.call_args[1]
-    assert call_kwargs["temperature"] <= 0.2
+    # Both calls should use low temperature
+    for c in mock_client.complete.call_args_list:
+        assert c[1]["temperature"] <= 0.2
 
 
 def test_analyze_structure_low_max_tokens(mock_client):
-    """Metadata call should use low max_tokens (not 16K+)."""
+    """Both metadata and math detection calls should use low max_tokens."""
     paper_text = make_paper_text()
     analyze_structure(paper_text, mock_client)
-    call_kwargs = mock_client.complete.call_args[1]
-    assert call_kwargs["max_tokens"] <= 512
+    for c in mock_client.complete.call_args_list:
+        assert c[1]["max_tokens"] <= 512
 
 
 def test_analyze_structure_propagates_llm_error(mock_client):
@@ -255,6 +275,137 @@ def test_analyze_structure_propagates_llm_error(mock_client):
     # Should still return a structure with default metadata
     assert result.domain == "unknown"
     assert result.taxonomy == "academic/research_paper"
+
+
+def test_analyze_structure_math_detection_sets_flags():
+    """Math detection LLM call sets math_content=True on indicated sections."""
+    client = MagicMock()
+
+    def _side_effect(messages, response_model, **kwargs):
+        if response_model is PaperMetadata:
+            return PaperMetadata(
+                domain="statistics/methodology",
+                taxonomy="academic/research_paper",
+            )
+        if response_model is MathSectionDetection:
+            # Mark sections at indices 3 and 4 (Methods and Data)
+            return MathSectionDetection(math_section_indices=[3, 4])
+        raise ValueError(f"Unexpected response_model: {response_model}")
+
+    client.complete.side_effect = _side_effect
+    paper_text = make_paper_text()
+    result = analyze_structure(paper_text, client)
+
+    math_sections = [s for s in result.sections if s.math_content]
+    non_math = [s for s in result.sections if not s.math_content]
+    assert len(math_sections) == 2
+    assert len(non_math) == len(result.sections) - 2
+
+
+# ---------------------------------------------------------------------------
+# _detect_math_sections tests
+# ---------------------------------------------------------------------------
+
+def test_detect_math_sections_sets_flags():
+    """LLM-based detection sets math_content on indicated indices."""
+    sections = [
+        SectionInfo(
+            number=1, title="Intro", text="intro text",
+            section_type=SectionType.INTRODUCTION,
+        ),
+        SectionInfo(
+            number=2, title="Theory", text="theorem proof lemma",
+            section_type=SectionType.OTHER,
+        ),
+        SectionInfo(
+            number=3, title="Results", text="empirical results",
+            section_type=SectionType.RESULTS,
+        ),
+    ]
+    client = MagicMock()
+    client.complete.return_value = MathSectionDetection(math_section_indices=[1])
+
+    result = _detect_math_sections(sections, client)
+    assert not result[0].math_content
+    assert result[1].math_content
+    assert not result[2].math_content
+
+
+def test_detect_math_sections_ignores_out_of_range():
+    """Out-of-range indices from LLM are silently ignored."""
+    sections = [
+        SectionInfo(
+            number=1, title="Intro", text="text",
+            section_type=SectionType.INTRODUCTION,
+        ),
+    ]
+    client = MagicMock()
+    client.complete.return_value = MathSectionDetection(math_section_indices=[0, 99])
+
+    result = _detect_math_sections(sections, client)
+    assert result[0].math_content  # index 0 is valid
+    assert len(result) == 1  # index 99 silently ignored
+
+
+def test_detect_math_sections_falls_back_on_error():
+    """On LLM failure, falls back to keyword detection."""
+    sections = [
+        SectionInfo(
+            number=1, title="Intro", text="intro text",
+            section_type=SectionType.INTRODUCTION,
+        ),
+        SectionInfo(
+            number=2, title="Proofs",
+            text="We prove the following theorem.",
+            section_type=SectionType.APPENDIX,
+        ),
+    ]
+    client = MagicMock()
+    client.complete.side_effect = RuntimeError("LLM down")
+
+    result = _detect_math_sections(sections, client)
+    assert not result[0].math_content
+    assert result[1].math_content  # keyword fallback detects "theorem" and "prove"
+
+
+# ---------------------------------------------------------------------------
+# _detect_math_sections_keyword tests
+# ---------------------------------------------------------------------------
+
+def test_keyword_fallback_detects_theorem():
+    sections = [
+        SectionInfo(
+            number=1, title="Theory",
+            text="We state the main theorem.",
+            section_type=SectionType.OTHER,
+        ),
+    ]
+    result = _detect_math_sections_keyword(sections)
+    assert result[0].math_content
+
+
+def test_keyword_fallback_detects_proof():
+    sections = [
+        SectionInfo(
+            number=1, title="Appendix",
+            text="Proof of Lemma 1.",
+            section_type=SectionType.APPENDIX,
+        ),
+    ]
+    result = _detect_math_sections_keyword(sections)
+    assert result[0].math_content
+
+
+def test_keyword_fallback_no_match():
+    sections = [
+        SectionInfo(
+            number=1, title="Intro",
+            text="This paper studies wages.",
+            section_type=SectionType.INTRODUCTION,
+        ),
+    ]
+    result = _detect_math_sections_keyword(sections)
+    assert not result[0].math_content
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +486,7 @@ def test_extract_claims_truncates_long_statements():
     assert len(claims[0]) <= 520  # "Theorem 1: " prefix + 500 chars + "..."
 
 
-def test_parse_sections_populates_claims_and_definitions(mock_client):
+def test_parse_sections_populates_claims_and_definitions():
     """_parse_sections_from_markdown should populate claims/definitions fields."""
     md = """\
 # Paper Title
@@ -350,6 +501,7 @@ def test_parse_sections_populates_claims_and_definitions(mock_client):
 
 The main finding is significant.
 """
+    mock_client = _make_mock_client()
     paper_text = PaperText(full_markdown=md, token_estimate=100)
     result = analyze_structure(paper_text, mock_client)
     theory = next(s for s in result.sections if s.title == "Theory")

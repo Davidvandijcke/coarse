@@ -1,12 +1,10 @@
-"""PDF extraction for coarse.
+"""Text extraction for coarse.
 
-Primary: Mistral OCR (94% math accuracy, proper LaTeX).
-Fallback: Docling (free, offline, but fails on complex formulas).
+Supports PDF, TXT, MD, DOCX, TEX/LATEX, HTML, and EPUB.
 
-Priority order:
-1. MISTRAL_API_KEY → litellm.ocr() direct
-2. OPENROUTER_API_KEY → OpenRouter file-parser plugin (mistral-ocr engine)
-3. Docling → local, free, no key needed
+PDF priority: Mistral OCR (direct) → OpenRouter → Docling.
+DOCX/HTML/TEX: Docling (if installed) → lightweight fallback (mammoth/markdownify/regex).
+TXT/MD: Direct read. EPUB: ebooklib + markdownify.
 """
 from __future__ import annotations
 
@@ -21,6 +19,11 @@ from coarse.types import ExtractionError, PaperText
 logger = logging.getLogger(__name__)
 
 PAGE_BREAK = "\n\n<!-- PAGE BREAK -->\n\n"
+
+SUPPORTED_EXTENSIONS = frozenset({
+    ".pdf", ".txt", ".md", ".tex", ".latex",
+    ".html", ".htm", ".docx", ".epub",
+})
 
 
 def _cache_path(pdf_path: Path) -> Path:
@@ -148,7 +151,7 @@ def _extract_mistral_openrouter(path: Path) -> str:
 
 
 def _extract_docling(path: Path) -> str:
-    """Fallback: extract via Docling (free, offline)."""
+    """Extract via Docling (free, offline). Supports PDF, DOCX, HTML, LaTeX."""
     from docling.document_converter import DocumentConverter
 
     converter = DocumentConverter()
@@ -156,6 +159,100 @@ def _extract_docling(path: Path) -> str:
     return result.document.export_to_markdown(
         page_break_placeholder="<!-- PAGE BREAK -->"
     )
+
+
+# ---------------------------------------------------------------------------
+# Non-PDF extraction backends (lightweight fallbacks)
+# ---------------------------------------------------------------------------
+
+
+def _extract_plaintext(path: Path) -> str:
+    """Read a plain text or markdown file as-is."""
+    return path.read_text(encoding="utf-8")
+
+
+# LaTeX heading patterns: \section{...}, \subsection{...}, etc.
+_LATEX_HEADING_RE = re.compile(
+    r"\\(section|subsection|subsubsection|paragraph)\*?\{([^}]*)\}"
+)
+_LATEX_HEADING_LEVEL = {
+    "section": "#",
+    "subsection": "##",
+    "subsubsection": "###",
+    "paragraph": "####",
+}
+# Preamble lines to strip (noise for the reviewer)
+_LATEX_PREAMBLE_RE = re.compile(
+    r"^\\(documentclass|usepackage|title|author|date|maketitle"
+    r"|begin\{document\}|end\{document\})\b.*$",
+    re.MULTILINE,
+)
+
+
+def _extract_latex_regex(path: Path) -> str:
+    """Extract from LaTeX source with heading conversion to markdown.
+
+    Converts \\section{X} → # X, etc. Strips preamble noise.
+    Leaves math, environments, and all other content intact.
+    """
+    text = path.read_text(encoding="utf-8")
+    # Strip preamble lines
+    text = _LATEX_PREAMBLE_RE.sub("", text)
+    # Convert LaTeX headings to markdown headings
+    text = _LATEX_HEADING_RE.sub(
+        lambda m: f"{_LATEX_HEADING_LEVEL[m.group(1)]} {m.group(2)}", text
+    )
+    # Clean up excessive blank lines from stripping
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _extract_html_markdownify(path: Path) -> str:
+    """Convert HTML to markdown via markdownify (lightweight fallback)."""
+    try:
+        import markdownify
+    except ImportError:
+        raise ExtractionError(
+            "HTML extraction requires markdownify: pip install coarse[formats]"
+        )
+    html_str = path.read_text(encoding="utf-8")
+    return markdownify.markdownify(html_str, heading_style="ATX")
+
+
+def _extract_docx_mammoth(path: Path) -> str:
+    """Convert DOCX to markdown via mammoth (lightweight fallback)."""
+    try:
+        import mammoth
+    except ImportError:
+        raise ExtractionError(
+            "DOCX extraction requires mammoth: pip install coarse[formats]"
+        )
+    with open(path, "rb") as f:
+        result = mammoth.convert_to_markdown(f)
+    return result.value
+
+
+def _extract_epub(path: Path) -> str:
+    """Extract EPUB chapters to markdown via ebooklib + markdownify."""
+    try:
+        import ebooklib
+        import markdownify
+        from ebooklib import epub
+    except ImportError:
+        raise ExtractionError(
+            "EPUB extraction requires ebooklib and markdownify: pip install coarse[formats]"
+        )
+    book = epub.read_epub(str(path))
+    chapters = []
+    for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+        html_content = item.get_content().decode("utf-8", errors="replace")
+        md = markdownify.markdownify(html_content, heading_style="ATX")
+        md = md.strip()
+        if md:
+            chapters.append(md)
+    if not chapters:
+        raise ExtractionError(f"No text content found in EPUB: {path}")
+    return "\n\n---\n\n".join(chapters)
 
 
 # ---------------------------------------------------------------------------
@@ -295,3 +392,76 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
 def _estimate_tokens(text: str) -> int:
     """Rough token estimate using the len // 4 heuristic."""
     return len(text) // 4
+
+
+# ---------------------------------------------------------------------------
+# Multi-format entry point
+# ---------------------------------------------------------------------------
+
+# Formats where Docling gives best quality (try first, fall back to lightweight)
+_DOCLING_FORMATS = frozenset({".docx", ".html", ".htm", ".tex", ".latex"})
+_FALLBACKS = {
+    ".docx": _extract_docx_mammoth,
+    ".html": _extract_html_markdownify,
+    ".htm": _extract_html_markdownify,
+    ".tex": _extract_latex_regex,
+    ".latex": _extract_latex_regex,
+}
+
+
+def extract_file(file_path: str | Path, use_cache: bool = True) -> PaperText:
+    """Extract text from any supported file format.
+
+    For PDFs: Mistral OCR (direct) → OpenRouter → Docling.
+    For DOCX/HTML/TEX: Docling (if installed) → lightweight fallback.
+    For TXT/MD: direct read. For EPUB: ebooklib + markdownify.
+
+    Args:
+        file_path: Path to the file.
+        use_cache: If True (default), use cached extraction when available.
+
+    Returns:
+        PaperText with full_markdown and token_estimate.
+    """
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    ext = path.suffix.lower()
+    if ext not in SUPPORTED_EXTENSIONS:
+        raise ExtractionError(
+            f"Unsupported file format: {ext}. "
+            f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+        )
+
+    # PDFs: existing Mistral OCR → OpenRouter → Docling pipeline
+    if ext == ".pdf":
+        return extract_text(path, use_cache=use_cache)
+
+    # Non-PDF: cache check
+    if use_cache:
+        cached = _load_cache(path)
+        if cached is not None:
+            return cached
+
+    # Formats where Docling gives best quality
+    if ext in _DOCLING_FORMATS:
+        try:
+            full_markdown = _extract_docling(path)
+            logger.info("Extracted %s via Docling (%d chars)", ext, len(full_markdown))
+        except Exception as exc:
+            logger.info("Docling unavailable for %s: %s, using fallback", ext, exc)
+            full_markdown = _FALLBACKS[ext](path)
+    elif ext == ".epub":
+        full_markdown = _extract_epub(path)
+    else:  # .txt, .md
+        full_markdown = _extract_plaintext(path)
+
+    paper_text = PaperText(
+        full_markdown=full_markdown,
+        token_estimate=_estimate_tokens(full_markdown),
+        garble_ratio=0.0,
+    )
+    if use_cache:
+        _save_cache(path, paper_text)
+    return paper_text

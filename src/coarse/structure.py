@@ -10,8 +10,9 @@ import logging
 import re
 
 from coarse.llm import LLMClient
-from coarse.prompts import METADATA_SYSTEM
+from coarse.prompts import MATH_DETECTION_SYSTEM, METADATA_SYSTEM, math_detection_user
 from coarse.types import (
+    MathSectionDetection,
     PaperMetadata,
     PaperStructure,
     PaperText,
@@ -107,6 +108,7 @@ def analyze_structure(paper_text: PaperText, client: LLMClient) -> PaperStructur
     2. Extract title from first heading
     3. Extract abstract from first ABSTRACT section or first paragraph
     4. Get domain/taxonomy via cheap text-LLM call
+    5. Detect math sections via cheap LLM call
     """
     sections = _parse_sections_from_markdown(paper_text.full_markdown)
     title = _extract_title(paper_text.full_markdown)
@@ -114,6 +116,9 @@ def analyze_structure(paper_text: PaperText, client: LLMClient) -> PaperStructur
 
     headings = [s.title for s in sections]
     metadata = _get_metadata(title, abstract, headings, client)
+
+    # LLM-based math section detection
+    sections = _detect_math_sections(sections, client)
 
     return PaperStructure(
         title=title,
@@ -227,3 +232,51 @@ def _get_metadata(
     except Exception:
         logger.warning("Metadata classification failed, using defaults")
         return PaperMetadata(domain="unknown", taxonomy="academic/research_paper")
+
+
+# ---------------------------------------------------------------------------
+# Math section detection
+# ---------------------------------------------------------------------------
+
+_PROOF_KEYWORDS = frozenset([
+    "theorem", "proof", "lemma", "proposition", "corollary", "q.e.d", "qed",
+    "∎", "□", "we prove", "we show that", "it follows that",
+])
+
+
+def _detect_math_sections_keyword(sections: list[SectionInfo]) -> list[SectionInfo]:
+    """Keyword-based fallback for math detection."""
+    result = []
+    for s in sections:
+        text_lower = s.text.lower()
+        has_math = any(kw in text_lower for kw in _PROOF_KEYWORDS)
+        result.append(s.model_copy(update={"math_content": True}) if has_math else s)
+    return result
+
+
+def _detect_math_sections(
+    sections: list[SectionInfo],
+    client: LLMClient,
+) -> list[SectionInfo]:
+    """Cheap LLM call to identify sections with math content (~$0.001).
+
+    Returns new list with math_content flags set.
+    Falls back to keyword detection on failure.
+    """
+    messages = [
+        {"role": "system", "content": MATH_DETECTION_SYSTEM},
+        {"role": "user", "content": math_detection_user(sections)},
+    ]
+    try:
+        result = client.complete(
+            messages, MathSectionDetection, max_tokens=256, temperature=0.1,
+        )
+        math_indices = set(result.math_section_indices)
+    except Exception:
+        logger.warning("Math section detection failed, falling back to keyword detection")
+        return _detect_math_sections_keyword(sections)
+
+    return [
+        s.model_copy(update={"math_content": True}) if i in math_indices else s
+        for i, s in enumerate(sections)
+    ]

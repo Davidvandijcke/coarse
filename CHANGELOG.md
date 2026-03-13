@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **Multi-format support** — `extract_file()` router supports .txt, .md, .tex, .latex, .html, .docx, and .epub in addition to PDF. Quality-first strategy: Docling (if installed) for .docx/.html/.tex, with lightweight fallbacks (mammoth, markdownify, regex). PDFs always use Mistral OCR first. New optional dependency group: `pip install coarse[formats]` for .docx/.html/.epub fallback support; .txt/.md/.tex require no extra dependencies.
+
 ### Changed
 
 - **Literature search: Perplexity Sonar Pro** — Primary literature search now uses `perplexity/sonar-pro-search` via OpenRouter for web-grounded results with real citations (~12s, ~$0.03). Returns both related work and open questions/known limitations. arXiv pipeline kept as automatic fallback when OPENROUTER_API_KEY is unavailable or Perplexity fails.

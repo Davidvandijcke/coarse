@@ -18,9 +18,10 @@ from coarse.agents.crossref import CrossrefAgent
 from coarse.agents.literature import search_literature
 from coarse.agents.overview import OverviewAgent
 from coarse.agents.section import SectionAgent
+from coarse.agents.verify import ProofVerifyAgent
 from coarse.config import CoarseConfig, load_config
 from coarse.cost import run_cost_gate
-from coarse.extraction import extract_text
+from coarse.extraction import extract_file
 from coarse.llm import LLMClient
 from coarse.prompts import CALIBRATION_SYSTEM, calibration_user
 from coarse.quote_verify import verify_quotes
@@ -30,6 +31,7 @@ from coarse.types import (
     DetailedComment,
     DomainCalibration,
     ExtractionError,
+    OverviewFeedback,
     PaperStructure,
     PaperText,
     Review,
@@ -50,12 +52,6 @@ def _check_extraction_quality(structure: "PaperStructure") -> bool:
         return False
 
     return True
-
-
-_PROOF_KEYWORDS = frozenset([
-    "theorem", "proof", "lemma", "proposition", "corollary", "q.e.d", "qed",
-    "∎", "□", "we prove", "we show that", "it follows that",
-])
 
 
 _SECTION_WEIGHT = 1.5   # comments-per-section multiplier
@@ -86,12 +82,12 @@ def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]
 
 
 def detect_section_focus(section: SectionInfo) -> str:
-    """Detect whether a section contains proofs, methodology, literature, etc.
+    """Detect section focus based on LLM-detected math content and section type.
 
     Returns one of: "proof", "methodology", "results", "literature", "general".
+    The math_content flag is set during structure analysis by an LLM call.
     """
-    text_lower = section.text.lower()
-    if any(kw in text_lower for kw in _PROOF_KEYWORDS):
+    if section.math_content:
         return "proof"
     if section.section_type == SectionType.METHODOLOGY:
         return "methodology"
@@ -100,6 +96,31 @@ def detect_section_focus(section: SectionInfo) -> str:
     if section.section_type == SectionType.RELATED_WORK:
         return "literature"
     return "general"
+
+
+def _review_section(
+    section_agent: SectionAgent,
+    verify_agent: ProofVerifyAgent,
+    section: SectionInfo,
+    paper_title: str,
+    overview: OverviewFeedback | None,
+    calibration: DomainCalibration | None,
+    focus: str,
+    literature_context: str,
+    all_sections: list[SectionInfo],
+    abstract: str,
+) -> list[DetailedComment]:
+    """Review a section; chain with adversarial verification for proof sections."""
+    comments = section_agent.run(
+        section, paper_title, overview, calibration,
+        focus, literature_context,
+        all_sections=all_sections, abstract=abstract,
+    )
+    if focus == "proof" and comments:
+        comments = verify_agent.run(
+            section, paper_title, comments, abstract=abstract,
+        )
+    return comments
 
 
 def calibrate_domain(
@@ -137,8 +158,11 @@ def review_paper(
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
+    Accepts any supported file format (PDF, TXT, MD, DOCX, TEX, HTML, EPUB).
+    The ``pdf_path`` parameter name is kept for backwards compatibility.
+
     Pipeline order:
-    1. Extract PDF → PaperText (Mistral OCR / Docling fallback)
+    1. Extract file → PaperText (format-specific extraction)
     2. Cost gate (optional)
     3. Analyze structure via markdown parsing + cheap LLM metadata → PaperStructure
     4. Phase 1: Overview agent + assumption checker (parallel, blocking)
@@ -155,39 +179,43 @@ def review_paper(
     resolved_model = model or config.default_model
     client = LLMClient(model=resolved_model, config=config)
 
-    paper_text = extract_text(pdf_path)
+    paper_text = extract_file(pdf_path)
 
-    # Auto-trigger extraction QA if garble detected or explicitly enabled
-    run_qa = config.extraction_qa
-    if not run_qa and paper_text.garble_ratio > 0.001:
-        logger.info(
-            "High garble ratio (%.4f) detected — auto-enabling extraction QA",
-            paper_text.garble_ratio,
-        )
-        run_qa = True
+    # Extraction QA only applies to PDFs (vision LLM compares rendered pages)
+    is_pdf = Path(pdf_path).suffix.lower() == ".pdf"
 
-    if run_qa:
-        from coarse.config import resolve_api_key
-        from coarse.extraction import _save_cache
-        from coarse.extraction_qa import run_extraction_qa
-
-        vision_key = resolve_api_key(config.vision_model, config)
-        if vision_key is None:
-            logger.warning(
-                "No API key for vision model %s — skipping extraction QA. "
-                "Set GEMINI_API_KEY or use --no-qa to silence this warning.",
-                config.vision_model,
+    if is_pdf:
+        # Auto-trigger extraction QA if garble detected or explicitly enabled
+        run_qa = config.extraction_qa
+        if not run_qa and paper_text.garble_ratio > 0.001:
+            logger.info(
+                "High garble ratio (%.4f) detected — auto-enabling extraction QA",
+                paper_text.garble_ratio,
             )
-            run_qa = False
+            run_qa = True
 
-    if run_qa:
-        vision_client = LLMClient(model=config.vision_model, config=config)
-        corrected = run_extraction_qa(Path(pdf_path), paper_text, vision_client)
-        if corrected is not paper_text:
-            # QA applied corrections — update the cache so future runs skip QA
-            _save_cache(Path(pdf_path), corrected)
-            logger.info("Extraction cache updated with QA corrections")
-        paper_text = corrected
+        if run_qa:
+            from coarse.config import resolve_api_key
+            from coarse.extraction import _save_cache
+            from coarse.extraction_qa import run_extraction_qa
+
+            vision_key = resolve_api_key(config.vision_model, config)
+            if vision_key is None:
+                logger.warning(
+                    "No API key for vision model %s — skipping extraction QA. "
+                    "Set GEMINI_API_KEY or use --no-qa to silence this warning.",
+                    config.vision_model,
+                )
+                run_qa = False
+
+        if run_qa:
+            vision_client = LLMClient(model=config.vision_model, config=config)
+            corrected = run_extraction_qa(Path(pdf_path), paper_text, vision_client)
+            if corrected is not paper_text:
+                # QA applied corrections — update the cache so future runs skip QA
+                _save_cache(Path(pdf_path), corrected)
+                logger.info("Extraction cache updated with QA corrections")
+            paper_text = corrected
 
     if not skip_cost_gate:
         run_cost_gate(paper_text, config)
@@ -220,13 +248,15 @@ def review_paper(
     section_agent = SectionAgent(client)
     crossref_agent = CrossrefAgent(client)
 
-    # Review main body sections + appendix proof sections; skip references.
+    # Review all sections except references; skip very short appendices.
     # Cap at 25 sections to keep total comment count manageable for crossref.
+    _MIN_APPENDIX_CHARS = 500
+
     reviewable_sections = [
         s for s in structure.sections
         if s.section_type != SectionType.REFERENCES
         and (s.section_type != SectionType.APPENDIX
-             or detect_section_focus(s) == "proof")
+             or len(s.text) >= _MIN_APPENDIX_CHARS)
     ]
     non_ref_sections = reviewable_sections[:25]
 
@@ -234,7 +264,9 @@ def review_paper(
     # Assumption checking is folded into the methodology overview persona.
     overview = overview_agent.run_panel(structure, calibration, literature_context)
 
-    # --- Phase 2: Section agents (parallel, text-only with overview context) ---
+    # --- Phase 2: Section agents (parallel, with verification for proof sections) ---
+    verify_agent = ProofVerifyAgent(client)
+
     with ThreadPoolExecutor(max_workers=10) as executor:
         section_futures = []
         # Only pass literature context to sections that benefit from it
@@ -247,12 +279,10 @@ def review_paper(
             sec_abstract = structure.abstract if focus == "proof" else ""
             section_futures.append(
                 executor.submit(
-                    section_agent.run, section, structure.title,
-                    overview, calibration,
-                    focus,
-                    sec_lit,
-                    all_sections=structure.sections,
-                    abstract=sec_abstract,
+                    _review_section,
+                    section_agent, verify_agent, section, structure.title,
+                    overview, calibration, focus, sec_lit,
+                    structure.sections, sec_abstract,
                 )
             )
 

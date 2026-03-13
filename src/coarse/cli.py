@@ -22,6 +22,7 @@ from coarse.config import (
     resolve_api_key,
     save_config,
 )
+from coarse.extraction import SUPPORTED_EXTENSIONS
 from coarse.models import CHEAP_MODELS, QUALITY_MODEL
 from coarse.pipeline import review_paper
 
@@ -83,7 +84,10 @@ def setup() -> None:
 
 @app.command()
 def review(
-    pdf: Path = typer.Argument(..., exists=True, help="Path to PDF file"),
+    pdf: Path = typer.Argument(
+        ..., exists=True,
+        help="Path to paper file (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)",
+    ),
     output: Optional[Path] = typer.Option(
         None, "--output", "-o", help="Output file path (default: <pdf_stem>_review.md)"
     ),
@@ -111,13 +115,20 @@ def review(
         None, "--eval-model", help=f"Model for quality evaluation (default: {QUALITY_MODEL})"
     ),
 ) -> None:
-    """Review a PDF paper and write a markdown report."""
+    """Review a paper and write a markdown report."""
 
     # Load env file / API key before anything else so config picks them up
     if env_file is not None:
         load_dotenv(env_file, override=True)
     if api_key is not None:
         os.environ["OPENROUTER_API_KEY"] = api_key
+
+    if pdf.suffix.lower() not in SUPPORTED_EXTENSIONS:
+        console.print(
+            f"[red]Unsupported format: {pdf.suffix}. "
+            f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}[/red]"
+        )
+        raise typer.Exit(code=1)
 
     config = load_config()
     if no_qa:

@@ -5,7 +5,7 @@ import { useDropzone } from "react-dropzone";
 import { useRouter } from "next/navigation";
 import { CharcoalRule, HeroMarks } from "@/components/charcoal";
 import ModelPicker from "@/components/ModelPicker";
-import { estimateTokensFromPdf, getModelPricing, estimateReviewCost } from "@/lib/estimateCost";
+import { estimateTokensFromPdf, estimateTokensFromText, getModelPricing, estimateReviewCost } from "@/lib/estimateCost";
 
 /* ── Split-flap AI name display ────────────────────────────── */
 const AI_NAMES = ["Claude,", "Gemini,", "Qwen,", "ChatGPT,", "DeepSeek,", "Kimi,", "Grok,", "MiniMax,", "Mistral,", "Llama,"];
@@ -181,13 +181,16 @@ export default function Home() {
 
     (async () => {
       try {
-        // Cache token count so model switches don't re-parse the PDF
+        // Cache token count so model switches don't re-parse the file
         let tokens: number;
         const cached = tokenCacheRef.current;
         if (cached && cached.name === file.name && cached.size === file.size) {
           tokens = cached.tokens;
         } else {
-          tokens = await estimateTokensFromPdf(file);
+          const isPdf = file.name.toLowerCase().endsWith(".pdf");
+          tokens = isPdf
+            ? await estimateTokensFromPdf(file)
+            : await estimateTokensFromText(file);
           tokenCacheRef.current = { name: file.name, size: file.size, tokens };
         }
 
@@ -212,7 +215,15 @@ export default function Home() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { "application/pdf": [".pdf"] },
+    accept: {
+      "application/pdf": [".pdf"],
+      "text/plain": [".txt"],
+      "text/markdown": [".md"],
+      "text/x-tex": [".tex", ".latex"],
+      "text/html": [".html", ".htm"],
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+      "application/epub+zip": [".epub"],
+    },
     maxSize: 50 * 1024 * 1024,
     maxFiles: 1,
   });
@@ -425,7 +436,7 @@ export default function Home() {
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
             {/* Drop zone */}
             <div>
-              <FieldLabel>Paper (PDF)</FieldLabel>
+              <FieldLabel>Paper</FieldLabel>
               <div
                 {...getRootProps()}
                 style={{
@@ -473,7 +484,7 @@ export default function Home() {
                         margin: 0,
                       }}
                     >
-                      Drop your PDF here, or{" "}
+                      Drop your file here, or{" "}
                       <span style={{ textDecoration: "underline", textUnderlineOffset: "2px" }}>browse</span>
                     </p>
                     <p
@@ -617,7 +628,7 @@ export default function Home() {
                   marginTop: "0.9rem",
                 }}
               >
-                PDF deleted after processing. Your review key retrieves it for 90 days. Usually under a dollar.
+                File deleted after processing. Your review key retrieves it for 90 days. Usually under a dollar.
               </p>
             </div>
           </form>

@@ -37,8 +37,9 @@ def test_build_cost_estimate_returns_all_stages():
     assert "pdf_extraction" in names
     assert "calibration" in names
     assert "literature_search" in names
-    # Total: pdf_extraction + metadata + calibration + literature_search + 3 overview judges + overview_synthesis + 8 sections + crossref + critique + extraction_qa = 19
-    assert len(estimate.stages) == 19
+    assert "math_detection" in names
+    # Total: pdf_extraction + metadata + math_detection + calibration + literature_search + 3 overview judges + overview_synthesis + 8 sections + crossref + critique + extraction_qa = 20
+    assert len(estimate.stages) == 20
 
 
 def test_build_cost_estimate_zero_cost_unknown_model():

@@ -38,6 +38,11 @@ image = (
         "supabase>=2.0",
         "requests>=2.31",
         "fastapi[standard]",
+        # Multi-format support
+        "mammoth>=1.6",
+        "markdownify>=0.12",
+        "ebooklib>=0.18",
+        "docling>=2.0",
     )
     .add_local_dir(_repo_root / "src" / "coarse", remote_path="/root/coarse")
 )
@@ -129,13 +134,14 @@ def do_review(req_dict: dict):
     if user_api_key:
         os.environ["OPENROUTER_API_KEY"] = user_api_key
 
-    # Download PDF from Supabase Storage
+    # Download file from Supabase Storage
     pdf_bytes = db.storage.from_("papers").download(pdf_storage_path)
     if not pdf_bytes:
         raise ValueError(f"Storage download returned empty for {pdf_storage_path}")
-    print(f"[{job_id}] Downloaded PDF — {len(pdf_bytes)} bytes")
+    print(f"[{job_id}] Downloaded file — {len(pdf_bytes)} bytes")
 
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+    ext = Path(pdf_storage_path).suffix or ".pdf"
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
         f.write(pdf_bytes)
         pdf_path = f.name
 

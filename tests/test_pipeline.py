@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import datetime
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from coarse.config import CoarseConfig
-from coarse.models import VISION_MODEL
-from coarse.pipeline import _compute_comment_target, _renumber_comments, review_paper
+from coarse.pipeline import (
+    _compute_comment_target,
+    _renumber_comments,
+    _review_section,
+    review_paper,
+)
 from coarse.types import (
     DetailedComment,
     OverviewFeedback,
@@ -20,7 +21,6 @@ from coarse.types import (
     SectionInfo,
     SectionType,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,7 +83,6 @@ def test_review_paper_calls_stages_in_order():
     paper_text = _make_paper_text()
     structure = _make_structure()
     overview = _make_overview()
-    comments = [_make_comment(1)]
     deduped = [_make_comment(1)]
     final = [_make_comment(1)]
     markdown = "# Test Paper\n"
@@ -105,6 +104,7 @@ def test_review_paper_calls_stages_in_order():
     def fake_section_run(
         section, title, overview=None, calibration=None,
         focus="general", literature_context="",
+        all_sections=None, abstract="",
     ):
         call_order.append(f"section_{section.number}")
         return [_make_comment(section.number)]
@@ -122,12 +122,13 @@ def test_review_paper_calls_stages_in_order():
         return markdown
 
     with (
-        patch("coarse.pipeline.extract_text", side_effect=fake_extract),
+        patch("coarse.pipeline.extract_file", side_effect=fake_extract),
         patch("coarse.pipeline.analyze_structure", side_effect=fake_analyze),
         patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.search_literature", return_value=""),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
@@ -135,6 +136,7 @@ def test_review_paper_calls_stages_in_order():
     ):
         MockOverview.return_value.run_panel.side_effect = fake_overview_run
         MockSection.return_value.run.side_effect = fake_section_run
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.side_effect = fake_crossref_run
         MockCritique.return_value.run.side_effect = fake_critique_run
 
@@ -168,12 +170,13 @@ def test_review_paper_skips_references_section():
         return [_make_comment(section.number)]
 
     with (
-        patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=structure),
         patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.search_literature", return_value=""),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
@@ -181,6 +184,7 @@ def test_review_paper_skips_references_section():
     ):
         MockOverview.return_value.run_panel.return_value = overview
         MockSection.return_value.run.side_effect = fake_section_run
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
         MockCritique.return_value.run.return_value = [_make_comment(1)]
 
@@ -198,12 +202,13 @@ def test_review_paper_date_format():
     overview = _make_overview()
 
     with (
-        patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=_make_structure()),
         patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.search_literature", return_value=""),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
@@ -213,6 +218,7 @@ def test_review_paper_date_format():
         mock_dt.date.today.return_value = fixed_date
         MockOverview.return_value.run_panel.return_value = overview
         MockSection.return_value.run.return_value = [_make_comment(1)]
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
         MockCritique.return_value.run.return_value = [_make_comment(1)]
 
@@ -226,12 +232,13 @@ def _patch_pipeline_deps(overview: OverviewFeedback):
     from contextlib import ExitStack
 
     stack = ExitStack()
-    stack.enter_context(patch("coarse.pipeline.extract_text", return_value=_make_paper_text()))
+    stack.enter_context(patch("coarse.pipeline.extract_file", return_value=_make_paper_text()))
     stack.enter_context(patch("coarse.pipeline.analyze_structure", return_value=_make_structure()))
     stack.enter_context(patch("coarse.pipeline.calibrate_domain", return_value=None))
     stack.enter_context(patch("coarse.pipeline.search_literature", return_value=""))
     mock_ov = stack.enter_context(patch("coarse.pipeline.OverviewAgent"))
     mock_sec = stack.enter_context(patch("coarse.pipeline.SectionAgent"))
+    mock_vf = stack.enter_context(patch("coarse.pipeline.ProofVerifyAgent"))
     mock_cr = stack.enter_context(patch("coarse.pipeline.CrossrefAgent"))
     mock_ct = stack.enter_context(patch("coarse.pipeline.CritiqueAgent"))
     stack.enter_context(patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c))
@@ -239,6 +246,7 @@ def _patch_pipeline_deps(overview: OverviewFeedback):
 
     mock_ov.return_value.run_panel.return_value = overview
     mock_sec.return_value.run.return_value = [_make_comment(1)]
+    mock_vf.return_value.run.return_value = [_make_comment(1)]
     mock_cr.return_value.run.return_value = [_make_comment(1)]
     mock_ct.return_value.run.return_value = [_make_comment(1)]
 
@@ -270,12 +278,13 @@ def test_review_paper_returns_review_and_markdown():
     expected_markdown = "# Test Paper\n**Date**: 03/03/2026\n"
 
     with (
-        patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=_make_structure()),
         patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.search_literature", return_value=""),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
@@ -283,6 +292,7 @@ def test_review_paper_returns_review_and_markdown():
     ):
         MockOverview.return_value.run_panel.return_value = overview
         MockSection.return_value.run.return_value = [_make_comment(1)]
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
         MockCritique.return_value.run.return_value = [_make_comment(1)]
 
@@ -312,12 +322,13 @@ def test_review_paper_section_comments_flattened():
         return [_make_comment(1)]
 
     with (
-        patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=structure),
         patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.search_literature", return_value=""),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
@@ -326,6 +337,7 @@ def test_review_paper_section_comments_flattened():
         MockOverview.return_value.run_panel.return_value = overview
         # Each section returns 2 comments
         MockSection.return_value.run.return_value = [_make_comment(1), _make_comment(2)]
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.side_effect = fake_crossref_run
         MockCritique.return_value.run.return_value = [_make_comment(1)]
 
@@ -348,12 +360,13 @@ def test_review_paper_uses_provided_config():
     with (
         patch("coarse.pipeline.load_config") as mock_load_config,
         patch("coarse.pipeline.LLMClient", side_effect=fake_llm_client),
-        patch("coarse.pipeline.extract_text", return_value=_make_paper_text()),
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=_make_structure()),
         patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.search_literature", return_value=""),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
         patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
         patch("coarse.pipeline.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
@@ -361,6 +374,7 @@ def test_review_paper_uses_provided_config():
     ):
         MockOverview.return_value.run_panel.return_value = overview
         MockSection.return_value.run.return_value = [_make_comment(1)]
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
         MockCritique.return_value.run.return_value = [_make_comment(1)]
 
@@ -450,3 +464,93 @@ def test_compute_comment_target_excludes_references():
     target = _compute_comment_target(structure, paper_text)
     # 2 reviewable sections * 1.5 + 5*0.3 = 3 + 1.5 = 4.5 → clamped to 6
     assert target == 6
+
+
+# ---------------------------------------------------------------------------
+# _review_section + appendix filter tests
+# ---------------------------------------------------------------------------
+
+def test_review_section_chains_verify_for_proof():
+    """_review_section with focus='proof' calls both section agent and verify agent."""
+    section_agent = MagicMock()
+    verify_agent = MagicMock()
+    section = _make_section(1)
+    first_pass = [_make_comment(1)]
+    verified = [_make_comment(1), _make_comment(2)]
+
+    section_agent.run.return_value = first_pass
+    verify_agent.run.return_value = verified
+
+    result = _review_section(
+        section_agent, verify_agent, section, "Paper",
+        overview=None, calibration=None, focus="proof",
+        literature_context="", all_sections=[], abstract="abstract",
+    )
+
+    section_agent.run.assert_called_once()
+    verify_agent.run.assert_called_once_with(
+        section, "Paper", first_pass, abstract="abstract",
+    )
+    assert result == verified
+
+
+def test_review_section_skips_verify_for_non_proof():
+    """_review_section with focus='general' only calls section agent."""
+    section_agent = MagicMock()
+    verify_agent = MagicMock()
+    section = _make_section(1)
+    comments = [_make_comment(1)]
+    section_agent.run.return_value = comments
+
+    result = _review_section(
+        section_agent, verify_agent, section, "Paper",
+        overview=None, calibration=None, focus="general",
+        literature_context="", all_sections=[], abstract="",
+    )
+
+    section_agent.run.assert_called_once()
+    verify_agent.run.assert_not_called()
+    assert result == comments
+
+
+def test_appendix_filter_includes_long_appendix():
+    """Appendix with >= 500 chars is included in reviewable sections."""
+    appendix = SectionInfo(
+        number="A",
+        title="Robustness Checks",
+        text="x" * 600,
+        section_type=SectionType.APPENDIX,
+    )
+    sections = [_make_section(1), appendix]
+    structure = _make_structure(sections=sections)
+
+    # Replicate the pipeline's filter logic
+    _MIN_APPENDIX_CHARS = 500
+    reviewable = [
+        s for s in structure.sections
+        if s.section_type != SectionType.REFERENCES
+        and (s.section_type != SectionType.APPENDIX
+             or len(s.text) >= _MIN_APPENDIX_CHARS)
+    ]
+    assert appendix in reviewable
+
+
+def test_appendix_filter_skips_short_appendix():
+    """Appendix with < 500 chars is excluded from reviewable sections."""
+    appendix = SectionInfo(
+        number="A",
+        title="Short Appendix",
+        text="x" * 100,
+        section_type=SectionType.APPENDIX,
+    )
+    sections = [_make_section(1), appendix]
+    structure = _make_structure(sections=sections)
+
+    _MIN_APPENDIX_CHARS = 500
+    reviewable = [
+        s for s in structure.sections
+        if s.section_type != SectionType.REFERENCES
+        and (s.section_type != SectionType.APPENDIX
+             or len(s.text) >= _MIN_APPENDIX_CHARS)
+    ]
+    assert appendix not in reviewable

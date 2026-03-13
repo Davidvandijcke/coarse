@@ -5,24 +5,25 @@ from coarse.pipeline import detect_section_focus
 from coarse.types import SectionInfo, SectionType
 
 
-def _make_section(text: str, section_type: SectionType = SectionType.OTHER) -> SectionInfo:
+def _make_section(
+    text: str = "Some section text.",
+    section_type: SectionType = SectionType.OTHER,
+    math_content: bool = False,
+) -> SectionInfo:
     return SectionInfo(
         number=1, title="Test", text=text, section_type=section_type,
+        math_content=math_content,
     )
 
 
-def test_proof_keyword_theorem():
-    section = _make_section("We now state the main theorem and provide its proof.")
+def test_math_content_returns_proof():
+    section = _make_section(math_content=True)
     assert detect_section_focus(section) == "proof"
 
 
-def test_proof_keyword_lemma():
-    section = _make_section("Lemma 3.2 establishes the upper bound.")
-    assert detect_section_focus(section) == "proof"
-
-
-def test_proof_keyword_qed():
-    section = _make_section("This completes the argument. QED")
+def test_math_content_overrides_type():
+    """math_content takes priority over section_type."""
+    section = _make_section(section_type=SectionType.RESULTS, math_content=True)
     assert detect_section_focus(section) == "proof"
 
 
@@ -44,11 +45,3 @@ def test_results_type():
 def test_general_fallback():
     section = _make_section("This section discusses implications.", SectionType.DISCUSSION)
     assert detect_section_focus(section) == "general"
-
-
-def test_proof_keyword_overrides_type():
-    """Proof keywords take priority over section_type."""
-    section = _make_section(
-        "We prove the following proposition.", SectionType.RESULTS,
-    )
-    assert detect_section_focus(section) == "proof"

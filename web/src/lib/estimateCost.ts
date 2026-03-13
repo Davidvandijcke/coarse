@@ -56,6 +56,12 @@ function loadPdfJs(): Promise<any> {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+/** Extract token estimate from a text-based file (~4 chars/token). */
+export async function estimateTokensFromText(file: File): Promise<number> {
+  const text = await file.text();
+  return Math.max(500, Math.round(text.length / 4));
+}
+
 /** Extract text from a PDF and return estimated token count (~4 chars/token). */
 export async function estimateTokensFromPdf(file: File): Promise<number> {
   const pdfjsLib = await loadPdfJs();

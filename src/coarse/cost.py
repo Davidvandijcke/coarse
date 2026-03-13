@@ -82,6 +82,7 @@ def build_cost_estimate(
 
     stage_defs: list[tuple[str, int, int]] = [
         ("metadata", 500, 100),
+        ("math_detection", 2000, 256),
         ("calibration", 1000, 2000),
         *lit_stage,
         *[

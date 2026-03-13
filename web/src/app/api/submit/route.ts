@@ -4,6 +4,23 @@ import nodemailer from "nodemailer";
 
 export const maxDuration = 30;
 
+const SUPPORTED_EXTENSIONS = new Set([
+  ".pdf", ".txt", ".md", ".tex", ".latex",
+  ".html", ".htm", ".docx", ".epub",
+]);
+
+const MIME_MAP: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".tex": "text/x-tex",
+  ".latex": "text/x-tex",
+  ".html": "text/html",
+  ".htm": "text/html",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".epub": "application/epub+zip",
+};
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -16,6 +33,11 @@ function getMailer() {
     service: "gmail",
     auth: { user, pass },
   });
+}
+
+function getExtension(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot >= 0 ? filename.slice(dot).toLowerCase() : "";
 }
 
 export async function POST(request: NextRequest) {
@@ -49,10 +71,17 @@ export async function POST(request: NextRequest) {
   }
 
   if (!pdf || pdf.size === 0) {
-    return NextResponse.json({ error: "No PDF provided" }, { status: 400 });
+    return NextResponse.json({ error: "No file provided" }, { status: 400 });
+  }
+  const ext = getExtension(pdf.name);
+  if (!SUPPORTED_EXTENSIONS.has(ext)) {
+    return NextResponse.json(
+      { error: `Unsupported format. Supported: ${[...SUPPORTED_EXTENSIONS].join(", ")}` },
+      { status: 400 },
+    );
   }
   if (pdf.size > 50 * 1024 * 1024) {
-    return NextResponse.json({ error: "PDF too large (max 50 MB)" }, { status: 400 });
+    return NextResponse.json({ error: "File too large (max 50 MB)" }, { status: 400 });
   }
   if (!email || !email.includes("@")) {
     return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
@@ -82,17 +111,17 @@ export async function POST(request: NextRequest) {
     await supabaseAdmin.from("reviews").delete().eq("id", id);
     return NextResponse.json({ error: "Failed to save contact info" }, { status: 500 });
   }
-  const pdfPath = `${id}.pdf`;
+  const storagePath = `${id}${ext}`;
 
-  // Upload PDF to Supabase Storage
-  const pdfBytes = await pdf.arrayBuffer();
+  // Upload file to Supabase Storage
+  const fileBytes = await pdf.arrayBuffer();
   const { error: uploadError } = await supabaseAdmin.storage
     .from("papers")
-    .upload(pdfPath, pdfBytes, { contentType: "application/pdf" });
+    .upload(storagePath, fileBytes, { contentType: MIME_MAP[ext] ?? "application/octet-stream" });
 
   if (uploadError) {
     await supabaseAdmin.from("reviews").delete().eq("id", id);
-    return NextResponse.json({ error: "Failed to upload PDF" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to upload file" }, { status: 500 });
   }
 
   // Trigger Modal worker (fire-and-forget — the worker updates Supabase directly)
@@ -106,7 +135,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         job_id: id,
-        pdf_storage_path: pdfPath,
+        pdf_storage_path: storagePath,
         user_api_key: apiKey,
         email,
         model: model || undefined,

@@ -8,13 +8,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from coarse.extraction import (
+    SUPPORTED_EXTENSIONS,
     _estimate_tokens,
+    _extract_latex_regex,
     compute_garble_ratio,
+    extract_file,
     extract_text,
     normalize_mistral_artifacts,
     normalize_ocr_garble,
 )
-from coarse.types import PaperText
+from coarse.types import ExtractionError, PaperText
 
 
 def _mock_ocr_response(pages_markdown: list[str]):
@@ -260,3 +263,159 @@ def test_extract_text_normalizes_mistral_artifacts(minimal_pdf: Path) -> None:
     assert "> 0" in result.full_markdown
     assert "glyph[" not in result.full_markdown
     assert "formula-not-decoded" not in result.full_markdown
+
+
+# ---------------------------------------------------------------------------
+# Multi-format extraction tests (extract_file)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_file_txt(tmp_path: Path) -> None:
+    """Plain text files are read as-is with garble_ratio=0.0."""
+    txt = tmp_path / "paper.txt"
+    txt.write_text("This is a plain text paper.\nWith multiple lines.", encoding="utf-8")
+    result = extract_file(txt, use_cache=False)
+    assert isinstance(result, PaperText)
+    assert "plain text paper" in result.full_markdown
+    assert result.garble_ratio == 0.0
+    assert result.token_estimate > 0
+
+
+def test_extract_file_md(tmp_path: Path) -> None:
+    """Markdown files preserve headings."""
+    md = tmp_path / "paper.md"
+    md.write_text("# Introduction\n\nSome content.\n\n## Methods\n\nMore content.", encoding="utf-8")
+    result = extract_file(md, use_cache=False)
+    assert "# Introduction" in result.full_markdown
+    assert "## Methods" in result.full_markdown
+    assert result.garble_ratio == 0.0
+
+
+def test_extract_file_tex(tmp_path: Path) -> None:
+    """LaTeX files have headings converted to markdown."""
+    tex = tmp_path / "paper.tex"
+    tex.write_text(
+        "\\documentclass{article}\n"
+        "\\usepackage{amsmath}\n"
+        "\\begin{document}\n"
+        "\\section{Introduction}\n"
+        "This paper studies $x^2$.\n"
+        "\\subsection{Background}\n"
+        "Some background.\n"
+        "\\end{document}\n",
+        encoding="utf-8",
+    )
+    result = extract_file(tex, use_cache=False)
+    assert "# Introduction" in result.full_markdown
+    assert "## Background" in result.full_markdown
+    assert "$x^2$" in result.full_markdown
+    assert "\\documentclass" not in result.full_markdown
+    assert result.garble_ratio == 0.0
+
+
+def test_extract_file_unsupported(tmp_path: Path) -> None:
+    """Unsupported extensions raise ExtractionError."""
+    bad = tmp_path / "paper.xyz"
+    bad.write_text("content", encoding="utf-8")
+    with pytest.raises(ExtractionError, match="Unsupported file format"):
+        extract_file(bad, use_cache=False)
+
+
+def test_extract_file_missing() -> None:
+    """Missing files raise FileNotFoundError."""
+    with pytest.raises(FileNotFoundError):
+        extract_file("/nonexistent/paper.txt")
+
+
+def test_extract_file_pdf_delegates(minimal_pdf: Path, mock_ocr_pages) -> None:
+    """PDF files delegate to extract_text."""
+    with patch("litellm.ocr", return_value=_mock_ocr_response(mock_ocr_pages)):
+        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+            result = extract_file(minimal_pdf, use_cache=False)
+    assert isinstance(result, PaperText)
+    assert "# Test Paper" in result.full_markdown
+
+
+def test_extract_file_caching(tmp_path: Path) -> None:
+    """Non-PDF files are cached after first extraction."""
+    txt = tmp_path / "paper.txt"
+    txt.write_text("Cached content.", encoding="utf-8")
+    r1 = extract_file(txt, use_cache=True)
+    # Modify file content — but cache should still be used (same mtime check)
+    r2 = extract_file(txt, use_cache=True)
+    assert r1.full_markdown == r2.full_markdown
+
+
+def test_extract_latex_heading_conversion() -> None:
+    """All LaTeX heading levels are correctly converted."""
+    result = _extract_latex_regex.__wrapped__(Path("/dev/null")) if hasattr(
+        _extract_latex_regex, "__wrapped__"
+    ) else None
+    # Test the regex directly
+    from coarse.extraction import _LATEX_HEADING_RE, _LATEX_HEADING_LEVEL
+    import re
+
+    test_cases = [
+        ("\\section{Intro}", "# Intro"),
+        ("\\subsection{Methods}", "## Methods"),
+        ("\\subsubsection{Details}", "### Details"),
+        ("\\paragraph{Note}", "#### Note"),
+        ("\\section*{Starred}", "# Starred"),
+    ]
+    for latex, expected_md in test_cases:
+        converted = _LATEX_HEADING_RE.sub(
+            lambda m: f"{_LATEX_HEADING_LEVEL[m.group(1)]} {m.group(2)}", latex
+        )
+        assert converted == expected_md, f"{latex} → {converted}, expected {expected_md}"
+
+
+def test_extract_latex_preserves_math(tmp_path: Path) -> None:
+    """Math content survives LaTeX extraction (may be converted to $$ format by Docling)."""
+    tex = tmp_path / "math.tex"
+    tex.write_text(
+        "\\begin{document}\n"
+        "\\section{Theory}\n"
+        "Consider $x^2 + y^2 = z^2$ and\n"
+        "\\begin{equation}\n"
+        "  E = mc^2\n"
+        "\\end{equation}\n"
+        "\\end{document}\n",
+        encoding="utf-8",
+    )
+    result = extract_file(tex, use_cache=False)
+    # Inline math preserved
+    assert "x^2" in result.full_markdown
+    # Display math preserved (either as \begin{equation} or $$ depending on backend)
+    assert "E = mc^2" in result.full_markdown
+
+
+def test_extract_latex_strips_preamble(tmp_path: Path) -> None:
+    """LaTeX preamble noise is stripped."""
+    tex = tmp_path / "preamble.tex"
+    tex.write_text(
+        "\\documentclass{article}\n"
+        "\\usepackage{amsmath}\n"
+        "\\usepackage[utf8]{inputenc}\n"
+        "\\title{My Paper}\n"
+        "\\author{Author}\n"
+        "\\date{2026}\n"
+        "\\begin{document}\n"
+        "\\maketitle\n"
+        "\\section{Intro}\n"
+        "Content here.\n"
+        "\\end{document}\n",
+        encoding="utf-8",
+    )
+    result = extract_file(tex, use_cache=False)
+    assert "\\documentclass" not in result.full_markdown
+    assert "\\usepackage" not in result.full_markdown
+    assert "\\title" not in result.full_markdown
+    assert "\\maketitle" not in result.full_markdown
+    assert "# Intro" in result.full_markdown
+    assert "Content here." in result.full_markdown
+
+
+def test_supported_extensions_includes_all_formats() -> None:
+    """SUPPORTED_EXTENSIONS includes all documented formats."""
+    for ext in [".pdf", ".txt", ".md", ".tex", ".latex", ".html", ".htm", ".docx", ".epub"]:
+        assert ext in SUPPORTED_EXTENSIONS

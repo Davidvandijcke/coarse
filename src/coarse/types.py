@@ -54,6 +54,13 @@ class SectionInfo(BaseModel):
         default_factory=list,
         description="Formal definitions introduced",
     )
+    math_content: bool = Field(
+        default=False,
+        description=(
+            "Whether section contains mathematical proofs, "
+            "derivations, or formal definitions needing verification"
+        ),
+    )
 
     @field_validator("section_type", mode="before")
     @classmethod
@@ -155,6 +162,17 @@ class DomainCalibration(BaseModel):
     )
     evaluation_standards: list[str] = Field(
         description="What a top-tier journal in this field expects"
+    )
+
+
+class MathSectionDetection(BaseModel):
+    """Response model for LLM-based math section detection."""
+    math_section_indices: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Indices (0-based) of sections containing "
+            "mathematical content needing verification"
+        ),
     )
 
 

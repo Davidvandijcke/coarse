@@ -570,6 +570,99 @@ Report 0-5 issues. Only report errors you can demonstrate through calculation, n
 stylistic preferences. If you find no errors after careful verification, report 0 issues.
 """
 
+PROOF_VERIFY_SYSTEM = """\
+You are an adversarial mathematical proof verifier. You have received a proof \
+section AND a first-pass review. Your job is threefold: validate existing findings, \
+find issues the first pass missed, and generate counterexamples.
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _CONFIDENCE_CALIBRATION + (
+    _OCR_ARTIFACT_NOTICE + _NUMERICAL_CLAIMS
+) + """
+Your tasks:
+
+1. VALIDATE each first-pass comment:
+   - Re-derive the claimed error yourself from scratch.
+   - If you reach the same conclusion, keep the comment and set confidence to "high".
+   - If you cannot reproduce the error, set confidence to "low" and explain why \
+in the feedback (e.g., "The first-pass reviewer may have overlooked that...").
+   - If the comment is correct but overstated, revise the feedback for accuracy.
+
+2. FIND MISSED ISSUES — work through proof steps the first pass did NOT flag:
+   - For each theorem/lemma, attempt to construct a COUNTEREXAMPLE within the \
+theorem's stated conditions. If you find one, report it.
+   - For each "it follows that" or "by assumption" step, check: does it actually \
+follow? What intermediate steps are being skipped? Are they valid?
+   - Check boundary/degenerate cases the proof claims to handle.
+   - Check that invoked identities, inequalities, or theorems have their \
+conditions satisfied under the proof's stated assumptions.
+
+3. SCOPE CHECK using the abstract:
+   - Verify each proof covers ALL cases the paper claims, not just a convenient \
+special case (e.g., scalar when the theorem claims matrix, compact when the \
+theorem claims general, finite-dimensional when the theorem claims infinite).
+
+For each issue (validated or new), produce a structured comment with:
+- title: Concise, specific (5-10 words)
+- quote: EXACT verbatim substring from the section text. Copy character-for-character. \
+Never paraphrase. Include complete passage — never truncate mid-sentence or mid-equation.
+- feedback: Show your independent derivation or counterexample (3-8 sentences). \
+For validated first-pass comments, show your own re-derivation confirming or \
+contradicting the finding.
+""" + _REMEDIATION_SPECIFICITY + """
+Do NOT comment on: formatting, OCR artifacts, notation preferences, style.
+
+Return the COMPLETE merged list: validated first-pass comments (with updated \
+confidence) + any new issues you found. Report 0-8 total comments. \
+Drop first-pass comments you cannot reproduce (confidence "low" with no \
+supporting evidence).
+"""
+
+
+def proof_verify_user(
+    paper_title: str,
+    section: "SectionInfo",
+    first_pass_comments: "list[DetailedComment]",
+    abstract: str = "",
+) -> str:
+    """User prompt for adversarial proof verification."""
+    abstract_block = ""
+    if abstract:
+        abstract_block = (
+            f"\n**Paper Abstract** (verify proofs cover all claimed cases):"
+            f"\n{abstract[:1500]}\n"
+        )
+
+    comments_block = "\n\n".join(
+        f"### First-Pass Comment {c.number}: {c.title}\n"
+        f"**Severity**: {c.severity} | **Confidence**: {c.confidence}\n"
+        f"**Quote**: {c.quote}\n"
+        f"**Feedback**: {c.feedback}"
+        for c in first_pass_comments
+    )
+
+    return f"""\
+Verify the proof-checking review of section "{section.title}" from "{paper_title}".
+{abstract_block}
+**Section {section.number}: {section.title}**
+
+**Section Text**:
+{section.text}
+
+---
+
+**First-Pass Review ({len(first_pass_comments)} comments):**
+{comments_block}
+
+---
+
+Instructions:
+1. For each first-pass comment above, re-derive the claimed error independently. \
+Keep if valid (set confidence "high"), drop or downgrade if not reproducible.
+2. Find 0-3 NEW issues the first pass missed: counterexamples, unjustified steps, \
+scope gaps, boundary cases.
+3. Return the COMPLETE merged list (validated + new), numbered sequentially from 1.
+"""
+
+
 SECTION_METHODOLOGY_SYSTEM = """\
 You are an expert methodologist reviewing a methodology section of a research paper.
 """ + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + (
@@ -649,6 +742,46 @@ SECTION_SYSTEM_MAP: dict[str, str] = {
     "literature": SECTION_LITERATURE_SYSTEM,
     "general": SECTION_SYSTEM,
 }
+
+
+# ---------------------------------------------------------------------------
+# Math section detection (cheap LLM call during structure analysis)
+# ---------------------------------------------------------------------------
+
+MATH_DETECTION_SYSTEM = """\
+You are an expert academic paper analyst. Given a list of paper sections with \
+brief text previews, identify which sections contain mathematical content that \
+requires formal verification during peer review.
+
+A section needs mathematical verification if it contains ANY of:
+- Proofs (formal or informal), derivations, or proof sketches
+- Theorem, lemma, proposition, or corollary statements with arguments
+- Formal definitions or assumptions that establish mathematical objects or conditions
+- Algebraic manipulations, inequalities, or equations that support the paper's claims
+- Estimator definitions, statistical results, or asymptotic expressions
+
+A section does NOT need mathematical verification if it merely:
+- References a result proved elsewhere ("as shown in Theorem 1")
+- Discusses results qualitatively without equations
+- Contains only tables, figures, or empirical results without derivations
+- Is a references/bibliography section
+
+Return the 0-based indices of sections that need mathematical verification.\
+"""
+
+
+def math_detection_user(sections: "list[SectionInfo]") -> str:
+    """User prompt for math section detection."""
+    lines = []
+    for i, s in enumerate(sections):
+        preview = s.text[:200].replace("\n", " ").strip()
+        if len(s.text) > 200:
+            preview += "..."
+        lines.append(f"[{i}] **{s.title}** ({s.section_type.value}): {preview}")
+    return (
+        "Identify which sections contain mathematical content needing verification.\n\n"
+        + "\n".join(lines)
+    )
 
 # ---------------------------------------------------------------------------
 # Cross-reference / deduplication agent

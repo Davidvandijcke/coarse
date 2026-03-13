@@ -19,7 +19,7 @@ class _SectionComments(BaseModel):
     renumbers comments globally across all sections.
     """
 
-    comments: list[DetailedComment] = Field(min_length=1, max_length=5)
+    comments: list[DetailedComment] = Field(min_length=1, max_length=8)
 
 
 class SectionAgent(ReviewAgent):
