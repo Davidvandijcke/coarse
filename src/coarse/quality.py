@@ -35,60 +35,92 @@ class QualityReport(BaseModel):
 
 _JUDGE_SYSTEM = """\
 You are an expert academic peer review evaluator. You have access to the \
-original paper, a reference review written by another reviewer, and a \
-generated review. Your task is to assess the generated review's quality \
-primarily against the paper itself, using the reference for calibration.
+original paper and two reviews labeled "Review A" and "Review B". One is a \
+human-written reference and one is AI-generated. Your task is to assess \
+Review B's quality primarily against the paper itself, using Review A \
+for calibration.
+
+IMPORTANT — Bias awareness:
+- Do NOT favor a review because it is longer. A concise review that identifies \
+real errors is better than a verbose review that pads with generic observations. \
+Evaluate substance per comment, not total word count.
+- Do NOT favor a review because it uses more confident or assertive language. \
+A hedged but correct observation is better than a confident but wrong claim.
+- Do NOT favor a review because it cites more sources or uses more technical \
+jargon. Evaluate whether the technical content is correct, not whether it \
+sounds impressive.
+- USE THE FULL SCORING RANGE. A review with fabricated quotes or incorrect \
+mathematical claims should score 1-2, not 3-4. Reserve scores of 3-4 for \
+reviews that are mediocre but not actively wrong. Do not cluster scores in \
+the middle of the scale.
 
 Score each dimension from 1.0 to 6.0 in half-point increments \
 (1, 1.5, 2, ..., 5, 5.5, 6). Use half-points to distinguish minor issues \
 from major ones — e.g., one truncated quote out of 19 is a 4.5, not a 4.
 
 The scale:
-- 1.0-4.5: Below reference quality (various degrees of deficiency)
+- 1.0-2.0: Major deficiencies — fabricated quotes, incorrect claims, \
+missing the paper's central issues, or largely generic feedback
+- 2.5-3.5: Partial quality — some valid points but significant gaps, \
+errors in technical analysis, or mostly surface-level observations
+- 4.0-4.5: Good but below reference — identifies real issues with \
+some depth but misses important points or has minor inaccuracies
 - 5.0: Matches the reference review in quality
 - 5.5: Exceeds the reference — catches valid issues the reference missed, \
 or provides deeper analysis on shared issues
 - 6.0: Substantially exceeds the reference — identifies important errors or \
 insights the reference missed entirely, with stronger evidence and reasoning
 
-Award 5+ scores when the generated review demonstrably surpasses the reference. \
-This is not grade inflation — it requires concrete evidence (e.g., the generated \
-review found a real error the reference overlooked, provided a re-derivation \
-where the reference only noted concern, or identified a cross-section \
-inconsistency the reference missed).
+Award 5+ scores when Review B demonstrably surpasses Review A. \
+This requires concrete evidence (e.g., found a real error the reference \
+overlooked, provided a re-derivation where the reference only noted concern, \
+or identified a cross-section inconsistency the reference missed).
 
 Dimensions:
-1. **coverage**: Does the generated review identify the paper's most important \
+1. **coverage**: Does Review B identify the paper's most important \
 issues? Evaluate this against the paper itself — what are the real strengths, \
-weaknesses, and gaps? The reference review may help calibrate what matters, but \
-it is not the answer key. Credit the generated review fully for finding valid \
-issues the reference missed, and do not penalize it for omitting issues that \
+weaknesses, and gaps? Review A may help calibrate what matters, but \
+it is not the answer key. Credit Review B fully for finding valid \
+issues Review A missed, and do not penalize it for omitting issues that \
 are minor or debatable.
 2. **specificity**: Are comments precise, with correct verbatim quotes from the \
 paper and actionable guidance? Verify quotes against the paper text. Score 5 if \
 every comment has an accurate quote and clear fix, 1 if comments are vague or \
 quotes are fabricated. Score 5+ if quotes are more precise and fixes more \
-concrete than the reference.
+concrete than Review A.
 3. **depth**: Is the analysis substantive and technically rigorous? Does it \
 engage with the paper's methodology, proofs, and assumptions at a deep level, \
-or does it stay surface-level (notation complaints, formatting issues)? Score \
-5+ if the analysis provides deeper technical engagement than the reference \
+or does it stay surface-level (notation complaints, formatting issues)? \
+A long review full of surface observations scores LOWER than a short review \
+with deep technical engagement. Score 5+ if the analysis provides deeper \
+technical engagement than Review A \
 (e.g., re-derivations, concrete counterexamples, numerical verification).
-4. **format**: Does the generated review adhere to the standard review structure \
+4. **format**: Does Review B adhere to the standard review structure \
 (header block, Overall Feedback with titled issues, Detailed Comments with \
 numbered entries, each with Quote and Feedback sections)? Score 5 for perfect \
 adherence, 1 for major structural deviation.
 
 For each dimension, provide a brief reasoning string (1-2 sentences).
 
-Also provide 2-3 strengths and 2-3 weaknesses of the generated review as brief \
+Also provide 2-3 strengths and 2-3 weaknesses of Review B as brief \
 bullet strings.
 
 Do not compute overall_score — it will be computed externally.
 """
 
 
-def _judge_user(reference: str, generated: str, paper_text: str = "") -> str:
+def _judge_user(
+    reference: str,
+    generated: str,
+    paper_text: str = "",
+    swap: bool = False,
+) -> str:
+    """Build user prompt for judge.
+
+    When swap=True, the generated review is presented as Review A
+    and the reference as Review B (reversed). The judge always evaluates
+    Review B. This is used for positional-bias mitigation.
+    """
     paper_block = ""
     if paper_text:
         paper_block = f"""
@@ -98,27 +130,32 @@ def _judge_user(reference: str, generated: str, paper_text: str = "") -> str:
 </paper>
 
 """
+    if swap:
+        review_a, review_b = generated, reference
+    else:
+        review_a, review_b = reference, generated
+
     return f"""\
-Evaluate the following generated review. Use the paper text as the primary \
-source of truth and the reference review for calibration (not as an answer key).
+Evaluate Review B below. Use the paper text as the primary source of truth \
+and Review A for calibration (Review A is not an answer key).
 {paper_block}
-## Reference Review (for calibration only)
-<reference>
-{reference}
-</reference>
+## Review A (for calibration)
+<review_a>
+{review_a}
+</review_a>
 
-## Generated Review (evaluate this)
-<generated>
-{generated}
-</generated>
+## Review B (evaluate this)
+<review_b>
+{review_b}
+</review_b>
 
-Score the generated review on: coverage, specificity, depth, and format \
-(each 1.0-6.0 in half-point increments, where 5.0 = matches reference, \
-5.5-6.0 = exceeds reference).
+Score Review B on: coverage, specificity, depth, and format \
+(each 1.0-6.0 in half-point increments, where 5.0 = matches Review A, \
+5.5-6.0 = exceeds Review A).
 Verify quotes against the paper text. Assess coverage and depth against the \
-paper itself — does the generated review find the paper's real issues and \
-engage with its actual methodology and assumptions? Credit valid issues the \
-reference missed — if the generated review catches real errors the reference \
+paper itself — does Review B find the paper's real issues and \
+engage with its actual methodology and assumptions? Credit valid issues \
+Review A missed — if Review B catches real errors Review A \
 overlooked, that warrants a score above 5.0. Provide reasoning for each score, \
 plus 2-3 strengths and 2-3 weaknesses.
 """
@@ -140,6 +177,10 @@ def evaluate_review(
 ) -> QualityReport:
     """LLM-judge evaluation of a generated review against a reference.
 
+    Mitigates positional bias by running the judge twice — once with the
+    reference as Review A (normal) and once with the generated review as
+    Review A (swapped) — then averaging dimension scores.
+
     Accepts Review object or rendered markdown string.
     If paper_text is provided, the judge can verify quotes and
     independently assess coverage and depth.
@@ -152,20 +193,62 @@ def evaluate_review(
     if isinstance(generated, Review):
         generated = render_review(generated)
 
-    messages = [
-        {"role": "system", "content": _JUDGE_SYSTEM},
-        {"role": "user", "content": _judge_user(reference, generated, paper_text)},
-    ]
+    def _run_judge(swap: bool) -> _JudgeOutput:
+        messages = [
+            {"role": "system", "content": _JUDGE_SYSTEM},
+            {
+                "role": "user",
+                "content": _judge_user(
+                    reference, generated, paper_text, swap=swap
+                ),
+            },
+        ]
+        return client.complete(messages, _JudgeOutput, max_tokens=max_tokens)
 
-    result: _JudgeOutput = client.complete(messages, _JudgeOutput, max_tokens=max_tokens)
+    # Run both orderings in parallel to mitigate positional bias
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_normal = pool.submit(_run_judge, False)
+        fut_swapped = pool.submit(_run_judge, True)
+        result_normal = fut_normal.result()
+        result_swapped = fut_swapped.result()
 
-    overall_score = sum(d.score for d in result.dimensions) / len(result.dimensions)
+    # When swapped, the judge scored the *reference* as Review B.
+    # Invert those scores: if reference scored X, generated scores (10-X)
+    # mapped back to 1-6 scale. Actually simpler: the swapped score
+    # tells us how good the reference is relative to generated.
+    # generated_quality ≈ 10 - swapped_reference_score doesn't work on
+    # a 1-6 scale. Instead: swapped score S means "reference is S vs
+    # generated". So generated vs reference ≈ mirror: 10 - S.
+    # On a 1-6 scale with 5 as parity: deviation = S - 5, so
+    # generated = 5 - deviation = 5 - (S - 5) = 10 - S.
+    swapped_dims = {d.dimension: d for d in result_swapped.dimensions}
+
+    averaged_dims = []
+    for d in result_normal.dimensions:
+        normal_score = d.score
+        if d.dimension in swapped_dims:
+            # Invert swapped score: if ref scored 5.5 vs gen, gen is 4.5
+            inverted = 10.0 - swapped_dims[d.dimension].score
+            # Clamp to valid range
+            inverted = max(1.0, min(6.0, inverted))
+            avg = round((normal_score + inverted) * 2) / 4  # nearest 0.25
+            # Round to nearest 0.5 for final score
+            avg = round(avg * 2) / 2
+        else:
+            avg = normal_score
+        averaged_dims.append(DimensionScore(
+            dimension=d.dimension,
+            score=avg,
+            reasoning=d.reasoning,
+        ))
+
+    overall = sum(d.score for d in averaged_dims) / len(averaged_dims)
 
     return QualityReport(
-        overall_score=overall_score,
-        dimensions=result.dimensions,
-        strengths=result.strengths,
-        weaknesses=result.weaknesses,
+        overall_score=overall,
+        dimensions=averaged_dims,
+        strengths=result_normal.strengths,
+        weaknesses=result_normal.weaknesses,
     )
 
 

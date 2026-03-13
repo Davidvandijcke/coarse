@@ -56,7 +56,12 @@ def _make_review() -> Review:
 
 
 def test_evaluate_review_with_string_inputs():
-    """Pass two short markdown strings; mock client; assert overall_score equals mean of dimension scores."""
+    """Pass two short markdown strings; mock client; assert position-swap averaging works.
+
+    evaluate_review runs the judge twice (normal + swapped order) and averages.
+    The mock returns the same scores both times. When swapped, scores are inverted
+    (10 - S, clamped to [1,6]), so the averaged result differs from raw scores.
+    """
     scores = [3, 4, 3, 5]
     client = _make_mock_client(scores)
 
@@ -67,11 +72,15 @@ def test_evaluate_review_with_string_inputs():
     )
 
     assert isinstance(result, QualityReport)
-    expected_mean = sum(scores) / len(scores)
-    assert result.overall_score == pytest.approx(expected_mean)
+    # Mock returns same scores for both calls. Swapped scores are inverted:
+    # inverted = [10-3, 10-4, 10-3, 10-5] = [7, 6, 7, 5] → clamped [6, 6, 6, 5]
+    # averaged (rounded to nearest 0.5): [4.5, 5.0, 4.5, 5.0] → mean 4.75
+    assert result.overall_score == pytest.approx(4.75)
     assert len(result.dimensions) == 4
     assert len(result.strengths) == 2
     assert len(result.weaknesses) == 2
+    # Verify client.complete was called twice (normal + swapped)
+    assert client.complete.call_count == 2
 
 
 def test_evaluate_review_with_review_object():
