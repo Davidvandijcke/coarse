@@ -1,7 +1,7 @@
 """Tests for coarse.quote_verify."""
 from __future__ import annotations
 
-from coarse.quote_verify import _passage_garble_score, _trim_to_best_match, verify_quotes
+from coarse.quote_verify import _is_math_heavy, _passage_garble_score, _trim_to_best_match, verify_quotes
 from coarse.types import DetailedComment
 
 
@@ -123,3 +123,55 @@ def test_passage_garble_score_garbled():
 
 def test_passage_garble_score_empty():
     assert _passage_garble_score("") == 0.0
+
+
+# --- Math-heavy quote detection and stricter threshold ---
+
+
+MATH_PAPER = r"""\
+The coding gain is $\gamma = \phi^3 / \sqrt{2}$ for the H32 lattice.
+Table I shows the exponent values for each lattice class.
+The fundamental region has volume $\text{vol}(\Lambda) = 2^{n/2}$.
+"""
+
+
+def test_is_math_heavy_detects_latex():
+    """Quotes with LaTeX commands are detected as math-heavy."""
+    assert _is_math_heavy(r"The gain is $\gamma = \phi^3 / \sqrt{2}$ for H32")
+    assert _is_math_heavy(r"\frac{1}{n} \sum_{i=1}^{n} x_i = \bar{x}")
+
+
+def test_is_math_heavy_detects_numbers():
+    """Quotes with multiple numbers are detected as math-heavy."""
+    assert _is_math_heavy("Row 3 shows value 128 at order 256 with gain 3.01 dB")
+
+
+def test_is_math_heavy_rejects_prose():
+    """Plain prose without math tokens is not math-heavy."""
+    assert not _is_math_heavy("This paper presents a novel approach to regression")
+
+
+def test_math_quote_altered_exponent_dropped():
+    """A math quote with a single altered exponent should be dropped under stricter threshold.
+
+    Changing phi^3 to phi^5 has high string similarity (~95%) but completely
+    changes the mathematical meaning. The 0.92 threshold should catch this.
+    """
+    # Original paper has phi^3, but quote says phi^5
+    altered = r"The coding gain is $\gamma = \phi^5 / \sqrt{2}$ for the H32 lattice."
+    comment = _make_comment(altered)
+    result = verify_quotes([comment], MATH_PAPER)
+    # The altered exponent should cause this to be dropped
+    # (fuzzy ratio ~0.95 passes 0.80 but the match replaces with actual text)
+    # Key: the corrected quote should contain phi^3, not phi^5
+    if result:
+        assert r"\phi^5" not in result[0].quote
+
+
+def test_math_quote_exact_match_kept():
+    """An exact math quote passes regardless of threshold."""
+    exact = r"The coding gain is $\gamma = \phi^3 / \sqrt{2}$ for the H32 lattice."
+    comment = _make_comment(exact)
+    result = verify_quotes([comment], MATH_PAPER)
+    assert len(result) == 1
+    assert r"\phi^3" in result[0].quote

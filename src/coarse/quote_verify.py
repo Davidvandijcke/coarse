@@ -2,11 +2,14 @@
 
 Programmatically verifies that comment quotes are actual substrings of the paper.
 Uses fuzzy matching to correct garbled quotes from PDF extraction artifacts.
+Applies stricter thresholds for math-heavy quotes where single-character changes
+(e.g., an exponent or subscript) can completely alter the meaning.
 """
 from __future__ import annotations
 
 import difflib
 import logging
+import re
 
 from coarse.types import DetailedComment
 
@@ -14,6 +17,24 @@ logger = logging.getLogger(__name__)
 
 # Minimum fuzzy match ratio to accept a corrected quote
 _MIN_MATCH_RATIO = 0.80
+# Stricter threshold for quotes containing math/numeric content
+_MIN_MATH_MATCH_RATIO = 0.92
+
+# Pattern detecting math-heavy content: LaTeX commands, digits, operators
+_MATH_PATTERN = re.compile(
+    r"\\[a-zA-Z]+|"        # LaTeX commands (\frac, \phi, etc.)
+    r"\$[^$]+\$|"           # inline math $...$
+    r"\b\d+\.?\d*\b|"      # numbers
+    r"[=<>≤≥±∑∏∫]"         # math operators
+)
+
+
+def _is_math_heavy(text: str) -> bool:
+    """Return True if the quote contains significant mathematical content."""
+    matches = _MATH_PATTERN.findall(text)
+    # Consider math-heavy if ≥3 math tokens or >10% of length is math
+    math_len = sum(len(m) for m in matches)
+    return len(matches) >= 3 or (matches and math_len > 0.10 * len(text))
 
 from coarse.garble import garble_ratio as _passage_garble_score  # noqa: E402, F401
 
@@ -55,7 +76,11 @@ def verify_quotes(
         # Fuzzy match: find the best matching passage
         best_match, ratio = _find_nearest_passage(comment.quote, paper_text)
 
-        if ratio >= _MIN_MATCH_RATIO and best_match:
+        # Use stricter threshold for math-heavy quotes where single-char
+        # changes (exponents, subscripts) alter meaning completely
+        threshold = _MIN_MATH_MATCH_RATIO if _is_math_heavy(comment.quote) else _MIN_MATCH_RATIO
+
+        if ratio >= threshold and best_match:
             stats["fuzzy"] += 1
             # Track if the matched source passage itself is garbled
             if _passage_garble_score(best_match) > 0.005:
