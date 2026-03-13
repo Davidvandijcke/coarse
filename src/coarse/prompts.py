@@ -87,6 +87,41 @@ Do NOT end feedback with vague suggestions like "It would be helpful to discuss.
 or "The authors should clarify..." — state the exact change needed.
 """
 
+_STEELMAN_BEFORE_ATTACK = """
+Before claiming a proof step is wrong or an assumption is violated:
+1. STEEL-MAN the authors' argument first: State what the authors intended the step to \
+accomplish and why they believe it works. Read their surrounding explanation, remarks, \
+and footnotes.
+2. CHECK THE PAPER'S OWN DEFENSE: Authors often anticipate objections. Before flagging \
+an issue, check whether the paper addresses it in a remark, footnote, appendix, or \
+cited reference. If the paper cites a specific result to justify a step (e.g., "by \
+Theorem 3 of [Ref]"), do not claim the step is wrong without engaging with that \
+justification.
+3. VERIFY CONDITIONS ARE ACTUALLY NEEDED: When you believe a step requires a condition, \
+trace EXACTLY where in the derivation that condition would enter. Point to the specific \
+algebraic line or inequality where the condition is invoked. If you cannot identify \
+such a line, the condition may not be needed — and your objection is invalid.
+4. DISTINGUISH RESULT FROM INTERPRETATION: A formal mathematical result may have an \
+intuitive interpretation that requires stronger conditions than the result itself. \
+Do not conflate conditions needed for the interpretation with conditions needed for \
+the formal derivation.
+5. YOUR UNFAMILIARITY IS NOT EVIDENCE: If a paper cites a specific reference for a \
+result you do not recognize, that is not grounds for skepticism. Classical results in \
+specialized fields may be unfamiliar to you. Express uncertainty ("It would be helpful \
+to verify that [cited result] applies here") rather than doubt ("This claim appears \
+unsupported").
+"""
+
+_EQUIVALENCE_CLAIMS = """
+Before asserting that two mathematical objects or operations are equivalent, identical, \
+or that one "reduces to" the other:
+- State the formal definition of EACH object from the paper or standard references.
+- Verify they produce identical outputs on a concrete example, or cite a theorem \
+establishing their equivalence.
+- If you cannot perform this verification, phrase as a question: "It would be helpful \
+to clarify whether X and Y coincide in this setting."
+"""
+
 # ---------------------------------------------------------------------------
 # OpenRouter extraction (used by file-parser plugin OCR path)
 # ---------------------------------------------------------------------------
@@ -345,9 +380,9 @@ version of each issue.
 SECTION_SYSTEM = """\
 You are an expert peer reviewer. Your task is to find concrete errors and \
 inconsistencies in a single section of a research paper.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + (
-    _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION
-) + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _STEELMAN_BEFORE_ATTACK + (
+    _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION
+) + _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION + """
 For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words) describing the exact problem
 - quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
@@ -511,9 +546,9 @@ requests for additional work.
 SECTION_PROOF_SYSTEM = """\
 You are an expert mathematical proof checker. Your job is to VERIFY the mathematics \
 in this section by working through it yourself, not just reading it passively.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + (
-    _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION + _NUMERICAL_CLAIMS
-) + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _STEELMAN_BEFORE_ATTACK + _EQUIVALENCE_CLAIMS + (
+    _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION
+) + _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION + _NUMERICAL_CLAIMS + """
 For each theorem, proposition, lemma, or corollary:
 
 1. STATE the claim precisely.
@@ -574,8 +609,8 @@ PROOF_VERIFY_SYSTEM = """\
 You are an adversarial mathematical proof verifier. You have received a proof \
 section AND a first-pass review. Your job is threefold: validate existing findings, \
 find issues the first pass missed, and generate counterexamples.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _CONFIDENCE_CALIBRATION + (
-    _OCR_ARTIFACT_NOTICE + _NUMERICAL_CLAIMS
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _STEELMAN_BEFORE_ATTACK + _EQUIVALENCE_CLAIMS + (
+    _CONFIDENCE_CALIBRATION + _OCR_ARTIFACT_NOTICE + _NUMERICAL_CLAIMS
 ) + """
 Your tasks:
 
@@ -585,6 +620,12 @@ Your tasks:
    - If you cannot reproduce the error, set confidence to "low" and explain why \
 in the feedback (e.g., "The first-pass reviewer may have overlooked that...").
    - If the comment is correct but overstated, revise the feedback for accuracy.
+   - If a first-pass comment claims a step requires an additional condition (e.g., \
+non-negativity, compactness): trace through the algebra and mark the EXACT line \
+where that condition is invoked. If you cannot find such a line, the condition may \
+not be needed and the comment should be dropped.
+   - If a first-pass comment claims two operations are equivalent: verify by checking \
+formal definitions and a concrete example. Drop if equivalence is not established.
 
 2. FIND MISSED ISSUES — work through proof steps the first pass did NOT flag:
    - For each theorem/lemma, attempt to construct a COUNTEREXAMPLE within the \
@@ -894,6 +935,13 @@ determinant) without showing a derivation from the paper's definitions — unsup
 numerical claims are a common hallucination pattern
 - The comment claims a table entry is wrong, duplicated, or missing, but the quote does \
 not include the complete table row(s) needed to verify the claim
+- The comment claims a proof step requires a condition but does not identify the specific \
+line in the derivation where that condition is invoked — the condition may only be needed \
+for an interpretation, not for the formal result
+- The comment claims two mathematical operations are equivalent without verifying via \
+formal definitions or a concrete example
+- The comment expresses skepticism about a cited result without engaging with the cited \
+reference — unfamiliarity with a result is not evidence against it
 
 KEEP and potentially strengthen a comment if:
 - It identifies a specific mathematical error with a re-derivation or calculation
