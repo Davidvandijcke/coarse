@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { splitIntoBlocks, findQuoteInBlocks } from "@/lib/quoteMatch";
+import { preprocessLatex } from "@/lib/preprocessLatex";
 
 const katexOptions = { strict: false, throwOnError: false };
 
@@ -19,7 +20,7 @@ export default function PaperPanel({
   onClose: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const blocks = useMemo(() => splitIntoBlocks(markdown), [markdown]);
+  const blocks = useMemo(() => splitIntoBlocks(preprocessLatex(markdown)), [markdown]);
 
   const scrollToQuote = useCallback(
     (quote: string) => {
