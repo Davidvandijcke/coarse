@@ -21,14 +21,17 @@ uv run python -m coarse paper.pdf
 ### Review Pipeline
 
 ```
-paper.pdf
-    → [extraction.py]   Mistral OCR / Docling fallback → PaperText (markdown)
-    → [extraction_qa.py] Vision LLM spot-check (skipped for clean text papers)
-    → [structure.py]     Parse headings + cheap LLM → PaperStructure (sections, domain)
-    → [overview agent]   LLM → 4-6 macro issues (parallel with section agents)
+paper (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)
+    → [extraction.py]    Mistral OCR / Docling fallback → PaperText (markdown)
+    → [extraction_qa.py] Vision LLM spot-check (auto-triggers on garbled text)
+    → [structure.py]     Parse headings + LLM → PaperStructure (sections, math detection, domain)
+    → [calibrate_domain] Domain-specific review criteria (parallel with literature)
+    → [literature.py]    Perplexity Sonar Pro search, arXiv fallback (parallel with calibration)
+    → [overview panel]   3-judge panel → synthesized OverviewFeedback (4-6 macro issues)
     → [section agents]   LLM → 15-25 detailed comments (1 per section, parallel)
+    → [verify agent]     Adversarial proof verification (math sections only, chained)
     → [crossref agent]   LLM → deduplicate, validate quotes, consistency
-    → [quote_verify.py]  Programmatic → fuzzy-match quotes against paper text
+    → [quote_verify.py]  Programmatic → fuzzy-match quotes (stricter for math)
     → [critique agent]   LLM → self-critique quality gate, revise weak comments
     → [quote_verify.py]  Programmatic → re-verify quotes (critique re-garbles via JSON)
     → [synthesis.py]     Deterministic → paper_review.md (refine.ink format)
@@ -43,10 +46,10 @@ src/coarse/
 ├── cli.py                   # Typer CLI, progress display (rich)
 ├── config.py                # ~/.coarse/config.toml, API key management
 ├── cost.py                  # Cost estimation + user approval gate
-├── extraction.py            # PDF → PaperText (Mistral OCR → OpenRouter → Docling)
+├── extraction.py            # PDF/TXT/MD/TeX/DOCX/HTML/EPUB → PaperText
 ├── extraction_qa.py         # Post-extraction QA via vision LLM (Gemini Flash)
-├── structure.py             # PaperText → PaperStructure (heading parse + LLM metadata)
-├── quote_verify.py          # Post-processing quote verification
+├── structure.py             # PaperText → PaperStructure (heading parse + math detection + LLM metadata)
+├── quote_verify.py          # Post-processing quote verification (stricter for math)
 ├── models.py                # Model manifest — single source of truth for all model IDs
 ├── garble.py                # OCR garble detection and normalization
 ├── llm.py                   # litellm wrapper, model registry, cost tracking
@@ -57,19 +60,20 @@ src/coarse/
 ├── quality.py               # Quality eval against reference (dev only)
 └── agents/
     ├── __init__.py
-    ├── base.py              # ReviewAgent ABC + _build_messages helper
-    ├── overview.py          # Macro-level feedback (4-6 issues)
+    ├── base.py              # ReviewAgent ABC + _build_messages helper + prompt caching
+    ├── overview.py          # 3-judge panel overview (macro-level feedback, 4-6 issues)
     ├── section.py           # Per-section detailed review
     ├── crossref.py          # Cross-reference consistency
     ├── critique.py          # Self-critique quality gate
-    └── literature.py        # arXiv literature search (agentic loop)
+    ├── verify.py            # Adversarial proof verification (math sections)
+    └── literature.py        # Literature search (Perplexity Sonar Pro, arXiv fallback)
 ```
 
 ### Key Types (types.py)
 
-- `PaperText` — extracted PDF content (full_markdown, token_estimate)
+- `PaperText` — extracted document content (full_markdown, token_estimate, garble_ratio)
 - `PaperStructure` — title, domain, taxonomy, abstract, sections[]
-- `SectionInfo` — number, title, text, section_type, claims[], definitions[]
+- `SectionInfo` — number, title, text, section_type, math_content, claims[], definitions[]
 - `PaperMetadata` — domain, taxonomy (response model for LLM classification)
 - `OverviewFeedback` — issues[] (4-6 macro issues with title + body)
 - `DetailedComment` — number, title, status, quote (verbatim), feedback
@@ -85,7 +89,7 @@ Auto-detects API keys from env vars or `~/.coarse/config.toml`.
 ### Dependencies
 
 Core: litellm, instructor, pydantic, typer, rich, tomli-w, pymupdf, python-dotenv
-Optional: docling (OCR fallback)
+Optional: docling (PDF/DOCX/HTML/TeX fallback), mammoth/markdownify/ebooklib (format fallbacks)
 Dev: pytest, ruff
 
 ## Reference Review
@@ -192,6 +196,8 @@ Current models (verified 2026-03-04):
 - **Vision**: `gemini/gemini-3-flash-preview` (1M ctx, $0.50/3.00 per 1M tok) — post-extraction QA (litellm uses `gemini/` prefix)
 - **OCR**: `mistral/mistral-ocr-latest` — PDF text extraction (Mistral OCR via litellm)
 - **OpenRouter Extraction**: `google/gemini-3-flash-preview` — fallback extraction via OpenRouter file-parser plugin
+- **Literature Search**: `perplexity/sonar-pro-search` — web-grounded literature search via OpenRouter (~$0.03)
+- **Quality Eval**: `gemini/gemini-3-flash-preview` — dev-only quality evaluation (single-judge or panel)
 - **Cheap (OpenAI)**: `openai/gpt-5.1-codex-mini` ($0.25/2.00)
 - **Cheap (Anthropic)**: `anthropic/claude-haiku-4.5` ($1.00/5.00)
 **Hard rules:**

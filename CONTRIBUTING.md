@@ -29,37 +29,43 @@ make format  # auto-format
 src/coarse/
 ├── cli.py              # Typer CLI, progress display
 ├── config.py           # ~/.coarse/config.toml, API key management
-├── extraction.py       # PDF -> markdown (Mistral OCR, Docling fallback)
+├── extraction.py       # PDF/TXT/MD/TeX/DOCX/HTML/EPUB -> markdown
 ├── extraction_qa.py    # Vision LLM spot-check of extraction quality
-├── structure.py        # Markdown -> PaperStructure (sections, domain)
+├── structure.py        # Markdown -> PaperStructure (sections, math detection, domain)
 ├── pipeline.py         # review_paper() orchestrator
 ├── synthesis.py        # Review -> markdown output
-├── quote_verify.py     # Fuzzy-match quotes against paper text
+├── quote_verify.py     # Fuzzy-match quotes against paper text (stricter for math)
 ├── llm.py              # litellm wrapper, cost tracking
 ├── models.py           # Model ID constants (single source of truth)
 ├── prompts.py          # All LLM prompt templates
 ├── types.py            # Pydantic models
 ├── cost.py             # Cost estimation + user approval
 ├── garble.py           # OCR garble detection and normalization
+├── quality.py          # Quality eval against reference review (dev only)
 └── agents/
-    ├── base.py             # ReviewAgent ABC
-    ├── overview.py         # Macro-level feedback (4-6 issues)
+    ├── base.py             # ReviewAgent ABC + prompt caching support
+    ├── overview.py         # 3-judge panel overview (macro-level feedback)
     ├── section.py          # Per-section detailed review
     ├── crossref.py         # Cross-reference deduplication
     ├── critique.py         # Self-critique quality gate
-    └── literature.py       # arXiv literature search
+    ├── verify.py           # Adversarial proof verification for math sections
+    └── literature.py       # Literature search (Perplexity Sonar Pro, arXiv fallback)
 ```
 
 ## How the pipeline works
 
 ```
-paper.pdf
+paper.pdf (or .txt, .md, .tex, .docx, .html, .epub)
   -> extraction.py       Mistral OCR / Docling fallback -> PaperText
-  -> extraction_qa.py    Vision LLM spot-check (optional)
-  -> structure.py        Parse headings + LLM classify -> PaperStructure
-  -> overview agent  \
-                      |  Run in parallel
-  -> section agents  /
+  -> extraction_qa.py    Vision LLM spot-check (auto-triggers on garbled text)
+  -> structure.py        Parse headings + LLM classify + math detection -> PaperStructure
+  -> calibrate_domain \
+                       |  Parallel: domain-specific criteria + literature search
+  -> search_literature /  (Perplexity Sonar Pro, arXiv fallback)
+  -> overview panel       3-judge panel with different personas -> synthesized OverviewFeedback
+  -> section agents   \
+                       |  Parallel: detailed comments + adversarial proof verification
+  -> proof verify      /  (math sections only)
   -> crossref agent      Deduplicate, validate quotes, consistency
   -> quote_verify.py     Programmatic fuzzy-match quotes against text
   -> critique agent      Self-critique quality gate, revise weak comments

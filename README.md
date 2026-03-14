@@ -48,25 +48,41 @@ OPENROUTER_API_KEY=sk-or-v1-YOUR_KEY
 
 Or run `coarse setup` to store keys in `~/.coarse/config.toml`.
 
+## Supported formats
+
+PDF, TXT, Markdown, LaTeX, DOCX, HTML, and EPUB. PDFs use Mistral OCR; other formats use
+Docling (if installed) with lightweight fallbacks. Install optional format support:
+
+```bash
+pip install coarse[formats]   # DOCX, HTML, EPUB fallbacks
+pip install coarse[docling]   # Docling for PDF/DOCX/HTML/LaTeX
+```
+
 ## How it works
 
 ```
-paper.pdf
+paper.pdf (or .txt, .md, .tex, .docx, .html, .epub)
   -> Mistral OCR (Docling fallback)      Extract text as markdown
-  -> Vision LLM spot-check               Optional quality check
-  -> Structure analysis                   Parse sections, classify domain
-  -> Overview + section agents            Run in parallel: 4-6 macro issues + 15-25 detailed comments
+  -> Vision LLM spot-check               Optional QA (auto-triggers on garbled text)
+  -> Structure analysis                   Parse sections, detect math content, classify domain
+  -> Domain calibration + lit search      Parallel: domain-specific criteria + Perplexity Sonar Pro
+  -> 3-judge overview panel               Three personas review full paper, then synthesize
+  -> Section agents + proof verification  Parallel: 15-25 detailed comments; math sections get adversarial proof check
   -> Cross-reference agent                Deduplicate, validate consistency
-  -> Quote verification                   Fuzzy-match quotes against paper text
+  -> Quote verification                   Fuzzy-match quotes against paper text (stricter for math)
   -> Self-critique agent                  Quality gate, revise weak comments
   -> Quote re-verification               Fix any quotes garbled during critique
   -> Synthesis                            Render final paper_review.md
 ```
 
-The pipeline extracts text via OCR, classifies the paper's domain and structure, then runs
-multiple review agents in parallel. A cross-reference pass deduplicates comments and a
-self-critique agent acts as a quality gate. All quotes are programmatically verified against
-the source text.
+The pipeline extracts text, classifies the paper's domain and structure, then generates
+domain-specific review criteria and searches for related literature (via
+[Perplexity Sonar Pro](https://docs.perplexity.ai/), with arXiv fallback). A 3-judge
+overview panel produces macro-level feedback from different perspectives, which is then
+synthesized into a unified assessment. Section agents run in parallel, with an adversarial
+proof verification pass for math-heavy sections. A cross-reference pass deduplicates comments
+and a self-critique agent acts as a quality gate. All quotes are programmatically verified
+against the source text, with stricter thresholds for math content.
 
 ## Model selection
 
@@ -74,13 +90,15 @@ Pass any litellm-compatible model string with `--model`:
 
 ```bash
 coarse review paper.pdf --model openai/gpt-4o
-coarse review paper.pdf --model anthropic/claude-3-5-sonnet-20241022
-coarse review paper.pdf --model gemini/gemini-3-flash
+coarse review paper.pdf --model anthropic/claude-sonnet-4-6
+coarse review paper.pdf --model gemini/gemini-3-flash-preview
 ```
 
 The default model is `qwen/qwen3.5-plus-02-15` routed via [OpenRouter](https://openrouter.ai).
 Any model supported by [litellm](https://docs.litellm.ai/docs/providers) works.
 With only `OPENROUTER_API_KEY` set, all models (including vision QA) route through OpenRouter automatically.
+
+Use `--cheap` to automatically select the cheapest model for which you have an API key.
 
 ## API keys
 
@@ -102,7 +120,8 @@ set the provider-specific key instead:
 
 ## Cost
 
-coarse estimates cost before running and asks for confirmation.
+coarse estimates cost before running and asks for confirmation. The estimate includes a
+15% buffer to account for variance.
 
 | Paper length    | Typical cost  |
 |-----------------|---------------|
@@ -112,6 +131,8 @@ coarse estimates cost before running and asks for confirmation.
 The default spending cap is **$10 per review** (`max_cost_usd` in config). Use `--yes` to skip the
 confirmation prompt. Use `--no-qa` to skip the post-extraction quality check (vision LLM).
 Scanned PDFs are supported via Docling's built-in OCR (`pip install coarse[docling]`).
+
+You can also load API keys from any `.env` file with `--env-file path/to/.env`.
 
 ## Output format
 
@@ -146,8 +167,8 @@ from coarse import review_paper
 from pathlib import Path
 
 review, markdown, paper_text = review_paper(
-    pdf_path=Path("paper.pdf"),
-    model="openai/gpt-4o",   # optional; uses config default if omitted
+    pdf_path=Path("paper.pdf"),  # accepts any supported format
+    model="openai/gpt-4o",       # optional; uses config default if omitted
 )
 
 print(markdown)                         # full review as markdown string
@@ -155,7 +176,8 @@ print(review.detailed_comments[0].feedback)  # access structured fields
 ```
 
 `review_paper` returns a `(Review, str, PaperText)` tuple: the structured `Review` model,
-rendered markdown, and the extracted paper text (useful for quality evaluation).
+rendered markdown, and the extracted paper text. The `pdf_path` parameter accepts any
+supported file format (PDF, TXT, MD, TeX, DOCX, HTML, EPUB).
 
 ## Configuration
 
