@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Young_Serif, Caveat, Space_Mono } from "next/font/google";
 import "katex/dist/katex.min.css";
 import "./globals.css";
+
+const GA_ID = "G-VLYKK7RQTZ";
 
 const youngSerif = Young_Serif({
   subsets: ["latin"],
@@ -33,6 +36,15 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${youngSerif.variable} ${caveat.variable} ${spaceMono.variable}`} suppressHydrationWarning>
+      <head>
+        <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
+        <Script id="ga-init" strategy="afterInteractive">
+          {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${GA_ID}');`}
+        </Script>
+      </head>
       <body>
         {/* SVG filter definitions for textured rules */}
         <svg width="0" height="0" style={{ position: "absolute" }}>
