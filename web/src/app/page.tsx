@@ -352,7 +352,7 @@ export default function Home() {
 
           {/* Score preview */}
           <div style={{ marginTop: "2.25rem" }}>
-            <div style={{ display: "flex", gap: "2.5rem", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", gap: "2.5rem", flexWrap: "wrap", alignItems: "flex-end" }}>
               {/* Big score */}
               <div style={{ transform: "rotate(-1.5deg)" }}>
                 <span
@@ -386,7 +386,7 @@ export default function Home() {
                 ["20+", "detailed comments", null],
                 ["MIT", "open source", null],
               ].map(([num, label, footnote]) => (
-                <div key={label}>
+                <div key={label} style={{ position: "relative" }}>
                   <span
                     style={{
                       fontFamily: "var(--font-serif)",
@@ -418,7 +418,11 @@ export default function Home() {
                         color: "var(--dust)",
                         fontStyle: "italic",
                         display: "block",
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
                         marginTop: "0.125rem",
+                        whiteSpace: "nowrap",
                       }}
                     >
                       {footnote}
