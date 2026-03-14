@@ -283,7 +283,7 @@ function ScoresOverviewTable() {
               fontStyle: "italic",
             }}
           >
-            Evaluated by Gemini 3.1 Pro with positional-bias mitigation (each comparison run twice with swapped order). 5.0 = matches reference quality. 5.5+ = exceeds it.
+            Evaluated by Gemini 3.1 Pro. 5.0 = matches reference quality. 5.5+ = exceeds it.
           </p>
         </div>
       )}
@@ -325,10 +325,13 @@ function JudgePromptCollapsible() {
           textUnderlineOffset: "2px",
         }}
       >
-        {open ? "Hide" : "Show"} debiased judge prompt sent to Gemini 3.1 Pro {open ? "▴" : "▾"}
+        {open ? "Hide" : "Show"} judge prompt sent to Gemini 3.1 Pro {open ? "▴" : "▾"}
       </button>
       {open && (
         <div style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+          <p style={{ fontFamily: "var(--font-chalk)", fontSize: "0.8rem", color: "var(--chalk)", lineHeight: 1.6, margin: "0 0 0.75rem", maxWidth: "640px" }}>
+            To mitigate known LLM-as-judge biases, the judge is run twice per evaluation with the two reviews swapped in presentation order, and scores are averaged across both orderings. This counteracts positional bias, where judges systematically favor whichever review appears first. The prompt also includes specific instructions to counteract verbosity bias (not rewarding length over substance), confidence bias (not rewarding assertive language over correct hedging), authority bias (not rewarding jargon or citation count over accuracy), and leniency bias (using the full 1-6 scoring range rather than clustering in the middle). Reviews are labeled neutrally as {'"'}Review A{'"'} and {'"'}Review B{'"'} rather than {'"'}reference{'"'} and {'"'}generated{'"'} to prevent provenance-based scoring.
+          </p>
           <p style={{ fontFamily: "var(--font-chalk)", fontSize: "0.8rem", color: "var(--dust)", margin: "0 0 0.25rem" }}>
             System prompt
           </p>
