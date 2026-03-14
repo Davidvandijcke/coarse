@@ -382,7 +382,7 @@ export default function Home() {
 
               {/* Stats */}
               {[
-                ["< $1", "per review"],
+                ["< $2", "per review"],
                 ["20+", "detailed comments"],
                 ["MIT", "open source"],
               ].map(([num, label]) => (
@@ -658,7 +658,7 @@ export default function Home() {
                   marginTop: "0.9rem",
                 }}
               >
-                File deleted after processing. Your review key retrieves it for 90 days. Usually under a dollar.
+                File deleted after processing. Your review key retrieves it for 90 days. Usually under $2.
               </p>
             </div>
           </form>

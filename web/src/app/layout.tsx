@@ -27,7 +27,7 @@ const spaceMono = Space_Mono({
 export const metadata: Metadata = {
   title: "\u2018coarse \u2014 AI peer review, of course.",
   description:
-    "An open-source multi-agent AI system that reviews your academic paper like a real referee. Bring your own OpenRouter key. Usually under $1.",
+    "An open-source multi-agent AI system that reviews your academic paper like a real referee. Bring your own OpenRouter key. Usually under $2.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
