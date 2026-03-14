@@ -441,7 +441,7 @@ export default function Home() {
               <span style={{ color: "var(--chalk-bright)" }}>refine.ink</span>,{" "}
               <span style={{ color: "var(--chalk-bright)" }}>Stanford Agentic Reviewer</span>, and{" "}
               <span style={{ color: "var(--chalk-bright)" }}>reviewer3.com</span>.
-              Scores higher on coverage, specificity, and depth.
+              Scores higher on coverage, specificity, and depth -- at a fraction of the cost.
             </p>
 
             <a
