@@ -214,6 +214,25 @@ export default function StatusPage() {
             >
               {review?.error_message ?? "An unexpected error occurred."}
             </p>
+            <p
+              style={{
+                fontFamily: "var(--font-chalk)",
+                fontSize: "1rem",
+                color: "var(--muted)",
+                margin: "0 0 1.25rem",
+              }}
+            >
+              Please try resubmitting, or post your issue on the{" "}
+              <a
+                href="https://github.com/Davidvandijcke/coarse/issues"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--accent)", textDecoration: "underline", textUnderlineOffset: "2px" }}
+              >
+                Github
+              </a>
+              .
+            </p>
             <a
               href="/"
               style={{
