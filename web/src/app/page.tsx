@@ -487,6 +487,8 @@ export default function Home() {
               <FieldLabel>Paper</FieldLabel>
               <div
                 {...getRootProps()}
+                role="button"
+                aria-label="Upload your paper — drop a file or click to browse"
                 style={{
                   border: `1.5px dashed ${isDragActive ? "var(--yellow-chalk)" : "var(--tray)"}`,
                   padding: "2.25rem 2rem",
@@ -497,7 +499,7 @@ export default function Home() {
                   borderRadius: "2px",
                 }}
               >
-                <input {...getInputProps()} />
+                <input {...getInputProps()} aria-label="Choose a file to upload" />
                 {file ? (
                   <>
                     <p
@@ -566,6 +568,7 @@ export default function Home() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@university.edu"
+                  aria-label="Email address"
                   className="field-line"
                 />
                 <p
@@ -599,6 +602,7 @@ export default function Home() {
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="sk-or-v1-…"
+                  aria-label="OpenRouter API key"
                   className="field-line-mono"
                 />
                 <p
@@ -707,6 +711,7 @@ export default function Home() {
                   router.push(`/review/${lookupKey.trim()}`);
               }}
               placeholder="Paste your review key..."
+              aria-label="Review key"
               className="field-line-mono"
               style={{ maxWidth: "480px" }}
             />
@@ -767,6 +772,40 @@ export default function Home() {
             />
           </a>
         </section>
+
+        <CharcoalRule />
+
+        <footer
+          style={{
+            padding: "1.5rem 0 0",
+            display: "flex",
+            justifyContent: "center",
+            gap: "1.5rem",
+          }}
+        >
+          <a
+            href="/privacy"
+            style={{
+              fontFamily: "var(--font-chalk)",
+              fontSize: "0.9rem",
+              color: "var(--dust)",
+              textDecoration: "none",
+            }}
+          >
+            privacy
+          </a>
+          <a
+            href="/terms"
+            style={{
+              fontFamily: "var(--font-chalk)",
+              fontSize: "0.9rem",
+              color: "var(--dust)",
+              textDecoration: "none",
+            }}
+          >
+            terms
+          </a>
+        </footer>
       </main>
     </div>
   );

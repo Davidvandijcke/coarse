@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".pdf", ".txt", ".md", ".tex", ".latex",
@@ -22,6 +23,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
+
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const rateLimited = await checkRateLimit(supabaseAdmin, ip, "presign");
+  if (rateLimited) return rateLimited;
+
   let filename = "";
   try {
     const body = await request.json();
@@ -34,6 +41,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No filename provided" }, { status: 400 });
   }
 
+  if (filename.length > 255) {
+    return NextResponse.json({ error: "Filename too long" }, { status: 400 });
+  }
+
   const ext = getExtension(filename);
   if (!SUPPORTED_EXTENSIONS.has(ext)) {
     return NextResponse.json(
@@ -41,8 +52,6 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-
-  const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
 
   // Create review record to get UUID
   const { data: reviewRow, error: insertError } = await supabaseAdmin
