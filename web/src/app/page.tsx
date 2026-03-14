@@ -382,7 +382,7 @@ export default function Home() {
 
               {/* Stats */}
               {[
-                ["< $2", "per review"],
+                ["< $2*", "per review"],
                 ["20+", "detailed comments"],
                 ["MIT", "open source"],
               ].map(([num, label]) => (
@@ -413,6 +413,18 @@ export default function Home() {
                 </div>
               ))}
             </div>
+
+            <p
+              style={{
+                marginTop: "0.5rem",
+                fontFamily: "var(--font-chalk)",
+                fontSize: "0.85rem",
+                color: "var(--dust)",
+                fontStyle: "italic",
+              }}
+            >
+              *typically :)
+            </p>
 
             {/* Competitive comparison */}
             <p
