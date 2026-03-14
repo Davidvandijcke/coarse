@@ -21,7 +21,10 @@ export async function checkRateLimit(
     p_max_requests: limit.maxRequests,
   });
 
-  if (error || data === false) {
+  // If the RPC function doesn't exist yet, fail open (allow the request)
+  if (error) return null;
+
+  if (data === false) {
     return NextResponse.json(
       { error: "Too many requests. Please wait a minute." },
       { status: 429, headers: { "Retry-After": "60" } },
