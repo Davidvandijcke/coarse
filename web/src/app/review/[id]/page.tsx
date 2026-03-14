@@ -1,270 +1,54 @@
-"use client";
+import type { Metadata } from "next";
+import { createClient } from "@supabase/supabase-js";
+import ReviewPageClient from "./ReviewPageClient";
 
-import { useEffect, useState, useMemo } from "react";
-import { useParams } from "next/navigation";
-import { createClient } from "@/lib/supabase";
-import type { Review } from "@/lib/types";
-import { PageMarks } from "@/components/charcoal";
-import { parseReview } from "@/lib/parseReview";
-import ReviewDisplay from "@/components/ReviewDisplay";
+type Props = {
+  params: Promise<{ id: string }>;
+};
 
-export default function ReviewPage() {
-  const { id } = useParams<{ id: string }>();
-  const [review, setReview] = useState<Review | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-  const supabase = createClient();
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params;
 
-  useEffect(() => {
-    async function load() {
-      const { data } = await supabase
-        .from("reviews")
-        .select("*")
-        .eq("id", id)
-        .single();
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-      if (!data) {
-        setNotFound(true);
-      } else {
-        setReview(data as Review);
-      }
-      setLoading(false);
-    }
+  const fallbackTitle = "\u2018coarse \u2014 AI Paper Review";
+  const description =
+    "Check out my paper\u2019s AI review by \u2018coarse, the free and open-source AI peer reviewer.";
 
-    load();
-
-    const channel = supabase
-      .channel(`review-${id}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "reviews", filter: `id=eq.${id}` },
-        (payload) => {
-          setReview((prev) => (prev ? { ...prev, ...payload.new } : null));
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [id]);
-
-  const parsed = useMemo(
-    () => (review?.result_markdown ? parseReview(review.result_markdown) : null),
-    [review?.result_markdown]
-  );
-
-  /* ── Loading ───────────────────────────────────────────── */
-  if (loading) {
-    return (
-      <div
-        style={{
-          background: "var(--board)",
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "Georgia, serif",
-            fontStyle: "italic",
-            color: "var(--dust)",
-            fontSize: "0.9375rem",
-          }}
-        >
-          Loading<span className="blink">_</span>
-        </span>
-      </div>
-    );
+  if (!supabaseUrl || !supabaseKey) {
+    return { title: fallbackTitle, description };
   }
 
-  /* ── Not found ─────────────────────────────────────────── */
-  if (notFound) {
-    return (
-      <div
-        style={{
-          background: "var(--board)",
-          minHeight: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "2rem",
-          textAlign: "center",
-        }}
-      >
-        <p
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: "1.625rem",
-            fontStyle: "italic",
-            fontWeight: 700,
-            color: "var(--chalk-bright)",
-            margin: "0 0 0.75rem",
-          }}
-        >
-          Review not found.
-        </p>
-        <p
-          style={{
-            fontFamily: "Georgia, serif",
-            fontStyle: "italic",
-            color: "var(--dust)",
-            fontSize: "0.9375rem",
-            margin: "0 0 1.25rem",
-          }}
-        >
-          Check your key and try again.
-        </p>
-        <a
-          href="/"
-          style={{
-            fontFamily: "var(--font-space-mono), monospace",
-            fontSize: "0.6875rem",
-            letterSpacing: "0.12em",
-            textTransform: "uppercase",
-            color: "var(--yellow-chalk)",
-            textDecoration: "none",
-          }}
-        >
-          Submit a new paper →
-        </a>
-      </div>
-    );
-  }
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const { data } = await supabase
+    .from("reviews")
+    .select("paper_title")
+    .eq("id", id)
+    .single();
 
-  if (!review) return null;
+  const title = data?.paper_title
+    ? `Review of \u201c${data.paper_title}\u201d`
+    : fallbackTitle;
 
-  const isDone = review.status === "done";
-  const isPending = review.status === "queued" || review.status === "running";
-
-  /* ── Main render ───────────────────────────────────────── */
-  return (
-    <div style={{ background: "var(--board)", minHeight: "100vh" }}>
-      <PageMarks />
-
-      {/* ── In-progress ─────────────────────────────────── */}
-      {isPending && (
-        <div style={{ paddingTop: "8rem", textAlign: "center" }}>
-          <h1
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: "clamp(2.5rem, 6vw, 4rem)",
-              fontStyle: "italic",
-              fontWeight: 700,
-              lineHeight: 1.1,
-              letterSpacing: "-0.02em",
-              margin: "0 0 2rem",
-              color: "var(--chalk-bright)",
-            }}
-          >
-            {review.status === "running" ? "Reading your paper." : "Queued."}
-          </h1>
-          <div className="scan-track" style={{ maxWidth: "320px", margin: "0 auto 1.5rem" }} />
-          <p
-            style={{
-              fontFamily: "Georgia, serif",
-              fontStyle: "italic",
-              color: "var(--dust)",
-              fontSize: "0.9375rem",
-            }}
-          >
-            {review.status === "running"
-              ? "Usually 30\u201360 minutes. This page updates automatically."
-              : "Processing begins shortly."}
-          </p>
-        </div>
-      )}
-
-      {/* ── Failed ──────────────────────────────────────── */}
-      {review.status === "failed" && (
-        <div
-          style={{
-            maxWidth: "600px",
-            margin: "0 auto",
-            padding: "6rem 2rem",
-          }}
-        >
-          <div
-            style={{
-              borderLeft: "3px solid var(--red-chalk)",
-              paddingLeft: "1.25rem",
-            }}
-          >
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: "1.375rem",
-                fontStyle: "italic",
-                fontWeight: 700,
-                color: "var(--red-chalk)",
-                margin: "0 0 0.5rem",
-              }}
-            >
-              Review failed.
-            </p>
-            <p
-              style={{
-                fontFamily: "Georgia, serif",
-                color: "var(--dust)",
-                fontStyle: "italic",
-                fontSize: "0.9375rem",
-                margin: "0 0 1rem",
-              }}
-            >
-              {review.error_message ?? "An unexpected error occurred."}
-            </p>
-            <a
-              href="/"
-              style={{
-                fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.6875rem",
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: "var(--yellow-chalk)",
-                textDecoration: "none",
-              }}
-            >
-              Try again →
-            </a>
-          </div>
-        </div>
-      )}
-
-      {/* ── Done: structured display ────────────────────── */}
-      {isDone && review.result_markdown && parsed && (
-        <ReviewDisplay
-          parsed={parsed}
-          markdown={review.result_markdown}
-          reviewId={review.id}
-          paperMarkdown={review.paper_markdown}
-          paperTitle={review.paper_title}
-          model={review.model}
-          domain={review.domain}
-          durationSeconds={review.duration_seconds}
-          costUsd={review.cost_usd}
-        />
-      )}
-
-      {/* Fallback: raw markdown if parsing fails */}
-      {isDone && review.result_markdown && !parsed && (
-        <div style={{ maxWidth: "780px", margin: "0 auto", padding: "3rem 2.5rem 6rem" }}>
-          <article className="review-content">
-            <ReactMarkdownFallback markdown={review.result_markdown} />
-          </article>
-        </div>
-      )}
-    </div>
-  );
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "article",
+      siteName: "\u2018coarse",
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description,
+    },
+  };
 }
 
-/* Simple fallback for unparseable reviews */
-function ReactMarkdownFallback({ markdown }: { markdown: string }) {
-  const ReactMarkdown = require("react-markdown").default;
-  const remarkGfm = require("remark-gfm").default;
-  return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-      {markdown}
-    </ReactMarkdown>
-  );
+export default async function ReviewPage({ params }: Props) {
+  const { id } = await params;
+  return <ReviewPageClient id={id} />;
 }

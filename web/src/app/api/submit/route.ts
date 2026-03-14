@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 export const maxDuration = 30;
 
@@ -30,6 +31,11 @@ export async function POST(request: NextRequest) {
   }
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
+
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const rateLimited = await checkRateLimit(supabaseAdmin, ip, "submit");
+  if (rateLimited) return rateLimited;
+
   const mailer = getMailer();
 
   // Parse JSON body (no file — file was uploaded directly to Supabase via presign)
@@ -50,17 +56,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (!id) {
-    return NextResponse.json({ error: "No review ID provided" }, { status: 400 });
+  if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return NextResponse.json({ error: "Invalid review ID" }, { status: 400 });
   }
-  if (!email || !email.includes("@")) {
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
+  }
+  if (email.length > 254) {
+    return NextResponse.json({ error: "Email too long" }, { status: 400 });
   }
   if (!apiKey) {
     return NextResponse.json({ error: "OpenRouter API key required" }, { status: 400 });
   }
+  if (apiKey.length > 256) {
+    return NextResponse.json({ error: "API key too long" }, { status: 400 });
+  }
+  if (model.length > 128) {
+    return NextResponse.json({ error: "Model name too long" }, { status: 400 });
+  }
   if (!storagePath) {
     return NextResponse.json({ error: "No storage path provided" }, { status: 400 });
+  }
+  if (storagePath.length > 512) {
+    return NextResponse.json({ error: "Storage path too long" }, { status: 400 });
   }
 
   // Verify the review record exists
@@ -123,7 +141,7 @@ export async function POST(request: NextRequest) {
       subject: `Your paper "${escapeHtml(paperFilename)}" is being reviewed`,
       html: [
         `<p>Hi,</p>`,
-        `<p>Your paper <strong>${escapeHtml(paperFilename)}</strong> is being reviewed. We'll email you when it's done (usually 30–60 minutes).</p>`,
+        `<p>Your paper <strong>${escapeHtml(paperFilename)}</strong> is being reviewed${model ? ` using <strong>${escapeHtml(model)}</strong>` : ""}. We'll email you when it's done (usually 30–60 minutes).</p>`,
         `<p>Track progress: <a href="${siteUrl}/status/${id}">${siteUrl}/status/${id}</a></p>`,
         `<p><strong>Save your review key:</strong> <code>${id}</code></p>`,
         `<p>— coarse</p>`,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -637,10 +638,13 @@ export default function ReviewDisplay({
   durationSeconds?: number | null;
   costUsd?: number | null;
 }) {
+  const router = useRouter();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [paperPanelOpen, setPaperPanelOpen] = useState(!!paperMarkdown);
   const [highlightQuote, setHighlightQuote] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Open paper panel by default when paper markdown becomes available
   useEffect(() => {
@@ -691,6 +695,130 @@ export default function ReviewDisplay({
     // Bump the quote to trigger re-search even if same quote clicked twice
     setHighlightQuote(null);
     setTimeout(() => setHighlightQuote(quote), 50);
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: reviewId }),
+      });
+      if (res.ok) {
+        router.push("/");
+      } else {
+        setDeleting(false);
+        setShowDeleteConfirm(false);
+      }
+    } catch {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
+
+  /* ── Delete confirmation screen ─────────────────────────── */
+  if (showDeleteConfirm) {
+    return (
+      <div style={{ background: "var(--board)", minHeight: "100vh" }}>
+        <header
+          style={{
+            borderBottom: "1px solid var(--tray)",
+            padding: "0.75rem 2rem",
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          <a
+            href="/"
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: "1.15rem",
+              fontWeight: 700,
+              letterSpacing: "-0.02em",
+              textDecoration: "none",
+              color: "var(--chalk-bright)",
+            }}
+          >
+            &lsquo;coarse
+          </a>
+        </header>
+
+        <main
+          style={{
+            maxWidth: "560px",
+            margin: "0 auto",
+            padding: "5rem 2.5rem 6rem",
+          }}
+        >
+          <h1
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: "clamp(2.5rem, 6vw, 4rem)",
+              fontStyle: "italic",
+              fontWeight: 700,
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              margin: "0 0 2rem",
+              color: "var(--chalk-bright)",
+            }}
+          >
+            Delete review?
+          </h1>
+
+          <p
+            style={{
+              fontFamily: "Georgia, serif",
+              fontSize: "1rem",
+              lineHeight: 1.65,
+              color: "var(--dust)",
+              fontStyle: "italic",
+              margin: "0 0 2.5rem",
+            }}
+          >
+            Are you sure? You will not be able to see your results.
+          </p>
+
+          <div style={{ display: "flex", gap: "1rem" }}>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              style={{
+                background: "var(--red-chalk)",
+                border: "1.5px solid var(--red-chalk)",
+                color: "var(--board)",
+                padding: "0.5rem 1.5rem",
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.6875rem",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                cursor: deleting ? "default" : "pointer",
+                opacity: deleting ? 0.5 : 1,
+              }}
+            >
+              {deleting ? "Deleting..." : "Yes, delete"}
+            </button>
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={deleting}
+              style={{
+                background: "transparent",
+                border: "1.5px solid var(--tray)",
+                color: "var(--chalk)",
+                padding: "0.5rem 1.5rem",
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.6875rem",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                cursor: deleting ? "default" : "pointer",
+              }}
+            >
+              Go back
+            </button>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -1031,6 +1159,26 @@ export default function ReviewDisplay({
                 }}
               >
                 {copied ? "Copied" : "Share this review"}
+              </button>
+            </div>
+            <div style={{ marginTop: "1.5rem", textAlign: "right" }}>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  fontFamily: "var(--font-space-mono), monospace",
+                  fontSize: "0.5625rem",
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "var(--dust)",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  textUnderlineOffset: "2px",
+                }}
+              >
+                Delete review
               </button>
             </div>
           </div>

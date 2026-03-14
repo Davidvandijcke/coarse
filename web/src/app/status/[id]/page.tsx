@@ -12,6 +12,8 @@ export default function StatusPage() {
   const [review, setReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -31,6 +33,9 @@ export default function StatusPage() {
           clearInterval(interval);
           router.push(`/review/${id}`);
         }
+      } else {
+        // Row was deleted (cancelled from another tab, etc.)
+        setLoading(false);
       }
     }
 
@@ -45,8 +50,29 @@ export default function StatusPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  async function handleCancel() {
+    setCancelling(true);
+    try {
+      const res = await fetch("/api/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (res.ok) {
+        router.push("/");
+      } else {
+        setCancelling(false);
+        setShowCancelConfirm(false);
+      }
+    } catch {
+      setCancelling(false);
+      setShowCancelConfirm(false);
+    }
+  }
+
   const isFailed = review?.status === "failed";
   const isRunning = review?.status === "running";
+  const isActive = !isFailed && review;
 
   if (loading) {
     return (
@@ -69,6 +95,112 @@ export default function StatusPage() {
         >
           Loading<span className="blink">_</span>
         </span>
+      </div>
+    );
+  }
+
+  // Cancel confirmation screen
+  if (showCancelConfirm) {
+    return (
+      <div style={{ background: "var(--paper)", minHeight: "100vh" }}>
+        <PageMarks />
+        <header
+          style={{
+            borderBottom: "2px solid var(--ink)",
+            padding: "0.875rem 2.5rem",
+            display: "flex",
+            alignItems: "baseline",
+            justifyContent: "space-between",
+          }}
+        >
+          <a
+            href="/"
+            style={{
+              fontFamily: "var(--font-playfair), Georgia, serif",
+              fontSize: "1.25rem",
+              fontWeight: 700,
+              letterSpacing: "-0.02em",
+              textDecoration: "none",
+              color: "var(--ink)",
+            }}
+          >
+            &lsquo;coarse
+          </a>
+        </header>
+
+        <main
+          style={{
+            maxWidth: "560px",
+            margin: "0 auto",
+            padding: "5rem 2.5rem 6rem",
+          }}
+        >
+          <h1
+            style={{
+              fontFamily: "var(--font-playfair), Georgia, serif",
+              fontSize: "clamp(2.5rem, 6vw, 4rem)",
+              fontStyle: "italic",
+              fontWeight: 700,
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              margin: "0 0 2rem",
+              color: "var(--ink)",
+            }}
+          >
+            Cancel review?
+          </h1>
+
+          <p
+            style={{
+              fontFamily: "Georgia, serif",
+              fontSize: "1rem",
+              lineHeight: 1.65,
+              color: "var(--muted)",
+              fontStyle: "italic",
+              margin: "0 0 2.5rem",
+            }}
+          >
+            Are you sure? You will not be able to see your results.
+          </p>
+
+          <div style={{ display: "flex", gap: "1rem" }}>
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              style={{
+                background: "var(--ink)",
+                border: "1.5px solid var(--ink)",
+                color: "var(--paper)",
+                padding: "0.5rem 1.5rem",
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.6875rem",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                cursor: cancelling ? "default" : "pointer",
+                opacity: cancelling ? 0.5 : 1,
+              }}
+            >
+              {cancelling ? "Cancelling..." : "Yes, cancel"}
+            </button>
+            <button
+              onClick={() => setShowCancelConfirm(false)}
+              disabled={cancelling}
+              style={{
+                background: "transparent",
+                border: "1.5px solid var(--border)",
+                color: "var(--ink)",
+                padding: "0.5rem 1.5rem",
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.6875rem",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                cursor: cancelling ? "default" : "pointer",
+              }}
+            >
+              Go back
+            </button>
+          </div>
+        </main>
       </div>
     );
   }
@@ -307,6 +439,30 @@ export default function StatusPage() {
             This page will redirect automatically when your review is ready.
           </p>
         </div>
+
+        {/* Cancel review — only show for active (non-failed) reviews */}
+        {isActive && (
+          <div style={{ marginTop: "2.5rem" }}>
+            <button
+              onClick={() => setShowCancelConfirm(true)}
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.5625rem",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+                cursor: "pointer",
+                textDecoration: "underline",
+                textUnderlineOffset: "2px",
+              }}
+            >
+              Cancel review
+            </button>
+          </div>
+        )}
       </main>
     </div>
   );
