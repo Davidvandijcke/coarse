@@ -91,48 +91,59 @@ function ChalkDivider() {
 }
 
 /* ── Judge prompt (from quality.py) ────────────────────────── */
-const JUDGE_SYSTEM_PROMPT = `You are an expert academic peer review evaluator. You have access to the original paper, a reference review written by another reviewer, and a generated review. Your task is to assess the generated review's quality primarily against the paper itself, using the reference for calibration.
+const JUDGE_SYSTEM_PROMPT = `You are an expert academic peer review evaluator. You have access to the original paper and two reviews labeled "Review A" and "Review B". One is a human-written reference and one is AI-generated. Your task is to assess Review B's quality primarily against the paper itself, using Review A for calibration.
+
+IMPORTANT — Bias awareness:
+- Do NOT favor a review because it is longer. A concise review that identifies real errors is better than a verbose review that pads with generic observations. Evaluate substance per comment, not total word count.
+- Do NOT favor a review because it uses more confident or assertive language. A hedged but correct observation is better than a confident but wrong claim.
+- Do NOT favor a review because it cites more sources or uses more technical jargon. Evaluate whether the technical content is correct, not whether it sounds impressive.
+- USE THE FULL SCORING RANGE. A review with fabricated quotes or incorrect mathematical claims should score 1-2, not 3-4. Reserve scores of 3-4 for reviews that are mediocre but not actively wrong. Do not cluster scores in the middle of the scale.
 
 Score each dimension from 1.0 to 6.0 in half-point increments (1, 1.5, 2, ..., 5, 5.5, 6). Use half-points to distinguish minor issues from major ones — e.g., one truncated quote out of 19 is a 4.5, not a 4.
 
 The scale:
-- 1.0-4.5: Below reference quality (various degrees of deficiency)
+- 1.0-2.0: Major deficiencies — fabricated quotes, incorrect claims, missing the paper's central issues, or largely generic feedback
+- 2.5-3.5: Partial quality — some valid points but significant gaps, errors in technical analysis, or mostly surface-level observations
+- 4.0-4.5: Good but below reference — identifies real issues with some depth but misses important points or has minor inaccuracies
 - 5.0: Matches the reference review in quality
 - 5.5: Exceeds the reference — catches valid issues the reference missed, or provides deeper analysis on shared issues
 - 6.0: Substantially exceeds the reference — identifies important errors or insights the reference missed entirely, with stronger evidence and reasoning
 
-Award 5+ scores when the generated review demonstrably surpasses the reference. This is not grade inflation — it requires concrete evidence (e.g., the generated review found a real error the reference overlooked, provided a re-derivation where the reference only noted concern, or identified a cross-section inconsistency the reference missed).
+Award 5+ scores when Review B demonstrably surpasses Review A. This requires concrete evidence (e.g., found a real error the reference overlooked, provided a re-derivation where the reference only noted concern, or identified a cross-section inconsistency the reference missed).
 
 Dimensions:
-1. **coverage**: Does the generated review identify the paper's most important issues? Evaluate this against the paper itself — what are the real strengths, weaknesses, and gaps? The reference review may help calibrate what matters, but it is not the answer key. Credit the generated review fully for finding valid issues the reference missed, and do not penalize it for omitting issues that are minor or debatable.
-2. **specificity**: Are comments precise, with correct verbatim quotes from the paper and actionable guidance? Verify quotes against the paper text. Score 5 if every comment has an accurate quote and clear fix, 1 if comments are vague or quotes are fabricated. Score 5+ if quotes are more precise and fixes more concrete than the reference.
-3. **depth**: Is the analysis substantive and technically rigorous? Does it engage with the paper's methodology, proofs, and assumptions at a deep level, or does it stay surface-level (notation complaints, formatting issues)? Score 5+ if the analysis provides deeper technical engagement than the reference (e.g., re-derivations, concrete counterexamples, numerical verification).
+1. **coverage**: Does Review B identify the paper's most important issues? Evaluate this against the paper itself — what are the real strengths, weaknesses, and gaps? Review A may help calibrate what matters, but it is not the answer key. Credit Review B fully for finding valid issues Review A missed, and do not penalize it for omitting issues that are minor or debatable.
+2. **specificity**: Are comments precise, with correct verbatim quotes from the paper and actionable guidance? Verify quotes against the paper text. Score 5 if every comment has an accurate quote and clear fix, 1 if comments are vague or quotes are fabricated. Score 5+ if quotes are more precise and fixes more concrete than Review A.
+3. **depth**: Is the analysis substantive and technically rigorous? Does it engage with the paper's methodology, proofs, and assumptions at a deep level, or does it stay surface-level (notation complaints, formatting issues)? A long review full of surface observations scores LOWER than a short review with deep technical engagement. Score 5+ if the analysis provides deeper technical engagement than Review A (e.g., re-derivations, concrete counterexamples, numerical verification).
+4. **format**: Does Review B adhere to the standard review structure (header block, Overall Feedback with titled issues, Detailed Comments with numbered entries, each with Quote and Feedback sections)? Score 5 for perfect adherence, 1 for major structural deviation.
 
 For each dimension, provide a brief reasoning string (1-2 sentences).
 
-Also provide 2-3 strengths and 2-3 weaknesses of the generated review as brief bullet strings.
+Also provide 2-3 strengths and 2-3 weaknesses of Review B as brief bullet strings.
 
 Do not compute overall_score — it will be computed externally.`;
 
-const JUDGE_USER_TEMPLATE = `Evaluate the following generated review. Use the paper text as the primary source of truth and the reference review for calibration (not as an answer key).
+const JUDGE_USER_TEMPLATE = `Evaluate Review B below. Use the paper text as the primary source of truth and Review A for calibration (Review A is not an answer key).
 
 ## Original Paper
 <paper>
 {full paper text — ~50-200K tokens}
 </paper>
 
-## Reference Review (for calibration only)
-<reference>
-{the selected reference review}
-</reference>
+## Review A (for calibration)
+<review_a>
+{one of the two reviews — assignment alternates to mitigate positional bias}
+</review_a>
 
-## Generated Review (evaluate this)
-<generated>
-{the 'coarse review being scored}
-</generated>
+## Review B (evaluate this)
+<review_b>
+{the other review}
+</review_b>
 
-Score the generated review on: coverage, specificity, depth, and format (each 1.0-6.0 in half-point increments, where 5.0 = matches reference, 5.5-6.0 = exceeds reference).
-Verify quotes against the paper text. Assess coverage and depth against the paper itself — does the generated review find the paper's real issues and engage with its actual methodology and assumptions? Credit valid issues the reference missed — if the generated review catches real errors the reference overlooked, that warrants a score above 5.0. Provide reasoning for each score, plus 2-3 strengths and 2-3 weaknesses.`;
+Score Review B on: coverage, specificity, depth, and format (each 1.0-6.0 in half-point increments, where 5.0 = matches Review A, 5.5-6.0 = exceeds Review A).
+Verify quotes against the paper text. Assess coverage and depth against the paper itself — does Review B find the paper's real issues and engage with its actual methodology and assumptions? Credit valid issues Review A missed — if Review B catches real errors Review A overlooked, that warrants a score above 5.0. Provide reasoning for each score, plus 2-3 strengths and 2-3 weaknesses.
+
+NOTE: To mitigate positional bias, the judge runs twice with Review A and Review B swapped. Scores are inverted and averaged across both orderings.`;
 
 /* ── Scores overview table ────────────────────────────────── */
 const SCORE_DATA = [
@@ -272,7 +283,7 @@ function ScoresOverviewTable() {
               fontStyle: "italic",
             }}
           >
-            Evaluated by Gemini 3.1 Pro. 5.0 = matches reference quality. 5.5+ = exceeds it.
+            Evaluated by Gemini 3.1 Pro with positional-bias mitigation (each comparison run twice with swapped order). 5.0 = matches reference quality. 5.5+ = exceeds it.
           </p>
         </div>
       )}
@@ -314,7 +325,7 @@ function JudgePromptCollapsible() {
           textUnderlineOffset: "2px",
         }}
       >
-        {open ? "Hide" : "Show"} judge prompt sent to Gemini 3.1 Pro {open ? "▴" : "▾"}
+        {open ? "Hide" : "Show"} debiased judge prompt sent to Gemini 3.1 Pro {open ? "▴" : "▾"}
       </button>
       {open && (
         <div style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
