@@ -6,7 +6,7 @@
 
 Free, open-source AI academic paper reviewer that outperforms popular paid AI reviewers.
 
-You provide your own API key and pay the LLM provider directly — typically **under $1 per review**.
+You provide your own API key and pay the LLM provider directly — typically **under $2 per review**.
 
 Don't want to run it locally? Use the [web interface](https://coarse.vercel.app/) instead.
 
