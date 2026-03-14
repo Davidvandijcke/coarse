@@ -352,7 +352,7 @@ export default function Home() {
 
           {/* Score preview */}
           <div style={{ marginTop: "2.25rem" }}>
-            <div style={{ display: "flex", gap: "2.5rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ display: "flex", gap: "2.5rem", flexWrap: "wrap", alignItems: "flex-start" }}>
               {/* Big score */}
               <div style={{ transform: "rotate(-1.5deg)" }}>
                 <span
