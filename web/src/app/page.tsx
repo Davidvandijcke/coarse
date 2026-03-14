@@ -382,10 +382,10 @@ export default function Home() {
 
               {/* Stats */}
               {[
-                ["< $2*", "per review"],
-                ["20+", "detailed comments"],
-                ["MIT", "open source"],
-              ].map(([num, label]) => (
+                ["< $2*", "per review", "*typically :)"],
+                ["20+", "detailed comments", null],
+                ["MIT", "open source", null],
+              ].map(([num, label, footnote]) => (
                 <div key={label}>
                   <span
                     style={{
@@ -410,21 +410,23 @@ export default function Home() {
                   >
                     {label}
                   </span>
+                  {footnote && (
+                    <span
+                      style={{
+                        fontFamily: "var(--font-chalk)",
+                        fontSize: "0.85rem",
+                        color: "var(--dust)",
+                        fontStyle: "italic",
+                        display: "block",
+                        marginTop: "0.125rem",
+                      }}
+                    >
+                      {footnote}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
-
-            <p
-              style={{
-                marginTop: "0.5rem",
-                fontFamily: "var(--font-chalk)",
-                fontSize: "0.85rem",
-                color: "var(--dust)",
-                fontStyle: "italic",
-              }}
-            >
-              *typically :)
-            </p>
 
             {/* Competitive comparison */}
             <p
