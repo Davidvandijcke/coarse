@@ -103,7 +103,8 @@ def _get_page_count(pdf_path: Path) -> int:
 def _split_by_page(markdown: str) -> list[str]:
     """Split markdown on page break markers.
 
-    Returns a list of per-page chunks (1-indexed by list position + 1).
+    Returns a 0-indexed list of per-page chunks.  Page *i* (1-indexed)
+    corresponds to ``chunks[i - 1]``.
     If no markers present, returns the entire markdown as a single chunk.
     """
     chunks = markdown.split(PAGE_BREAK_MARKER)
@@ -132,7 +133,7 @@ def _select_qa_pages(num_pages: int, page_chunks: list[str]) -> list[int]:
             score += 3.0  # highest priority: garbled formulas
         if "$$" in chunk or "\\begin{" in chunk:
             score += 2.0
-        if "|" in chunk and chunk.count("|") > 4:
+        if chunk.count("|") > 4:
             score += 1.5
         if len(chunk) < 200 and len(chunk) > 0:
             score += 1.0  # suspiciously short
@@ -272,6 +273,9 @@ def _apply_corrections(markdown: str, corrections: list[PageCorrection]) -> str:
     result = markdown
     applied = 0
     for corr in corrections:
+        if not corr.original_snippet or not corr.original_snippet.strip():
+            logger.debug("Ignoring empty original_snippet for page %d", corr.page_number)
+            continue
         if corr.original_snippet in result:
             result = result.replace(corr.original_snippet, corr.corrected_snippet, 1)
             applied += 1

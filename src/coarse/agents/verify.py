@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from coarse.agents.base import ReviewAgent
+from coarse.agents.base import ReviewAgent, truncate_section
 from coarse.prompts import PROOF_VERIFY_SYSTEM, proof_verify_user
 from coarse.types import DetailedComment, SectionInfo
 
@@ -21,8 +21,6 @@ class ProofVerifyAgent(ReviewAgent):
     and checks for missed issues.
     """
 
-    MAX_SECTION_CHARS = 500_000
-
     def run(  # type: ignore[override]
         self,
         section: SectionInfo,
@@ -30,10 +28,7 @@ class ProofVerifyAgent(ReviewAgent):
         first_pass_comments: list[DetailedComment],
         abstract: str = "",
     ) -> list[DetailedComment]:
-        if len(section.text) > self.MAX_SECTION_CHARS:
-            section = section.model_copy(
-                update={"text": section.text[:self.MAX_SECTION_CHARS] + "\n\n[...truncated]"}
-            )
+        section = truncate_section(section)
 
         user_text = proof_verify_user(
             paper_title, section, first_pass_comments, abstract=abstract,

@@ -19,6 +19,15 @@ def section_filename(s: SectionInfo) -> str:
     return f"{prefix}_{slug}.md"
 
 
+def truncate_section(section: SectionInfo, max_chars: int = 500_000) -> SectionInfo:
+    """Truncate a section's text if it exceeds *max_chars*."""
+    if len(section.text) <= max_chars:
+        return section
+    return section.model_copy(
+        update={"text": section.text[:max_chars] + "\n\n[...truncated]"}
+    )
+
+
 class ReviewAgent(ABC):
     """Base class for review agents. Each agent holds a shared LLMClient and
     implements run() to return a Pydantic model specific to that agent."""

@@ -6,6 +6,7 @@ call time; resolve_api_key() is for pre-flight checks and CLI prompting only.
 """
 from __future__ import annotations
 
+import logging
 import os
 import tomllib
 from pathlib import Path
@@ -14,6 +15,8 @@ import tomli_w
 from pydantic import BaseModel, Field
 
 from coarse.models import DEFAULT_MODEL, VISION_MODEL
+
+logger = logging.getLogger(__name__)
 
 # Maps provider name -> environment variable name.
 # Extensible: add entries as more providers are supported.
@@ -49,9 +52,26 @@ def load_config() -> CoarseConfig:
     path = get_config_path()
     if not path.exists():
         return CoarseConfig()
-    with open(path, "rb") as f:
-        data = tomllib.load(f)
-    return CoarseConfig.model_validate(data)
+
+    # Warn if config file containing API keys is readable by others
+    try:
+        mode = path.stat().st_mode
+        if mode & 0o077:  # group or world readable/writable
+            logger.warning(
+                "Config file %s has insecure permissions (%o). "
+                "Run: chmod 600 %s",
+                path, mode & 0o777, path,
+            )
+    except OSError:
+        pass
+
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+        return CoarseConfig.model_validate(data)
+    except Exception:
+        logger.warning("Failed to parse %s, using defaults", path, exc_info=True)
+        return CoarseConfig()
 
 
 def save_config(config: CoarseConfig) -> None:
@@ -63,6 +83,9 @@ def save_config(config: CoarseConfig) -> None:
     data["api_keys"] = {k: v for k, v in data["api_keys"].items() if v is not None}
     with open(path, "wb") as f:
         f.write(tomli_w.dumps(data).encode())
+    # Restrict permissions: only owner can read/write API keys
+    path.chmod(0o600)
+    path.parent.chmod(0o700)
 
 
 def _normalize_provider(provider: str) -> str:

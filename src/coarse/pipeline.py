@@ -9,10 +9,6 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from coarse.agents.critique import CritiqueAgent
 from coarse.agents.crossref import CrossrefAgent
 from coarse.agents.literature import search_literature
@@ -58,6 +54,7 @@ _SECTION_WEIGHT = 1.5   # comments-per-section multiplier
 _TOKEN_WEIGHT = 0.3     # comments-per-1k-token multiplier
 _MIN_COMMENTS = 6
 _MAX_COMMENTS = 25
+_MIN_APPENDIX_CHARS = 500  # skip appendix sections shorter than this
 
 
 def _compute_comment_target(structure: PaperStructure, paper_text: PaperText) -> int:
@@ -81,7 +78,7 @@ def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]
     return [c.model_copy(update={"number": i}) for i, c in enumerate(comments, start=1)]
 
 
-def detect_section_focus(section: SectionInfo) -> str:
+def _detect_section_focus(section: SectionInfo) -> str:
     """Detect section focus based on LLM-detected math content and section type.
 
     Returns one of: "proof", "methodology", "results", "literature", "general".
@@ -146,7 +143,7 @@ def calibrate_domain(
     try:
         return client.complete(messages, DomainCalibration, max_tokens=2048, temperature=0.3)
     except Exception:
-        logger.warning("Domain calibration failed, using generic prompts")
+        logger.warning("Domain calibration failed, using generic prompts", exc_info=True)
         return None
 
 
@@ -238,7 +235,7 @@ def review_paper(
         try:
             literature_context = lit_future.result(timeout=900)
         except Exception:
-            logger.warning("Literature search failed, skipping")
+            logger.warning("Literature search failed, skipping", exc_info=True)
             literature_context = ""
 
     # Compute dynamic comment target based on paper size
@@ -247,10 +244,6 @@ def review_paper(
     overview_agent = OverviewAgent(client)
     section_agent = SectionAgent(client)
     crossref_agent = CrossrefAgent(client)
-
-    # Review all sections except references; skip very short appendices.
-    # Cap at 25 sections to keep total comment count manageable for crossref.
-    _MIN_APPENDIX_CHARS = 500
 
     reviewable_sections = [
         s for s in structure.sections
@@ -272,7 +265,7 @@ def review_paper(
         # Only pass literature context to sections that benefit from it
         _LIT_RELEVANT = {SectionType.INTRODUCTION, SectionType.RELATED_WORK}
         for section in non_ref_sections:
-            focus = detect_section_focus(section)
+            focus = _detect_section_focus(section)
             sec_lit = literature_context if (
                 section.section_type in _LIT_RELEVANT or focus == "literature"
             ) else ""
@@ -293,7 +286,7 @@ def review_paper(
                 section_comments.extend(comments)
             except Exception:
                 sec_title = non_ref_sections[i].title if i < len(non_ref_sections) else "?"
-                logger.warning("Section agent failed for '%s', skipping", sec_title)
+                logger.warning("Section agent failed for '%s', skipping", sec_title, exc_info=True)
 
     if not section_comments:
         logger.error("All section agents failed — review will have no detailed comments")
@@ -303,7 +296,7 @@ def review_paper(
             overview, section_comments, comment_target=comment_target
         )
     except Exception:
-        logger.warning("Crossref agent failed, using raw section comments")
+        logger.warning("Crossref agent failed, using raw section comments", exc_info=True)
         deduped_comments = section_comments
 
     # Final quote verification against full paper text
@@ -320,7 +313,7 @@ def review_paper(
             overview, verified_comments, comment_target=comment_target
         )
     except Exception:
-        logger.warning("Critique agent failed, using verified comments")
+        logger.warning("Critique agent failed, using verified comments", exc_info=True)
         final_comments = verified_comments
 
     # Re-verify quotes after critique (critique re-emits through JSON, re-garbling LaTeX)

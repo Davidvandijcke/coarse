@@ -175,6 +175,11 @@ class OverviewAgent(ReviewAgent):
 
         if not overviews:
             raise RuntimeError("All overview judges failed")
+        if len(overviews) < len(OVERVIEW_PERSONAS):
+            logger.warning(
+                "Panel degraded: only %d/%d judges succeeded",
+                len(overviews), len(OVERVIEW_PERSONAS),
+            )
         if len(overviews) == 1:
             return overviews[0]
 

@@ -122,6 +122,32 @@ establishing their equivalence.
 to clarify whether X and Y coincide in this setting."
 """
 
+_QUOTE_INSTRUCTIONS = """
+Copy-paste the EXACT characters from the section text. The quote MUST be a \
+verbatim substring of the section text provided below — do not paraphrase, reword, \
+summarize, or reconstruct any part of it. Copy it character-for-character. \
+If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy them \
+exactly with their backslashes — do not render or interpret LaTeX as symbols. \
+The quote MUST include the COMPLETE passage — NEVER truncate mid-sentence or \
+mid-equation. If a passage spans multiple lines or contains multi-line equations, \
+include ALL of it. A truncated quote is a critical error. \
+The quote must be at least 2 full sentences or a complete equation block. \
+Single-phrase quotes lack context and make comments hard to locate in the paper.
+"""
+
+_DO_NOT_COMMENT_BLOCK = """
+Do NOT comment on: formatting, LaTeX rendering artifacts, minor notation preferences, \
+stylistic choices, typographical errors, or notation conventions that are internally \
+consistent.
+"""
+
+# ---------------------------------------------------------------------------
+# Magic-number constants
+# ---------------------------------------------------------------------------
+
+_MAX_ABSTRACT_PREVIEW = 1500
+_MAX_NOTATION_ITEMS = 60
+
 # ---------------------------------------------------------------------------
 # OpenRouter extraction (used by file-parser plugin OCR path)
 # ---------------------------------------------------------------------------
@@ -385,19 +411,10 @@ inconsistencies in a single section of a research paper.
 ) + _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION + """
 For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words) describing the exact problem
-- quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
-verbatim substring of the section text provided below — do not paraphrase, reword, \
-summarize, or reconstruct any part of it. Copy it character-for-character. \
-If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy them \
-exactly with their backslashes — do not render or interpret LaTeX as symbols. \
-The quote MUST include the COMPLETE passage — NEVER truncate mid-sentence or \
-mid-equation. If a passage spans multiple lines or contains multi-line equations, \
-include ALL of it. A truncated quote is a critical error. \
-The quote must be at least 2 full sentences or a complete equation block. \
-Single-phrase quotes lack context and make comments hard to locate in the paper.
-- feedback: A substantive explanation (3-8 sentences) of the problem with a specific \
-fix. Show your reasoning: if you claim an equation is wrong, write out the correct \
-version and why.
+- quote: """ + _QUOTE_INSTRUCTIONS + """
+- feedback: A substantive explanation (3-8 sentences) of the problem with a \
+specific fix. Show your reasoning: if you claim an equation is wrong, write out \
+the correct version and why.
 
 Prioritize issues in order of importance:
 (a) Concrete errors — sign mistakes, wrong prefactors, algebraic mistakes, flawed \
@@ -411,10 +428,8 @@ data, equations that use notation inconsistently with their definitions
 (c) Cross-reference errors — claims here that conflict with tables, figures, or \
 results stated elsewhere in the paper
 (d) Exposition issues ONLY if they cause genuine ambiguity about what is being claimed
-
-Do NOT comment on: formatting, LaTeX rendering artifacts, minor notation preferences, \
-stylistic choices, things that could be said about any paper in this field, \
-typographical errors, or notation conventions that are internally consistent. \
+""" + _DO_NOT_COMMENT_BLOCK + """\
+Things that could be said about any paper in this field are not useful. \
 A comment that says "symbol X is non-standard" or "define Y before first use" without \
 identifying a concrete ambiguity or error is a wasted slot.
 
@@ -454,9 +469,9 @@ def _build_notation_context(
     if not items:
         return ""
 
-    # Cap at 60 items to avoid overwhelming the context
-    if len(items) > 60:
-        items = items[:60]
+    # Cap to avoid overwhelming the context
+    if len(items) > _MAX_NOTATION_ITEMS:
+        items = items[:_MAX_NOTATION_ITEMS]
 
     return (
         "\n**Claims & Definitions from Other Sections** "
@@ -486,7 +501,7 @@ def section_user(
     if abstract:
         abstract_block = (
             f"\n**Paper Abstract** (stated scope — verify proof covers all claimed cases):"
-            f"\n{abstract[:1500]}\n"
+            f"\n{abstract[:_MAX_ABSTRACT_PREVIEW]}\n"
         )
 
     claims_block = ""
@@ -532,10 +547,9 @@ Review the following section of "{paper_title}" and produce detailed comments.
 **Section Text**:
 {section.text}
 
-Identify specific errors in the math, logic, or claims. For each comment, copy-paste \
-an exact quote from the section text above — the quote must be a verbatim substring, \
-not a paraphrase or summary. Focus on concrete errors you can demonstrate, not \
-requests for additional work.
+Identify specific errors in the math, logic, or claims. For each comment, include a \
+verbatim quote from the section text above (see system instructions for quoting rules). \
+Focus on concrete errors you can demonstrate, not requests for additional work.
 """
 
 
@@ -584,23 +598,10 @@ an error if the theorem claims generality.
 
 For each issue, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
-- quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
-verbatim substring of the section text provided below — do not paraphrase, reword, \
-or summarize any part of it. \
-If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy them \
-exactly with their backslashes — do not render or interpret LaTeX as symbols. \
-The quote MUST include the COMPLETE passage — NEVER \
-truncate mid-sentence or mid-equation. If a passage spans multiple lines or \
-contains multi-line equations, include ALL of it. A truncated quote is a critical error. \
-The quote must be at least 2 full sentences or a complete equation block. \
-Single-phrase quotes lack context and make comments hard to locate in the paper.
-- feedback: Show your re-derivation or calculation that reveals the error (3-8 \
-sentences). Write out the correct version of the equation/expression.
-""" + _REMEDIATION_SPECIFICITY + """
-Do NOT comment on: formatting, LaTeX rendering artifacts, minor notation preferences, \
-stylistic choices, typographical errors, or notation conventions that are internally \
-consistent.
-
+- quote: """ + _QUOTE_INSTRUCTIONS + """
+- feedback: Show your re-derivation or calculation that reveals the error \
+(3-8 sentences). Write out the correct version of the equation/expression.
+""" + _REMEDIATION_SPECIFICITY + _DO_NOT_COMMENT_BLOCK + """
 Report 0-5 issues. Only report errors you can demonstrate through calculation, not \
 stylistic preferences. If you find no errors after careful verification, report 0 issues.
 """
@@ -643,14 +644,11 @@ theorem claims general, finite-dimensional when the theorem claims infinite).
 
 For each issue (validated or new), produce a structured comment with:
 - title: Concise, specific (5-10 words)
-- quote: EXACT verbatim substring from the section text. Copy character-for-character. \
-Never paraphrase. Include complete passage — never truncate mid-sentence or mid-equation.
+- quote: """ + _QUOTE_INSTRUCTIONS + """
 - feedback: Show your independent derivation or counterexample (3-8 sentences). \
 For validated first-pass comments, show your own re-derivation confirming or \
 contradicting the finding.
-""" + _REMEDIATION_SPECIFICITY + """
-Do NOT comment on: formatting, OCR artifacts, notation preferences, style.
-
+""" + _REMEDIATION_SPECIFICITY + _DO_NOT_COMMENT_BLOCK + """
 Return the COMPLETE merged list: validated first-pass comments (with updated \
 confidence) + any new issues you found. Report 0-8 total comments. \
 Drop first-pass comments you cannot reproduce (confidence "low" with no \
@@ -669,7 +667,7 @@ def proof_verify_user(
     if abstract:
         abstract_block = (
             f"\n**Paper Abstract** (verify proofs cover all claimed cases):"
-            f"\n{abstract[:1500]}\n"
+            f"\n{abstract[:_MAX_ABSTRACT_PREVIEW]}\n"
         )
 
     comments_block = "\n\n".join(
@@ -726,24 +724,11 @@ consequence for the main result.
 
 For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
-- quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
-verbatim substring of the section text provided below — do not paraphrase, reword, \
-or summarize any part of it. \
-If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy them \
-exactly with their backslashes — do not render or interpret LaTeX as symbols. \
-The quote MUST include the COMPLETE passage — NEVER \
-truncate mid-sentence or mid-equation. If a passage spans multiple lines or \
-contains multi-line equations, include ALL of it. A truncated quote is a critical error. \
-The quote must be at least 2 full sentences or a complete equation block. \
-Single-phrase quotes lack context and make comments hard to locate in the paper.
-- feedback: Explain the methodological concern with specifics (3-8 sentences). If an \
-assumption is contradicted, cite the specific assumption and the specific evidence \
-against it.
-""" + _REMEDIATION_SPECIFICITY + """
-Do NOT comment on: formatting, LaTeX rendering artifacts, minor notation preferences, \
-stylistic choices, typographical errors, or notation conventions that are internally \
-consistent.
-
+- quote: """ + _QUOTE_INSTRUCTIONS + """
+- feedback: Explain the methodological concern with specifics (3-8 sentences). \
+If an assumption is contradicted, cite the specific assumption and the specific \
+evidence against it.
+""" + _REMEDIATION_SPECIFICITY + _DO_NOT_COMMENT_BLOCK + """
 Prioritize issues that affect the validity of the paper's main claims. Do NOT \
 request additional analyses — focus on errors in what is already written. \
 Report 1-5 comments.
@@ -763,14 +748,9 @@ Focus on:
 
 For each issue you identify, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
-- quote: Copy-paste the EXACT characters from the section text. The quote MUST be a \
-verbatim substring of the section text provided below — do not paraphrase, reword, \
-or summarize any part of it. \
-If the text contains LaTeX commands (e.g., \\rho, \\frac, \\boldsymbol), copy them \
-exactly with their backslashes — do not render or interpret LaTeX as symbols. \
-The quote should be at least 2 full sentences; longer is better.
-- feedback: Explain the concern with specifics (3-8 sentences). If a claim about prior \
-work is wrong, state what the prior work actually shows.
+- quote: """ + _QUOTE_INSTRUCTIONS + """
+- feedback: Explain the concern with specifics (3-8 sentences). If a claim about \
+prior work is wrong, state what the prior work actually shows.
 
 Report 1-5 comments. Focus on factual errors about prior work, not citation formatting \
 or "missing references" unless the omission is egregious.
@@ -1116,3 +1096,32 @@ def extraction_qa_user(page_chunks: list[tuple[int, str]]) -> str:
         "Report overall_quality and any corrections needed.\n\n"
         + "\n".join(parts)
     )
+
+
+# ---------------------------------------------------------------------------
+# Literature search (Perplexity Sonar Pro)
+# ---------------------------------------------------------------------------
+
+PERPLEXITY_PROMPT = """\
+You are a research librarian. Given a paper's title and abstract, find the most \
+relevant related work and identify open questions in the literature.
+
+**Part 1 — Related Work (8-10 papers)**
+Find 8-10 papers most relevant to this work. Include:
+- Methodological precursors (techniques this paper builds on)
+- Direct competitors (other papers solving the same problem)
+- Foundational citations (seminal papers in this area)
+- Recent extensions or applications of similar methods
+
+For each paper provide: full title, authors, year, venue, and a 1-sentence \
+explanation of its relevance.
+
+**Part 2 — Open Questions & Known Limitations (4-6 items)**
+Based on the existing literature, identify 4-6 open questions, known limitations, \
+or active debates relevant to this paper's contribution. For each, cite the \
+paper(s) that established or discuss the issue.
+
+**Paper title**: {title}
+
+**Abstract**: {abstract}
+"""

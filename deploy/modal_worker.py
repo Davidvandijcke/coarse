@@ -95,6 +95,7 @@ class ReviewRequest(BaseModel):
     image=image,
     timeout=3600,
     memory=2048,
+    max_containers=10,
     secrets=[
         modal.Secret.from_name("coarse-supabase"),
         modal.Secret.from_name("coarse-webhook"),
@@ -197,11 +198,11 @@ def do_review(req_dict: dict):
         }).eq("id", job_id).execute()
         raise
     finally:
-        # Restore original API key to prevent leaking user keys across container reuses
+        # Restore original API key to prevent leaking user keys across container reuses.
+        # Clear first, then restore — avoids partial state if restore itself raises.
+        os.environ.pop("OPENROUTER_API_KEY", None)
         if original_key is not None:
             os.environ["OPENROUTER_API_KEY"] = original_key
-        elif "OPENROUTER_API_KEY" in os.environ and user_api_key:
-            del os.environ["OPENROUTER_API_KEY"]
 
         # Clean up temp file
         if os.path.exists(pdf_path):

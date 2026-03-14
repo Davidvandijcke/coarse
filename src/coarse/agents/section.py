@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from coarse.agents.base import ReviewAgent
+from coarse.agents.base import ReviewAgent, truncate_section
 from coarse.prompts import (
     SECTION_SYSTEM,
     SECTION_SYSTEM_MAP,
@@ -29,9 +29,6 @@ class SectionAgent(ReviewAgent):
     The crossref agent is responsible for global renumbering.
     """
 
-    # Maximum section text length (chars) sent to the LLM.
-    MAX_SECTION_CHARS = 500_000
-
     def run(  # type: ignore[override]
         self,
         section: SectionInfo,
@@ -43,13 +40,7 @@ class SectionAgent(ReviewAgent):
         all_sections: "list[SectionInfo] | None" = None,
         abstract: str = "",
     ) -> list[DetailedComment]:
-        # Truncate very long sections to avoid token overflow
-        if len(section.text) > self.MAX_SECTION_CHARS:
-            truncated = section.model_copy(
-                update={"text": section.text[: self.MAX_SECTION_CHARS] + "\n\n[...truncated]"}
-            )
-        else:
-            truncated = section
+        truncated = truncate_section(section)
 
         system_prompt = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
         user_text = section_user(

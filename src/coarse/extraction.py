@@ -90,6 +90,9 @@ def _extract_mistral_direct(path: Path) -> str:
     return PAGE_BREAK.join(page.markdown for page in pages)
 
 
+_MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+
+
 def _extract_mistral_openrouter(path: Path) -> str:
     """Extract via OpenRouter's Mistral OCR file-parser plugin."""
     import base64
@@ -103,6 +106,13 @@ def _extract_mistral_openrouter(path: Path) -> str:
     api_key = resolve_api_key("openrouter/auto")
     if not api_key:
         raise ValueError("No OPENROUTER_API_KEY")
+
+    file_size = path.stat().st_size
+    if file_size > _MAX_FILE_SIZE:
+        raise ExtractionError(
+            f"File too large ({file_size / 1024 / 1024:.0f} MB). "
+            f"Maximum supported size is {_MAX_FILE_SIZE / 1024 / 1024:.0f} MB."
+        )
 
     with open(path, "rb") as f:
         pdf_b64 = base64.b64encode(f.read()).decode()
@@ -127,7 +137,12 @@ def _extract_mistral_openrouter(path: Path) -> str:
         timeout=300,
     )
     resp.raise_for_status()
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError as e:
+        raise ExtractionError(
+            f"OpenRouter returned invalid JSON (HTTP {resp.status_code}): {e}"
+        ) from e
 
     # Try annotations first (raw OCR output, no model modification)
     annotations = (

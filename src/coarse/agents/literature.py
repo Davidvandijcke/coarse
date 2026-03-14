@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from coarse.llm import LLMClient
 from coarse.models import LITERATURE_SEARCH_MODEL
+from coarse.prompts import PERPLEXITY_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -65,37 +66,12 @@ class _RankedResults(BaseModel):
 # Perplexity Sonar Pro Search (primary path)
 # ---------------------------------------------------------------------------
 
-_PERPLEXITY_PROMPT = """\
-You are a research librarian. Given a paper's title and abstract, find the most \
-relevant related work and identify open questions in the literature.
-
-**Part 1 — Related Work (8-10 papers)**
-Find 8-10 papers most relevant to this work. Include:
-- Methodological precursors (techniques this paper builds on)
-- Direct competitors (other papers solving the same problem)
-- Foundational citations (seminal papers in this area)
-- Recent extensions or applications of similar methods
-
-For each paper provide: full title, authors, year, venue, and a 1-sentence \
-explanation of its relevance.
-
-**Part 2 — Open Questions & Known Limitations (4-6 items)**
-Based on the existing literature, identify 4-6 open questions, known limitations, \
-or active debates relevant to this paper's contribution. For each, cite the \
-paper(s) that established or discuss the issue.
-
-**Paper title**: {title}
-
-**Abstract**: {abstract}
-"""
-
-
 def _search_perplexity(title: str, abstract: str, client: LLMClient) -> str:
     """Single Perplexity Sonar Pro Search call via OpenRouter.
 
     Returns formatted literature context string, or raises on failure.
     """
-    prompt = _PERPLEXITY_PROMPT.format(title=title, abstract=abstract[:1500])
+    prompt = PERPLEXITY_PROMPT.format(title=title, abstract=abstract[:1500])
 
     response = litellm.completion(
         model=f"openrouter/{LITERATURE_SEARCH_MODEL}",

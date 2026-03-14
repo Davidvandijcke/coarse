@@ -14,7 +14,7 @@ import instructor
 import litellm
 from pydantic import BaseModel
 
-from coarse.config import CoarseConfig, load_config
+from coarse.config import PROVIDER_ENV_VARS, CoarseConfig, load_config
 from coarse.models import JSON_MODE_PREFIXES, MARKDOWN_JSON_PREFIXES
 
 logger = logging.getLogger(__name__)
@@ -138,8 +138,7 @@ class LLMClient:
                 with self._lock:
                     self._cost_usd += cost
         except Exception:
-            # Unknown model pricing — skip cost tracking silently
-            pass
+            logger.debug("Cost tracking failed for model %s", self._model)
         return response
 
     def add_cost(self, cost_usd: float) -> None:
@@ -173,19 +172,13 @@ def _normalize_model(model: str) -> str:
         return model
     # Direct provider models — keep as-is only if the provider's API key is set.
     # Otherwise, fall through to OpenRouter routing below.
-    # Maps prefix -> list of env vars to check (first match wins)
-    direct_providers: dict[str, list[str]] = {
-        "anthropic": ["ANTHROPIC_API_KEY"],
-        "openai": ["OPENAI_API_KEY"],
-        "google": ["GOOGLE_API_KEY"],
-        "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-        "groq": ["GROQ_API_KEY"],
-        "azure": ["AZURE_API_KEY"],
-        "cohere": ["COHERE_API_KEY"],
-    }
+    # Derive from PROVIDER_ENV_VARS; gemini also accepts GOOGLE_API_KEY.
     prefix = model.split("/")[0].lower() if "/" in model else ""
-    if prefix in direct_providers:
-        if any(os.environ.get(v) for v in direct_providers[prefix]):
+    if prefix in PROVIDER_ENV_VARS:
+        env_vars = [PROVIDER_ENV_VARS[prefix]]
+        if prefix == "gemini":
+            env_vars.append("GOOGLE_API_KEY")
+        if any(os.environ.get(v) for v in env_vars):
             return model
         # No direct key — fall through to OpenRouter routing
     # If OPENROUTER_API_KEY is set and model has a slash (like qwen/qwen3.5-plus),
