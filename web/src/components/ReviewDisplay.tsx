@@ -965,6 +965,9 @@ export default function ReviewDisplay({
               marginBottom: "1.5rem",
             }}
           >
+            {model && (
+              <MetaTag label="Model" value={formatModelName(model)} />
+            )}
             {parsed.metadata.date && (
               <MetaTag label="Date" value={parsed.metadata.date} />
             )}
@@ -1189,6 +1192,22 @@ export default function ReviewDisplay({
 }
 
 /* ── Small helpers ──────────────────────────────────────────── */
+
+/** Strip provider prefixes (openrouter/, google/, etc.) and show the model name */
+function formatModelName(raw: string): string {
+  // e.g. "openrouter/qwen/qwen3.5-plus-02-15" → "qwen/qwen3.5-plus-02-15"
+  //      "google/gemini-3-flash-preview"        → "gemini-3-flash-preview"
+  const providers = ["openrouter/", "openai/", "anthropic/", "google/", "mistral/", "perplexity/"];
+  let name = raw;
+  for (const p of providers) {
+    if (name.startsWith(p)) {
+      name = name.slice(p.length);
+      break;
+    }
+  }
+  return name;
+}
+
 function MetaTag({ label, value }: { label: string; value: string }) {
   return (
     <span
