@@ -348,6 +348,13 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
     if not path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
+    file_size = path.stat().st_size
+    if file_size > _MAX_FILE_SIZE:
+        raise ExtractionError(
+            f"File too large ({file_size / 1024 / 1024:.0f} MB). "
+            f"Maximum supported size is {_MAX_FILE_SIZE // 1024 // 1024} MB."
+        )
+
     with open(path, "rb") as f:
         magic = f.read(5)
     if magic != b"%PDF-":
@@ -441,6 +448,13 @@ def extract_file(file_path: str | Path, use_cache: bool = True) -> PaperText:
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
+
+    file_size = path.stat().st_size
+    if file_size > _MAX_FILE_SIZE:
+        raise ExtractionError(
+            f"File too large ({file_size / 1024 / 1024:.0f} MB). "
+            f"Maximum supported size is {_MAX_FILE_SIZE // 1024 // 1024} MB."
+        )
 
     ext = path.suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:

@@ -67,7 +67,8 @@ export async function POST(request: NextRequest) {
   const id: string = reviewRow.id;
   const storagePath = `${id}${ext}`;
 
-  // Create a signed upload URL for direct client upload
+  // Create a signed upload URL for direct client upload.
+  // Supabase hardcodes 2-hour TTL; the token is single-use (consumed on upload).
   const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
     .from("papers")
     .createSignedUploadUrl(storagePath);

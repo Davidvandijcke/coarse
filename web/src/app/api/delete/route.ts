@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -10,6 +11,10 @@ export async function POST(request: NextRequest) {
   }
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
+
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const rateLimited = await checkRateLimit(supabaseAdmin, ip, "delete");
+  if (rateLimited) return rateLimited;
 
   let id = "";
   try {

@@ -5,6 +5,8 @@ import { checkRateLimit } from "@/lib/rateLimit";
 
 export const maxDuration = 30;
 
+const MAX_CONCURRENT_REVIEWS = 10;
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -35,6 +37,22 @@ export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   const rateLimited = await checkRateLimit(supabaseAdmin, ip, "submit");
   if (rateLimited) return rateLimited;
+
+  // Check concurrent review capacity before accepting work
+  const { count: activeCount } = await supabaseAdmin
+    .from("reviews")
+    .select("id", { count: "exact", head: true })
+    .in("status", ["queued", "running"]);
+
+  if (activeCount !== null && activeCount >= MAX_CONCURRENT_REVIEWS) {
+    return NextResponse.json(
+      {
+        error:
+          "We are seeing high traffic right now. Please try again later or check out the command line version on our GitHub: https://github.com/Davidvandijcke/coarse",
+      },
+      { status: 503 },
+    );
+  }
 
   const mailer = getMailer();
 
@@ -77,8 +95,9 @@ export async function POST(request: NextRequest) {
   if (!storagePath) {
     return NextResponse.json({ error: "No storage path provided" }, { status: 400 });
   }
-  if (storagePath.length > 512) {
-    return NextResponse.json({ error: "Storage path too long" }, { status: 400 });
+  // Storage path must be UUID.extension (set by presign) — reject anything else
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|txt|md|tex|latex|html|htm|docx|epub)$/i.test(storagePath)) {
+    return NextResponse.json({ error: "Invalid storage path" }, { status: 400 });
   }
 
   // Verify the review record exists
@@ -122,13 +141,25 @@ export async function POST(request: NextRequest) {
         email,
         model: model || undefined,
       }),
-    }).catch(async () => {
-      // Worker failed to start — mark as failed in background
-      await supabaseAdmin
-        .from("reviews")
-        .update({ status: "failed", error_message: "Failed to start review worker" })
-        .eq("id", id);
-    });
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          await supabaseAdmin
+            .from("reviews")
+            .update({
+              status: "failed",
+              error_message:
+                "We are seeing high traffic right now. Please try again later or use the command line version.",
+            })
+            .eq("id", id);
+        }
+      })
+      .catch(async () => {
+        await supabaseAdmin
+          .from("reviews")
+          .update({ status: "failed", error_message: "Failed to start review worker" })
+          .eq("id", id);
+      });
   }
 
   // Send confirmation email

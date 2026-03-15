@@ -75,12 +75,28 @@ def _sanitize_error(msg: str) -> str:
     """Strip potentially sensitive info from error messages."""
     import re
 
-    # Remove file paths
-    msg = re.sub(r"/[^\s:]+/[^\s:]+", "[path]", msg)
-    # Remove anything that looks like an API key
+    # Strip traceback to final exception line only
+    lines = msg.strip().splitlines()
+    if len(lines) > 1:
+        msg = next((line for line in reversed(lines) if line.strip()), msg)
+
+    # OpenRouter keys: sk-or-v1-...
+    msg = re.sub(r"sk-or-v1-[a-zA-Z0-9]{20,}", "[key]", msg)
+    # Standard OpenAI-style keys: sk-...
     msg = re.sub(r"sk-[a-zA-Z0-9-]{20,}", "[key]", msg)
+    # Gemini/Google API keys: AIza...
+    msg = re.sub(r"AIza[a-zA-Z0-9_-]{30,}", "[key]", msg)
+    # JWTs / Supabase service keys: eyJ...
+    msg = re.sub(r"eyJ[a-zA-Z0-9_-]{20,}", "[key]", msg)
+    # Bearer tokens
+    msg = re.sub(r"Bearer\s+\S+", "Bearer [key]", msg, flags=re.IGNORECASE)
+    # URLs (may contain embedded credentials or project refs)
+    msg = re.sub(r"https?://[^\s]+", "[url]", msg)
+    # File paths
+    msg = re.sub(r"/[^\s:]+/[^\s:]+", "[path]", msg)
+    # Long alphanumeric tokens (catch-all for remaining keys)
     msg = re.sub(r"[a-zA-Z0-9]{32,}", "[redacted]", msg)
-    return msg[:1000]
+    return msg[:500]
 
 
 class ReviewRequest(BaseModel):

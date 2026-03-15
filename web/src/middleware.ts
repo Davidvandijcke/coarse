@@ -5,7 +5,15 @@ export function middleware(request: NextRequest) {
   const host = request.headers.get("host");
 
   if (origin) {
-    const originHost = new URL(origin).host;
+    let originHost: string;
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid origin" },
+        { status: 403 },
+      );
+    }
     if (originHost !== host) {
       return NextResponse.json(
         { error: "Cross-origin requests not allowed" },

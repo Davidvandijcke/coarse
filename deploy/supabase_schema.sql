@@ -50,6 +50,70 @@ alter table review_emails enable row level security;
 insert into storage.buckets (id, name, public) values ('papers', 'papers', false);
 
 -- ============================================================================
+-- Rate limiting
+-- ============================================================================
+
+create table rate_limit_log (
+  id bigint generated always as identity primary key,
+  ip text not null,
+  endpoint text not null,
+  created_at timestamptz default now()
+);
+
+create index idx_rate_limit_lookup on rate_limit_log (ip, endpoint, created_at);
+
+-- Returns true if the request is allowed, false if rate-limited.
+-- Called via supabase.rpc("check_rate_limit", { p_ip, p_endpoint, p_window_seconds, p_max_requests }).
+create or replace function check_rate_limit(
+  p_ip text,
+  p_endpoint text,
+  p_window_seconds int,
+  p_max_requests int
+) returns boolean
+language plpgsql
+security definer
+as $$
+declare
+  request_count int;
+  window_start timestamptz := now() - (p_window_seconds || ' seconds')::interval;
+begin
+  -- Serialize concurrent calls for the same (ip, endpoint) pair
+  perform pg_advisory_xact_lock(hashtext(p_ip), hashtext(p_endpoint));
+
+  -- Count recent requests in window
+  select count(*) into request_count
+  from rate_limit_log
+  where ip = p_ip
+    and endpoint = p_endpoint
+    and created_at > window_start;
+
+  -- Over limit → deny
+  if request_count >= p_max_requests then
+    return false;
+  end if;
+
+  -- Log this request
+  insert into rate_limit_log (ip, endpoint) values (p_ip, p_endpoint);
+
+  -- Opportunistic cleanup: purge expired entries for this ip/endpoint
+  delete from rate_limit_log
+  where ip = p_ip
+    and endpoint = p_endpoint
+    and created_at < window_start;
+
+  -- Global cleanup: ~1% of calls, purge all entries older than 1 hour
+  if random() < 0.01 then
+    delete from rate_limit_log where created_at < now() - interval '1 hour';
+  end if;
+
+  return true;
+end;
+$$;
+
+-- RLS: deny all anonymous access. Only service_role (which bypasses RLS) calls this.
+alter table rate_limit_log enable row level security;
+
+-- ============================================================================
 -- Realtime: enable for review status updates
 -- ============================================================================
 

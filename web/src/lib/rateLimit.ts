@@ -5,6 +5,7 @@ const LIMITS: Record<string, { windowSeconds: number; maxRequests: number }> = {
   presign: { windowSeconds: 60, maxRequests: 10 },
   submit: { windowSeconds: 60, maxRequests: 5 },
   cancel: { windowSeconds: 60, maxRequests: 10 },
+  delete: { windowSeconds: 60, maxRequests: 10 },
 };
 
 export async function checkRateLimit(
