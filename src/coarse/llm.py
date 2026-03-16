@@ -147,6 +147,11 @@ class LLMClient:
             self._cost_usd += cost_usd
 
     @property
+    def model(self) -> str:
+        """The resolved model ID for this client."""
+        return self._model
+
+    @property
     def cost_usd(self) -> float:
         """Total USD spent across all complete() calls this session."""
         return self._cost_usd

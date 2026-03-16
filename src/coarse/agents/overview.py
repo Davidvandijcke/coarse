@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from coarse.agents.base import ReviewAgent
+from coarse.agents.base import MAX_CONTEXT_CHARS, ReviewAgent
 from coarse.llm import LLMClient
 from coarse.prompts import (
     ASSUMPTION_CHECK_SYSTEM,
@@ -26,8 +26,11 @@ from coarse.types import (
 
 logger = logging.getLogger(__name__)
 
+_OVERVIEW_TEMPERATURE = 0.3
+_SYNTHESIS_TEMPERATURE = 0.2
+
 # Maximum total characters sent to the overview agent.
-MAX_OVERVIEW_CHARS = 500_000
+MAX_OVERVIEW_CHARS = MAX_CONTEXT_CHARS
 
 # Section types that get full text (theory-heavy, high-value for cross-cutting analysis).
 _FULL_TEXT_TYPES = {
@@ -131,7 +134,7 @@ class OverviewAgent(ReviewAgent):
             ]
 
         return self.client.complete(  # type: ignore[return-value]
-            messages, OverviewFeedback, max_tokens=4096, temperature=0.3
+            messages, OverviewFeedback, max_tokens=4096, temperature=_OVERVIEW_TEMPERATURE
         )
 
     def run_panel(
@@ -196,7 +199,7 @@ def synthesize_overviews(
         {"role": "user", "content": overview_synthesis_user(overviews)},
     ]
     return client.complete(  # type: ignore[return-value]
-        messages, OverviewFeedback, max_tokens=4096, temperature=0.2
+        messages, OverviewFeedback, max_tokens=4096, temperature=_SYNTHESIS_TEMPERATURE
     )
 
 
@@ -232,8 +235,8 @@ def check_assumptions(
     sections_text = "\n\n".join(
         f"## {s.number}. {s.title}\n{s.text}" for s in relevant_sections
     )
-    if len(sections_text) > 500_000:
-        sections_text = sections_text[:500_000] + "\n\n[...truncated]"
+    if len(sections_text) > MAX_CONTEXT_CHARS:
+        sections_text = sections_text[:MAX_CONTEXT_CHARS] + "\n\n[...truncated]"
 
     messages = [
         {"role": "system", "content": ASSUMPTION_CHECK_SYSTEM},
@@ -246,7 +249,10 @@ def check_assumptions(
     ]
 
     try:
-        result = client.complete(messages, OverviewFeedback, max_tokens=2048, temperature=0.3)
+        result = client.complete(
+            messages, OverviewFeedback, max_tokens=2048,
+            temperature=_OVERVIEW_TEMPERATURE,
+        )
         return list(result.issues)
     except Exception:
         logger.warning("Assumption checker failed, skipping")
@@ -288,8 +294,6 @@ def _normalize_title(title: str) -> str:
 
 def _title_overlap(a: str, b: str) -> float:
     """Word-level Jaccard similarity between two normalized titles."""
-    words_a = set(a.split())
-    words_b = set(b.split())
-    if not words_a or not words_b:
-        return 0.0
-    return len(words_a & words_b) / len(words_a | words_b)
+    from coarse.quote_verify import _jaccard
+
+    return _jaccard(set(a.split()), set(b.split()))

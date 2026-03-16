@@ -11,6 +11,8 @@ from coarse.prompts import (
 )
 from coarse.types import DetailedComment, DomainCalibration, OverviewFeedback, SectionInfo
 
+_TEMPERATURE = 0.3
+
 
 class _SectionComments(BaseModel):
     """Instructor response envelope for section-level detailed comments.
@@ -19,7 +21,7 @@ class _SectionComments(BaseModel):
     renumbers comments globally across all sections.
     """
 
-    comments: list[DetailedComment] = Field(min_length=1, max_length=8)
+    comments: list[DetailedComment] = Field(min_length=1, max_length=5)
 
 
 class SectionAgent(ReviewAgent):
@@ -53,6 +55,6 @@ class SectionAgent(ReviewAgent):
         messages = self._build_messages(system_prompt, user_text)
 
         result = self.client.complete(
-            messages, _SectionComments, max_tokens=16384, temperature=0.3
+            messages, _SectionComments, max_tokens=16384, temperature=_TEMPERATURE
         )
         return result.comments

@@ -65,8 +65,9 @@ def test_review_command_invokes_pipeline(tmp_path):
 # test_review_command_default_output_path
 # ---------------------------------------------------------------------------
 
-def test_review_command_default_output_path(tmp_path):
+def test_review_command_default_output_path(tmp_path, monkeypatch):
     """Output file defaults to <pdf_stem>_review.md in cwd."""
+    monkeypatch.chdir(tmp_path)
     pdf = tmp_path / "myresearch.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
@@ -78,9 +79,8 @@ def test_review_command_default_output_path(tmp_path):
         result = runner.invoke(app, ["review", str(pdf), "--yes"])
 
     assert result.exit_code == 0, result.output
-    expected = Path("myresearch_review.md")
+    expected = tmp_path / "myresearch_review.md"
     assert expected.exists()
-    expected.unlink()
 
 
 # ---------------------------------------------------------------------------
@@ -228,10 +228,15 @@ def test_main_module_entrypoint():
 
 def test_init_exports():
     """coarse package exports review_paper callable and __version__."""
+    import tomllib
+
     import coarse
 
     assert callable(coarse.review_paper)
-    assert coarse.__version__ == "1.0.0"
+    pyproject = Path(__file__).parent.parent / "pyproject.toml"
+    with open(pyproject, "rb") as f:
+        expected_version = tomllib.load(f)["project"]["version"]
+    assert coarse.__version__ == expected_version
 
 
 # ---------------------------------------------------------------------------

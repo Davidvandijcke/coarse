@@ -11,6 +11,7 @@ import difflib
 import logging
 import re
 
+from coarse.garble import garble_ratio as _passage_garble_score
 from coarse.types import DetailedComment
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,8 @@ logger = logging.getLogger(__name__)
 _MIN_MATCH_RATIO = 0.80
 # Stricter threshold for quotes containing math/numeric content
 _MIN_MATH_MATCH_RATIO = 0.92
+# Garble score above this indicates OCR-damaged source passage
+_GARBLE_THRESHOLD = 0.005
 
 # Pattern detecting math-heavy content: LaTeX commands, digits, operators
 _MATH_PATTERN = re.compile(
@@ -35,8 +38,6 @@ def _is_math_heavy(text: str) -> bool:
     # Consider math-heavy if ≥3 math tokens or >10% of length is math
     math_len = sum(len(m) for m in matches)
     return len(matches) >= 3 or (matches and math_len > 0.10 * len(text))
-
-from coarse.garble import garble_ratio as _passage_garble_score  # noqa: E402, F401
 
 
 def verify_quotes(
@@ -83,12 +84,13 @@ def verify_quotes(
         if ratio >= threshold and best_match:
             stats["fuzzy"] += 1
             # Track if the matched source passage itself is garbled
-            if _passage_garble_score(best_match) > 0.005:
+            garble_score = _passage_garble_score(best_match)
+            if garble_score > _GARBLE_THRESHOLD:
                 stats["garbled_source"] += 1
                 logger.warning(
                     "Comment '%s' matched garbled source passage (garble_score=%.3f)",
                     comment.title,
-                    _passage_garble_score(best_match),
+                    garble_score,
                 )
             corrected = comment.model_copy(update={"quote": best_match})
             result.append(corrected)
@@ -113,13 +115,30 @@ def verify_quotes(
     return result
 
 
+_MIN_WINDOW_SIZE = 50
+_JACCARD_TOP_K = 5  # number of candidate chunks to refine with SequenceMatcher
+
+
+def _tokenize(text: str) -> set[str]:
+    """Split lowercased text into word-level tokens for Jaccard similarity."""
+    return set(text.lower().split())
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    """Jaccard similarity between two token sets."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
 def _find_nearest_passage(
     quote: str, paper_text: str, window_factor: float = 1.5
 ) -> tuple[str, float]:
     """Find the passage in paper_text most similar to quote.
 
-    Uses a sliding window of length ~ len(quote) * window_factor and
-    SequenceMatcher to find the best match.
+    Uses a two-phase approach for performance:
+    1. Cheap Jaccard pre-filter on overlapping chunks to find top-k candidates
+    2. Expensive SequenceMatcher only on the top-k candidates
 
     Returns (best_matching_passage, match_ratio).
     """
@@ -127,19 +146,28 @@ def _find_nearest_passage(
         return "", 0.0
 
     quote_len = len(quote)
-    window_size = int(quote_len * window_factor)
-
-    # For very short quotes, increase window
-    window_size = max(window_size, 50)
-    # For very long paper text, cap the search window step
+    window_size = max(int(quote_len * window_factor), _MIN_WINDOW_SIZE)
     step = max(1, quote_len // 4)
 
+    quote_tokens = _tokenize(quote)
+
+    # Phase 1: Jaccard pre-filter — score all chunks cheaply
+    candidates: list[tuple[float, int]] = []
+    for i in range(0, len(paper_text) - min(quote_len, len(paper_text)) + 1, step):
+        chunk = paper_text[i : i + window_size]
+        score = _jaccard(quote_tokens, _tokenize(chunk))
+        candidates.append((score, i))
+
+    # Take top-k by Jaccard score
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    top_candidates = candidates[:_JACCARD_TOP_K]
+
+    # Phase 2: SequenceMatcher on top candidates only
+    quote_lower = quote.lower()
     best_ratio = 0.0
     best_passage = ""
 
-    quote_lower = quote.lower()
-
-    for i in range(0, len(paper_text) - min(quote_len, len(paper_text)) + 1, step):
+    for _, i in top_candidates:
         candidate = paper_text[i : i + window_size]
         ratio = difflib.SequenceMatcher(
             None, quote_lower, candidate.lower()

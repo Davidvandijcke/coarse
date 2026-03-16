@@ -12,6 +12,8 @@ from coarse.llm import LLMClient
 from coarse.prompts import CROSSREF_SYSTEM, crossref_system, crossref_user
 from coarse.types import DetailedComment, OverviewFeedback
 
+_TEMPERATURE = 0.1
+
 
 class _ConsolidatedComments(BaseModel):
     """Instructor response envelope for the consolidated, renumbered comment list."""
@@ -37,6 +39,6 @@ class CrossrefAgent(ReviewAgent):
 
         messages = self._build_messages(sys_prompt, user_content)
         result = self.client.complete(
-            messages, _ConsolidatedComments, max_tokens=32768, temperature=0.1
+            messages, _ConsolidatedComments, max_tokens=32768, temperature=_TEMPERATURE
         )
         return result.comments

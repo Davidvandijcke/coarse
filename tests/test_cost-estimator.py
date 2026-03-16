@@ -9,12 +9,14 @@ from coarse.config import CoarseConfig
 from coarse.cost import build_cost_estimate, confirm_or_abort, run_cost_gate
 from coarse.types import CostEstimate, CostStage, PaperText
 
+TEST_MODEL = "test/mock-model"
+
 
 def _paper(tokens: int = 10_000) -> PaperText:
     return PaperText(full_markdown="x", token_estimate=tokens)
 
 
-def _config(model: str = "openai/gpt-4o", max_cost: float = 10.0) -> CoarseConfig:
+def _config(model: str = TEST_MODEL, max_cost: float = 10.0) -> CoarseConfig:
     return CoarseConfig(default_model=model, max_cost_usd=max_cost)
 
 
@@ -73,7 +75,7 @@ def test_section_count_respected():
 def _make_estimate(cost: float) -> CostEstimate:
     stage = CostStage(
         name="test",
-        model="openai/gpt-4o",
+        model=TEST_MODEL,
         estimated_tokens_in=1000,
         estimated_tokens_out=500,
         estimated_cost_usd=cost,
@@ -108,7 +110,7 @@ def test_confirm_or_abort_negligible_skips_prompt():
 
 def test_confirm_or_abort_non_tty_treated_as_approved():
     estimate = _make_estimate(1.0)
-    with patch("typer.confirm", side_effect=Exception("not a tty")):
+    with patch("typer.confirm", side_effect=EOFError("not a tty")):
         confirm_or_abort(estimate, max_cost_usd=10.0)  # should not raise
 
 

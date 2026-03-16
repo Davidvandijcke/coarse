@@ -41,13 +41,32 @@ logger = logging.getLogger(__name__)
 def _check_extraction_quality(structure: "PaperStructure") -> bool:
     """Check whether extraction produced usable output.
 
-    Returns True if sections exist with non-empty text.
+    Returns True if sections exist with sufficient text content.
     """
     if not structure.sections:
         logger.warning("No sections extracted from markdown.")
         return False
 
+    total_text = sum(len(s.text) for s in structure.sections)
+    if total_text < 500:
+        logger.warning(
+            "Extraction produced only %d chars of section text (minimum: 500).",
+            total_text,
+        )
+        return False
+
     return True
+
+
+def _verify_with_fallback(
+    comments: list["DetailedComment"], paper_markdown: str,
+) -> list["DetailedComment"]:
+    """Run quote verification, falling back to originals if all are dropped."""
+    verified = verify_quotes(comments, paper_markdown, drop_unverified=True)
+    if comments and not verified:
+        logger.warning("Quote verification dropped ALL comments — skipping verification")
+        return comments
+    return verified
 
 
 _SECTION_WEIGHT = 1.5   # comments-per-section multiplier
@@ -300,12 +319,7 @@ def review_paper(
         deduped_comments = section_comments
 
     # Final quote verification against full paper text
-    verified_comments = verify_quotes(
-        deduped_comments, paper_text.full_markdown, drop_unverified=True,
-    )
-    if deduped_comments and not verified_comments:
-        logger.warning("Quote verification dropped ALL comments — skipping verification")
-        verified_comments = deduped_comments
+    verified_comments = _verify_with_fallback(deduped_comments, paper_text.full_markdown)
 
     critique_agent = CritiqueAgent(client)
     try:
@@ -317,13 +331,7 @@ def review_paper(
         final_comments = verified_comments
 
     # Re-verify quotes after critique (critique re-emits through JSON, re-garbling LaTeX)
-    final_comments_pre_verify = final_comments
-    final_comments = verify_quotes(
-        final_comments, paper_text.full_markdown, drop_unverified=True,
-    )
-    if final_comments_pre_verify and not final_comments:
-        logger.warning("Quote verification dropped ALL comments — skipping verification")
-        final_comments = final_comments_pre_verify
+    final_comments = _verify_with_fallback(final_comments, paper_text.full_markdown)
 
     # Ensure sequential numbering 1..N
     final_comments = _renumber_comments(final_comments)

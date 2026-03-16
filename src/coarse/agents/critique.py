@@ -8,6 +8,8 @@ from coarse.llm import LLMClient
 from coarse.prompts import CRITIQUE_SYSTEM, critique_system, critique_user
 from coarse.types import DetailedComment, OverviewFeedback
 
+_TEMPERATURE = 0.1
+
 
 class _RevisedComments(BaseModel):
     """Instructor response envelope for the revised, renumbered comment list."""
@@ -33,6 +35,6 @@ class CritiqueAgent(ReviewAgent):
 
         messages = self._build_messages(sys_prompt, user_content)
         result = self.client.complete(
-            messages, _RevisedComments, max_tokens=16384, temperature=0.1
+            messages, _RevisedComments, max_tokens=16384, temperature=_TEMPERATURE
         )
         return result.comments

@@ -14,3 +14,5 @@ paper_review.md
 paper_quality_*.md
 r3d_review_*.md
 quality_gap_analysis.md
+*.pem
+*.key

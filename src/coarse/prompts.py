@@ -861,21 +861,29 @@ def crossref_system(comment_target: int | str = "10-15") -> str:
     return _CROSSREF_SYSTEM_TEMPLATE.format(comment_target=comment_target)
 
 
-def crossref_user(
+def _format_review_context(
     overview: "OverviewFeedback",
     comments: "list[DetailedComment]",
-) -> str:
-    """User prompt for cross-reference. Embeds overview and all draft comments."""
+) -> tuple[str, str]:
+    """Build the overview and comments text blocks shared by crossref and critique."""
     overview_block = "\n".join(
         f"**{issue.title}**: {issue.body}" for issue in overview.issues
     )
-
     comments_block = "\n\n".join(
         f"### Comment {c.number}: {c.title}\n"
         f"**Quote**: {c.quote}\n"
         f"**Feedback**: {c.feedback}"
         for c in comments
     )
+    return overview_block, comments_block
+
+
+def crossref_user(
+    overview: "OverviewFeedback",
+    comments: "list[DetailedComment]",
+) -> str:
+    """User prompt for cross-reference. Embeds overview and all draft comments."""
+    overview_block, comments_block = _format_review_context(overview, comments)
 
     return f"""\
 Consolidate the following draft detailed comments for a research paper.
@@ -965,16 +973,7 @@ def critique_user(
     comments: "list[DetailedComment]",
 ) -> str:
     """User prompt for self-critique. Embeds overview and consolidated comment list."""
-    overview_block = "\n".join(
-        f"**{issue.title}**: {issue.body}" for issue in overview.issues
-    )
-
-    comments_block = "\n\n".join(
-        f"### Comment {c.number}: {c.title}\n"
-        f"**Quote**: {c.quote}\n"
-        f"**Feedback**: {c.feedback}"
-        for c in comments
-    )
+    overview_block, comments_block = _format_review_context(overview, comments)
 
     return f"""\
 Perform a final quality review of the following detailed comments for a research paper.
@@ -1080,22 +1079,6 @@ Rules:
 - overall_quality should be "good" if no corrections needed, "acceptable" if \
 minor issues, "poor" if significant content is wrong or missing.
 """
-
-
-def extraction_qa_user(page_chunks: list[tuple[int, str]]) -> str:
-    """User prompt text for extraction QA. Images are added as separate content blocks."""
-    parts = []
-    for page_num, chunk in page_chunks:
-        parts.append(
-            f"## Page {page_num}\n\n"
-            f"**Extracted markdown:**\n```\n{chunk}\n```\n\n"
-            f"**Page image:** (see attached image for page {page_num})\n"
-        )
-    return (
-        "Compare each page's extracted markdown against its image. "
-        "Report overall_quality and any corrections needed.\n\n"
-        + "\n".join(parts)
-    )
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ The web app runs on four free services:
 | **Vercel** | Frontend + `/api/submit` | 100 GB bandwidth, 10s function timeout |
 | **Supabase** | PostgreSQL + file storage | 500 MB DB, 1 GB storage, 50K MAU |
 | **Modal** | Serverless Python worker | $30/month compute credits |
-| **Resend** | Email notifications | 100 emails/day, 3K/month |
+| **Gmail** | Email notifications | 500 emails/day (app password) |
 
 Users provide their own OpenRouter API key, so **you only pay** for Mistral OCR + Gemini Flash extraction (~$0.02–0.07 per review). Everything else is free.
 
@@ -17,7 +17,7 @@ Users provide their own OpenRouter API key, so **you only pay** for Mistral OCR 
 
 - GitHub repo (public, for free GitHub Actions)
 - API keys: `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`, `GEMINI_API_KEY`
-- Accounts on: [Supabase](https://supabase.com), [Modal](https://modal.com), [Vercel](https://vercel.com), [Resend](https://resend.com)
+- Accounts on: [Supabase](https://supabase.com), [Modal](https://modal.com), [Vercel](https://vercel.com)
 
 ---
 
@@ -54,7 +54,7 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
    | `coarse-gemini` | `GEMINI_API_KEY` |
    | `coarse-supabase` | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` |
    | `coarse-webhook` | `MODAL_WEBHOOK_SECRET` (generate: `python -c "import secrets; print(secrets.token_urlsafe(32))"`) |
-   | `coarse-resend` | `RESEND_API_KEY`, `SITE_URL` (e.g. `https://coarse.vercel.app`) |
+   | `coarse-gmail` | `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `SITE_URL` (e.g. `https://coarse.vercel.app`) |
 
 3. Deploy:
    ```bash
@@ -91,7 +91,8 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
    | `SUPABASE_SERVICE_KEY` | `eyJ...` | From step 1 (server-side only) |
    | `MODAL_FUNCTION_URL` | `https://...modal.run` | From step 2 |
    | `MODAL_WEBHOOK_SECRET` | (same value as Modal secret) | Shared secret |
-   | `RESEND_API_KEY` | `re_...` | From Resend dashboard |
+   | `GMAIL_USER` | `your@gmail.com` | Gmail address for sending |
+   | `GMAIL_APP_PASSWORD` | `xxxx xxxx xxxx xxxx` | Gmail app password |
    | `NEXT_PUBLIC_SITE_URL` | `https://coarse.vercel.app` | Your public URL |
 
 3. Deploy. The site will be live at `https://coarse.vercel.app` (or a custom domain if configured).
@@ -113,14 +114,14 @@ The workflow is already at `.github/workflows/keepalive.yml`. You just need to a
 
 ## 5. Email (Optional)
 
-Resend requires a verified domain for custom sender addresses (`reviews@coarse.ai`). Without a domain, you can use Resend's shared sender (`onboarding@resend.dev`) by updating the `from` field in:
-- `deploy/modal_worker.py` (line 112)
-- `web/src/app/api/submit/route.ts` (line 97)
+Email notifications use Gmail with an app password. To set up:
 
-To use a custom domain:
-1. Buy a domain (~$12–15/year)
-2. Add DNS records (SPF, DKIM, DMARC) in the Resend dashboard
-3. Verify the domain
+1. Use or create a Gmail account for sending
+2. Enable 2-Factor Authentication on the account
+3. Go to [Google App Passwords](https://myaccount.google.com/apppasswords) and generate a new app password
+4. Set `GMAIL_USER` and `GMAIL_APP_PASSWORD` in both Vercel and Modal secrets
+
+Gmail app passwords support ~500 emails/day, which covers ~250 reviews/day. If you need more volume, swap to a transactional email service (Resend, SES, etc.).
 
 ---
 
@@ -134,7 +135,7 @@ Vercel: POST /api/submit
   ├── INSERT into Supabase reviews table → gets UUID
   ├── Upload PDF to Supabase Storage as {uuid}.pdf
   ├── POST to Modal webhook with {uuid, pdf_path, api_key, email}
-  ├── Send confirmation email (Resend)
+  ├── Send confirmation email (Gmail)
   └── Return { id: uuid } → redirect to /status/{uuid}
   │
   ▼
@@ -143,7 +144,7 @@ Modal worker (async, up to 10 min)
   ├── Run coarse.review_paper() with user's OpenRouter key
   ├── UPDATE reviews SET status='done', result_markdown=...
   ├── Delete PDF from Supabase Storage
-  └── Send completion email (Resend)
+  └── Send completion email (Gmail)
   │
   ▼
 User views /review/{uuid}
@@ -213,6 +214,6 @@ The frontend works locally without Supabase/Modal — form submission will fail 
 
 **Review stuck on "queued"**: Modal worker crashed or timed out. Check Modal logs at [modal.com/apps](https://modal.com/apps).
 
-**No emails received**: Check Resend dashboard for delivery status. If using a custom domain, verify DNS records are correct.
+**No emails received**: Check that `GMAIL_USER` and `GMAIL_APP_PASSWORD` are set in both Vercel and Modal. Verify the app password is valid at [Google App Passwords](https://myaccount.google.com/apppasswords). Check spam folders.
 
 **Database paused**: Go to [supabase.com](https://supabase.com) dashboard and click "Restore". Ensure the keep-alive cron is running (check GitHub Actions).

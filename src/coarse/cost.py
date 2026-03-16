@@ -16,12 +16,24 @@ from coarse.models import LITERATURE_SEARCH_MODEL, OCR_MODEL
 from coarse.types import CostEstimate, CostStage, PaperText
 
 
-def _estimate_section_count(total_tokens: int) -> int:
-    """Estimate number of reviewable sections from paper token count.
+# Heuristic pricing constants (verified 2026-03-04, aligned with models.py)
+_TOKENS_PER_SECTION = 1200       # avg tokens per section after OCR extraction
+_SECTION_PROMPT_OVERHEAD = 5000  # system prompt + overview + calibration + notation
+_TOKENS_PER_PAGE = 250           # OCR token estimate per page
+_OCR_COST_PER_PAGE = 0.002       # Mistral OCR cost per page
+_AVG_COMMENTS_PER_SECTION = 3    # raw comments per section agent
+_TOKENS_PER_COMMENT = 350        # input tokens per comment in crossref/critique
+_CROSSREF_OVERHEAD = 3500        # system prompt + overview context for crossref/critique
+_DEDUP_SURVIVAL_RATE = 0.6       # fraction surviving dedup
+_CRITIQUE_SURVIVAL_RATE = 0.9    # fraction surviving critique
+_COMMENT_OUTPUT_TOKENS = 600     # output tokens per surviving comment
+_LITERATURE_FLAT_COST = 0.03     # Perplexity flat fee for literature search
+_COST_BUFFER = 1.15              # conservative overestimate multiplier
 
-    Academic papers average ~1,200 tokens per section after OCR extraction.
-    """
-    return max(4, min(40, total_tokens // 1200))
+
+def _estimate_section_count(total_tokens: int) -> int:
+    """Estimate number of reviewable sections from paper token count."""
+    return max(4, min(40, total_tokens // _TOKENS_PER_SECTION))
 
 
 def build_cost_estimate(
@@ -35,33 +47,27 @@ def build_cost_estimate(
     if section_count is None:
         section_count = _estimate_section_count(total_tokens)
     section_text_tokens = max(1, total_tokens // section_count)
-    # Each section prompt includes ~5,000 tokens of overhead:
-    # system prompt (~1200) + overview context (~2500) + calibration (~500) + notation (~800)
-    section_input = section_text_tokens + 5000
+    section_input = section_text_tokens + _SECTION_PROMPT_OVERHEAD
 
-    # OCR extraction cost (Mistral OCR: ~$0.002/page)
-    est_pages = max(1, total_tokens // 250)
+    est_pages = max(1, total_tokens // _TOKENS_PER_PAGE)
     stages: list[CostStage] = [
         CostStage(
             name="pdf_extraction",
             model=OCR_MODEL,
             estimated_tokens_in=0,
             estimated_tokens_out=0,
-            estimated_cost_usd=est_pages * 0.002,
+            estimated_cost_usd=est_pages * _OCR_COST_PER_PAGE,
         ),
     ]
 
-    # Estimated raw comments from section agents (each produces 1-5, avg ~3)
-    n_raw_comments = section_count * 3
+    n_raw_comments = section_count * _AVG_COMMENTS_PER_SECTION
 
-    # Crossref reads all raw comments, emits deduplicated set as JSON
-    crossref_in = n_raw_comments * 350 + 3500  # comments + overview + system
-    crossref_out = int(n_raw_comments * 0.6) * 600  # ~60% survive dedup, JSON format
+    crossref_in = n_raw_comments * _TOKENS_PER_COMMENT + _CROSSREF_OVERHEAD
+    crossref_out = int(n_raw_comments * _DEDUP_SURVIVAL_RATE) * _COMMENT_OUTPUT_TOKENS
 
-    # Critique reads deduped comments, emits revised set as JSON
-    n_deduped = int(n_raw_comments * 0.6)
-    critique_in = n_deduped * 350 + 3500
-    critique_out = int(n_deduped * 0.9) * 600  # ~90% survive critique
+    n_deduped = int(n_raw_comments * _DEDUP_SURVIVAL_RATE)
+    critique_in = n_deduped * _TOKENS_PER_COMMENT + _CROSSREF_OVERHEAD
+    critique_out = int(n_deduped * _CRITIQUE_SURVIVAL_RATE) * _COMMENT_OUTPUT_TOKENS
 
     # Overview: 3 judges each read full paper, then a synthesis call
     _NUM_OVERVIEW_JUDGES = 3
@@ -73,7 +79,7 @@ def build_cost_estimate(
                 model=LITERATURE_SEARCH_MODEL,
                 estimated_tokens_in=0,
                 estimated_tokens_out=0,
-                estimated_cost_usd=0.03,
+                estimated_cost_usd=_LITERATURE_FLAT_COST,
             )
         )
         lit_stage: list[tuple[str, int, int]] = []
@@ -121,7 +127,7 @@ def build_cost_estimate(
         )
 
     total = sum(s.estimated_cost_usd for s in stages)
-    total *= 1.15  # Conservative buffer — better to overestimate
+    total *= _COST_BUFFER
     return CostEstimate(stages=stages, total_cost_usd=total)
 
 
@@ -163,8 +169,12 @@ def confirm_or_abort(estimate: CostEstimate, max_cost_usd: float) -> None:
             f"Proceed with estimated cost ${estimate.total_cost_usd:.4f}?",
             default=True,
         )
-    except Exception:
-        # Non-TTY or other error — treat as approved
+    except (EOFError, OSError):
+        import logging
+        logging.getLogger(__name__).warning(
+            "Non-interactive mode — auto-approving cost estimate ($%.4f)",
+            estimate.total_cost_usd,
+        )
         return
 
     if not confirmed:

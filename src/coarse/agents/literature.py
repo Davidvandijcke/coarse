@@ -21,10 +21,13 @@ from coarse.prompts import PERPLEXITY_PROMPT
 
 logger = logging.getLogger(__name__)
 
-_ARXIV_API = "http://export.arxiv.org/api/query"
+_ARXIV_API = "https://export.arxiv.org/api/query"
 _MAX_RESULTS_PER_QUERY = 10
 _MAX_ITERATIONS = 2
 _TOP_K = 8
+_PERPLEXITY_TEMPERATURE = 0.3
+_QUERY_GEN_TEMPERATURE = 0.5
+_RANKING_TEMPERATURE = 0.2
 
 # Atom namespace used by arXiv API
 _NS = {"atom": "http://www.w3.org/2005/Atom"}
@@ -77,7 +80,7 @@ def _search_perplexity(title: str, abstract: str, client: LLMClient) -> str:
         model=f"openrouter/{LITERATURE_SEARCH_MODEL}",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=4096,
-        temperature=0.3,
+        temperature=_PERPLEXITY_TEMPERATURE,
         timeout=60,
     )
 
@@ -273,7 +276,10 @@ def _generate_queries(title: str, abstract: str, client: LLMClient) -> list[str]
         },
     ]
     try:
-        result = client.complete(messages, _SearchQueries, max_tokens=512, temperature=0.5)
+        result = client.complete(
+            messages, _SearchQueries, max_tokens=512,
+            temperature=_QUERY_GEN_TEMPERATURE,
+        )
         return result.queries
     except Exception:
         logger.warning("Query generation failed, using title as fallback")
@@ -308,7 +314,10 @@ def _rank_results(
         },
     ]
     try:
-        result = client.complete(messages, _RankedResults, max_tokens=2048, temperature=0.2)
+        result = client.complete(
+            messages, _RankedResults, max_tokens=2048,
+            temperature=_RANKING_TEMPERATURE,
+        )
         ranked = sorted(result.ranked, key=lambda r: r.relevance_score, reverse=True)
         return ranked, result.refinement_queries
     except Exception:

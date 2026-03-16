@@ -11,15 +11,10 @@ from coarse.llm import LLMClient
 if TYPE_CHECKING:
     from coarse.types import SectionInfo
 
-
-def section_filename(s: SectionInfo) -> str:
-    """Generate a safe filename from a section number and title."""
-    slug = s.title.lower().replace(" ", "_")[:40]
-    prefix = f"{s.number:02}" if isinstance(s.number, int) else str(s.number)
-    return f"{prefix}_{slug}.md"
+MAX_CONTEXT_CHARS = 500_000
 
 
-def truncate_section(section: SectionInfo, max_chars: int = 500_000) -> SectionInfo:
+def truncate_section(section: SectionInfo, max_chars: int = MAX_CONTEXT_CHARS) -> SectionInfo:
     """Truncate a section's text if it exceeds *max_chars*."""
     if len(section.text) <= max_chars:
         return section

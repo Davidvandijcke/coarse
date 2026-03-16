@@ -6,6 +6,8 @@ from pydantic import BaseModel, ValidationError
 from coarse.config import CoarseConfig
 from coarse.llm import LLMClient, estimate_call_cost, model_cost_per_token
 
+TEST_MODEL = "test/mock-model"
+
 
 class _SimpleModel(BaseModel):
     value: str
@@ -37,7 +39,7 @@ def test_complete_returns_parsed_model(mock_instructor_client):
     )
 
     with patch("coarse.llm.litellm.completion_cost", return_value=0.001):
-        client = LLMClient(model="openai/gpt-4o", config=CoarseConfig())
+        client = LLMClient(model=TEST_MODEL, config=CoarseConfig())
         result = client.complete(
             messages=[{"role": "user", "content": "hello"}],
             response_model=_SimpleModel,
@@ -56,7 +58,7 @@ def test_cost_accumulates_across_calls(mock_instructor_client):
     )
 
     with patch("coarse.llm.litellm.completion_cost", return_value=0.005):
-        client = LLMClient(model="openai/gpt-4o", config=CoarseConfig())
+        client = LLMClient(model=TEST_MODEL, config=CoarseConfig())
         client.complete(messages=[{"role": "user", "content": "a"}], response_model=_SimpleModel)
         client.complete(messages=[{"role": "user", "content": "b"}], response_model=_SimpleModel)
 
@@ -85,7 +87,7 @@ def test_estimate_call_cost():
 def test_client_uses_config_model(mock_instructor_client):
     cfg = CoarseConfig(default_model="anthropic/claude-3-5-sonnet")
     client = LLMClient(config=cfg)
-    assert client._model == "anthropic/claude-3-5-sonnet"
+    assert client.model == "anthropic/claude-3-5-sonnet"
 
 
 def test_complete_instructor_validation_error(mock_instructor_client):
@@ -94,7 +96,7 @@ def test_complete_instructor_validation_error(mock_instructor_client):
     except ValidationError as exc:
         mock_instructor_client.chat.completions.create_with_completion.side_effect = exc
 
-    client = LLMClient(model="openai/gpt-4o", config=CoarseConfig())
+    client = LLMClient(model=TEST_MODEL, config=CoarseConfig())
     with pytest.raises(ValidationError):
         client.complete(
             messages=[{"role": "user", "content": "bad"}],

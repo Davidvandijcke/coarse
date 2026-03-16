@@ -23,4 +23,31 @@ def garble_ratio(text: str) -> float:
     if not text:
         return 0.0
     matches = GARBLE_CHARS.findall(text)
-    return len(matches) / max(len(text), 1)
+    return sum(len(m) for m in matches) / max(len(text), 1)
+
+
+# Common OCR garble patterns from older PDFs (pre-2005, non-standard encodings)
+_GARBLE_REPLACEMENTS: list[tuple[str, str]] = [
+    ("®nite", "finite"),
+    ("in®nite", "infinite"),
+    ("de®ne", "define"),
+    ("de®ned", "defined"),
+    ("de®nition", "definition"),
+    ("/C40", "("),
+    ("/C41", ")"),
+    ("naõÈve", "naïve"),
+    ("naõève", "naïve"),
+    ("\u00ae", "fi"),  # ® used as ligature for fi
+]
+
+
+def normalize_ocr_garble(text: str) -> str:
+    """Apply known OCR garble fixes to extracted text.
+
+    Fixes common character encoding issues from older PDFs without
+    altering correctly-encoded content.
+    """
+    result = text
+    for garbled, clean in _GARBLE_REPLACEMENTS:
+        result = result.replace(garbled, clean)
+    return result

@@ -67,6 +67,15 @@ def test_save_and_reload(tmp_config_path):
     assert reloaded.api_keys == original.api_keys
 
 
+def test_save_config_sets_restrictive_permissions(tmp_config_path):
+    """Config file gets chmod 600 after save."""
+    import stat
+
+    save_config(CoarseConfig())
+    mode = tmp_config_path.stat().st_mode
+    assert stat.S_IMODE(mode) == 0o600
+
+
 def test_save_config_creates_directory(tmp_path, monkeypatch):
     nested = tmp_path / "a" / "b" / ".coarse" / "config.toml"
 

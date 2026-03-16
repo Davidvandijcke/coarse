@@ -7,6 +7,8 @@ from coarse.agents.base import ReviewAgent, truncate_section
 from coarse.prompts import PROOF_VERIFY_SYSTEM, proof_verify_user
 from coarse.types import DetailedComment, SectionInfo
 
+_TEMPERATURE = 0.2
+
 
 class _VerifiedComments(BaseModel):
     """Response envelope for verified + new comments."""
@@ -35,6 +37,6 @@ class ProofVerifyAgent(ReviewAgent):
         )
         messages = self._build_messages(PROOF_VERIFY_SYSTEM, user_text)
         result = self.client.complete(
-            messages, _VerifiedComments, max_tokens=16384, temperature=0.2,
+            messages, _VerifiedComments, max_tokens=16384, temperature=_TEMPERATURE,
         )
         return result.comments

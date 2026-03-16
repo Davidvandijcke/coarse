@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
+from coarse.extraction import _estimate_tokens
+
 if TYPE_CHECKING:
     from coarse.llm import LLMClient
     from coarse.types import PaperText
@@ -66,33 +68,33 @@ def render_pdf_pages(
     """
     import fitz
 
-    doc = fitz.open(str(pdf_path))
-    results: list[tuple[int, str]] = []
-    mat = fitz.Matrix(dpi / 72, dpi / 72)
-    for page_num in pages:
-        idx = page_num - 1  # fitz uses 0-indexed
-        if idx < 0 or idx >= len(doc):
-            logger.warning("Page %d out of range (PDF has %d pages), skipping", page_num, len(doc))
-            continue
-        try:
-            pix = doc[idx].get_pixmap(matrix=mat)
-            png_bytes = pix.tobytes("png")
-            b64 = base64.b64encode(png_bytes).decode("ascii")
-            results.append((page_num, b64))
-        except Exception:
-            logger.warning("Failed to render page %d, skipping", page_num)
-    doc.close()
-    return results
+    with fitz.open(str(pdf_path)) as doc:
+        results: list[tuple[int, str]] = []
+        mat = fitz.Matrix(dpi / 72, dpi / 72)
+        for page_num in pages:
+            idx = page_num - 1  # fitz uses 0-indexed
+            if idx < 0 or idx >= len(doc):
+                logger.warning(
+                    "Page %d out of range (PDF has %d pages), skipping",
+                    page_num, len(doc),
+                )
+                continue
+            try:
+                pix = doc[idx].get_pixmap(matrix=mat)
+                png_bytes = pix.tobytes("png")
+                b64 = base64.b64encode(png_bytes).decode("ascii")
+                results.append((page_num, b64))
+            except Exception:
+                logger.warning("Failed to render page %d, skipping", page_num)
+        return results
 
 
 def _get_page_count(pdf_path: Path) -> int:
     """Return the number of pages in a PDF."""
     import fitz
 
-    doc = fitz.open(str(pdf_path))
-    count = len(doc)
-    doc.close()
-    return count
+    with fitz.open(str(pdf_path)) as doc:
+        return len(doc)
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +326,7 @@ def run_extraction_qa(
     from coarse.config import resolve_api_key
 
     # Check if vision model API key is available
-    model = client._model
+    model = client.model
     key = resolve_api_key(model)
     if key is None:
         logger.info("No API key for vision model %s, skipping extraction QA", model)
@@ -397,6 +399,6 @@ def run_extraction_qa(
     return paper_text.model_copy(
         update={
             "full_markdown": corrected_markdown,
-            "token_estimate": len(corrected_markdown) // 4,
+            "token_estimate": _estimate_tokens(corrected_markdown),
         }
     )

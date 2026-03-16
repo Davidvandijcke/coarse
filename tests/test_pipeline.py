@@ -22,6 +22,8 @@ from coarse.types import (
     SectionType,
 )
 
+TEST_MODEL = "test/mock-model"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -70,7 +72,7 @@ def _make_comment(number: int = 1) -> DetailedComment:
 
 
 def _make_config() -> CoarseConfig:
-    return CoarseConfig(default_model="openai/gpt-4o-mini")
+    return CoarseConfig(default_model=TEST_MODEL)
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +81,7 @@ def _make_config() -> CoarseConfig:
 
 def test_review_paper_calls_stages_in_order():
     """Verify each stage is called once in the correct order."""
-    config = CoarseConfig(default_model="openai/gpt-4o-mini")
+    config = CoarseConfig(default_model=TEST_MODEL)
     paper_text = _make_paper_text()
     structure = _make_structure()
     overview = _make_overview()

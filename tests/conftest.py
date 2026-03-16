@@ -1,4 +1,7 @@
 """Shared test fixtures for coarse."""
+from __future__ import annotations
+
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -11,6 +14,31 @@ from coarse.types import (
     SectionInfo,
     SectionType,
 )
+
+# Use this in tests where the model string is arbitrary (mocked LLM calls).
+# Keep real model IDs only where tests validate provider-specific behavior.
+TEST_MODEL = "test/mock-model"
+
+
+def make_comment(number: int = 1, **overrides) -> DetailedComment:
+    """Factory for DetailedComment with sensible defaults."""
+    defaults = {
+        "number": number,
+        "title": f"Comment {number}",
+        "quote": "Some verbatim quote from the paper text.",
+        "feedback": f"Feedback for comment {number}.",
+    }
+    defaults.update(overrides)
+    return DetailedComment(**defaults)
+
+
+def make_mock_client() -> MagicMock:
+    """Factory for a mocked LLMClient."""
+    from coarse.llm import LLMClient
+
+    client = MagicMock(spec=LLMClient)
+    client.supports_prompt_caching = False
+    return client
 
 
 @pytest.fixture
