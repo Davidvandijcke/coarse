@@ -915,6 +915,7 @@ export default function ReviewDisplay({
             markdown={paperMarkdown}
             highlightQuote={highlightQuote}
             onClose={() => setPaperPanelOpen(false)}
+            reviewId={reviewId}
           />
         )}
 

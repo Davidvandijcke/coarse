@@ -14,10 +14,12 @@ export default function PaperPanel({
   markdown,
   highlightQuote,
   onClose,
+  reviewId,
 }: {
   markdown: string;
   highlightQuote: string | null;
   onClose: () => void;
+  reviewId?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const blocks = useMemo(() => splitIntoBlocks(preprocessLatex(markdown)), [markdown]);
@@ -95,21 +97,48 @@ export default function PaperPanel({
         >
           Paper
         </span>
-        <button
-          onClick={onClose}
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--dust)",
-            cursor: "pointer",
-            fontFamily: "var(--font-space-mono), monospace",
-            fontSize: "0.75rem",
-            padding: "0.25rem",
-          }}
-          aria-label="Close paper panel"
-        >
-          {"\u00d7"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <button
+            onClick={() => {
+              const blob = new Blob([markdown], { type: "text/markdown" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `paper_${reviewId || "export"}.md`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--dust)",
+              cursor: "pointer",
+              fontFamily: "var(--font-space-mono), monospace",
+              fontSize: "0.55rem",
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              padding: "0.25rem",
+            }}
+            aria-label="Download paper markdown"
+          >
+            Download
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--dust)",
+              cursor: "pointer",
+              fontFamily: "var(--font-space-mono), monospace",
+              fontSize: "0.75rem",
+              padding: "0.25rem",
+            }}
+            aria-label="Close paper panel"
+          >
+            {"\u00d7"}
+          </button>
+        </div>
       </div>
 
       {/* Paper content */}
