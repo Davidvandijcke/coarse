@@ -111,11 +111,14 @@ def analyze_structure(paper_text: PaperText, client: LLMClient) -> PaperStructur
     5. Detect math sections via cheap LLM call
     """
     sections = _parse_sections_from_markdown(paper_text.full_markdown)
-    title = _extract_title(paper_text.full_markdown)
+    heuristic_title = _extract_title(paper_text.full_markdown)
     abstract = _extract_abstract(sections, paper_text.full_markdown)
 
     headings = [s.title for s in sections]
-    metadata = _get_metadata(title, abstract, headings, client)
+    first_page = paper_text.full_markdown[:2000]
+    metadata = _get_metadata(first_page, abstract, headings, client)
+
+    title = metadata.title or heuristic_title
 
     # LLM-based math section detection
     sections = _detect_math_sections(sections, client)
@@ -240,18 +243,18 @@ def _extract_abstract(sections: list[SectionInfo], markdown: str) -> str:
 
 
 def _get_metadata(
-    title: str,
+    first_page: str,
     abstract: str,
     headings: list[str],
     client: LLMClient,
 ) -> PaperMetadata:
-    """Cheap text-LLM call for domain/taxonomy classification (~$0.001)."""
+    """Cheap text-LLM call for title extraction + domain/taxonomy classification (~$0.001)."""
     headings_str = ", ".join(headings[:20])
     messages = [
         {"role": "system", "content": METADATA_SYSTEM},
         {"role": "user", "content": (
-            f"Classify this paper.\n\n"
-            f"**Title**: {title}\n"
+            f"Extract the title and classify this paper.\n\n"
+            f"**First page**:\n{first_page}\n\n"
             f"**Abstract**: {abstract[:1000]}\n"
             f"**Headings**: {headings_str}\n"
         )},
@@ -259,8 +262,10 @@ def _get_metadata(
     try:
         return client.complete(messages, PaperMetadata, max_tokens=256, temperature=0.1)
     except Exception:
-        logger.warning("Metadata classification failed, using defaults")
-        return PaperMetadata(domain="unknown", taxonomy="academic/research_paper")
+        logger.warning("Metadata extraction failed, using defaults")
+        return PaperMetadata(
+            title="", domain="unknown", taxonomy="academic/research_paper",
+        )
 
 
 # ---------------------------------------------------------------------------

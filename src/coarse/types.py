@@ -89,7 +89,8 @@ class PaperStructure(BaseModel):
 
 
 class PaperMetadata(BaseModel):
-    """Response model for cheap text-LLM domain/taxonomy classification."""
+    """Response model for cheap text-LLM metadata extraction."""
+    title: str = Field(description="Exact paper title as it appears on the first page")
     domain: str
     taxonomy: str
 

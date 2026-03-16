@@ -165,10 +165,12 @@ Include all LaTeX math expressions, tables, headings, and footnotes exactly as e
 # ---------------------------------------------------------------------------
 
 METADATA_SYSTEM = """\
-You are an expert academic paper classifier. Given a paper's title, abstract, \
-and section headings, classify it.
+You are an expert academic paper classifier. Given the first page of a paper \
+and its section headings, extract the title and classify it.
 
 Return:
+- title: The exact paper title as it appears on the first page. Do NOT use \
+a section heading or subtitle — return the main title only.
 - domain: The academic domain (e.g., "social_sciences/economics", \
 "computer_science/machine_learning", "statistics/causal_inference", \
 "natural_sciences/biology")

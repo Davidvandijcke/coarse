@@ -75,6 +75,7 @@ def _make_mock_client():
     def _side_effect(messages, response_model, **kwargs):
         if response_model is PaperMetadata:
             return PaperMetadata(
+                title="Test Paper Title",
                 domain="social_sciences/economics",
                 taxonomy="academic/research_paper",
             )
@@ -255,7 +256,7 @@ def test_analyze_structure_returns_paper_structure(mock_client):
     paper_text = make_paper_text()
     result = analyze_structure(paper_text, mock_client)
     assert isinstance(result, PaperStructure)
-    assert result.title == "My Paper Title"
+    assert result.title == "Test Paper Title"
     assert result.domain == "social_sciences/economics"
     assert len(result.sections) > 0
 
@@ -312,6 +313,7 @@ def test_analyze_structure_math_detection_sets_flags():
     def _side_effect(messages, response_model, **kwargs):
         if response_model is PaperMetadata:
             return PaperMetadata(
+                title="Test Paper Title",
                 domain="statistics/methodology",
                 taxonomy="academic/research_paper",
             )
