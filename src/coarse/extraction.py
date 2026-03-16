@@ -106,12 +106,16 @@ def _save_cache(pdf_path: Path, paper_text: PaperText) -> None:
 
 def _extract_mistral_direct(path: Path) -> str:
     """Extract via Mistral OCR API (requires MISTRAL_API_KEY)."""
+    import os
+
     from litellm import ocr
 
-    from coarse.config import resolve_api_key
     from coarse.models import OCR_MODEL
 
-    key = resolve_api_key(OCR_MODEL)
+    # Only use a real Mistral key here — the OpenRouter fallback in
+    # resolve_api_key() would send an OpenRouter key to Mistral's API,
+    # which fails and blocks the OpenRouter extraction backend.
+    key = os.environ.get("MISTRAL_API_KEY")
     if not key:
         raise ValueError("No MISTRAL_API_KEY")
 

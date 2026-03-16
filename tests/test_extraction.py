@@ -1,6 +1,7 @@
 """Tests for coarse.extraction."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -45,7 +46,7 @@ def minimal_pdf(tmp_path: Path) -> Path:
 
 def test_extract_text_returns_paper_text(minimal_pdf: Path, mock_ocr_pages) -> None:
     with patch("litellm.ocr", return_value=_mock_ocr_response(mock_ocr_pages)):
-        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert isinstance(result, PaperText)
     assert isinstance(result.full_markdown, str)
@@ -55,7 +56,7 @@ def test_extract_text_returns_paper_text(minimal_pdf: Path, mock_ocr_pages) -> N
 
 def test_extract_text_contains_page_breaks(minimal_pdf: Path, mock_ocr_pages) -> None:
     with patch("litellm.ocr", return_value=_mock_ocr_response(mock_ocr_pages)):
-        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert "<!-- PAGE BREAK -->" in result.full_markdown
     assert "# Test Paper" in result.full_markdown
@@ -65,7 +66,7 @@ def test_extract_text_contains_page_breaks(minimal_pdf: Path, mock_ocr_pages) ->
 def test_extract_text_joins_pages_with_page_break(minimal_pdf: Path) -> None:
     pages = ["Page 1 content", "Page 2 content", "Page 3 content"]
     with patch("litellm.ocr", return_value=_mock_ocr_response(pages)):
-        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert result.full_markdown.count("<!-- PAGE BREAK -->") == 2
 
@@ -87,7 +88,7 @@ def test_extract_text_caching(minimal_pdf: Path, mock_ocr_pages) -> None:
     """Extraction result should be cached and reloaded on second call."""
     mock_fn = MagicMock(return_value=_mock_ocr_response(mock_ocr_pages))
     with patch("litellm.ocr", mock_fn):
-        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
             result1 = extract_text(minimal_pdf, use_cache=True)
             # Second call should use cache — ocr not called again
             result2 = extract_text(minimal_pdf, use_cache=True)
@@ -100,7 +101,7 @@ def test_extract_text_no_cache(minimal_pdf: Path, mock_ocr_pages) -> None:
     """With use_cache=False, OCR is always called."""
     mock_fn = MagicMock(return_value=_mock_ocr_response(mock_ocr_pages))
     with patch("litellm.ocr", mock_fn):
-        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
             extract_text(minimal_pdf, use_cache=False)
             extract_text(minimal_pdf, use_cache=False)
 
@@ -121,7 +122,10 @@ def test_fallback_to_docling(minimal_pdf: Path) -> None:
     mock_docling = MagicMock()
     mock_docling.document_converter.DocumentConverter = mock_converter_cls
 
-    with patch("coarse.config.resolve_api_key", return_value=None):
+    # Ensure no Mistral key (direct check) and no OpenRouter key (resolve_api_key)
+    env_clean = {k: v for k, v in os.environ.items()
+                 if k not in ("MISTRAL_API_KEY", "OPENROUTER_API_KEY")}
+    with patch.dict(os.environ, env_clean, clear=True):
         with patch.dict("sys.modules", {
             "docling": mock_docling,
             "docling.document_converter": mock_docling.document_converter,
@@ -133,7 +137,10 @@ def test_fallback_to_docling(minimal_pdf: Path) -> None:
 
 def test_all_backends_fail(minimal_pdf: Path) -> None:
     """When all backends fail, raises ValueError."""
-    with patch("coarse.config.resolve_api_key", return_value=None):
+    # Ensure no Mistral key (direct check) and no OpenRouter key (resolve_api_key)
+    env_clean = {k: v for k, v in os.environ.items()
+                 if k not in ("MISTRAL_API_KEY", "OPENROUTER_API_KEY")}
+    with patch.dict(os.environ, env_clean, clear=True):
         with patch.dict(
             "sys.modules",
             {"docling": None, "docling.document_converter": None},
@@ -182,7 +189,7 @@ def test_normalize_ocr_garble_preserves_clean_text():
 def test_extract_text_sets_garble_ratio(minimal_pdf: Path, mock_ocr_pages) -> None:
     """Extraction should compute and store garble ratio."""
     with patch("litellm.ocr", return_value=_mock_ocr_response(mock_ocr_pages)):
-        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert hasattr(result, "garble_ratio")
     assert result.garble_ratio == 0.0  # clean mock data
@@ -192,7 +199,7 @@ def test_extract_text_normalizes_garbled_ocr(minimal_pdf: Path) -> None:
     """Garbled OCR output should be auto-normalized."""
     garbled_pages = ["The ®nite case shows /C40x/C41"]
     with patch("litellm.ocr", return_value=_mock_ocr_response(garbled_pages)):
-        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert "finite" in result.full_markdown
     assert "®nite" not in result.full_markdown
@@ -257,7 +264,7 @@ def test_extract_text_normalizes_mistral_artifacts(minimal_pdf: Path) -> None:
     """Mistral OCR artifacts should be normalized during extraction."""
     pages = ["Let glyph[lscript] &gt; 0 with <!-- formula-not-decoded --> here"]
     with patch("litellm.ocr", return_value=_mock_ocr_response(pages)):
-        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert "ℓ" in result.full_markdown
     assert "> 0" in result.full_markdown
@@ -330,7 +337,7 @@ def test_extract_file_missing() -> None:
 def test_extract_file_pdf_delegates(minimal_pdf: Path, mock_ocr_pages) -> None:
     """PDF files delegate to extract_text."""
     with patch("litellm.ocr", return_value=_mock_ocr_response(mock_ocr_pages)):
-        with patch("coarse.config.resolve_api_key", return_value="test-key"):
+        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
             result = extract_file(minimal_pdf, use_cache=False)
     assert isinstance(result, PaperText)
     assert "# Test Paper" in result.full_markdown
