@@ -5,7 +5,7 @@ import { useDropzone } from "react-dropzone";
 import { useRouter } from "next/navigation";
 import { CharcoalRule, HeroMarks } from "@/components/charcoal";
 import ModelPicker from "@/components/ModelPicker";
-import { estimateTokensFromPdf, estimateTokensFromText, getModelPricing, estimateReviewCost } from "@/lib/estimateCost";
+import { estimateTokensFromPdf, estimateTokensFromText, estimateTokensFromDocx, estimateTokensFromEpub, getModelPricing, estimateReviewCost } from "@/lib/estimateCost";
 
 /* ── Split-flap AI name display ────────────────────────────── */
 const AI_NAMES = ["Claude,", "Gemini,", "Qwen,", "ChatGPT,", "DeepSeek,", "Kimi,", "Grok,", "MiniMax,", "Mistral,", "Llama,"];
@@ -187,10 +187,16 @@ export default function Home() {
         if (cached && cached.name === file.name && cached.size === file.size) {
           tokens = cached.tokens;
         } else {
-          const isPdf = file.name.toLowerCase().endsWith(".pdf");
-          tokens = isPdf
-            ? await estimateTokensFromPdf(file)
-            : await estimateTokensFromText(file);
+          const ext = file.name.toLowerCase().split(".").pop();
+          if (ext === "pdf") {
+            tokens = await estimateTokensFromPdf(file);
+          } else if (ext === "docx") {
+            tokens = await estimateTokensFromDocx(file);
+          } else if (ext === "epub") {
+            tokens = await estimateTokensFromEpub(file);
+          } else {
+            tokens = await estimateTokensFromText(file);
+          }
           tokenCacheRef.current = { name: file.name, size: file.size, tokens };
         }
 

@@ -62,6 +62,21 @@ export async function estimateTokensFromText(file: File): Promise<number> {
   return Math.max(500, Math.round(text.length / 4));
 }
 
+/** Extract token estimate from a .docx file using mammoth (~4 chars/token). */
+export async function estimateTokensFromDocx(file: File): Promise<number> {
+  const mammoth = await import("mammoth");
+  const arrayBuffer = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  return Math.max(500, Math.round(result.value.length / 4));
+}
+
+/** Estimate tokens from an .epub file using file-size heuristic.
+ *  EPUB is a ZIP of XHTML — assume ~10% of file size is actual text. */
+export async function estimateTokensFromEpub(file: File): Promise<number> {
+  const textBytes = file.size * 0.1;
+  return Math.max(500, Math.round(textBytes / 4));
+}
+
 /** Extract text from a PDF and return estimated token count (~4 chars/token). */
 export async function estimateTokensFromPdf(file: File): Promise<number> {
   const pdfjsLib = await loadPdfJs();
