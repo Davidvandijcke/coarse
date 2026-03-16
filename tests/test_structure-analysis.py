@@ -10,6 +10,7 @@ from coarse.structure import (
     _extract_abstract,
     _extract_claims_and_definitions,
     _extract_title,
+    _is_section_heading,
     _parse_sections_from_markdown,
     analyze_structure,
 )
@@ -193,6 +194,33 @@ def test_extract_title_fallback():
 
 def test_extract_title_empty():
     assert _extract_title("") == "Untitled"
+
+
+def test_extract_title_skips_abstract_heading():
+    """When first heading is 'Abstract', title comes from preamble text."""
+    md = "My Actual Paper Title\n\n## Abstract\n\nThis is the abstract.\n"
+    assert _extract_title(md) == "My Actual Paper Title"
+
+
+def test_extract_title_skips_section_headings():
+    """When all headings are section names, use preamble."""
+    md = "A Novel Method for X\n\n## Introduction\n\nIntro text.\n\n## Methods\n\nMethod text.\n"
+    assert _extract_title(md) == "A Novel Method for X"
+
+
+def test_extract_title_prefers_non_section_heading():
+    """A heading that isn't a section name is preferred over preamble."""
+    md = "# Regression Discontinuity Design\n\n## Abstract\n\nText.\n"
+    assert _extract_title(md) == "Regression Discontinuity Design"
+
+
+def test_is_section_heading():
+    assert _is_section_heading("Abstract")
+    assert _is_section_heading("1. Introduction")
+    assert _is_section_heading("2 Methods")
+    assert _is_section_heading("References")
+    assert not _is_section_heading("My Paper Title")
+    assert not _is_section_heading("Regression Discontinuity Design")
 
 
 # ---------------------------------------------------------------------------

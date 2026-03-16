@@ -182,11 +182,40 @@ def _classify_section_type(title: str) -> SectionType:
     return SectionType.OTHER
 
 
+def _is_section_heading(title: str) -> bool:
+    """Return True if the heading looks like a generic section name, not a paper title."""
+    title_lower = title.lower().strip()
+    # Strip leading numbering like "1.", "1.1", "A.", "I."
+    title_lower = re.sub(r"^[\dA-Za-z]+[\.\)]\s*", "", title_lower).strip()
+    return any(kw in title_lower for kw in _TYPE_KEYWORDS)
+
+
 def _extract_title(markdown: str) -> str:
-    """Extract paper title from the first heading or first line."""
-    match = _HEADING_RE.search(markdown)
-    if match:
-        return match.group(2).strip()
+    """Extract paper title from headings or pre-heading text.
+
+    Strategy:
+    1. Find the first heading that is NOT a generic section name (abstract, etc.)
+    2. If all headings are section names, use text before the first heading
+    3. Fallback: first non-empty line
+    """
+    matches = list(_HEADING_RE.finditer(markdown))
+
+    # Try first heading that isn't a section name
+    for match in matches:
+        candidate = match.group(2).strip()
+        if not _is_section_heading(candidate):
+            return candidate
+
+    # All headings are section names — try text before the first heading
+    if matches:
+        preamble = markdown[:matches[0].start()].strip()
+        if preamble:
+            # Take the first non-empty line from the preamble
+            for line in preamble.split("\n"):
+                line = line.strip()
+                if line and len(line) > 3:
+                    return line
+
     # Fallback: first non-empty line
     for line in markdown.split("\n"):
         line = line.strip()
