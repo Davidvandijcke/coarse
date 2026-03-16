@@ -420,7 +420,7 @@ export default function Home() {
                     <span
                       style={{
                         fontFamily: "var(--font-chalk)",
-                        fontSize: "0.85rem",
+                        fontSize: "1rem",
                         color: "var(--dust)",
                         fontStyle: "italic",
                         display: "block",

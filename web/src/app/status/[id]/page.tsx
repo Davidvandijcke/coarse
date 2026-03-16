@@ -309,7 +309,7 @@ export default function StatusPage() {
             <p
               style={{
                 fontFamily: "Georgia, serif",
-                fontSize: "0.875rem",
+                fontSize: "1rem",
                 color: "var(--muted)",
                 margin: "0.25rem 0 0",
                 fontStyle: "italic",

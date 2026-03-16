@@ -530,7 +530,7 @@ export default function SetupPage() {
                   <span
                     style={{
                       fontFamily: "var(--font-space-mono), monospace",
-                      fontSize: "0.85rem",
+                      fontSize: "1rem",
                       color: "var(--dust)",
                     }}
                   >
@@ -609,7 +609,7 @@ export default function SetupPage() {
               <p
                 style={{
                   fontFamily: "Georgia, serif",
-                  fontSize: "0.875rem",
+                  fontSize: "1rem",
                   lineHeight: 1.6,
                   color: "var(--chalk)",
                   margin: 0,

@@ -89,7 +89,7 @@ export default function PaperPanel({
         <span
           style={{
             fontFamily: "var(--font-space-mono), monospace",
-            fontSize: "0.6rem",
+            fontSize: "0.75rem",
             letterSpacing: "0.12em",
             textTransform: "uppercase",
             color: "var(--dust)",
@@ -114,7 +114,7 @@ export default function PaperPanel({
               color: "var(--dust)",
               cursor: "pointer",
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.55rem",
+              fontSize: "0.7rem",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
               padding: "0.25rem",
@@ -131,7 +131,7 @@ export default function PaperPanel({
               color: "var(--dust)",
               cursor: "pointer",
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.75rem",
+              fontSize: "0.9rem",
               padding: "0.25rem",
             }}
             aria-label="Close paper panel"
@@ -147,7 +147,7 @@ export default function PaperPanel({
         className="review-content"
         style={{
           padding: "1rem 1.25rem 3rem",
-          fontSize: "0.85rem",
+          fontSize: "1rem",
           lineHeight: 1.7,
         }}
       >

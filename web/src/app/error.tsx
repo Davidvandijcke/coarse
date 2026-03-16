@@ -34,7 +34,7 @@ export default function ErrorPage({
       <p
         style={{
           fontFamily: "var(--font-space-mono), monospace",
-          fontSize: "0.8rem",
+          fontSize: "0.95rem",
           color: "var(--dust)",
           margin: "0 0 1.5rem",
           maxWidth: "400px",

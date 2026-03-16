@@ -175,7 +175,7 @@ function ScoresOverviewTable() {
   const cellStyle: CSSProperties = {
     padding: "0.375rem 0.625rem",
     fontFamily: "var(--font-space-mono), monospace",
-    fontSize: "0.75rem",
+    fontSize: "0.9rem",
     textAlign: "center" as const,
     color: "var(--chalk)",
     borderBottom: "1px solid var(--tray)",
@@ -183,14 +183,14 @@ function ScoresOverviewTable() {
   const headerStyle: CSSProperties = {
     ...cellStyle,
     fontFamily: "var(--font-chalk)",
-    fontSize: "0.8rem",
+    fontSize: "0.95rem",
     color: "var(--dust)",
     fontWeight: 400,
   };
   const paperCellStyle: CSSProperties = {
     ...cellStyle,
     fontFamily: "Georgia, serif",
-    fontSize: "0.75rem",
+    fontSize: "0.9rem",
     textAlign: "left" as const,
     color: "var(--chalk-bright)",
     whiteSpace: "nowrap" as const,
@@ -198,7 +198,7 @@ function ScoresOverviewTable() {
   const refCellStyle: CSSProperties = {
     ...cellStyle,
     fontFamily: "var(--font-chalk)",
-    fontSize: "0.75rem",
+    fontSize: "0.9rem",
     textAlign: "left" as const,
     color: "var(--dust)",
   };
@@ -219,7 +219,7 @@ function ScoresOverviewTable() {
           border: "none",
           cursor: "pointer",
           fontFamily: "var(--font-chalk)",
-          fontSize: "0.85rem",
+          fontSize: "1rem",
           color: "var(--dust)",
           padding: 0,
           textDecoration: "underline",
@@ -278,7 +278,7 @@ function ScoresOverviewTable() {
           <p
             style={{
               fontFamily: "var(--font-chalk)",
-              fontSize: "0.8rem",
+              fontSize: "0.95rem",
               color: "var(--dust)",
               marginTop: "0.375rem",
               fontStyle: "italic",
@@ -296,7 +296,7 @@ function JudgePromptCollapsible() {
   const [open, setOpen] = useState(false);
   const preStyle: CSSProperties = {
     fontFamily: "var(--font-space-mono), monospace",
-    fontSize: "0.75rem",
+    fontSize: "0.9rem",
     lineHeight: 1.5,
     color: "var(--chalk)",
     background: "var(--board)",
@@ -319,7 +319,7 @@ function JudgePromptCollapsible() {
           border: "none",
           cursor: "pointer",
           fontFamily: "var(--font-chalk)",
-          fontSize: "0.85rem",
+          fontSize: "1rem",
           color: "var(--dust)",
           padding: 0,
           textDecoration: "underline",
@@ -470,7 +470,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
             download
             style={{
               fontFamily: "var(--font-chalk)",
-              fontSize: "0.85rem",
+              fontSize: "1rem",
               color: "var(--dust)",
               textDecoration: "none",
               marginLeft: "auto",
@@ -498,7 +498,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
             <p
               style={{
                 fontFamily: "var(--font-chalk)",
-                fontSize: "0.85rem",
+                fontSize: "1rem",
                 color: "var(--dust)",
                 margin: "0 0 0.125rem",
               }}
@@ -666,7 +666,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
                   target="_blank"
                   rel="noopener noreferrer"
                   title={`Visit ${COMPARISON_LABELS[cid]}`}
-                  style={{ color: "var(--dust)", fontSize: "0.7rem", textDecoration: "none", lineHeight: 1 }}
+                  style={{ color: "var(--dust)", fontSize: "0.85rem", textDecoration: "none", lineHeight: 1 }}
                 >
                   ↗
                 </a>
