@@ -1,3 +1,21 @@
+/**
+ * Side-by-side comparison data loader.
+ *
+ * Score sources — each model × paper combination references specific quality
+ * evaluation files in data/refine_examples/ so results are reproducible.
+ *
+ * Sonnet 4.6 & Kimi K2.5 reviews: generated 2026-03-15 via the coarse web app.
+ * Qwen 3.5 Plus reviews: generated 2026-03-08 via coarse CLI.
+ *
+ * Quality scores vs refine.ink (Sonnet & Kimi): scored 2026-03-15 using
+ * Gemini 3.1 Pro as judge with PDF multimodal input (no format dimension).
+ * Files: quality_{model}_20260315_vs_refine_gemini31pro_pdf.md
+ *
+ * Quality scores vs Stanford/Reviewer 3 (all models): scored 2026-03-09
+ * using Gemini 3.1 Pro as judge with extracted text (includes format dimension,
+ * but format is no longer displayed).
+ * Files: quality_{model}_vs_{ref}_{TS}.md
+ */
 import fs from "fs";
 import path from "path";
 import type { QualityScores, ComparisonId, PaperId, PaperData } from "./compare-types";
@@ -14,7 +32,6 @@ function parseQualityScores(report: string): QualityScores {
     coverage: dim("coverage"),
     specificity: dim("specificity"),
     depth: dim("depth"),
-    format: dim("format"),
   };
 }
 
@@ -30,7 +47,7 @@ function tryReadFile(filePath: string): string | null {
   }
 }
 
-const NA_SCORES: QualityScores = { overall: "N/A", coverage: "N/A", specificity: "N/A", depth: "N/A", format: "N/A" };
+const NA_SCORES: QualityScores = { overall: "N/A", coverage: "N/A", specificity: "N/A", depth: "N/A" };
 
 function loadScoresForRef(dir: string, qualityFile: string): QualityScores {
   const content = tryReadFile(path.join(dir, qualityFile));
@@ -38,13 +55,17 @@ function loadScoresForRef(dir: string, qualityFile: string): QualityScores {
 }
 
 const dataRoot = path.join(process.cwd(), "..", "data", "refine_examples");
-const TS = "20260309_114443"; // timestamp of the quality eval run
+const STANFORD_REVIEWER3_TS = "20260309_114443"; // timestamp of Stanford/Reviewer3 quality eval run
 
-function loadModelScores(dir: string, modelSlug: string, refineQualityFile: string): Record<ComparisonId, QualityScores> {
+function loadModelScores(
+  dir: string,
+  modelSlug: string,
+  refineQualityFile: string,
+): Record<ComparisonId, QualityScores> {
   return {
     refine: loadScoresForRef(dir, refineQualityFile),
-    stanford: loadScoresForRef(dir, `quality_${modelSlug}_vs_stanford_${TS}.md`),
-    reviewer3: loadScoresForRef(dir, `quality_${modelSlug}_vs_reviewer3_${TS}.md`),
+    stanford: loadScoresForRef(dir, `quality_${modelSlug}_vs_stanford_${STANFORD_REVIEWER3_TS}.md`),
+    reviewer3: loadScoresForRef(dir, `quality_${modelSlug}_vs_reviewer3_${STANFORD_REVIEWER3_TS}.md`),
   };
 }
 
@@ -59,17 +80,20 @@ export const papers: Record<PaperId, PaperData> = {
     citation: "van Vreeswijk & Sompolinsky (1998)",
     pdfPath: "/compare/cortical_paper.pdf",
     models: {
+      // Review: review_sonnet46_20260315.md | Refine quality: quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md
       claude: {
-        review: readFile(path.join(corticalDir, "review_sonnet46_20260308_131015.md")),
-        scores: loadModelScores(corticalDir, "sonnet46", "paper_quality_sonnet46_20260308_131015.md"),
+        review: readFile(path.join(corticalDir, "review_sonnet46_20260315.md")),
+        scores: loadModelScores(corticalDir, "sonnet46", "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md"),
       },
+      // Review: review_qwen35plus_20260308_130637.md | Refine quality: paper_quality_qwen35plus_20260308_130637.md
       qwen: {
         review: readFile(path.join(corticalDir, "review_qwen35plus_20260308_130637.md")),
         scores: loadModelScores(corticalDir, "qwen35plus", "paper_quality_qwen35plus_20260308_130637.md"),
       },
+      // Review: review_kimik25_20260315.md | Refine quality: quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md
       kimi: {
-        review: readFile(path.join(corticalDir, "review_kimik25_20260308_135543.md")),
-        scores: loadModelScores(corticalDir, "kimik25", "paper_quality_kimik25_20260308_135543.md"),
+        review: readFile(path.join(corticalDir, "review_kimik25_20260315.md")),
+        scores: loadModelScores(corticalDir, "kimik25", "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md"),
       },
     },
     comparisons: {
@@ -83,17 +107,20 @@ export const papers: Record<PaperId, PaperData> = {
     citation: "Forney (1988)",
     pdfPath: "/compare/paper.pdf",
     models: {
+      // Review: review_sonnet46_20260315.md | Refine quality: quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md
       claude: {
-        review: readFile(path.join(cosetDir, "review_sonnet46_20260308_131015.md")),
-        scores: loadModelScores(cosetDir, "sonnet46", "paper_quality_sonnet46_20260308_131015.md"),
+        review: readFile(path.join(cosetDir, "review_sonnet46_20260315.md")),
+        scores: loadModelScores(cosetDir, "sonnet46", "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md"),
       },
+      // Review: review_qwen35plus_20260308_130637.md | Refine quality: paper_quality_qwen35plus_20260308_130637.md
       qwen: {
         review: readFile(path.join(cosetDir, "review_qwen35plus_20260308_130637.md")),
         scores: loadModelScores(cosetDir, "qwen35plus", "paper_quality_qwen35plus_20260308_130637.md"),
       },
+      // Review: review_kimik25_20260315.md | Refine quality: quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md
       kimi: {
-        review: readFile(path.join(cosetDir, "review_kimik25_20260308_153416.md")),
-        scores: loadModelScores(cosetDir, "kimik25", "paper_quality_kimik25_20260308_153416.md"),
+        review: readFile(path.join(cosetDir, "review_kimik25_20260315.md")),
+        scores: loadModelScores(cosetDir, "kimik25", "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md"),
       },
     },
     comparisons: {
@@ -107,17 +134,20 @@ export const papers: Record<PaperId, PaperData> = {
     citation: "Stephens & Donnelly (2000)",
     pdfPath: "/compare/popgen_paper.pdf",
     models: {
+      // Review: review_sonnet46_20260315.md | Refine quality: quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md
       claude: {
-        review: readFile(path.join(popgenDir, "review_sonnet46_20260308_131015.md")),
-        scores: loadModelScores(popgenDir, "sonnet46", "paper_quality_sonnet46_20260308_131015.md"),
+        review: readFile(path.join(popgenDir, "review_sonnet46_20260315.md")),
+        scores: loadModelScores(popgenDir, "sonnet46", "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md"),
       },
+      // Review: review_qwen35plus_20260308_134638.md | Refine quality: paper_quality_qwen35plus_20260308_134638.md
       qwen: {
         review: readFile(path.join(popgenDir, "review_qwen35plus_20260308_134638.md")),
         scores: loadModelScores(popgenDir, "qwen35plus", "paper_quality_qwen35plus_20260308_134638.md"),
       },
+      // Review: review_kimik25_20260315.md | Refine quality: quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md
       kimi: {
-        review: readFile(path.join(popgenDir, "review_kimik25_20260308_223614.md")),
-        scores: loadModelScores(popgenDir, "kimik25", "paper_quality_kimik25_20260308_223614.md"),
+        review: readFile(path.join(popgenDir, "review_kimik25_20260315.md")),
+        scores: loadModelScores(popgenDir, "kimik25", "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md"),
       },
     },
     comparisons: {
@@ -131,17 +161,20 @@ export const papers: Record<PaperId, PaperData> = {
     citation: "Galeotti, Golub & Goyal (2020)",
     pdfPath: "/compare/targeting_paper.pdf",
     models: {
+      // Review: review_sonnet46_20260315.md | Refine quality: quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md
       claude: {
-        review: readFile(path.join(targetDir, "review_sonnet46_20260308_130643.md")),
-        scores: loadModelScores(targetDir, "sonnet46", "paper_quality_sonnet46_20260308_130643.md"),
+        review: readFile(path.join(targetDir, "review_sonnet46_20260315.md")),
+        scores: loadModelScores(targetDir, "sonnet46", "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md"),
       },
+      // Review: review_qwen35plus_20260308_134638.md | Refine quality: paper_quality_qwen35plus_20260308_134638.md
       qwen: {
         review: readFile(path.join(targetDir, "review_qwen35plus_20260308_134638.md")),
         scores: loadModelScores(targetDir, "qwen35plus", "paper_quality_qwen35plus_20260308_134638.md"),
       },
+      // Review: review_kimik25_20260315.md | Refine quality: quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md
       kimi: {
-        review: readFile(path.join(targetDir, "review_kimik25_20260308_233034.md")),
-        scores: loadModelScores(targetDir, "kimik25", "paper_quality_kimik25_20260308_233034.md"),
+        review: readFile(path.join(targetDir, "review_kimik25_20260315.md")),
+        scores: loadModelScores(targetDir, "kimik25", "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md"),
       },
     },
     comparisons: {

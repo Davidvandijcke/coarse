@@ -5,6 +5,7 @@ Supports both single-judge and multi-judge panel evaluation with synthesis.
 """
 from __future__ import annotations
 
+import base64
 import datetime
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -95,10 +96,6 @@ A long review full of surface observations scores LOWER than a short review \
 with deep technical engagement. Score 5+ if the analysis provides deeper \
 technical engagement than Review A \
 (e.g., re-derivations, concrete counterexamples, numerical verification).
-4. **format**: Does Review B adhere to the standard review structure \
-(header block, Overall Feedback with titled issues, Detailed Comments with \
-numbered entries, each with Quote and Feedback sections)? Score 5 for perfect \
-adherence, 1 for major structural deviation.
 
 For each dimension, provide a brief reasoning string (1-2 sentences).
 
@@ -113,32 +110,40 @@ def _judge_user(
     reference: str,
     generated: str,
     paper_text: str = "",
+    paper_pdf: Path | None = None,
     swap: bool = False,
-) -> str:
+) -> str | list[dict]:
     """Build user prompt for judge.
 
     When swap=True, the generated review is presented as Review A
     and the reference as Review B (reversed). The judge always evaluates
     Review B. This is used for positional-bias mitigation.
-    """
-    paper_block = ""
-    if paper_text:
-        paper_block = f"""
-## Original Paper
-<paper>
-{paper_text}
-</paper>
 
-"""
+    When paper_pdf is provided, returns multimodal content blocks (list[dict])
+    with the PDF attached. Otherwise returns a plain string.
+    paper_pdf takes priority over paper_text when both are provided.
+    """
     if swap:
         review_a, review_b = generated, reference
     else:
         review_a, review_b = reference, generated
 
-    return f"""\
-Evaluate Review B below. Use the paper text as the primary source of truth \
+    # Build the paper reference note
+    if paper_pdf is not None:
+        paper_note = (
+            "\n## Original Paper\n"
+            "The paper is attached as a PDF. Use it as the primary source of "
+            "truth for verifying quotes and assessing coverage.\n\n"
+        )
+    elif paper_text:
+        paper_note = f"\n## Original Paper\n<paper>\n{paper_text}\n</paper>\n\n"
+    else:
+        paper_note = ""
+
+    prompt_text = f"""\
+Evaluate Review B below. Use the paper as the primary source of truth \
 and Review A for calibration (Review A is not an answer key).
-{paper_block}
+{paper_note}\
 ## Review A (for calibration)
 <review_a>
 {review_a}
@@ -149,7 +154,7 @@ and Review A for calibration (Review A is not an answer key).
 {review_b}
 </review_b>
 
-Score Review B on: coverage, specificity, depth, and format \
+Score Review B on: coverage, specificity, and depth \
 (each 1.0-6.0 in half-point increments, where 5.0 = matches Review A, \
 5.5-6.0 = exceeds Review A).
 Verify quotes against the paper text. Assess coverage and depth against the \
@@ -159,6 +164,17 @@ Review A missed — if Review B catches real errors Review A \
 overlooked, that warrants a score above 5.0. Provide reasoning for each score, \
 plus 2-3 strengths and 2-3 weaknesses.
 """
+
+    if paper_pdf is not None:
+        pdf_b64 = base64.b64encode(paper_pdf.read_bytes()).decode()
+        return [
+            {"type": "text", "text": prompt_text},
+            {"type": "image_url", "image_url": {
+                "url": f"data:application/pdf;base64,{pdf_b64}",
+            }},
+        ]
+
+    return prompt_text
 
 
 class _JudgeOutput(BaseModel):
@@ -172,6 +188,7 @@ def evaluate_review(
     reference: str,
     client: LLMClient | None = None,
     paper_text: str = "",
+    paper_pdf: Path | None = None,
     model: str = QUALITY_MODEL,
     max_tokens: int = 16384,
 ) -> QualityReport:
@@ -182,8 +199,8 @@ def evaluate_review(
     Review A (swapped) — then averaging dimension scores.
 
     Accepts Review object or rendered markdown string.
-    If paper_text is provided, the judge can verify quotes and
-    independently assess coverage and depth.
+    If paper_pdf is provided, the PDF is sent as a multimodal attachment
+    for quote verification (preferred). Falls back to paper_text if no PDF.
     Returns structured quality report.
     Creates a default LLMClient if none provided.
     """
@@ -199,7 +216,8 @@ def evaluate_review(
             {
                 "role": "user",
                 "content": _judge_user(
-                    reference, generated, paper_text, swap=swap
+                    reference, generated, paper_text,
+                    paper_pdf=paper_pdf, swap=swap,
                 ),
             },
         ]
@@ -289,7 +307,7 @@ of expert judges, each with a distinct perspective (methodology, empirical desig
 communication).
 
 Your task:
-1. For each dimension (coverage, specificity, depth, format), determine a final \
+1. For each dimension (coverage, specificity, depth), determine a final \
 consensus score (1.0-6.0 in half-point increments, where 5+ means exceeds \
 the reference) that FAITHFULLY reflects the panel's actual scores. Your score \
 must stay within the range of the judges' scores. Do NOT introduce your own \
@@ -340,6 +358,7 @@ def evaluate_review_panel(
     reference: str,
     client: LLMClient | None = None,
     paper_text: str = "",
+    paper_pdf: Path | None = None,
     model: str = QUALITY_MODEL,
 ) -> tuple[QualityReport, list[QualityReport]]:
     """Multi-judge panel evaluation with synthesis.
@@ -356,7 +375,7 @@ def evaluate_review_panel(
     if isinstance(generated, Review):
         generated = render_review(generated)
 
-    user_content = _judge_user(reference, generated, paper_text)
+    user_content = _judge_user(reference, generated, paper_text, paper_pdf=paper_pdf)
 
     def _run_judge(persona: str) -> QualityReport:
         messages = [
@@ -382,7 +401,7 @@ def evaluate_review_panel(
             try:
                 individual_reports.append(future.result())
             except Exception:
-                logger.warning("Judge %d failed, skipping", i)
+                logger.warning("Judge %d failed, skipping", i, exc_info=True)
 
     if not individual_reports:
         raise RuntimeError("All judges failed")

@@ -115,7 +115,6 @@ Dimensions:
 1. **coverage**: Does Review B identify the paper's most important issues? Evaluate this against the paper itself — what are the real strengths, weaknesses, and gaps? Review A may help calibrate what matters, but it is not the answer key. Credit Review B fully for finding valid issues Review A missed, and do not penalize it for omitting issues that are minor or debatable.
 2. **specificity**: Are comments precise, with correct verbatim quotes from the paper and actionable guidance? Verify quotes against the paper text. Score 5 if every comment has an accurate quote and clear fix, 1 if comments are vague or quotes are fabricated. Score 5+ if quotes are more precise and fixes more concrete than Review A.
 3. **depth**: Is the analysis substantive and technically rigorous? Does it engage with the paper's methodology, proofs, and assumptions at a deep level, or does it stay surface-level (notation complaints, formatting issues)? A long review full of surface observations scores LOWER than a short review with deep technical engagement. Score 5+ if the analysis provides deeper technical engagement than Review A (e.g., re-derivations, concrete counterexamples, numerical verification).
-4. **format**: Does Review B adhere to the standard review structure (header block, Overall Feedback with titled issues, Detailed Comments with numbered entries, each with Quote and Feedback sections)? Score 5 for perfect adherence, 1 for major structural deviation.
 
 For each dimension, provide a brief reasoning string (1-2 sentences).
 
@@ -126,9 +125,7 @@ Do not compute overall_score — it will be computed externally.`;
 const JUDGE_USER_TEMPLATE = `Evaluate Review B below. Use the paper text as the primary source of truth and Review A for calibration (Review A is not an answer key).
 
 ## Original Paper
-<paper>
-{full paper text — ~50-200K tokens}
-</paper>
+{paper PDF attached as multimodal input — the judge reads the actual PDF}
 
 ## Review A (for calibration)
 <review_a>
@@ -140,25 +137,29 @@ const JUDGE_USER_TEMPLATE = `Evaluate Review B below. Use the paper text as the 
 {the other review}
 </review_b>
 
-Score Review B on: coverage, specificity, depth, and format (each 1.0-6.0 in half-point increments, where 5.0 = matches Review A, 5.5-6.0 = exceeds Review A).
+Score Review B on: coverage, specificity, and depth (each 1.0-6.0 in half-point increments, where 5.0 = matches Review A, 5.5-6.0 = exceeds Review A).
 Verify quotes against the paper text. Assess coverage and depth against the paper itself — does Review B find the paper's real issues and engage with its actual methodology and assumptions? Credit valid issues Review A missed — if Review B catches real errors Review A overlooked, that warrants a score above 5.0. Provide reasoning for each score, plus 2-3 strengths and 2-3 weaknesses.
 
 NOTE: To mitigate positional bias, the judge runs twice with Review A and Review B swapped. Scores are inverted and averaged across both orderings.`;
 
 /* ── Scores overview table ────────────────────────────────── */
+// Source files in data/refine_examples/{paper}/:
+//   refine.ink (2026-03-15, PDF judge, no format): quality_{model}_20260315_vs_refine_gemini31pro_pdf.md
+//   Stanford & Reviewer 3 (2026-03-09, text judge): quality_{model}_vs_{ref}_20260309_114443.md
+// Qwen scores are from 2026-03-08 runs (not re-scored with PDF judge).
 const SCORE_DATA = [
   { paper: "van Vreeswijk & Sompolinsky (1998)", qwen: 5.50, claude: 5.62, kimi: 5.25, refLabel: "Stanford" },
   { paper: "van Vreeswijk & Sompolinsky (1998)", qwen: 5.50, claude: 5.75, kimi: 5.75, refLabel: "Reviewer 3" },
-  { paper: "van Vreeswijk & Sompolinsky (1998)", qwen: 3.50, claude: 5.62, kimi: 5.12, refLabel: "refine.ink" },
+  { paper: "van Vreeswijk & Sompolinsky (1998)", qwen: 3.50, claude: 5.33, kimi: 4.67, refLabel: "refine.ink" },
   { paper: "Forney (1988)", qwen: 4.88, claude: 5.12, kimi: 5.75, refLabel: "Stanford" },
   { paper: "Forney (1988)", qwen: 4.25, claude: 5.25, kimi: 5.75, refLabel: "Reviewer 3" },
-  { paper: "Forney (1988)", qwen: 5.50, claude: 5.75, kimi: 5.25, refLabel: "refine.ink" },
+  { paper: "Forney (1988)", qwen: 5.50, claude: 5.50, kimi: 4.17, refLabel: "refine.ink" },
   { paper: "Stephens & Donnelly (2000)", qwen: 5.75, claude: 5.25, kimi: 5.00, refLabel: "Stanford" },
   { paper: "Stephens & Donnelly (2000)", qwen: 5.62, claude: 5.00, kimi: 5.25, refLabel: "Reviewer 3" },
-  { paper: "Stephens & Donnelly (2000)", qwen: 4.38, claude: 5.50, kimi: 4.62, refLabel: "refine.ink" },
+  { paper: "Stephens & Donnelly (2000)", qwen: 4.38, claude: 5.67, kimi: 4.17, refLabel: "refine.ink" },
   { paper: "Galeotti, Golub & Goyal (2020)", qwen: 5.75, claude: 5.75, kimi: 5.75, refLabel: "Stanford" },
   { paper: "Galeotti, Golub & Goyal (2020)", qwen: 5.75, claude: 5.75, kimi: 5.75, refLabel: "Reviewer 3" },
-  { paper: "Galeotti, Golub & Goyal (2020)", qwen: 5.12, claude: 5.62, kimi: 5.62, refLabel: "refine.ink" },
+  { paper: "Galeotti, Golub & Goyal (2020)", qwen: 5.12, claude: 5.83, kimi: 5.67, refLabel: "refine.ink" },
 ];
 
 const PAPERS_ORDER = [
@@ -283,7 +284,7 @@ function ScoresOverviewTable() {
               fontStyle: "italic",
             }}
           >
-            Evaluated by Gemini 3.1 Pro. 5.0 = matches reference quality. 5.5+ = exceeds it.
+            Evaluated by Gemini 3.1 Pro with PDF multimodal input. 5.0 = matches reference quality. 5.5+ = exceeds it.
           </p>
         </div>
       )}

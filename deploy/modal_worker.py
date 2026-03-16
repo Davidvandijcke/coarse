@@ -99,6 +99,37 @@ def _sanitize_error(msg: str) -> str:
     return msg[:500]
 
 
+def _classify_api_error(exc: BaseException) -> str | None:
+    """Return a clear, user-facing message for common API errors.
+
+    Returns None if the error isn't a recognized API issue (falls back
+    to the generic sanitized message).
+    """
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    resp = getattr(exc, "response", None)
+    if resp is not None and not isinstance(status, int):
+        status = getattr(resp, "status_code", None)
+    msg = str(exc).lower()
+
+    if status == 401 or "invalid" in msg and "key" in msg or "unauthorized" in msg:
+        return "Invalid API key. Check that your key is correct and active."
+    if status == 402 or any(kw in msg for kw in (
+        "spend limit", "insufficient", "quota exceeded",
+        "payment required", "billing", "credits", "exceeded your",
+    )):
+        return ("API key spend limit reached. Add credits or raise your "
+                "limit on your provider dashboard, then try again.")
+    if status == 403:
+        return "API key does not have access to this model or endpoint."
+    if status == 429:
+        return ("Rate limited by the API provider. Wait a minute and try again, "
+                "or check your rate limits on your provider dashboard.")
+    # ExtractionError from coarse may already have a user-friendly message
+    if type(exc).__name__ == "ExtractionError":
+        return str(exc)
+    return None
+
+
 class ReviewRequest(BaseModel):
     job_id: str
     pdf_storage_path: str
@@ -109,7 +140,7 @@ class ReviewRequest(BaseModel):
 
 @app.function(
     image=image,
-    timeout=3600,
+    timeout=7200,
     memory=2048,
     max_containers=10,
     secrets=[
@@ -205,11 +236,17 @@ def do_review(req_dict: dict):
                 ),
             )
 
-    except Exception as e:
+    except BaseException as e:
         duration = int(time.time() - start)
+        # BaseException catches SystemExit (Modal SIGTERM on timeout) and
+        # KeyboardInterrupt, not just Exception subclasses.
+        if isinstance(e, SystemExit):
+            error_msg = "Review timed out"
+        else:
+            error_msg = _classify_api_error(e) or _sanitize_error(str(e))
         db.table("reviews").update({
             "status": "failed",
-            "error_message": _sanitize_error(str(e)),
+            "error_message": error_msg,
             "duration_seconds": duration,
         }).eq("id", job_id).execute()
         raise

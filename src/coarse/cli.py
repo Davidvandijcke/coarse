@@ -7,10 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 import typer
 from rich.console import Console
 from rich.status import Status
@@ -37,7 +33,6 @@ console = Console()
 
 def _pick_cheap_model() -> str | None:
     """Find the cheapest available model based on which API keys are set."""
-    import os
     for env_var, model in CHEAP_MODELS.items():
         if os.environ.get(env_var):
             return model
@@ -53,8 +48,6 @@ def _run_setup(config: CoarseConfig) -> CoarseConfig:
         default=config.default_model,
     )
     config = config.model_copy(update={"default_model": default_model})
-
-    import os
 
     for provider, env_var in PROVIDER_ENV_VARS.items():
         if os.environ.get(env_var):
@@ -95,7 +88,8 @@ def review(
         None, "--model", "-m", help="LiteLLM model string (e.g. openai/gpt-4o)"
     ),
     api_key: Optional[str] = typer.Option(
-        None, "--api-key", help="OpenRouter API key (sets OPENROUTER_API_KEY for this run)"
+        None, "--api-key",
+        help="OpenRouter API key (WARNING: visible in shell history; prefer --env-file)",
     ),
     env_file: Optional[Path] = typer.Option(
         None, "--env-file", help="Path to a .env file to load (e.g. ~/keys.env)"
@@ -119,6 +113,7 @@ def review(
 
     # Load env file / API key before anything else so config picks them up
     if env_file is not None:
+        from dotenv import load_dotenv
         load_dotenv(env_file, override=True)
     if api_key is not None:
         os.environ["OPENROUTER_API_KEY"] = api_key
@@ -197,16 +192,21 @@ def review(
         quality_client = LLMClient(model=quality_model)
         mode = "panel" if eval_panel else "single"
 
+        # Prefer sending the actual PDF for quote verification (no extraction mismatch)
+        pdf_path = pdf if pdf.suffix.lower() == ".pdf" else None
+
         with Status(f"Running quality evaluation ({mode})...", console=console):
             if eval_panel:
                 report, _ = evaluate_review_panel(
                     markdown, reference_text, client=quality_client,
                     paper_text=paper_text.full_markdown,
+                    paper_pdf=pdf_path,
                 )
             else:
                 report = evaluate_review(
                     markdown, reference_text, client=quality_client,
                     paper_text=paper_text.full_markdown,
+                    paper_pdf=pdf_path,
                 )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -20,6 +20,42 @@ logger = logging.getLogger(__name__)
 
 PAGE_BREAK = "\n\n<!-- PAGE BREAK -->\n\n"
 
+
+def _get_api_error_status(exc: Exception) -> int | None:
+    """Extract HTTP status code from an API error, if present."""
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    if isinstance(status, int):
+        return status
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        s = getattr(resp, "status_code", None)
+        if isinstance(s, int):
+            return s
+    return None
+
+
+def _classify_api_error(exc: Exception) -> str | None:
+    """Return a user-facing message if this is a user-actionable API error.
+
+    Returns None if the error is transient or backend-specific (should fall
+    through to the next extraction backend).
+    """
+    status = _get_api_error_status(exc)
+    msg = str(exc).lower()
+
+    if status == 401 or "invalid.*key" in msg or "unauthorized" in msg:
+        return "Invalid API key. Check that your key is correct and active."
+    if status == 402 or any(kw in msg for kw in (
+        "spend limit", "insufficient", "quota exceeded",
+        "payment required", "billing", "credits", "exceeded your",
+    )):
+        return ("API key spend limit reached. Add credits or raise your "
+                "limit in your provider dashboard.")
+    if status == 403:
+        return "API key does not have access to this model or endpoint."
+    # Don't classify 429 (rate limit) or 5xx here — those are transient.
+    return None
+
 SUPPORTED_EXTENSIONS = frozenset({
     ".pdf", ".txt", ".md", ".tex", ".latex",
     ".html", ".htm", ".docx", ".epub",
@@ -274,19 +310,6 @@ def _extract_epub(path: Path) -> str:
 # Garble detection and normalization
 # ---------------------------------------------------------------------------
 
-# Common OCR garble patterns from older PDFs (pre-2005, non-standard encodings)
-_GARBLE_REPLACEMENTS: list[tuple[str, str]] = [
-    ("®nite", "finite"),
-    ("in®nite", "infinite"),
-    ("de®ne", "define"),
-    ("de®ned", "defined"),
-    ("de®nition", "definition"),
-    ("/C40", "("),
-    ("/C41", ")"),
-    ("naõÈve", "naïve"),
-    ("naõève", "naïve"),
-    ("\u00ae", "fi"),  # ® used as ligature for fi
-]
 
 # Mistral OCR glyph[...] artifact → Unicode mapping
 _GLYPH_MAP: dict[str, str] = {
@@ -307,19 +330,7 @@ def normalize_mistral_artifacts(text: str) -> str:
     return result
 
 
-from coarse.garble import garble_ratio as compute_garble_ratio  # noqa: E402, F401
-
-
-def normalize_ocr_garble(text: str) -> str:
-    """Apply known OCR garble fixes to extracted text.
-
-    Fixes common character encoding issues from older PDFs without
-    altering correctly-encoded content.
-    """
-    result = text
-    for garbled, clean in _GARBLE_REPLACEMENTS:
-        result = result.replace(garbled, clean)
-    return result
+from coarse.garble import garble_ratio as compute_garble_ratio, normalize_ocr_garble  # noqa: E402, F401
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +390,11 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
             logger.info("Extracted via %s (%d chars)", name, len(full_markdown))
             break
         except Exception as exc:
+            # Surface user-actionable API errors immediately — don't mask
+            # them by falling through to the next backend.
+            api_msg = _classify_api_error(exc)
+            if api_msg:
+                raise ExtractionError(api_msg) from exc
             logger.info("%s unavailable: %s", name, exc)
 
     if full_markdown is None:

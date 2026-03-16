@@ -3,7 +3,6 @@ export type QualityScores = {
   coverage: string;
   specificity: string;
   depth: string;
-  format: string;
 };
 
 export type ModelId = "claude" | "kimi" | "qwen";
