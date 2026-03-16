@@ -144,22 +144,22 @@ NOTE: To mitigate positional bias, the judge runs twice with Review A and Review
 
 /* ── Scores overview table ────────────────────────────────── */
 // Source files in data/refine_examples/{paper}/:
-//   refine.ink (2026-03-15, PDF judge, no format): quality_{model}_20260315_vs_refine_gemini31pro_pdf.md
-//   Stanford & Reviewer 3 (2026-03-09, text judge): quality_{model}_vs_{ref}_20260309_114443.md
-// Qwen scores are from 2026-03-08 runs (not re-scored with PDF judge).
+//   refine.ink: quality_{model}_{date}_vs_refine_gemini31pro_pdf.md
+//   Stanford & Reviewer 3 (2026-03-16): quality_{model}_20260316_vs_{ref}_gemini31pro_pdf.md
+// All scored by Gemini 3.1 Pro with PDF multimodal input.
 const SCORE_DATA = [
-  { paper: "van Vreeswijk & Sompolinsky (1998)", qwen: 5.50, claude: 5.62, kimi: 5.25, refLabel: "Stanford" },
-  { paper: "van Vreeswijk & Sompolinsky (1998)", qwen: 5.50, claude: 5.75, kimi: 5.75, refLabel: "Reviewer 3" },
-  { paper: "van Vreeswijk & Sompolinsky (1998)", qwen: 3.50, claude: 5.33, kimi: 4.67, refLabel: "refine.ink" },
-  { paper: "Forney (1988)", qwen: 4.88, claude: 5.12, kimi: 5.75, refLabel: "Stanford" },
-  { paper: "Forney (1988)", qwen: 4.25, claude: 5.25, kimi: 5.75, refLabel: "Reviewer 3" },
-  { paper: "Forney (1988)", qwen: 5.50, claude: 5.50, kimi: 4.17, refLabel: "refine.ink" },
-  { paper: "Stephens & Donnelly (2000)", qwen: 5.75, claude: 5.25, kimi: 5.00, refLabel: "Stanford" },
-  { paper: "Stephens & Donnelly (2000)", qwen: 5.62, claude: 5.00, kimi: 5.25, refLabel: "Reviewer 3" },
-  { paper: "Stephens & Donnelly (2000)", qwen: 4.38, claude: 5.67, kimi: 4.17, refLabel: "refine.ink" },
-  { paper: "Galeotti, Golub & Goyal (2020)", qwen: 5.75, claude: 5.75, kimi: 5.75, refLabel: "Stanford" },
-  { paper: "Galeotti, Golub & Goyal (2020)", qwen: 5.75, claude: 5.75, kimi: 5.75, refLabel: "Reviewer 3" },
-  { paper: "Galeotti, Golub & Goyal (2020)", qwen: 5.12, claude: 5.83, kimi: 5.67, refLabel: "refine.ink" },
+  { paper: "van Vreeswijk & Sompolinsky (1998)", gpt5mini: 6.00, claude: 4.50, kimi: 6.00, refLabel: "Stanford" },
+  { paper: "van Vreeswijk & Sompolinsky (1998)", gpt5mini: 6.00, claude: 6.00, kimi: 6.00, refLabel: "Reviewer 3" },
+  { paper: "van Vreeswijk & Sompolinsky (1998)", gpt5mini: 5.50, claude: 5.33, kimi: 4.67, refLabel: "refine.ink" },
+  { paper: "Forney (1988)", gpt5mini: 4.83, claude: 6.00, kimi: 6.00, refLabel: "Stanford" },
+  { paper: "Forney (1988)", gpt5mini: 6.00, claude: 6.00, kimi: 6.00, refLabel: "Reviewer 3" },
+  { paper: "Forney (1988)", gpt5mini: 5.83, claude: 5.50, kimi: 4.17, refLabel: "refine.ink" },
+  { paper: "Stephens & Donnelly (2000)", gpt5mini: 5.83, claude: 6.00, kimi: 5.83, refLabel: "Stanford" },
+  { paper: "Stephens & Donnelly (2000)", gpt5mini: 6.00, claude: 6.00, kimi: 5.50, refLabel: "Reviewer 3" },
+  { paper: "Stephens & Donnelly (2000)", gpt5mini: 5.00, claude: 5.67, kimi: 4.17, refLabel: "refine.ink" },
+  { paper: "Galeotti, Golub & Goyal (2020)", gpt5mini: 5.00, claude: 6.00, kimi: 5.00, refLabel: "Stanford" },
+  { paper: "Galeotti, Golub & Goyal (2020)", gpt5mini: 6.00, claude: 6.00, kimi: 5.83, refLabel: "Reviewer 3" },
+  { paper: "Galeotti, Golub & Goyal (2020)", gpt5mini: 4.33, claude: 5.83, kimi: 5.67, refLabel: "refine.ink" },
 ];
 
 const PAPERS_ORDER = [
@@ -235,7 +235,7 @@ function ScoresOverviewTable() {
               <tr>
                 <th style={{ ...headerStyle, textAlign: "left" }}>Paper</th>
                 <th style={{ ...headerStyle, textAlign: "left" }}>Reference</th>
-                <th style={headerStyle}>Qwen 3.5+</th>
+                <th style={headerStyle}>GPT-5 Mini</th>
                 <th style={headerStyle}>Sonnet 4.6</th>
                 <th style={headerStyle}>Kimi K2.5</th>
               </tr>
@@ -260,7 +260,7 @@ function ScoresOverviewTable() {
                         {row.refLabel}
                       </a>
                     </td>
-                    {[row.qwen, row.claude, row.kimi].map((score, j) => (
+                    {[row.gpt5mini, row.claude, row.kimi].map((score, j) => (
                       <td key={j} style={{
                         ...cellStyle,
                         color: scoreColor(score),
@@ -600,7 +600,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
           {/* Model selector */}
           <div style={{ display: "flex", gap: "1.25rem", padding: "0.5rem 1.5rem", flexShrink: 0, alignItems: "baseline" }}>
             <span style={{ fontFamily: "var(--font-serif)", fontSize: "0.8rem", color: "var(--dust)", letterSpacing: "0.02em" }}>&lsquo;coarse</span>
-            {(["claude", "kimi", "qwen"] as const).map((mid) => {
+            {(["claude", "kimi", "gpt5mini"] as const).map((mid) => {
               const available = !!paper.models[mid];
               return (
                 <button

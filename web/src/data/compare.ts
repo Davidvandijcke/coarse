@@ -5,16 +5,16 @@
  * evaluation files in data/refine_examples/ so results are reproducible.
  *
  * Sonnet 4.6 & Kimi K2.5 reviews: generated 2026-03-15 via the coarse web app.
- * Qwen 3.5 Plus reviews: generated 2026-03-08 via coarse CLI.
+ * GPT-5 Mini reviews: generated 2026-03-16 via coarse CLI.
  *
- * Quality scores vs refine.ink (Sonnet & Kimi): scored 2026-03-15 using
- * Gemini 3.1 Pro as judge with PDF multimodal input (no format dimension).
- * Files: quality_{model}_20260315_vs_refine_gemini31pro_pdf.md
+ * Quality scores vs refine.ink: scored using Gemini 3.1 Pro as judge with PDF
+ * multimodal input (no format dimension).
+ *   Sonnet & Kimi: quality_{model}_20260315_vs_refine_gemini31pro_pdf.md
+ *   GPT-5 Mini:   quality_gpt5mini_20260316_vs_refine_gemini31pro_pdf.md
  *
- * Quality scores vs Stanford/Reviewer 3 (all models): scored 2026-03-09
- * using Gemini 3.1 Pro as judge with extracted text (includes format dimension,
- * but format is no longer displayed).
- * Files: quality_{model}_vs_{ref}_{TS}.md
+ * Quality scores vs Stanford/Reviewer 3: scored 2026-03-16 using Gemini 3.1 Pro
+ * as judge with PDF multimodal input (no format dimension).
+ *   Files: quality_{model}_20260316_vs_{ref}_gemini31pro_pdf.md
  */
 import fs from "fs";
 import path from "path";
@@ -55,17 +55,17 @@ function loadScoresForRef(dir: string, qualityFile: string): QualityScores {
 }
 
 const dataRoot = path.join(process.cwd(), "..", "data", "refine_examples");
-const STANFORD_REVIEWER3_TS = "20260309_114443"; // timestamp of Stanford/Reviewer3 quality eval run
 
 function loadModelScores(
   dir: string,
-  modelSlug: string,
-  refineQualityFile: string,
+  refineFile: string,
+  stanfordFile: string,
+  reviewer3File: string,
 ): Record<ComparisonId, QualityScores> {
   return {
-    refine: loadScoresForRef(dir, refineQualityFile),
-    stanford: loadScoresForRef(dir, `quality_${modelSlug}_vs_stanford_${STANFORD_REVIEWER3_TS}.md`),
-    reviewer3: loadScoresForRef(dir, `quality_${modelSlug}_vs_reviewer3_${STANFORD_REVIEWER3_TS}.md`),
+    refine: loadScoresForRef(dir, refineFile),
+    stanford: loadScoresForRef(dir, stanfordFile),
+    reviewer3: loadScoresForRef(dir, reviewer3File),
   };
 }
 
@@ -80,20 +80,32 @@ export const papers: Record<PaperId, PaperData> = {
     citation: "van Vreeswijk & Sompolinsky (1998)",
     pdfPath: "/compare/cortical_paper.pdf",
     models: {
-      // Review: review_sonnet46_20260315.md | Refine quality: quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md
+      // Review: review_sonnet46_20260315.md
       claude: {
         review: readFile(path.join(corticalDir, "review_sonnet46_20260315.md")),
-        scores: loadModelScores(corticalDir, "sonnet46", "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md"),
+        scores: loadModelScores(corticalDir,
+          "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md",
+          "quality_sonnet46_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_sonnet46_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
       },
-      // Review: review_qwen35plus_20260308_130637.md | Refine quality: paper_quality_qwen35plus_20260308_130637.md
-      qwen: {
-        review: readFile(path.join(corticalDir, "review_qwen35plus_20260308_130637.md")),
-        scores: loadModelScores(corticalDir, "qwen35plus", "paper_quality_qwen35plus_20260308_130637.md"),
-      },
-      // Review: review_kimik25_20260315.md | Refine quality: quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md
+      // Review: review_kimik25_20260315.md
       kimi: {
         review: readFile(path.join(corticalDir, "review_kimik25_20260315.md")),
-        scores: loadModelScores(corticalDir, "kimik25", "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md"),
+        scores: loadModelScores(corticalDir,
+          "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md",
+          "quality_kimik25_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_kimik25_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
+      },
+      // Review: review_gpt5mini_20260316.md
+      gpt5mini: {
+        review: readFile(path.join(corticalDir, "review_gpt5mini_20260316.md")),
+        scores: loadModelScores(corticalDir,
+          "quality_gpt5mini_20260316_vs_refine_gemini31pro_pdf.md",
+          "quality_gpt5mini_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_gpt5mini_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
       },
     },
     comparisons: {
@@ -107,20 +119,32 @@ export const papers: Record<PaperId, PaperData> = {
     citation: "Forney (1988)",
     pdfPath: "/compare/paper.pdf",
     models: {
-      // Review: review_sonnet46_20260315.md | Refine quality: quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md
+      // Review: review_sonnet46_20260315.md
       claude: {
         review: readFile(path.join(cosetDir, "review_sonnet46_20260315.md")),
-        scores: loadModelScores(cosetDir, "sonnet46", "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md"),
+        scores: loadModelScores(cosetDir,
+          "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md",
+          "quality_sonnet46_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_sonnet46_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
       },
-      // Review: review_qwen35plus_20260308_130637.md | Refine quality: paper_quality_qwen35plus_20260308_130637.md
-      qwen: {
-        review: readFile(path.join(cosetDir, "review_qwen35plus_20260308_130637.md")),
-        scores: loadModelScores(cosetDir, "qwen35plus", "paper_quality_qwen35plus_20260308_130637.md"),
-      },
-      // Review: review_kimik25_20260315.md | Refine quality: quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md
+      // Review: review_kimik25_20260315.md
       kimi: {
         review: readFile(path.join(cosetDir, "review_kimik25_20260315.md")),
-        scores: loadModelScores(cosetDir, "kimik25", "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md"),
+        scores: loadModelScores(cosetDir,
+          "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md",
+          "quality_kimik25_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_kimik25_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
+      },
+      // Review: review_gpt5mini_20260316.md
+      gpt5mini: {
+        review: readFile(path.join(cosetDir, "review_gpt5mini_20260316.md")),
+        scores: loadModelScores(cosetDir,
+          "quality_gpt5mini_20260316_vs_refine_gemini31pro_pdf.md",
+          "quality_gpt5mini_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_gpt5mini_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
       },
     },
     comparisons: {
@@ -134,20 +158,32 @@ export const papers: Record<PaperId, PaperData> = {
     citation: "Stephens & Donnelly (2000)",
     pdfPath: "/compare/popgen_paper.pdf",
     models: {
-      // Review: review_sonnet46_20260315.md | Refine quality: quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md
+      // Review: review_sonnet46_20260315.md
       claude: {
         review: readFile(path.join(popgenDir, "review_sonnet46_20260315.md")),
-        scores: loadModelScores(popgenDir, "sonnet46", "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md"),
+        scores: loadModelScores(popgenDir,
+          "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md",
+          "quality_sonnet46_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_sonnet46_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
       },
-      // Review: review_qwen35plus_20260308_134638.md | Refine quality: paper_quality_qwen35plus_20260308_134638.md
-      qwen: {
-        review: readFile(path.join(popgenDir, "review_qwen35plus_20260308_134638.md")),
-        scores: loadModelScores(popgenDir, "qwen35plus", "paper_quality_qwen35plus_20260308_134638.md"),
-      },
-      // Review: review_kimik25_20260315.md | Refine quality: quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md
+      // Review: review_kimik25_20260315.md
       kimi: {
         review: readFile(path.join(popgenDir, "review_kimik25_20260315.md")),
-        scores: loadModelScores(popgenDir, "kimik25", "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md"),
+        scores: loadModelScores(popgenDir,
+          "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md",
+          "quality_kimik25_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_kimik25_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
+      },
+      // Review: review_gpt5mini_20260316.md
+      gpt5mini: {
+        review: readFile(path.join(popgenDir, "review_gpt5mini_20260316.md")),
+        scores: loadModelScores(popgenDir,
+          "quality_gpt5mini_20260316_vs_refine_gemini31pro_pdf.md",
+          "quality_gpt5mini_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_gpt5mini_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
       },
     },
     comparisons: {
@@ -161,20 +197,32 @@ export const papers: Record<PaperId, PaperData> = {
     citation: "Galeotti, Golub & Goyal (2020)",
     pdfPath: "/compare/targeting_paper.pdf",
     models: {
-      // Review: review_sonnet46_20260315.md | Refine quality: quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md
+      // Review: review_sonnet46_20260315.md
       claude: {
         review: readFile(path.join(targetDir, "review_sonnet46_20260315.md")),
-        scores: loadModelScores(targetDir, "sonnet46", "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md"),
+        scores: loadModelScores(targetDir,
+          "quality_sonnet46_20260315_vs_refine_gemini31pro_pdf.md",
+          "quality_sonnet46_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_sonnet46_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
       },
-      // Review: review_qwen35plus_20260308_134638.md | Refine quality: paper_quality_qwen35plus_20260308_134638.md
-      qwen: {
-        review: readFile(path.join(targetDir, "review_qwen35plus_20260308_134638.md")),
-        scores: loadModelScores(targetDir, "qwen35plus", "paper_quality_qwen35plus_20260308_134638.md"),
-      },
-      // Review: review_kimik25_20260315.md | Refine quality: quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md
+      // Review: review_kimik25_20260315.md
       kimi: {
         review: readFile(path.join(targetDir, "review_kimik25_20260315.md")),
-        scores: loadModelScores(targetDir, "kimik25", "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md"),
+        scores: loadModelScores(targetDir,
+          "quality_kimik25_20260315_vs_refine_gemini31pro_pdf.md",
+          "quality_kimik25_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_kimik25_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
+      },
+      // Review: review_gpt5mini_20260316.md
+      gpt5mini: {
+        review: readFile(path.join(targetDir, "review_gpt5mini_20260316.md")),
+        scores: loadModelScores(targetDir,
+          "quality_gpt5mini_20260316_vs_refine_gemini31pro_pdf.md",
+          "quality_gpt5mini_20260316_vs_stanford_gemini31pro_pdf.md",
+          "quality_gpt5mini_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
       },
     },
     comparisons: {
