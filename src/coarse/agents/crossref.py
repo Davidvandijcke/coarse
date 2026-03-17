@@ -33,8 +33,10 @@ class CrossrefAgent(ReviewAgent):
         overview: OverviewFeedback,
         comments: list[DetailedComment],
         comment_target: int | str | None = None,
+        title: str = "",
+        abstract: str = "",
     ) -> list[DetailedComment]:
-        user_content = crossref_user(overview, comments)
+        user_content = crossref_user(overview, comments, title=title, abstract=abstract)
         sys_prompt = crossref_system(comment_target) if comment_target else CROSSREF_SYSTEM
 
         messages = self._build_messages(sys_prompt, user_content)

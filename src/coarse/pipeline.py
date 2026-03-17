@@ -9,6 +9,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from coarse.agents.contradiction import ContradictionCheckAgent
 from coarse.agents.critique import CritiqueAgent
 from coarse.agents.crossref import CrossrefAgent
 from coarse.agents.literature import search_literature
@@ -19,11 +20,17 @@ from coarse.config import CoarseConfig, load_config
 from coarse.cost import run_cost_gate
 from coarse.extraction import extract_file
 from coarse.llm import LLMClient
-from coarse.prompts import CALIBRATION_SYSTEM, calibration_user
+from coarse.prompts import (
+    CALIBRATION_SYSTEM,
+    CONTRIBUTION_EXTRACTION_SYSTEM,
+    calibration_user,
+    contribution_extraction_user,
+)
 from coarse.quote_verify import verify_quotes
 from coarse.structure import analyze_structure
 from coarse.synthesis import render_review
 from coarse.types import (
+    ContributionContext,
     DetailedComment,
     DomainCalibration,
     ExtractionError,
@@ -166,6 +173,40 @@ def calibrate_domain(
         return None
 
 
+def extract_contribution(
+    structure: PaperStructure, client: LLMClient,
+) -> ContributionContext | None:
+    """Extract paper's stated contributions via cheap LLM call (~$0.02).
+
+    Returns None on failure (pipeline proceeds without contribution context).
+    """
+    intro_text = ""
+    conclusion_text = ""
+    for s in structure.sections:
+        if s.section_type == SectionType.INTRODUCTION:
+            intro_text = s.text
+        elif s.section_type == SectionType.CONCLUSION:
+            conclusion_text = s.text
+
+    if not intro_text:
+        intro_text = structure.abstract
+
+    messages = [
+        {"role": "system", "content": CONTRIBUTION_EXTRACTION_SYSTEM},
+        {
+            "role": "user",
+            "content": contribution_extraction_user(
+                structure.title, structure.abstract, intro_text, conclusion_text,
+            ),
+        },
+    ]
+    try:
+        return client.complete(messages, ContributionContext, max_tokens=2048, temperature=0.2)
+    except Exception:
+        logger.warning("Contribution extraction failed, proceeding without", exc_info=True)
+        return None
+
+
 def review_paper(
     pdf_path: str | Path,
     model: str | None = None,
@@ -243,12 +284,13 @@ def review_paper(
             "The PDF may be scanned/image-only with no extractable text."
         )
 
-    # Domain calibration + literature search (parallel, both cheap)
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    # Domain calibration + literature search + contribution extraction (parallel, all cheap)
+    with ThreadPoolExecutor(max_workers=3) as executor:
         cal_future = executor.submit(calibrate_domain, structure, client)
         lit_future = executor.submit(
             search_literature, structure.title, structure.abstract, client
         )
+        contrib_future = executor.submit(extract_contribution, structure, client)
 
         calibration = cal_future.result(timeout=900)
         try:
@@ -256,6 +298,7 @@ def review_paper(
         except Exception:
             logger.warning("Literature search failed, skipping", exc_info=True)
             literature_context = ""
+        contribution_context = contrib_future.result(timeout=900)
 
     # Compute dynamic comment target based on paper size
     comment_target = _compute_comment_target(structure, paper_text)
@@ -288,7 +331,7 @@ def review_paper(
             sec_lit = literature_context if (
                 section.section_type in _LIT_RELEVANT or focus == "literature"
             ) else ""
-            sec_abstract = structure.abstract if focus == "proof" else ""
+            sec_abstract = structure.abstract
             section_futures.append(
                 executor.submit(
                     _review_section,
@@ -312,19 +355,31 @@ def review_paper(
 
     try:
         deduped_comments = crossref_agent.run(
-            overview, section_comments, comment_target=comment_target
+            overview, section_comments, comment_target=comment_target,
+            title=structure.title, abstract=structure.abstract,
         )
     except Exception:
         logger.warning("Crossref agent failed, using raw section comments", exc_info=True)
         deduped_comments = section_comments
 
+    # Contradiction check: flag comments that contradict the paper's stated contribution
+    contradiction_agent = ContradictionCheckAgent(client)
+    try:
+        checked_comments = contradiction_agent.run(
+            structure.abstract, contribution_context, deduped_comments,
+        )
+    except Exception:
+        logger.warning("Contradiction check failed, using crossref output", exc_info=True)
+        checked_comments = deduped_comments
+
     # Final quote verification against full paper text
-    verified_comments = _verify_with_fallback(deduped_comments, paper_text.full_markdown)
+    verified_comments = _verify_with_fallback(checked_comments, paper_text.full_markdown)
 
     critique_agent = CritiqueAgent(client)
     try:
         final_comments = critique_agent.run(
-            overview, verified_comments, comment_target=comment_target
+            overview, verified_comments, comment_target=comment_target,
+            title=structure.title, abstract=structure.abstract,
         )
     except Exception:
         logger.warning("Critique agent failed, using verified comments", exc_info=True)

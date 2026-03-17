@@ -111,11 +111,11 @@ def test_review_paper_calls_stages_in_order():
         call_order.append(f"section_{section.number}")
         return [_make_comment(section.number)]
 
-    def fake_crossref_run(ov, cmts, comment_target=None):
+    def fake_crossref_run(ov, cmts, comment_target=None, title="", abstract=""):
         call_order.append("crossref")
         return deduped
 
-    def fake_critique_run(ov, cmts, comment_target=None):
+    def fake_critique_run(ov, cmts, comment_target=None, title="", abstract=""):
         call_order.append("critique")
         return final
 
@@ -319,7 +319,7 @@ def test_review_paper_section_comments_flattened():
 
     crossref_received: list[DetailedComment] = []
 
-    def fake_crossref_run(ov, cmts, comment_target=None):
+    def fake_crossref_run(ov, cmts, comment_target=None, title="", abstract=""):
         crossref_received.extend(cmts)
         return [_make_comment(1)]
 

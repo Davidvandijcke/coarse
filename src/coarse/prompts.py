@@ -9,7 +9,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from coarse.types import DetailedComment, DomainCalibration, OverviewFeedback, SectionInfo
+    from coarse.types import (
+        ContributionContext,
+        DetailedComment,
+        DomainCalibration,
+        OverviewFeedback,
+        SectionInfo,
+    )
 
 # ---------------------------------------------------------------------------
 # Shared tone & confidence instructions injected into all review prompts
@@ -110,6 +116,12 @@ result you do not recognize, that is not grounds for skepticism. Classical resul
 specialized fields may be unfamiliar to you. Express uncertainty ("It would be helpful \
 to verify that [cited result] applies here") rather than doubt ("This claim appears \
 unsupported").
+6. CONTRIBUTION INVERSION TEST: Before asserting that a key result, quantity, or property \
+in the paper is wrong, check: does the abstract or introduction explicitly claim the \
+opposite? If yes, you have almost certainly made an error in your own reasoning — the \
+authors have likely spent months verifying this claim. Re-check your work from scratch \
+before proceeding. The most common and most damaging review failure is confidently \
+asserting the opposite of the paper's central result.
 """
 
 _EQUIVALENCE_CLAIMS = """
@@ -230,6 +242,156 @@ Evaluation standards for this field:
 
 
 # ---------------------------------------------------------------------------
+# Contribution extraction (reading comprehension, not evaluation)
+# ---------------------------------------------------------------------------
+
+CONTRIBUTION_EXTRACTION_SYSTEM = """\
+You are an expert academic reader. Extract the paper's stated contributions, \
+key mathematical objects, and author defenses. Your task is READING COMPREHENSION \
+— report what the paper SAYS, not your assessment of it.
+
+For main_claims: Quote or closely paraphrase each contribution the paper explicitly \
+states (in abstract, introduction, or contribution section). Include the specific \
+mathematical result rather than generic descriptions.
+
+For key_objects: List the central mathematical objects/quantities and what the \
+paper claims about each.
+
+For stated_limitations: List any limitations the authors explicitly acknowledge.
+
+For author_defenses: List objections the authors anticipate and address, including \
+the section/remark where the defense appears.
+
+For methodology_type: Describe the paper's approach in one sentence.
+"""
+
+_MAX_CONTRIBUTION_INTRO = 8000
+_MAX_CONTRIBUTION_CONCLUSION = 3000
+
+
+def contribution_extraction_user(
+    title: str, abstract: str, intro_text: str, conclusion_text: str = "",
+) -> str:
+    """User prompt for contribution extraction."""
+    conclusion_block = ""
+    if conclusion_text:
+        conclusion_block = (
+            f"\n**Conclusion**:\n{conclusion_text[:_MAX_CONTRIBUTION_CONCLUSION]}\n"
+        )
+    return f"""\
+Extract the stated contributions of "{title}".
+
+**Abstract**:
+{abstract}
+
+**Introduction**:
+{intro_text[:_MAX_CONTRIBUTION_INTRO]}
+{conclusion_block}
+Report what the paper claims. Do not evaluate the claims.
+"""
+
+
+def _format_contribution_context(ctx: "ContributionContext") -> str:
+    """Format ContributionContext for injection into review prompts."""
+    claims = "\n".join(f"- {c}" for c in ctx.main_claims)
+    objects = (
+        "\n".join(f"- {o}" for o in ctx.key_objects)
+        if ctx.key_objects else "(none extracted)"
+    )
+    limitations = (
+        "\n".join(f"- {lim}" for lim in ctx.stated_limitations)
+        if ctx.stated_limitations else "(none stated)"
+    )
+    defenses = (
+        "\n".join(f"- {d}" for d in ctx.author_defenses)
+        if ctx.author_defenses else "(none stated)"
+    )
+
+    return f"""\
+**PAPER'S STATED CONTRIBUTION** (hard constraint — read before reviewing):
+The paper claims:
+{claims}
+
+Key mathematical objects:
+{objects}
+
+Methodology: {ctx.methodology_type}
+
+Author-acknowledged limitations:
+{limitations}
+
+Author defenses of anticipated objections:
+{defenses}
+
+CONSTRAINT: If your comment contradicts any of the above stated claims or \
+key object properties, you MUST provide a concrete counterexample or \
+derivation proving the paper wrong. Otherwise, DROP the comment. \
+If the paper explicitly acknowledges a limitation, do NOT treat it as a \
+novel finding — instead evaluate whether the paper's defense is adequate.
+"""
+
+
+# ---------------------------------------------------------------------------
+# Contradiction check (post-processing, structural/logical)
+# ---------------------------------------------------------------------------
+
+CONTRADICTION_CHECK_SYSTEM = """\
+You are a consistency checker. You have the paper's abstract, stated contributions, \
+and a set of review comments. Your task is to flag comments that CONTRADICT the \
+paper's stated goals or methodology without providing a concrete counterexample.
+
+A comment contradicts the paper if it:
+1. Claims a key object has a property the paper explicitly proves it does not have \
+(or vice versa)
+2. Mischaracterizes the paper's methodology
+3. Claims something is not achievable when the paper explicitly shows it is (and the \
+comment provides no counterexample)
+4. Treats an acknowledged limitation as if the authors are unaware of it
+5. Demands the paper address a competing approach when the paper explicitly frames \
+itself as an extension, not a competitor
+
+For each flagged comment, explain the contradiction. If no counterexample is given, \
+set confidence to "low".
+
+Return the FULL list of comments. Flagged comments should have confidence set to "low" \
+and a note prepended to feedback explaining the consistency concern. Unflagged comments \
+pass through unchanged.
+"""
+
+
+def contradiction_check_user(
+    abstract: str,
+    contribution_context: "ContributionContext | None",
+    comments: "list[DetailedComment]",
+) -> str:
+    """User prompt for contradiction checking."""
+    contrib_block = ""
+    if contribution_context:
+        contrib_block = "\n" + _format_contribution_context(contribution_context) + "\n"
+
+    comments_block = "\n\n".join(
+        f"### Comment {c.number}: {c.title}\n"
+        f"**Confidence**: {c.confidence}\n"
+        f"**Quote**: {c.quote}\n"
+        f"**Feedback**: {c.feedback}"
+        for c in comments
+    )
+
+    return f"""\
+Check the following review comments for contradictions with the paper's stated goals.
+
+**Abstract**:
+{abstract}
+{contrib_block}
+## Comments to Check
+{comments_block}
+
+Flag any comment that contradicts the paper's stated contributions without providing \
+a concrete counterexample. Return the full list with flagged comments downgraded.
+"""
+
+
+# ---------------------------------------------------------------------------
 # Overview / macro-issues agent
 # ---------------------------------------------------------------------------
 
@@ -265,8 +427,9 @@ Your task:
 method, and main result). This goes in the "summary" field.
 2. Produce 4-6 consolidated issues that represent the panel's collective assessment.
 3. Deduplicate: merge issues that address the same concern from different angles.
-4. When reviewers disagree, weight toward the more critical assessment — \
-overrating quality is worse than underrating it.
+4. When reviewers disagree, weight toward the assessment with the most concrete \
+evidence (specific equations, cross-references, or derivations) — confident but \
+unsupported criticism is worse than missing a minor issue.
 5. Each issue must have a concise title and substantive body paragraph.
 6. Preserve the most specific, actionable version of each concern.
 """
@@ -568,10 +731,16 @@ in this section by working through it yourself, not just reading it passively.
 For each theorem, proposition, lemma, or corollary:
 
 1. STATE the claim precisely.
-2. RE-DERIVE the key steps yourself. Show your calculation in the feedback field. \
-For example, if the paper claims a change-of-variables yields expression X, perform \
-the change-of-variables yourself and verify you get X. If you get something different, \
-that is an error worth reporting.
+2. DECOMPOSE the proof into individual steps. For each step:
+   a. EXTRACT: What does the paper claim? State the chain: claim → justification → conclusion.
+   b. CHECK: Does the stated justification logically entail the conclusion under the \
+paper's stated assumptions? Do NOT re-derive from scratch — evaluate whether the paper's \
+own reasoning is internally valid.
+   c. VERIFY CONDITIONS: If a step invokes a theorem, identity, or inequality, check that \
+the conditions of that result are satisfied. Cite the specific condition and where in \
+the paper it is (or is not) established.
+   d. ONLY flag a step as wrong if you can state: "Step N claims [X] follows from [Y] by \
+[Z], but [Z] requires [condition] which is not established because [reason]."
 3. CHECK for specific error types:
    - Sign errors or missing factors
    - Subscript/index errors
@@ -601,11 +770,12 @@ an error if the theorem claims generality.
 For each issue, produce a structured comment with:
 - title: A concise, specific title (5-10 words)
 - quote: """ + _QUOTE_INSTRUCTIONS + """
-- feedback: Show your re-derivation or calculation that reveals the error \
-(3-8 sentences). Write out the correct version of the equation/expression.
+- feedback: Show the logical gap or condition failure you identified \
+(3-8 sentences). State the claim → justification → conclusion chain and where it breaks.
 """ + _REMEDIATION_SPECIFICITY + _DO_NOT_COMMENT_BLOCK + """
-Report 0-5 issues. Only report errors you can demonstrate through calculation, not \
-stylistic preferences. If you find no errors after careful verification, report 0 issues.
+Report 0-5 issues. Only report errors where you can identify a specific logical gap \
+or unsatisfied condition, not stylistic preferences. If you find no errors after \
+careful verification, report 0 issues.
 """
 
 PROOF_VERIFY_SYSTEM = """\
@@ -618,7 +788,12 @@ find issues the first pass missed, and generate counterexamples.
 Your tasks:
 
 1. VALIDATE each first-pass comment:
-   - Re-derive the claimed error yourself from scratch.
+   - Decompose the proof step the first-pass comment targets into: \
+claim → justification → conclusion.
+   - Check whether the first-pass reviewer's objection identifies a genuine gap \
+in the justification → conclusion chain.
+   - If the first-pass reviewer added their own re-derivation, check whether THAT \
+re-derivation is correct — re-derivations are themselves hallucination-prone.
    - If you reach the same conclusion, keep the comment and set confidence to "high".
    - If you cannot reproduce the error, set confidence to "low" and explain why \
 in the feedback (e.g., "The first-pass reviewer may have overlooked that...").
@@ -629,12 +804,20 @@ where that condition is invoked. If you cannot find such a line, the condition m
 not be needed and the comment should be dropped.
    - If a first-pass comment claims two operations are equivalent: verify by checking \
 formal definitions and a concrete example. Drop if equivalence is not established.
+   - INVERSE CLAIM CHECK: For each first-pass comment, compare its conclusion against \
+the paper's abstract. If the comment's conclusion directly opposes a claim the paper \
+explicitly makes (e.g., the comment says a property fails when the abstract says the \
+paper proves it holds), treat the first-pass comment with extreme skepticism. The \
+paper's authors are more likely correct about their own central result than the \
+first-pass reviewer. If you cannot independently reproduce the claimed error via a \
+different reasoning path, DROP it.
 
-2. FIND MISSED ISSUES — work through proof steps the first pass did NOT flag:
-   - For each theorem/lemma, attempt to construct a COUNTEREXAMPLE within the \
-theorem's stated conditions. If you find one, report it.
-   - For each "it follows that" or "by assumption" step, check: does it actually \
-follow? What intermediate steps are being skipped? Are they valid?
+2. FIND MISSED ISSUES — check proof steps the first pass did NOT flag:
+   - For each unflagged proof step, extract the claim → justification → conclusion \
+chain and check the logical link. Does the justification actually support the conclusion \
+under the stated assumptions?
+   - Only construct counterexamples for steps where you have identified a specific \
+logical gap. Do not attempt counterexamples speculatively.
    - Check boundary/degenerate cases the proof claims to handle.
    - Check that invoked identities, inequalities, or theorems have their \
 conditions satisfied under the proof's stated assumptions.
@@ -852,6 +1035,10 @@ contradictory claim, missing factor) over comments that suggest improvements.
 - Floor: Keep at least 8 comments (or all remaining if fewer than 8 survive). \
 Do not remove a comment with a specific verbatim quote and a concrete identified \
 error solely to reduce count.
+5. CONTRIBUTION CONSISTENCY: If a comment's core claim contradicts the paper's abstract \
+or stated contribution (provided in the user message), flag it for removal unless the \
+comment provides a complete, self-contained derivation or counterexample disproving \
+the paper's claim.
 """
 
 # Default constant for backward compat
@@ -883,13 +1070,24 @@ def _format_review_context(
 def crossref_user(
     overview: "OverviewFeedback",
     comments: "list[DetailedComment]",
+    title: str = "",
+    abstract: str = "",
 ) -> str:
     """User prompt for cross-reference. Embeds overview and all draft comments."""
     overview_block, comments_block = _format_review_context(overview, comments)
 
+    paper_block = ""
+    if title or abstract:
+        paper_block = f"""## Paper Context
+**Title**: {title}
+**Abstract**: {abstract[:2000]}
+
+"""
+
     return f"""\
 Consolidate the following draft detailed comments for a research paper.
 
+{paper_block}\
 ## Overview Issues (for context)
 {overview_block}
 
@@ -932,6 +1130,25 @@ for an interpretation, not for the formal result
 formal definitions or a concrete example
 - The comment expresses skepticism about a cited result without engaging with the cited \
 reference — unfamiliarity with a result is not evidence against it
+- The comment's claim directly contradicts the paper's stated main result or contribution \
+as described in the abstract. For example, if the paper claims to establish convergence of \
+an estimator and the comment claims the estimator diverges, remove the comment unless it \
+provides an explicit derivation proving the paper's claim wrong
+- The comment treats the paper's extension or generalization as a deficiency. For example, \
+if the paper generalizes an existing result to a broader setting, a comment demanding \
+that the authors demonstrate a failure in the original narrower setting misunderstands \
+the contribution — remove it
+- The comment treats an explicitly acknowledged limitation as if the authors are unaware \
+of it
+
+CONTRIBUTION INVERSION CHECK:
+For each comment, compare its core claim against the paper's abstract (provided in the \
+user message). If a comment asserts a result, quantity, or property has the opposite \
+character of what the paper explicitly claims to prove (e.g., bounded vs unbounded, \
+identifiable vs not identifiable, consistent vs inconsistent), REMOVE the comment \
+unless it provides a complete, self-contained derivation disproving the paper's claim. \
+This is the single most damaging failure mode: confidently asserting the opposite of \
+the paper's stated theorem.
 
 KEEP and potentially strengthen a comment if:
 - It identifies a specific mathematical error with a re-derivation or calculation
@@ -973,13 +1190,24 @@ def critique_system(comment_target: int | str = "10-20") -> str:
 def critique_user(
     overview: "OverviewFeedback",
     comments: "list[DetailedComment]",
+    title: str = "",
+    abstract: str = "",
 ) -> str:
     """User prompt for self-critique. Embeds overview and consolidated comment list."""
     overview_block, comments_block = _format_review_context(overview, comments)
 
+    paper_block = ""
+    if title or abstract:
+        paper_block = f"""## Paper Context
+**Title**: {title}
+**Abstract**: {abstract[:2000]}
+
+"""
+
     return f"""\
 Perform a final quality review of the following detailed comments for a research paper.
 
+{paper_block}\
 ## Overview Issues (macro context)
 {overview_block}
 

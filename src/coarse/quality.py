@@ -96,6 +96,15 @@ A long review full of surface observations scores LOWER than a short review \
 with deep technical engagement. Score 5+ if the analysis provides deeper \
 technical engagement than Review A \
 (e.g., re-derivations, concrete counterexamples, numerical verification).
+4. **consistency**: Does the review contradict the paper's own stated contributions \
+or methodology without providing a concrete counterexample or derivation? \
+Verify against the paper: if the paper claims to prove a result and the review \
+asserts the opposite without a complete derivation, that is a consistency failure. \
+Score 5 if every comment is consistent with the paper's claims (or provides \
+explicit evidence when disagreeing). Score 1 if multiple comments directly assert \
+the opposite of the paper's stated results without justification. Score 5+ if the \
+review correctly identifies cases where the paper's own claims are internally \
+inconsistent.
 
 For each dimension, provide a brief reasoning string (1-2 sentences).
 
@@ -154,7 +163,7 @@ and Review A for calibration (Review A is not an answer key).
 {review_b}
 </review_b>
 
-Score Review B on: coverage, specificity, and depth \
+Score Review B on: coverage, specificity, depth, and consistency \
 (each 1.0-6.0 in half-point increments, where 5.0 = matches Review A, \
 5.5-6.0 = exceeds Review A).
 Verify quotes against the paper text. Assess coverage and depth against the \
@@ -277,8 +286,9 @@ def evaluate_review(
 # Each judge gets a distinct persona to encourage diverse perspectives.
 _JUDGE_PERSONAS = [
     "You are an expert in mathematical methodology and statistical theory. "
-    "Focus especially on proof correctness, rate conditions, and whether "
-    "assumptions are internally consistent.",
+    "Focus especially on proof correctness, rate conditions, whether "
+    "assumptions are internally consistent, and whether the review's claims "
+    "are consistent with what the paper actually states.",
     "You are an expert in empirical research design and applied methodology. "
     "Focus especially on whether the paper's empirical implementation matches "
     "its theoretical claims, and whether simulations test the right properties.",

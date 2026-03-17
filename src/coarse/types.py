@@ -95,6 +95,30 @@ class PaperMetadata(BaseModel):
     taxonomy: str
 
 
+class ContributionContext(BaseModel):
+    """Paper's stated contribution extracted for downstream constraint injection."""
+    main_claims: list[str] = Field(
+        min_length=1,
+        description="Paper's stated contributions (verbatim or close paraphrase)",
+    )
+    key_objects: list[str] = Field(
+        default_factory=list,
+        description="Key mathematical objects/quantities and what the paper claims about them",
+    )
+    stated_limitations: list[str] = Field(
+        default_factory=list,
+        description="Limitations the authors explicitly acknowledge",
+    )
+    author_defenses: list[str] = Field(
+        default_factory=list,
+        description="Anticipated objections the authors address (remarks, footnotes, appendices)",
+    )
+    methodology_type: str = Field(
+        default="",
+        description="Brief description of the paper's methodological approach",
+    )
+
+
 class OverviewIssue(BaseModel):
     """A single macro-level issue identified in the paper."""
     title: str = Field(description="Short title summarizing the issue")
