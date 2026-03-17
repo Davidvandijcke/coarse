@@ -45,7 +45,7 @@ function QuoteBlock({
         style={{
           fontFamily: "Georgia, serif",
           fontStyle: "italic",
-          fontSize: "0.9rem",
+          fontSize: "1.05rem",
           lineHeight: 1.7,
           color: "var(--dust)",
           whiteSpace: "pre-wrap",
@@ -67,7 +67,7 @@ function QuoteBlock({
               border: "none",
               color: "var(--blue-chalk)",
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.85rem",
+              fontSize: "1.05rem",
               letterSpacing: "0.08em",
               textTransform: "uppercase",
               cursor: "pointer",
@@ -86,7 +86,7 @@ function QuoteBlock({
               border: "none",
               color: "var(--blue-chalk)",
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.85rem",
+              fontSize: "1.05rem",
               letterSpacing: "0.08em",
               textTransform: "uppercase",
               cursor: "pointer",
@@ -109,7 +109,7 @@ const actionBtnStyle: React.CSSProperties = {
   cursor: "pointer",
   padding: "0.15rem 0.4rem",
   fontFamily: "var(--font-space-mono), monospace",
-  fontSize: "0.8rem",
+  fontSize: "1rem",
   lineHeight: 1,
   transition: "all 0.15s",
 };
@@ -218,7 +218,7 @@ function CommentCard({
             border: "none",
             color: "var(--dust)",
             fontFamily: "var(--font-space-mono), monospace",
-            fontSize: "0.8rem",
+            fontSize: "1rem",
             letterSpacing: "0.08em",
             textTransform: "uppercase",
             cursor: "pointer",
@@ -237,7 +237,7 @@ function CommentCard({
           {/* Feedback */}
           <div
             className="review-content"
-            style={{ fontSize: "0.95rem", lineHeight: 1.7, marginTop: "0.5rem" }}
+            style={{ fontSize: "1.1rem", lineHeight: 1.7, marginTop: "0.5rem" }}
           >
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}
@@ -253,7 +253,7 @@ function CommentCard({
               display: "inline-block",
               marginTop: "0.5rem",
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.75rem",
+              fontSize: "1.1rem",
               letterSpacing: "0.12em",
               textTransform: "uppercase",
               color: isDone
@@ -278,7 +278,7 @@ function CommentCard({
                 border: "none",
                 color: "var(--dust)",
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.8rem",
+                fontSize: "1rem",
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
                 cursor: "pointer",
@@ -327,7 +327,7 @@ function FilterTabs({
             border: "none",
             cursor: "pointer",
             fontFamily: "var(--font-space-mono), monospace",
-            fontSize: "0.7rem",
+            fontSize: "1.05rem",
             letterSpacing: "0.08em",
             textTransform: "uppercase",
             color: current === key ? "var(--yellow-chalk)" : "var(--dust)",
@@ -389,7 +389,7 @@ function Sidebar({
           padding: "0.4rem 0.5rem",
           cursor: "pointer",
           fontFamily: "var(--font-chalk)",
-          fontSize: "0.95rem",
+          fontSize: "1.1rem",
           color:
             activeId === "overall-feedback"
               ? "var(--yellow-chalk)"
@@ -414,7 +414,7 @@ function Sidebar({
       <div
         style={{
           fontFamily: "var(--font-space-mono), monospace",
-          fontSize: "0.8rem",
+          fontSize: "1rem",
           letterSpacing: "0.08em",
           textTransform: "uppercase",
           color: "var(--dust)",
@@ -452,7 +452,7 @@ function Sidebar({
               padding: "0.35rem 0.5rem",
               cursor: "pointer",
               fontFamily: "Georgia, serif",
-              fontSize: "0.9rem",
+              fontSize: "1.05rem",
               lineHeight: 1.4,
               color: isActive
                 ? "var(--chalk-bright)"
@@ -533,7 +533,7 @@ function DownloadMenu({
     color: "var(--chalk)",
     padding: "0.5rem 0.75rem",
     fontFamily: "var(--font-space-mono), monospace",
-    fontSize: "0.8rem",
+    fontSize: "1rem",
     letterSpacing: "0.1em",
     textTransform: "uppercase",
     cursor: "pointer",
@@ -551,7 +551,7 @@ function DownloadMenu({
           color: "var(--chalk)",
           padding: "0.375rem 0.875rem",
           fontFamily: "var(--font-space-mono), monospace",
-          fontSize: "0.7rem",
+          fontSize: "1.05rem",
           letterSpacing: "0.12em",
           textTransform: "uppercase",
           cursor: "pointer",
@@ -610,7 +610,7 @@ const headerBtnStyle: React.CSSProperties = {
   color: "var(--chalk)",
   padding: "0.375rem 0.875rem",
   fontFamily: "var(--font-space-mono), monospace",
-  fontSize: "0.7rem",
+  fontSize: "1.05rem",
   letterSpacing: "0.12em",
   textTransform: "uppercase",
   cursor: "pointer",
@@ -789,7 +789,7 @@ export default function ReviewDisplay({
                 color: "var(--board)",
                 padding: "0.5rem 1.5rem",
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.6875rem",
+                fontSize: "0.85rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 cursor: deleting ? "default" : "pointer",
@@ -807,7 +807,7 @@ export default function ReviewDisplay({
                 color: "var(--chalk)",
                 padding: "0.5rem 1.5rem",
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.6875rem",
+                fontSize: "0.85rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 cursor: deleting ? "default" : "pointer",
@@ -857,7 +857,7 @@ export default function ReviewDisplay({
           <span
             style={{
               fontFamily: "var(--font-chalk)",
-              fontSize: "0.95rem",
+              fontSize: "1.1rem",
               color: "var(--yellow-chalk)",
             }}
           >
@@ -886,7 +886,7 @@ export default function ReviewDisplay({
             rel="noopener noreferrer"
             style={{
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.7rem",
+              fontSize: "1.05rem",
               letterSpacing: "0.12em",
               textTransform: "uppercase",
               color: "var(--dust)",
@@ -1036,7 +1036,7 @@ export default function ReviewDisplay({
                 <h3
                   style={{
                     fontFamily: "var(--font-serif)",
-                    fontSize: "0.95rem",
+                    fontSize: "1.1rem",
                     fontWeight: 700,
                     color: "var(--chalk-bright)",
                     margin: "0 0 0.5rem",
@@ -1047,7 +1047,7 @@ export default function ReviewDisplay({
                 </h3>
                 <div
                   className="review-content"
-                  style={{ fontSize: "0.9rem", lineHeight: 1.7 }}
+                  style={{ fontSize: "1.05rem", lineHeight: 1.7 }}
                 >
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkMath]}
@@ -1130,7 +1130,7 @@ export default function ReviewDisplay({
               <span
                 style={{
                   fontFamily: "var(--font-serif)",
-                  fontSize: "0.95rem",
+                  fontSize: "1.1rem",
                   fontStyle: "italic",
                   color: "var(--dust)",
                 }}
@@ -1156,7 +1156,7 @@ export default function ReviewDisplay({
                   color: "var(--chalk)",
                   padding: "0.375rem 1rem",
                   fontFamily: "var(--font-space-mono), monospace",
-                  fontSize: "0.7rem",
+                  fontSize: "1.05rem",
                   letterSpacing: "0.12em",
                   textTransform: "uppercase",
                   cursor: "pointer",
@@ -1173,7 +1173,7 @@ export default function ReviewDisplay({
                   border: "none",
                   padding: 0,
                   fontFamily: "var(--font-space-mono), monospace",
-                  fontSize: "0.7rem",
+                  fontSize: "1.05rem",
                   letterSpacing: "0.12em",
                   textTransform: "uppercase",
                   color: "var(--dust)",
@@ -1214,7 +1214,7 @@ function MetaTag({ label, value }: { label: string; value: string }) {
     <span
       style={{
         fontFamily: "var(--font-space-mono), monospace",
-        fontSize: "0.75rem",
+        fontSize: "1.1rem",
         letterSpacing: "0.1em",
         textTransform: "uppercase",
       }}

@@ -89,7 +89,7 @@ export default function PaperPanel({
         <span
           style={{
             fontFamily: "var(--font-space-mono), monospace",
-            fontSize: "0.75rem",
+            fontSize: "0.95rem",
             letterSpacing: "0.12em",
             textTransform: "uppercase",
             color: "var(--dust)",
@@ -114,7 +114,7 @@ export default function PaperPanel({
               color: "var(--dust)",
               cursor: "pointer",
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.7rem",
+              fontSize: "0.85rem",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
               padding: "0.25rem",
@@ -131,7 +131,7 @@ export default function PaperPanel({
               color: "var(--dust)",
               cursor: "pointer",
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.9rem",
+              fontSize: "1.05rem",
               padding: "0.25rem",
             }}
             aria-label="Close paper panel"

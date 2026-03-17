@@ -31,7 +31,7 @@ function Header() {
         <span
           style={{
             fontFamily: "var(--font-chalk)",
-            fontSize: "0.95rem",
+            fontSize: "1.1rem",
             color: "var(--dust)",
           }}
         >
@@ -106,7 +106,7 @@ function ChalkSketch({
             right: "-0.5rem",
             top: "-0.75rem",
             fontFamily: "var(--font-chalk)",
-            fontSize: "0.95rem",
+            fontSize: "1.1rem",
             color: "var(--yellow-chalk)",
             transform: "rotate(-3deg)",
           }}
@@ -136,7 +136,7 @@ function MockButton({
           : "1px solid var(--tray)",
         borderRadius: "2px",
         fontFamily: "var(--font-chalk)",
-        fontSize: "0.9rem",
+        fontSize: "1.05rem",
         color: highlight ? "var(--yellow-chalk)" : "var(--dust)",
         background: highlight ? "rgba(212, 168, 67, 0.08)" : "transparent",
       }}
@@ -154,7 +154,7 @@ function MockInput({ placeholder }: { placeholder: string }) {
         borderBottom: "1px solid var(--tray)",
         padding: "0.375rem 0",
         fontFamily: "var(--font-space-mono), monospace",
-        fontSize: "0.95rem",
+        fontSize: "1.1rem",
         color: "var(--tray)",
       }}
     >
@@ -168,7 +168,7 @@ function MockLabel({ children }: { children: React.ReactNode }) {
     <span
       style={{
         fontFamily: "var(--font-chalk)",
-        fontSize: "0.9rem",
+        fontSize: "1.05rem",
         color: "var(--dust)",
         display: "block",
         marginBottom: "0.25rem",
@@ -276,7 +276,7 @@ export default function SetupPage() {
             <p
               style={{
                 fontFamily: "Georgia, serif",
-                fontSize: "0.9375rem",
+                fontSize: "1.1rem",
                 lineHeight: 1.7,
                 color: "var(--chalk)",
                 margin: "0 0 0.75rem",
@@ -321,7 +321,7 @@ export default function SetupPage() {
                 style={{
                   marginTop: "1rem",
                   fontFamily: "Georgia, serif",
-                  fontSize: "0.9rem",
+                  fontSize: "1.05rem",
                   color: "var(--dust)",
                   lineHeight: 1.6,
                 }}
@@ -336,7 +336,7 @@ export default function SetupPage() {
             <p
               style={{
                 fontFamily: "Georgia, serif",
-                fontSize: "0.9375rem",
+                fontSize: "1.1rem",
                 lineHeight: 1.7,
                 color: "var(--chalk)",
                 margin: "0 0 0.75rem",
@@ -376,7 +376,7 @@ export default function SetupPage() {
                       borderBottom: "1px solid var(--tray)",
                       padding: "0.375rem 0",
                       fontFamily: "var(--font-space-mono), monospace",
-                      fontSize: "0.9rem",
+                      fontSize: "1.05rem",
                       color: "var(--chalk)",
                     }}
                   >
@@ -389,7 +389,7 @@ export default function SetupPage() {
                 style={{
                   marginTop: "0.75rem",
                   fontFamily: "var(--font-chalk)",
-                  fontSize: "0.95rem",
+                  fontSize: "1.1rem",
                   color: "var(--dust)",
                 }}
               >
@@ -403,7 +403,7 @@ export default function SetupPage() {
             <p
               style={{
                 fontFamily: "Georgia, serif",
-                fontSize: "0.9375rem",
+                fontSize: "1.1rem",
                 lineHeight: 1.7,
                 color: "var(--chalk)",
                 margin: "0 0 0.75rem",
@@ -426,7 +426,7 @@ export default function SetupPage() {
               <span
                 style={{
                   fontFamily: "var(--font-space-mono), monospace",
-                  fontSize: "0.9rem",
+                  fontSize: "1.05rem",
                   color: "var(--chalk-bright)",
                 }}
               >
@@ -438,7 +438,7 @@ export default function SetupPage() {
             <p
               style={{
                 fontFamily: "Georgia, serif",
-                fontSize: "0.9375rem",
+                fontSize: "1.1rem",
                 lineHeight: 1.7,
                 color: "var(--red-chalk)",
                 fontStyle: "italic",
@@ -475,7 +475,7 @@ export default function SetupPage() {
                 <span
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
-                    fontSize: "0.95rem",
+                    fontSize: "1.1rem",
                     color: "var(--yellow-chalk)",
                     wordBreak: "break-all",
                   }}
@@ -491,7 +491,7 @@ export default function SetupPage() {
             <p
               style={{
                 fontFamily: "Georgia, serif",
-                fontSize: "0.9375rem",
+                fontSize: "1.1rem",
                 lineHeight: 1.7,
                 color: "var(--chalk)",
                 margin: "0 0 0.75rem",
@@ -561,7 +561,7 @@ export default function SetupPage() {
                       style={{
                         padding: "0.35rem 0.75rem",
                         fontFamily: "var(--font-chalk)",
-                        fontSize: "0.9rem",
+                        fontSize: "1.05rem",
                         color: "var(--yellow-chalk)",
                       }}
                     >
@@ -585,7 +585,7 @@ export default function SetupPage() {
                       borderBottom: "1px solid var(--yellow-chalk)",
                       padding: "0.375rem 0",
                       fontFamily: "var(--font-space-mono), monospace",
-                      fontSize: "0.9rem",
+                      fontSize: "1.05rem",
                       color: "var(--yellow-chalk)",
                       width: "80px",
                     }}
@@ -644,7 +644,7 @@ export default function SetupPage() {
             <p
               style={{
                 fontFamily: "Georgia, serif",
-                fontSize: "0.9375rem",
+                fontSize: "1.1rem",
                 lineHeight: 1.7,
                 color: "var(--chalk)",
                 margin: "0 0 0.75rem",
@@ -672,7 +672,7 @@ export default function SetupPage() {
                       borderBottom: "1px solid var(--yellow-chalk)",
                       padding: "0.375rem 0",
                       fontFamily: "var(--font-space-mono), monospace",
-                      fontSize: "0.95rem",
+                      fontSize: "1.1rem",
                       color: "var(--yellow-chalk)",
                     }}
                   >

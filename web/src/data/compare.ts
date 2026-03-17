@@ -24,14 +24,16 @@ export type { QualityScores, ModelId, ComparisonId, PaperId, ModelEntry, Compari
 export { MODEL_LABELS, COMPARISON_LABELS, COMPARISON_URLS } from "./compare-types";
 
 function parseQualityScores(report: string): QualityScores {
+  // Display denominator as /5 (public-facing) even though judge uses a /6 scale internally
+  const swapDenom = (s: string) => s.replace(/\/\d+(\.\d+)?$/, "/5");
   const overall = report.match(/Overall Score:\s*([\d.]+\/[\d.]+)/)?.[1] ?? "N/A";
   const dim = (name: string) =>
     report.match(new RegExp(`\\|\\s*${name}\\s*\\|\\s*([\\d.]+/\\d+)`))?.[1] ?? "N/A";
   return {
-    overall,
-    coverage: dim("coverage"),
-    specificity: dim("specificity"),
-    depth: dim("depth"),
+    overall: overall !== "N/A" ? swapDenom(overall) : overall,
+    coverage: dim("coverage") !== "N/A" ? swapDenom(dim("coverage")) : "N/A",
+    specificity: dim("specificity") !== "N/A" ? swapDenom(dim("specificity")) : "N/A",
+    depth: dim("depth") !== "N/A" ? swapDenom(dim("depth")) : "N/A",
   };
 }
 

@@ -193,7 +193,7 @@ function SearchModal({
                   <span
                     style={{
                       fontFamily: "var(--font-space-mono), monospace",
-                      fontSize: "0.9rem",
+                      fontSize: "1.05rem",
                       color: "var(--dust)",
                       marginLeft: "0.5rem",
                     }}
@@ -204,7 +204,7 @@ function SearchModal({
                 <span
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
-                    fontSize: "0.9rem",
+                    fontSize: "1.05rem",
                     color: "var(--dust)",
                     whiteSpace: "nowrap",
                     marginLeft: "1rem",
@@ -278,7 +278,7 @@ export default function ModelPicker({
                 border: `1px solid ${selected ? "var(--yellow-chalk)" : "var(--tray)"}`,
                 borderRadius: "2px",
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.95rem",
+                fontSize: "1.1rem",
                 cursor: "pointer",
                 transition: "all 0.15s",
                 whiteSpace: "nowrap",
@@ -299,7 +299,7 @@ export default function ModelPicker({
             border: `1px solid ${!isDefault && value ? "var(--yellow-chalk)" : "var(--tray)"}`,
             borderRadius: "2px",
             fontFamily: "var(--font-space-mono), monospace",
-            fontSize: "0.95rem",
+            fontSize: "1.1rem",
             cursor: "pointer",
             transition: "all 0.15s",
             whiteSpace: "nowrap",

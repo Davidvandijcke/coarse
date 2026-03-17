@@ -175,7 +175,7 @@ function ScoresOverviewTable() {
   const cellStyle: CSSProperties = {
     padding: "0.375rem 0.625rem",
     fontFamily: "var(--font-space-mono), monospace",
-    fontSize: "0.9rem",
+    fontSize: "1.05rem",
     textAlign: "center" as const,
     color: "var(--chalk)",
     borderBottom: "1px solid var(--tray)",
@@ -183,14 +183,14 @@ function ScoresOverviewTable() {
   const headerStyle: CSSProperties = {
     ...cellStyle,
     fontFamily: "var(--font-chalk)",
-    fontSize: "0.95rem",
+    fontSize: "1.1rem",
     color: "var(--dust)",
     fontWeight: 400,
   };
   const paperCellStyle: CSSProperties = {
     ...cellStyle,
     fontFamily: "Georgia, serif",
-    fontSize: "0.9rem",
+    fontSize: "1.05rem",
     textAlign: "left" as const,
     color: "var(--chalk-bright)",
     whiteSpace: "nowrap" as const,
@@ -198,7 +198,7 @@ function ScoresOverviewTable() {
   const refCellStyle: CSSProperties = {
     ...cellStyle,
     fontFamily: "var(--font-chalk)",
-    fontSize: "0.9rem",
+    fontSize: "1.05rem",
     textAlign: "left" as const,
     color: "var(--dust)",
   };
@@ -278,13 +278,13 @@ function ScoresOverviewTable() {
           <p
             style={{
               fontFamily: "var(--font-chalk)",
-              fontSize: "0.95rem",
+              fontSize: "1.1rem",
               color: "var(--dust)",
               marginTop: "0.375rem",
               fontStyle: "italic",
             }}
           >
-            Evaluated by Gemini 3.1 Pro with PDF multimodal input. 5.0 = matches reference quality. 5.5+ = exceeds it.
+            Evaluated by Gemini 3.1 Pro with PDF multimodal input. 5.0/5 = matches reference quality. 5.5+/5 = exceeds it.
           </p>
         </div>
       )}
@@ -296,7 +296,7 @@ function JudgePromptCollapsible() {
   const [open, setOpen] = useState(false);
   const preStyle: CSSProperties = {
     fontFamily: "var(--font-space-mono), monospace",
-    fontSize: "0.9rem",
+    fontSize: "1.05rem",
     lineHeight: 1.5,
     color: "var(--chalk)",
     background: "var(--board)",
@@ -330,14 +330,14 @@ function JudgePromptCollapsible() {
       </button>
       {open && (
         <div style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
-          <p style={{ fontFamily: "var(--font-chalk)", fontSize: "0.8rem", color: "var(--chalk)", lineHeight: 1.6, margin: "0 0 0.75rem", maxWidth: "640px" }}>
+          <p style={{ fontFamily: "var(--font-chalk)", fontSize: "1rem", color: "var(--chalk)", lineHeight: 1.6, margin: "0 0 0.75rem", maxWidth: "640px" }}>
             To mitigate known LLM-as-judge biases, the judge is run twice per evaluation with the two reviews swapped in presentation order, and scores are averaged across both orderings. This counteracts positional bias, where judges systematically favor whichever review appears first. The prompt also includes specific instructions to counteract verbosity bias (not rewarding length over substance), confidence bias (not rewarding assertive language over correct hedging), authority bias (not rewarding jargon or citation count over accuracy), and leniency bias (using the full 1-6 scoring range rather than clustering in the middle). Reviews are labeled neutrally as {'"'}Review A{'"'} and {'"'}Review B{'"'} rather than {'"'}reference{'"'} and {'"'}generated{'"'} to prevent provenance-based scoring.
           </p>
-          <p style={{ fontFamily: "var(--font-chalk)", fontSize: "0.8rem", color: "var(--dust)", margin: "0 0 0.25rem" }}>
+          <p style={{ fontFamily: "var(--font-chalk)", fontSize: "1rem", color: "var(--dust)", margin: "0 0 0.25rem" }}>
             System prompt
           </p>
           <pre style={preStyle}>{JUDGE_SYSTEM_PROMPT}</pre>
-          <p style={{ fontFamily: "var(--font-chalk)", fontSize: "0.8rem", color: "var(--dust)", margin: "0.75rem 0 0.25rem" }}>
+          <p style={{ fontFamily: "var(--font-chalk)", fontSize: "1rem", color: "var(--dust)", margin: "0.75rem 0 0.25rem" }}>
             User prompt (paper + reviews injected at runtime)
           </p>
           <pre style={preStyle}>{JUDGE_USER_TEMPLATE}</pre>
@@ -515,7 +515,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
               }}
             >
               {activeScores.overall.replace(/\/[\d.]+$/, "")}
-              <span style={{ fontSize: "1.25rem", fontWeight: 400, color: "var(--dust)" }}>/6</span>
+              <span style={{ fontSize: "1.25rem", fontWeight: 400, color: "var(--dust)" }}>/5</span>
             </span>
           </div>
 
@@ -565,7 +565,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
           alignItems: "baseline",
         }}
       >
-        <span style={{ fontFamily: "var(--font-chalk)", fontSize: "0.85rem", color: "var(--dust)" }}>Jump to</span>
+        <span style={{ fontFamily: "var(--font-chalk)", fontSize: "1.05rem", color: "var(--dust)" }}>Jump to</span>
         {["Overall Feedback", "Detailed Comments"].map((section) => (
           <button
             key={section}
@@ -599,7 +599,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
         >
           {/* Model selector */}
           <div style={{ display: "flex", gap: "1.25rem", padding: "0.5rem 1.5rem", flexShrink: 0, alignItems: "baseline" }}>
-            <span style={{ fontFamily: "var(--font-serif)", fontSize: "0.8rem", color: "var(--dust)", letterSpacing: "0.02em" }}>&lsquo;coarse</span>
+            <span style={{ fontFamily: "var(--font-serif)", fontSize: "1rem", color: "var(--dust)", letterSpacing: "0.02em" }}>&lsquo;coarse</span>
             {(["claude", "kimi", "gpt5mini"] as const).map((mid) => {
               const available = !!paper.models[mid];
               return (
@@ -666,7 +666,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
                   target="_blank"
                   rel="noopener noreferrer"
                   title={`Visit ${COMPARISON_LABELS[cid]}`}
-                  style={{ color: "var(--dust)", fontSize: "0.85rem", textDecoration: "none", lineHeight: 1 }}
+                  style={{ color: "var(--dust)", fontSize: "1.05rem", textDecoration: "none", lineHeight: 1 }}
                 >
                   ↗
                 </a>
@@ -714,7 +714,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
                 download
                 style={{
                   fontFamily: "var(--font-chalk)",
-                  fontSize: "0.9rem",
+                  fontSize: "1.05rem",
                   color: "var(--dust)",
                   marginTop: "0.5rem",
                   textDecoration: "underline",

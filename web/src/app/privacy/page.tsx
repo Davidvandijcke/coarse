@@ -34,7 +34,7 @@ function Header() {
         <span
           style={{
             fontFamily: "var(--font-chalk)",
-            fontSize: "0.95rem",
+            fontSize: "1.1rem",
             color: "var(--dust)",
           }}
         >
@@ -81,7 +81,7 @@ const h2Style = {
 };
 const pStyle = {
   fontFamily: "Georgia, serif",
-  fontSize: "0.9375rem",
+  fontSize: "1.1rem",
   lineHeight: 1.7,
   color: "var(--chalk)",
   margin: "0 0 0.75rem",

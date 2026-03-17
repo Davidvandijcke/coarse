@@ -90,7 +90,7 @@ export default function StatusPage() {
             fontFamily: "Georgia, serif",
             fontStyle: "italic",
             color: "var(--muted)",
-            fontSize: "0.9375rem",
+            fontSize: "1.1rem",
           }}
         >
           Loading<span className="blink">_</span>
@@ -173,7 +173,7 @@ export default function StatusPage() {
                 color: "var(--paper)",
                 padding: "0.5rem 1.5rem",
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.6875rem",
+                fontSize: "0.85rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 cursor: cancelling ? "default" : "pointer",
@@ -191,7 +191,7 @@ export default function StatusPage() {
                 color: "var(--ink)",
                 padding: "0.5rem 1.5rem",
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.6875rem",
+                fontSize: "0.85rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 cursor: cancelling ? "default" : "pointer",
@@ -235,7 +235,7 @@ export default function StatusPage() {
           <span
             style={{
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.625rem",
+              fontSize: "0.85rem",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
               color: "var(--muted)",
@@ -249,7 +249,7 @@ export default function StatusPage() {
             rel="noopener noreferrer"
             style={{
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.5625rem",
+              fontSize: "0.85rem",
               letterSpacing: "0.12em",
               textTransform: "uppercase",
               color: "var(--ink)",
@@ -337,7 +337,7 @@ export default function StatusPage() {
             <p
               style={{
                 fontFamily: "Georgia, serif",
-                fontSize: "0.9375rem",
+                fontSize: "1.1rem",
                 lineHeight: 1.65,
                 color: "var(--muted)",
                 fontStyle: "italic",
@@ -369,7 +369,7 @@ export default function StatusPage() {
               href="/"
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.6875rem",
+                fontSize: "0.85rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 color: "var(--accent)",
@@ -388,7 +388,7 @@ export default function StatusPage() {
             <p
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.5625rem",
+                fontSize: "0.85rem",
                 letterSpacing: "0.18em",
                 textTransform: "uppercase",
                 color: "var(--muted)",
@@ -400,7 +400,7 @@ export default function StatusPage() {
             <p
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.9rem",
+                fontSize: "1.05rem",
                 color: "var(--ink)",
                 wordBreak: "break-all",
                 margin: "0 0 0.875rem",
@@ -417,7 +417,7 @@ export default function StatusPage() {
                 color: "var(--ink)",
                 padding: "0.4375rem 1.125rem",
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.5625rem",
+                fontSize: "0.85rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 cursor: "pointer",
@@ -431,7 +431,7 @@ export default function StatusPage() {
             style={{
               fontFamily: "Georgia, serif",
               fontStyle: "italic",
-              fontSize: "0.9rem",
+              fontSize: "1.05rem",
               color: "var(--muted)",
               marginTop: "1.25rem",
             }}
@@ -450,7 +450,7 @@ export default function StatusPage() {
                 border: "none",
                 padding: 0,
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.5625rem",
+                fontSize: "0.85rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 color: "var(--muted)",

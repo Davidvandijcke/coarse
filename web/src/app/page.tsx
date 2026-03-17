@@ -632,7 +632,7 @@ export default function Home() {
               <p
                 style={{
                   fontFamily: "var(--font-space-mono), monospace",
-                  fontSize: "0.9rem",
+                  fontSize: "1.05rem",
                   color: costEstimate !== null ? "var(--yellow-chalk)" : "var(--dust)",
                   margin: "-0.5rem 0 0",
                 }}
@@ -753,7 +753,7 @@ export default function Home() {
           <p
             style={{
               fontFamily: "var(--font-chalk)",
-              fontSize: "0.95rem",
+              fontSize: "1.1rem",
               color: "var(--dust)",
               marginBottom: "1rem",
               letterSpacing: "0.05em",
@@ -793,7 +793,7 @@ export default function Home() {
             href="/privacy"
             style={{
               fontFamily: "var(--font-chalk)",
-              fontSize: "0.9rem",
+              fontSize: "1.05rem",
               color: "var(--dust)",
               textDecoration: "none",
             }}
@@ -804,7 +804,7 @@ export default function Home() {
             href="/terms"
             style={{
               fontFamily: "var(--font-chalk)",
-              fontSize: "0.9rem",
+              fontSize: "1.05rem",
               color: "var(--dust)",
               textDecoration: "none",
             }}

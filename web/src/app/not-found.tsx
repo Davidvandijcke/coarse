@@ -40,7 +40,7 @@ export default function NotFound() {
         style={{
           fontFamily: "Georgia, serif",
           fontStyle: "italic",
-          fontSize: "0.9375rem",
+          fontSize: "1.1rem",
           color: "var(--dust)",
           margin: "0 0 1.5rem",
         }}

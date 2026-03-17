@@ -67,7 +67,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
             fontFamily: "Georgia, serif",
             fontStyle: "italic",
             color: "var(--dust)",
-            fontSize: "0.9375rem",
+            fontSize: "1.1rem",
           }}
         >
           Loading<span className="blink">_</span>
@@ -108,7 +108,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
             fontFamily: "Georgia, serif",
             fontStyle: "italic",
             color: "var(--dust)",
-            fontSize: "0.9375rem",
+            fontSize: "1.1rem",
             margin: "0 0 1.25rem",
           }}
         >
@@ -118,7 +118,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
           href="/"
           style={{
             fontFamily: "var(--font-space-mono), monospace",
-            fontSize: "0.6875rem",
+            fontSize: "0.85rem",
             letterSpacing: "0.12em",
             textTransform: "uppercase",
             color: "var(--yellow-chalk)",
@@ -164,7 +164,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
               fontFamily: "Georgia, serif",
               fontStyle: "italic",
               color: "var(--dust)",
-              fontSize: "0.9375rem",
+              fontSize: "1.1rem",
             }}
           >
             {review.status === "running"
@@ -206,7 +206,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
                 fontFamily: "Georgia, serif",
                 color: "var(--dust)",
                 fontStyle: "italic",
-                fontSize: "0.9375rem",
+                fontSize: "1.1rem",
                 margin: "0 0 1rem",
               }}
             >
@@ -216,7 +216,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
               href="/"
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.6875rem",
+                fontSize: "0.85rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 color: "var(--yellow-chalk)",
