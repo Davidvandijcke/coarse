@@ -36,6 +36,9 @@ QUALITY_MODEL = "gemini/gemini-3-flash-preview"
 # Literature search via Perplexity Sonar Pro (web-grounded, returns citations)
 LITERATURE_SEARCH_MODEL = "perplexity/sonar-pro-search"
 
+# Recall evaluation judge (cheap model for YES/NO semantic matching)
+RECALL_JUDGE_MODEL = QUALITY_MODEL
+
 # Model families that need JSON mode instead of tool-calling
 JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini")
 

@@ -39,6 +39,9 @@ Before flagging notation or definitions as "wrong" or "non-standard":
 - Consider whether this is a field convention you may not be familiar with.
 - If the notation is used consistently throughout the paper, it is likely intentional.
 - Only flag if the convention creates a concrete mathematical error or ambiguity.
+- Standard field conventions (big-O notation, asymptotic equivalence, \
+measure-theoretic shorthands, common abbreviations) should not be flagged even if \
+they differ from conventions you are most familiar with.
 """
 
 _ENGAGEMENT_PATTERN = """
@@ -151,6 +154,25 @@ _DO_NOT_COMMENT_BLOCK = """
 Do NOT comment on: formatting, LaTeX rendering artifacts, minor notation preferences, \
 stylistic choices, typographical errors, or notation conventions that are internally \
 consistent.
+"""
+
+_FORWARD_REFERENCE_LENIENCY = """
+When a symbol, quantity, or concept is used before its formal definition:
+- Check whether it is defined LATER in the paper (in a subsequent section).
+- If the paper defines it later, this is a forward reference, not an error.
+- Do NOT flag "X is undefined" or "X is not introduced" unless you have confirmed \
+X never receives a definition anywhere in the paper.
+- Authors commonly use symbols informally in introductions and define them formally \
+in methodology sections. This is standard academic practice.
+"""
+
+_INTRO_LENIENCY = """
+This is an introductory or concluding section. These sections are intentionally \
+informal and high-level.
+Do NOT flag: imprecise language, lack of formal definitions, informal descriptions \
+of results, or motivational claims that are formalized elsewhere in the paper.
+DO flag: factual errors about the paper's own results, mischaracterizations of \
+prior work, claims that are contradicted by the paper's technical sections.
 """
 
 # ---------------------------------------------------------------------------
@@ -571,7 +593,7 @@ version of each issue.
 SECTION_SYSTEM = """\
 You are an expert peer reviewer. Your task is to find concrete errors and \
 inconsistencies in a single section of a research paper.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _STEELMAN_BEFORE_ATTACK + (
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _STEELMAN_BEFORE_ATTACK + _FORWARD_REFERENCE_LENIENCY + (
     _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION
 ) + _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION + """
 For each issue you identify, produce a structured comment with:
@@ -702,12 +724,17 @@ to this section that are NOT captured in the overview:
     if literature_context:
         lit_block = f"\n**Literature Context**:\n{literature_context}\n"
 
+    intro_block = ""
+    _INTRO_TYPES = {"introduction", "conclusion"}
+    if section.section_type.value in _INTRO_TYPES:
+        intro_block = _INTRO_LENIENCY
+
     return f"""\
 Review the following section of "{paper_title}" and produce detailed comments.
 
 **Section {section.number}: {section.title}**
 **Type**: {section.section_type.value}
-{abstract_block}{claims_block}{defs_block}{notation_block}{context_block}{cal_block}{lit_block}
+{abstract_block}{claims_block}{defs_block}{notation_block}{context_block}{cal_block}{lit_block}{intro_block}
 
 **Section Text**:
 {section.text}
@@ -725,9 +752,11 @@ Focus on concrete errors you can demonstrate, not requests for additional work.
 SECTION_PROOF_SYSTEM = """\
 You are an expert mathematical proof checker. Your job is to VERIFY the mathematics \
 in this section by working through it yourself, not just reading it passively.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _STEELMAN_BEFORE_ATTACK + _EQUIVALENCE_CLAIMS + (
-    _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION
-) + _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION + _NUMERICAL_CLAIMS + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _STEELMAN_BEFORE_ATTACK + (
+    _EQUIVALENCE_CLAIMS + _FORWARD_REFERENCE_LENIENCY
+) + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + (
+    _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION + _NUMERICAL_CLAIMS
+) + """
 For each theorem, proposition, lemma, or corollary:
 
 1. STATE the claim precisely.
@@ -889,9 +918,9 @@ scope gaps, boundary cases.
 
 SECTION_METHODOLOGY_SYSTEM = """\
 You are an expert methodologist reviewing a methodology section of a research paper.
-""" + _TONE_BLOCK + _CONFIDENCE_GATE + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION + (
-    _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION
-) + """
+""" + _TONE_BLOCK + _CONFIDENCE_GATE + _FORWARD_REFERENCE_LENIENCY + (
+    _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION
+) + _OCR_ARTIFACT_NOTICE + _TABLE_VERIFICATION + """
 Focus on:
 
 1. Does the method actually identify or estimate the stated target quantity? \
