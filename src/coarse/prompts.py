@@ -73,6 +73,13 @@ For each potential issue, describe your thought process:
 2. How you resolved the confusion (or why you could not resolve it)
 3. Whether the issue is an actual error, an ambiguity, or a clarity problem
 
+If at step 2 you successfully resolved the confusion — you can see why the \
+authors' approach works — then the issue is NOT a comment. Do not include it. \
+A comment that states a concern and then answers its own concern is a false \
+positive. The test: if your feedback contains "though," "however," "in principle," \
+or "but this may not be a problem because" — you have likely answered your own \
+question. Drop it.
+
 This ensures you only flag genuine issues and your feedback is constructive.
 """
 
