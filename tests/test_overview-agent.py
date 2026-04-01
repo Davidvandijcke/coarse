@@ -1,7 +1,7 @@
 """Tests for agents/overview.py — OverviewAgent."""
 from unittest.mock import MagicMock
 
-from coarse.agents.overview import OverviewAgent, _build_sections_summary
+from coarse.agents.overview import OverviewAgent, _build_sections_text
 from coarse.llm import LLMClient
 from coarse.prompts import OVERVIEW_SYSTEM
 from coarse.types import (
@@ -94,8 +94,8 @@ def test_overview_agent_calls_complete_with_correct_model():
     assert system_msgs[0]["content"] == OVERVIEW_SYSTEM
 
 
-def test_build_sections_summary_includes_all_sections():
-    """All section titles and claims appear in the output string."""
+def test_build_sections_text_includes_all_sections():
+    """All section titles appear in the output string."""
     sections = [
         SectionInfo(
             number=1,
@@ -119,25 +119,36 @@ def test_build_sections_summary_includes_all_sections():
             claims=["Claim D", "Claim E"],
         ),
     ]
-    result = _build_sections_summary(sections)
+    result = _build_sections_text(sections)
 
     for sec in sections:
         assert sec.title in result
 
 
-def test_build_sections_summary_empty_claims():
-    """Sections with empty claims list don't raise."""
+def test_build_sections_text_no_truncation():
+    """Full text is preserved without truncation."""
+    long_text = "A" * 15_000
     sections = [
         SectionInfo(
             number=1,
-            title="Results",
-            text="...",
-            section_type=SectionType.RESULTS,
-            claims=[],
+            title="Introduction",
+            text=long_text,
+            section_type=SectionType.INTRODUCTION,
         ),
     ]
-    result = _build_sections_summary(sections)
-    assert "Results" in result
+    result = _build_sections_text(sections)
+    assert long_text in result
+    assert "[...truncated]" not in result
+
+
+def test_build_sections_text_empty_text():
+    """Sections with empty text should show (empty)."""
+    sections = [
+        SectionInfo(number=1, title="Empty", text="",
+                    section_type=SectionType.OTHER),
+    ]
+    result = _build_sections_text(sections)
+    assert "(empty)" in result
 
 
 def test_overview_agent_passes_title_and_abstract():
@@ -170,62 +181,6 @@ def test_overview_agent_uses_temperature_03():
     assert kwargs.get("temperature") == 0.3
 
 
-def test_build_sections_summary_full_text_for_methodology():
-    """Methodology/results sections should include full text, not 500-char snippets."""
-    long_text = "A" * 3000
-    sections = [
-        SectionInfo(
-            number=1,
-            title="Methodology",
-            text=long_text,
-            section_type=SectionType.METHODOLOGY,
-        ),
-    ]
-    result = _build_sections_summary(sections)
-    # Full text should be present (not truncated to 500 chars)
-    assert long_text in result
-
-
-def test_build_sections_summary_truncates_introduction():
-    """Introduction sections should be truncated to ~10000 chars."""
-    long_text = "B" * 15_000  # exceeds 10K _TRUNCATED_LIMIT
-    sections = [
-        SectionInfo(
-            number=1,
-            title="Introduction",
-            text=long_text,
-            section_type=SectionType.INTRODUCTION,
-        ),
-    ]
-    result = _build_sections_summary(sections)
-    # Should be truncated
-    assert "[...truncated]" in result
-    assert "B" * 15_000 not in result
-
-
-def test_build_sections_summary_respects_char_budget():
-    """Total output should not exceed MAX_OVERVIEW_CHARS."""
-    from coarse.agents.overview import MAX_OVERVIEW_CHARS
-    big_text = "C" * 40_000
-    sections = [
-        SectionInfo(number=i, title=f"Sec {i}", text=big_text,
-                    section_type=SectionType.METHODOLOGY)
-        for i in range(1, 4)
-    ]
-    result = _build_sections_summary(sections)
-    assert len(result) <= MAX_OVERVIEW_CHARS + 500  # some slack for headers/markers
-
-
-def test_build_sections_summary_empty_text():
-    """Sections with empty text should show (empty)."""
-    sections = [
-        SectionInfo(number=1, title="Empty", text="",
-                    section_type=SectionType.OTHER),
-    ]
-    result = _build_sections_summary(sections)
-    assert "(empty)" in result
-
-
 def test_overview_agent_prompt_caching_layout():
     """With supports_prompt_caching=True, system content is a list with 2 blocks:
     first has cache_control and paper context, second has OVERVIEW_SYSTEM."""
@@ -256,24 +211,6 @@ def test_overview_agent_prompt_caching_layout():
     assert second["type"] == "text"
     assert second["text"] == OVERVIEW_SYSTEM
     assert "cache_control" not in second
-
-
-def test_overview_agent_prompt_caching_with_persona():
-    """With caching + persona, second system block contains persona + OVERVIEW_SYSTEM."""
-    client = _make_client()
-    client.supports_prompt_caching = True
-    client.complete.return_value = _make_feedback()
-
-    agent = OverviewAgent(client)
-    persona = "You are a domain expert in econometrics."
-    agent.run(_make_structure(), persona=persona)
-
-    messages = client.complete.call_args[0][0]
-    system_msg = [m for m in messages if m["role"] == "system"][0]
-    second = system_msg["content"][1]
-
-    assert persona in second["text"]
-    assert OVERVIEW_SYSTEM in second["text"]
 
 
 def test_overview_agent_prompt_caching_short_user_message():

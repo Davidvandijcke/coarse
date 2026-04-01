@@ -76,27 +76,7 @@ def _verify_with_fallback(
     return verified
 
 
-_SECTION_WEIGHT = 1.2   # comments-per-section multiplier
-_TOKEN_WEIGHT = 0.3     # comments-per-1k-token multiplier
-_MIN_COMMENTS = 6
-_MAX_COMMENTS = 18
 _MIN_APPENDIX_CHARS = 500  # skip appendix sections shorter than this
-
-
-def _compute_comment_target(structure: PaperStructure, paper_text: PaperText) -> int:
-    """Compute a dynamic comment count target based on paper size.
-
-    Formula: clamp(n_sections * _SECTION_WEIGHT + token_k * _TOKEN_WEIGHT,
-                   _MIN_COMMENTS, _MAX_COMMENTS)
-    where token_k = token_estimate / 1000.
-    """
-    n_sections = len([
-        s for s in structure.sections
-        if s.section_type not in (SectionType.REFERENCES, SectionType.APPENDIX)
-    ])
-    token_k = paper_text.token_estimate / 1000.0
-    raw = n_sections * _SECTION_WEIGHT + token_k * _TOKEN_WEIGHT
-    return max(_MIN_COMMENTS, min(_MAX_COMMENTS, int(round(raw))))
 
 
 def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]:
@@ -300,9 +280,6 @@ def review_paper(
             literature_context = ""
         contribution_context = contrib_future.result(timeout=900)
 
-    # Compute dynamic comment target based on paper size
-    comment_target = _compute_comment_target(structure, paper_text)
-
     overview_agent = OverviewAgent(client)
     section_agent = SectionAgent(client)
     editorial_agent = EditorialAgent(client)
@@ -315,9 +292,8 @@ def review_paper(
     ]
     non_ref_sections = reviewable_sections[:25]
 
-    # --- Phase 1: Multi-judge overview panel (blocking) ---
-    # Assumption checking is folded into the methodology overview persona.
-    overview = overview_agent.run_panel(structure, calibration, literature_context)
+    # --- Phase 1: Overview (single-pass, full paper text) ---
+    overview = overview_agent.run(structure, calibration, literature_context)
 
     # --- Phase 2: Section agents (parallel, with verification for proof sections) ---
     verify_agent = ProofVerifyAgent(client)
@@ -358,7 +334,6 @@ def review_paper(
     try:
         filtered_comments = editorial_agent.run(
             paper_text.full_markdown, overview, section_comments,
-            comment_target=comment_target,
             title=structure.title, abstract=structure.abstract,
             contribution_context=contribution_context,
         )
@@ -369,7 +344,7 @@ def review_paper(
         critique_agent = CritiqueAgent(client)
         try:
             filtered_comments = crossref_agent.run(
-                overview, section_comments, comment_target=comment_target,
+                overview, section_comments,
                 title=structure.title, abstract=structure.abstract,
             )
         except Exception:
@@ -377,7 +352,7 @@ def review_paper(
             filtered_comments = section_comments
         try:
             filtered_comments = critique_agent.run(
-                overview, filtered_comments, comment_target=comment_target,
+                overview, filtered_comments,
                 title=structure.title, abstract=structure.abstract,
             )
         except Exception:

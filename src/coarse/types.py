@@ -126,7 +126,7 @@ class OverviewIssue(BaseModel):
 
 
 class OverviewFeedback(BaseModel):
-    """Macro-level feedback containing 4-6 high-level issues."""
+    """Macro-level feedback containing high-level issues."""
     summary: str = Field(
         default="", description="Optional summary paragraph",
     )
@@ -138,8 +138,8 @@ class OverviewFeedback(BaseModel):
         ),
     )
     issues: list[OverviewIssue] = Field(
-        min_length=1, max_length=6,
-        description="Macro-level issues (4-6)",
+        min_length=1,
+        description="Macro-level issues",
     )
 
 

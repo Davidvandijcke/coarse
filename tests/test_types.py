@@ -107,12 +107,8 @@ def test_overview_feedback_count_constraint():
     with pytest.raises(ValidationError):
         OverviewFeedback(issues=[])
 
-    # Too many (max_length=6)
-    with pytest.raises(ValidationError):
-        OverviewFeedback(issues=[make_issue(i) for i in range(7)])
-
-    # Valid range: 1 to 6
-    for count in (1, 4, 5, 6):
+    # Any positive count is valid (no upper cap)
+    for count in (1, 4, 5, 6, 10):
         fb = OverviewFeedback(issues=[make_issue(i) for i in range(count)])
         assert len(fb.issues) == count
 

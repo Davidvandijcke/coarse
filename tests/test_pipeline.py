@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 from coarse.config import CoarseConfig
 from coarse.pipeline import (
-    _compute_comment_target,
     _renumber_comments,
     _review_section,
     review_paper,
@@ -136,7 +135,7 @@ def test_review_paper_calls_stages_in_order():
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", side_effect=fake_render),
     ):
-        MockOverview.return_value.run_panel.side_effect = fake_overview_run
+        MockOverview.return_value.run.side_effect = fake_overview_run
         MockSection.return_value.run.side_effect = fake_section_run
         MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.side_effect = fake_crossref_run
@@ -184,7 +183,7 @@ def test_review_paper_skips_references_section():
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
-        MockOverview.return_value.run_panel.return_value = overview
+        MockOverview.return_value.run.return_value = overview
         MockSection.return_value.run.side_effect = fake_section_run
         MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
@@ -218,7 +217,7 @@ def test_review_paper_date_format():
         patch("coarse.pipeline.datetime") as mock_dt,
     ):
         mock_dt.date.today.return_value = fixed_date
-        MockOverview.return_value.run_panel.return_value = overview
+        MockOverview.return_value.run.return_value = overview
         MockSection.return_value.run.return_value = [_make_comment(1)]
         MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
@@ -246,7 +245,7 @@ def _patch_pipeline_deps(overview: OverviewFeedback):
     stack.enter_context(patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c))
     stack.enter_context(patch("coarse.pipeline.render_review", return_value="md"))
 
-    mock_ov.return_value.run_panel.return_value = overview
+    mock_ov.return_value.run.return_value = overview
     mock_sec.return_value.run.return_value = [_make_comment(1)]
     mock_vf.return_value.run.return_value = [_make_comment(1)]
     mock_cr.return_value.run.return_value = [_make_comment(1)]
@@ -292,7 +291,7 @@ def test_review_paper_returns_review_and_markdown():
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value=expected_markdown),
     ):
-        MockOverview.return_value.run_panel.return_value = overview
+        MockOverview.return_value.run.return_value = overview
         MockSection.return_value.run.return_value = [_make_comment(1)]
         MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
@@ -336,7 +335,7 @@ def test_review_paper_section_comments_flattened():
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
-        MockOverview.return_value.run_panel.return_value = overview
+        MockOverview.return_value.run.return_value = overview
         # Each section returns 2 comments
         MockSection.return_value.run.return_value = [_make_comment(1), _make_comment(2)]
         MockVerify.return_value.run.return_value = [_make_comment(1)]
@@ -374,7 +373,7 @@ def test_review_paper_uses_provided_config():
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
-        MockOverview.return_value.run_panel.return_value = overview
+        MockOverview.return_value.run.return_value = overview
         MockSection.return_value.run.return_value = [_make_comment(1)]
         MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockCrossref.return_value.run.return_value = [_make_comment(1)]
@@ -420,52 +419,6 @@ def test_renumber_comments_preserves_content():
 def test_renumber_comments_empty():
     assert _renumber_comments([]) == []
 
-
-# ---------------------------------------------------------------------------
-# Unit tests: _compute_comment_target
-# ---------------------------------------------------------------------------
-
-def test_compute_comment_target_small_paper():
-    """Small paper (2 sections, 500 tokens) → clamped to minimum 6."""
-    structure = _make_structure(sections=[_make_section(1), _make_section(2)])
-    paper_text = PaperText(full_markdown="short", token_estimate=500)
-    target = _compute_comment_target(structure, paper_text)
-    assert target == 6  # 2*1.5 + 0.5*0.3 = 3.15 → clamped to 6
-
-
-def test_compute_comment_target_large_paper():
-    """Large paper (15 sections, 30K tokens) → reasonable target."""
-    sections = [_make_section(i) for i in range(1, 16)]
-    structure = _make_structure(sections=sections)
-    paper_text = PaperText(full_markdown="x" * 100000, token_estimate=30000)
-    target = _compute_comment_target(structure, paper_text)
-    # 15*1.2 + 30*0.3 = 18 + 9 = 27 → clamped to 18
-    assert target == 18
-
-
-def test_compute_comment_target_medium_paper():
-    """Medium paper (6 sections, 10K tokens)."""
-    sections = [_make_section(i) for i in range(1, 7)]
-    structure = _make_structure(sections=sections)
-    paper_text = PaperText(full_markdown="x" * 30000, token_estimate=10000)
-    target = _compute_comment_target(structure, paper_text)
-    # 6*1.2 + 10*0.3 = 7.2 + 3 = 10.2 → 10
-    assert target == 10
-
-
-def test_compute_comment_target_excludes_references():
-    """References and appendix sections don't count toward section count."""
-    sections = [
-        _make_section(1, SectionType.INTRODUCTION),
-        _make_section(2, SectionType.METHODOLOGY),
-        _make_section(3, SectionType.REFERENCES),
-        _make_section(4, SectionType.APPENDIX),
-    ]
-    structure = _make_structure(sections=sections)
-    paper_text = PaperText(full_markdown="x" * 10000, token_estimate=5000)
-    target = _compute_comment_target(structure, paper_text)
-    # 2 reviewable sections * 1.5 + 5*0.3 = 3 + 1.5 = 4.5 → clamped to 6
-    assert target == 6
 
 
 # ---------------------------------------------------------------------------

@@ -7,12 +7,9 @@ from coarse.agents.base import MAX_CONTEXT_CHARS, ReviewAgent
 from coarse.llm import LLMClient
 from coarse.prompts import (
     ASSUMPTION_CHECK_SYSTEM,
-    OVERVIEW_PERSONAS,
-    OVERVIEW_SYNTHESIS_SYSTEM,
     OVERVIEW_SYSTEM,
     assumption_check_user,
     overview_paper_context,
-    overview_synthesis_user,
     overview_user,
 )
 from coarse.types import (
@@ -27,70 +24,21 @@ from coarse.types import (
 logger = logging.getLogger(__name__)
 
 _OVERVIEW_TEMPERATURE = 0.3
-_SYNTHESIS_TEMPERATURE = 0.2
-
-# Maximum total characters sent to the overview agent.
-MAX_OVERVIEW_CHARS = MAX_CONTEXT_CHARS
-
-# Section types that get full text (theory-heavy, high-value for cross-cutting analysis).
-_FULL_TEXT_TYPES = {
-    SectionType.METHODOLOGY,
-    SectionType.RESULTS,
-    SectionType.DISCUSSION,
-    SectionType.APPENDIX,
-    SectionType.OTHER,
-}
-
-# Section types that get truncated (context only, not where the substance lives).
-_TRUNCATED_LIMIT = 10_000
 
 
-def _build_sections_summary(sections: list[SectionInfo]) -> str:
-    """Convert sections list to a text block for the overview prompt.
-
-    Methodology, results, discussion, and appendix sections get full text.
-    Introduction, conclusion, and related_work get truncated to 10K chars.
-    Total output is capped at MAX_OVERVIEW_CHARS with proportional allocation.
-    """
-    # Phase 1: Build raw parts with full or truncated text
-    raw_parts: list[tuple[str, int]] = []  # (text, weight)
+def _build_sections_text(sections: list[SectionInfo]) -> str:
+    """Convert sections list to a text block with full, untruncated text."""
+    parts: list[str] = []
     for sec in sections:
         if not sec.text:
-            header = f"## {sec.number}. {sec.title} ({sec.section_type.value})\n(empty)"
-            raw_parts.append((header, 1))
+            parts.append(f"## {sec.number}. {sec.title} ({sec.section_type.value})\n(empty)")
             continue
-
-        if sec.section_type in _FULL_TEXT_TYPES:
-            body = sec.text
-            weight = 2  # methodology/results get 2x budget in proportional allocation
-        else:
-            body = sec.text[:_TRUNCATED_LIMIT]
-            if len(sec.text) > _TRUNCATED_LIMIT:
-                body += "\n[...truncated]"
-            weight = 1
-
-        header = f"## {sec.number}. {sec.title} ({sec.section_type.value})\n{body}"
-        raw_parts.append((header, weight))
-
-    # Phase 2: Check total length, proportionally truncate if over budget
-    total_len = sum(len(text) for text, _ in raw_parts)
-    if total_len <= MAX_OVERVIEW_CHARS:
-        return "\n\n".join(text for text, _ in raw_parts)
-
-    # Proportional allocation: each part gets chars proportional to its weight
-    total_weight = sum(w for _, w in raw_parts)
-    final_parts = []
-    for text, weight in raw_parts:
-        budget = int(MAX_OVERVIEW_CHARS * weight / total_weight)
-        if len(text) > budget:
-            text = text[:budget] + "\n[...truncated to fit budget]"
-        final_parts.append(text)
-
-    return "\n\n".join(final_parts)
+        parts.append(f"## {sec.number}. {sec.title} ({sec.section_type.value})\n{sec.text}")
+    return "\n\n".join(parts)
 
 
 class OverviewAgent(ReviewAgent):
-    """Produces 4-6 macro-level issues from a PaperStructure."""
+    """Produces macro-level issues from a PaperStructure."""
 
     def __init__(self, client: LLMClient) -> None:
         super().__init__(client)
@@ -99,108 +47,39 @@ class OverviewAgent(ReviewAgent):
         self,
         structure: PaperStructure,
         calibration: DomainCalibration | None = None,
-        persona: str | None = None,
         literature_context: str = "",
     ) -> OverviewFeedback:
-        sections_summary = _build_sections_summary(structure.sections)
+        sections_text = _build_sections_text(structure.sections)
 
         if self.client.supports_prompt_caching:
-            # Caching layout: shared paper context (cached) + persona (uncached)
             paper_context = overview_paper_context(
-                structure.title, structure.abstract, sections_summary,
+                structure.title, structure.abstract, sections_text,
                 calibration=calibration, literature_context=literature_context,
             )
-            persona_block = (persona + "\n\n" + OVERVIEW_SYSTEM) if persona else OVERVIEW_SYSTEM
             messages = [
                 {"role": "system", "content": [
                     {"type": "text", "text": paper_context,
                      "cache_control": {"type": "ephemeral"}},
-                    {"type": "text", "text": persona_block},
+                    {"type": "text", "text": OVERVIEW_SYSTEM},
                 ]},
                 {"role": "user", "content": overview_user(
-                    structure.title, structure.abstract, sections_summary,
+                    structure.title, structure.abstract, sections_text,
                     cache_mode=True,
                 )},
             ]
         else:
-            system = (persona + "\n\n" + OVERVIEW_SYSTEM) if persona else OVERVIEW_SYSTEM
             messages = [
-                {"role": "system", "content": system},
+                {"role": "system", "content": OVERVIEW_SYSTEM},
                 {"role": "user", "content": overview_user(
                     structure.title, structure.abstract,
-                    sections_summary, calibration=calibration,
+                    sections_text, calibration=calibration,
                     literature_context=literature_context,
                 )},
             ]
 
         return self.client.complete(  # type: ignore[return-value]
-            messages, OverviewFeedback, max_tokens=4096, temperature=_OVERVIEW_TEMPERATURE
+            messages, OverviewFeedback, max_tokens=8192, temperature=_OVERVIEW_TEMPERATURE
         )
-
-    def run_panel(
-        self,
-        structure: PaperStructure,
-        calibration: DomainCalibration | None = None,
-        literature_context: str = "",
-    ) -> OverviewFeedback:
-        """Run 3 judges with different personas, then synthesize.
-
-        When the model supports prompt caching, judges run sequentially so
-        judge 1's cache write completes before judges 2 and 3 read from it.
-        Otherwise judges run in parallel.
-        """
-        overviews: list[OverviewFeedback] = []
-
-        if self.client.supports_prompt_caching:
-            # Sequential execution for cache sharing
-            for i, persona in enumerate(OVERVIEW_PERSONAS):
-                try:
-                    overviews.append(
-                        self.run(structure, calibration, persona, literature_context)
-                    )
-                except Exception:
-                    logger.warning("Overview judge %d failed, skipping", i)
-        else:
-            from concurrent.futures import ThreadPoolExecutor
-
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                futures = [
-                    executor.submit(
-                        self.run, structure, calibration, persona, literature_context
-                    )
-                    for persona in OVERVIEW_PERSONAS
-                ]
-                for i, future in enumerate(futures):
-                    try:
-                        overviews.append(future.result())
-                    except Exception:
-                        logger.warning("Overview judge %d failed, skipping", i)
-
-        if not overviews:
-            raise RuntimeError("All overview judges failed")
-        if len(overviews) < len(OVERVIEW_PERSONAS):
-            logger.warning(
-                "Panel degraded: only %d/%d judges succeeded",
-                len(overviews), len(OVERVIEW_PERSONAS),
-            )
-        if len(overviews) == 1:
-            return overviews[0]
-
-        return synthesize_overviews(overviews, self.client)
-
-
-def synthesize_overviews(
-    overviews: list[OverviewFeedback],
-    client: LLMClient,
-) -> OverviewFeedback:
-    """Synthesize multiple overview assessments into a single consolidated overview."""
-    messages = [
-        {"role": "system", "content": OVERVIEW_SYNTHESIS_SYSTEM},
-        {"role": "user", "content": overview_synthesis_user(overviews)},
-    ]
-    return client.complete(  # type: ignore[return-value]
-        messages, OverviewFeedback, max_tokens=4096, temperature=_SYNTHESIS_TEMPERATURE
-    )
 
 
 # Section types relevant for assumption checking

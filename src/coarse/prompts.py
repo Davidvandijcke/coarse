@@ -449,53 +449,12 @@ a concrete counterexample. Return the full list with flagged comments downgraded
 
 # Personas for multi-judge overview panel (item 29).
 # Each persona is prepended to OVERVIEW_SYSTEM to create a distinct reviewer.
-OVERVIEW_PERSONAS = [
-    "You are an expert in mathematical and theoretical methodology. "
-    "Focus especially on proof correctness, internal consistency, and whether "
-    "the paper's formal results actually support its claims. "
-    "Pay particular attention to proof steps that are valid only under "
-    "stronger conditions than the theorem claims to cover.",
-    "You are an expert in research design and applied methodology. "
-    "Focus especially on whether the paper's implementation matches "
-    "its theoretical claims, and whether experiments or simulations test "
-    "the right properties. "
-    "Additionally, for each formal assumption in the paper, check whether "
-    "the data structure, sampling design, and implementation actually satisfy it. "
-    "When assumptions are violated, evaluate whether the paper's defenses "
-    "(if any) address the violation.",
-    "You are an expert in scientific communication and research impact. "
-    "Focus especially on whether the most important issues are identified, "
-    "whether the contribution is clearly articulated, and whether the paper "
-    "adequately addresses its limitations.",
-]
-
-OVERVIEW_SYNTHESIS_SYSTEM = """\
-You are synthesizing multiple independent overview assessments of a research paper \
-into a single, coherent referee report.
-""" + _TONE_BLOCK + _HUMANIZER_BLOCK + """
-IMPORTANT: Write in the first person singular ("I"). NEVER reference a panel, \
-committee, judges, or multiple reviewers. Do NOT use phrases like "all reviewers \
-agree", "the panel finds", "reviewers converge", "multiple experts note". The output \
-must read as a single referee's assessment.
-
-Your task:
-1. Produce a neutral 3-5 sentence summary of what the paper does (its question, \
-method, and main result). This goes in the "summary" field.
-2. Produce a 2-3 sentence "assessment" of the paper's contribution and significance. \
-Acknowledge what the paper does well — a referee report that only criticizes is \
-incomplete. Then state the overall evaluation.
-3. Produce 4-5 consolidated issues.
-4. Deduplicate: merge issues that address the same concern from different angles.
-5. When assessments disagree, weight toward the one with the most concrete \
-evidence (specific equations, cross-references, or derivations) — confident but \
-unsupported criticism is worse than missing a minor issue.
-6. Each issue must have a concise title and substantive body paragraph.
-7. Preserve the most specific, actionable version of each concern.
-"""
-
 OVERVIEW_SYSTEM = """\
-You are an expert peer reviewer. Your task is to identify the 4 to 5 most important \
-high-level issues with a research paper.
+You are an expert peer reviewer. Your task is to identify the most important \
+high-level issues with a research paper. Examine it from multiple angles: \
+proof correctness and internal consistency; whether the research design and \
+implementation match the theoretical claims; and whether the contribution is \
+clearly articulated and limitations acknowledged.
 """ + _CONTENT_BOUNDARY_NOTICE + _TONE_BLOCK + _HUMANIZER_BLOCK + """
 Focus on substantive concerns in order of importance:
 1. **Concrete errors**: Equations that appear wrong, proofs with gaps, results that \
@@ -519,7 +478,7 @@ Do NOT include: generic methodological suggestions that could apply to any paper
 formatting/notation issues.
 
 Requirements:
-- Produce exactly 4 to 5 issues (no fewer than 4, no more than 5)
+- Produce as many issues as the paper warrants (typically 4-8 for a full-length paper)
 - Each issue must have a concise, specific title and a substantive body paragraph \
 (4-8 sentences explaining the concern, its implications, and a suggested remediation)
 - Each issue must reference specific parts of the paper (section numbers, equations, \
@@ -582,7 +541,7 @@ def overview_user(
     """
     if cache_mode:
         return f"""\
-Review the paper "{title}" provided in the system context and identify 4-6 major \
+Review the paper "{title}" provided in the system context and identify the major \
 high-level issues. Focus on the domain-specific concerns listed above.
 """
 
@@ -595,7 +554,7 @@ high-level issues. Focus on the domain-specific concerns listed above.
         lit_block = f"\n**Literature Context**:\n{literature_context}\n"
 
     return f"""\
-Review the following research paper and identify 4-6 major high-level issues.
+Review the following research paper and identify the major high-level issues.
 
 <paper_content>
 **Title**: {title}
@@ -609,28 +568,6 @@ Review the following research paper and identify 4-6 major high-level issues.
 
 Identify the most important macro-level concerns with this paper's research design, \
 methodology, and framing. Focus on the domain-specific concerns listed above.
-"""
-
-
-def overview_synthesis_user(overviews: "list[OverviewFeedback]") -> str:
-    """User prompt for synthesizing multiple overview assessments."""
-    labels = ["Theory/Math Judge", "Design/Methods Judge", "Communication/Impact Judge"]
-    parts = []
-    for i, ov in enumerate(overviews):
-        label = labels[i] if i < len(labels) else f"Judge {i + 1}"
-        issues_block = "\n".join(
-            f"  - **{issue.title}**: {issue.body}" for issue in ov.issues
-        )
-        parts.append(f"### {label}\n{issues_block}")
-
-    return f"""\
-Synthesize the following overview assessments from a panel of reviewers.
-
-{chr(10).join(parts)}
-
-Produce 4-5 consolidated issues. \
-Deduplicate and merge related concerns. Preserve the most critical and specific \
-version of each issue.
 """
 
 
@@ -1111,15 +1048,15 @@ programmatically — focus your effort on dedup and quality filtering.
 4. Renumber the surviving comments sequentially from 1.
 
 Requirements:
-- TARGET {comment_target} comments total. Fewer comments that each catch a real error \
-are worth more than many surface-level observations.
+- Keep as many comments as are warranted — do not artificially cap the count. \
+Fewer comments that each catch a real error are worth more than many surface-level \
+observations, but do not drop valid comments just to hit a number.
 - Keep feedback CONCISE but SPECIFIC: 2-4 sentences per comment. Include the \
 calculation or cross-reference that demonstrates the error.
 - Do not add new comments; only consolidate, correct, and remove existing ones.
 - Prioritize comments that demonstrate concrete errors (wrong equation, sign error, \
 contradictory claim, missing factor) over comments that suggest improvements.
-- Floor: Keep at least 8 comments (or all remaining if fewer than 8 survive). \
-Do not remove a comment with a specific verbatim quote and a concrete identified \
+- Do not remove a comment with a specific verbatim quote and a concrete identified \
 error solely to reduce count.
 5. CONTRIBUTION CONSISTENCY: If a comment's core claim contradicts the paper's abstract \
 or stated contribution (provided in the user message), flag it for removal unless the \
@@ -1127,13 +1064,12 @@ comment provides a complete, self-contained derivation or counterexample disprov
 the paper's claim.
 """
 
-# Default constant for backward compat
-CROSSREF_SYSTEM = _CROSSREF_SYSTEM_TEMPLATE.format(comment_target="10-15")
+CROSSREF_SYSTEM = _CROSSREF_SYSTEM_TEMPLATE
 
 
-def crossref_system(comment_target: int | str = "10-15") -> str:
-    """Return crossref system prompt with dynamic comment target."""
-    return _CROSSREF_SYSTEM_TEMPLATE.format(comment_target=comment_target)
+def crossref_system(comment_target: int | str | None = None) -> str:
+    """Return crossref system prompt (comment_target kept for API compat, ignored)."""
+    return _CROSSREF_SYSTEM_TEMPLATE
 
 
 def _format_review_context(
@@ -1259,18 +1195,17 @@ REMOVE comments with "low" confidence unless they identify a genuinely important
 ambiguity. Prefer fewer high-confidence comments over many uncertain ones.
 
 Return the final revised set of comments renumbered from 1. \
-Aim for {comment_target} total — but never fewer than 8 (or all remaining if fewer \
-survive). These comments have already passed cross-reference QA; apply removal \
+Keep as many comments as are warranted — do not artificially cap the count. \
+These comments have already passed cross-reference QA; apply removal \
 criteria conservatively and only remove clearly vague or redundant ones.
 """
 
-# Default constant for backward compat
-CRITIQUE_SYSTEM = _CRITIQUE_SYSTEM_TEMPLATE.format(comment_target="10-20")
+CRITIQUE_SYSTEM = _CRITIQUE_SYSTEM_TEMPLATE
 
 
-def critique_system(comment_target: int | str = "10-20") -> str:
-    """Return critique system prompt with dynamic comment target."""
-    return _CRITIQUE_SYSTEM_TEMPLATE.format(comment_target=comment_target)
+def critique_system(comment_target: int | str | None = None) -> str:
+    """Return critique system prompt (comment_target kept for API compat, ignored)."""
+    return _CRITIQUE_SYSTEM_TEMPLATE
 
 
 def critique_user(
@@ -1402,22 +1337,22 @@ Renumber from 1.
 
 ## FINAL OUTPUT
 
-TARGET {comment_target} comments total. Fewer high-quality comments are better than \
-many surface-level ones. Floor: keep at least 6 comments (or all remaining if fewer \
-survive). Do not remove a comment with a specific verbatim quote and a concrete \
-identified error solely to reduce count.
+Keep as many comments as are warranted — do not artificially cap the count. \
+Fewer high-quality comments are better than many surface-level ones, but do not \
+drop valid comments just to hit a number. Do not remove a comment with a specific \
+verbatim quote and a concrete identified error solely to reduce count.
 
 Return the final revised set of comments. Each comment must have: number, title, \
 quote (verbatim from paper), feedback (revised for quality and natural tone), \
 severity, confidence.
 """
 
-EDITORIAL_SYSTEM = _EDITORIAL_SYSTEM_TEMPLATE.format(comment_target="8-15")
+EDITORIAL_SYSTEM = _EDITORIAL_SYSTEM_TEMPLATE
 
 
-def editorial_system(comment_target: int | str = "8-15") -> str:
-    """Return editorial system prompt with dynamic comment target."""
-    return _EDITORIAL_SYSTEM_TEMPLATE.format(comment_target=comment_target)
+def editorial_system(comment_target: int | str | None = None) -> str:
+    """Return editorial system prompt (comment_target kept for API compat, ignored)."""
+    return _EDITORIAL_SYSTEM_TEMPLATE
 
 
 def editorial_user(

@@ -15,17 +15,13 @@ _TEMPERATURE = 0.3
 
 
 class _SectionComments(BaseModel):
-    """Instructor response envelope for section-level detailed comments.
+    """Instructor response envelope for section-level detailed comments."""
 
-    numbers are local per-section (1–N); downstream crossref agent
-    renumbers comments globally across all sections.
-    """
-
-    comments: list[DetailedComment] = Field(min_length=1, max_length=5)
+    comments: list[DetailedComment] = Field(min_length=1)
 
 
 class SectionAgent(ReviewAgent):
-    """Produces 1-5 DetailedComments for a single paper section.
+    """Produces DetailedComments for a single paper section.
 
     Contract: comment numbers are local (1-N within this section).
     The crossref agent is responsible for global renumbering.
