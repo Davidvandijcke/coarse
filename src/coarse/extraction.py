@@ -88,11 +88,16 @@ def _load_cache(pdf_path: Path) -> PaperText | None:
 def _save_cache(pdf_path: Path, paper_text: PaperText) -> None:
     """Save extraction result to cache file next to the PDF."""
     cache = _cache_path(pdf_path)
+    # Prevent symlink-following writes (attacker could pre-create symlink)
+    if cache.is_symlink():
+        logger.warning("Cache path %s is a symlink, refusing to write", cache)
+        return
     try:
         cache.write_text(
             paper_text.model_dump_json(indent=None),
             encoding="utf-8",
         )
+        cache.chmod(0o600)  # restrict to owner-only (contains paper text)
         size_kb = cache.stat().st_size / 1024
         logger.info("Saved extraction cache (%.1f KB) to %s", size_kb, cache.name)
     except Exception:
