@@ -118,3 +118,34 @@ alter table rate_limit_log enable row level security;
 -- ============================================================================
 
 alter publication supabase_realtime add table reviews;
+
+-- ============================================================================
+-- System status (capacity management)
+-- ============================================================================
+
+-- Singleton row: manual kill switch + banner message for the web frontend.
+-- Flip from the Supabase SQL editor:
+--   UPDATE system_status SET accepting_reviews = false,
+--     banner_message = 'High traffic — use the CLI: pip install coarse',
+--     updated_at = now() WHERE id = 1;
+create table system_status (
+  id int primary key default 1 check (id = 1),
+  accepting_reviews boolean not null default true,
+  banner_message text,
+  updated_at timestamptz default now()
+);
+
+insert into system_status (id) values (1);
+
+alter table system_status enable row level security;
+
+create policy "Anyone can read system status"
+  on system_status for select using (true);
+
+alter publication supabase_realtime add table system_status;
+
+-- Helper for monitoring cron: count reviews since a given timestamp.
+create or replace function count_reviews_since(since timestamptz)
+returns bigint language sql security definer as $$
+  select count(*) from reviews where created_at >= since;
+$$;

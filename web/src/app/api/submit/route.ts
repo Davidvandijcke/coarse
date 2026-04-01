@@ -38,6 +38,22 @@ export async function POST(request: NextRequest) {
   const rateLimited = await checkRateLimit(supabaseAdmin, ip, "submit");
   if (rateLimited) return rateLimited;
 
+  // Check if submissions are paused (manual kill switch)
+  const { data: statusRow } = await supabaseAdmin
+    .from("system_status")
+    .select("accepting_reviews, banner_message")
+    .eq("id", 1)
+    .single();
+
+  if (statusRow && !statusRow.accepting_reviews) {
+    return NextResponse.json(
+      {
+        error: statusRow.banner_message || "Submissions are temporarily paused. Please try again later or use the CLI: pip install coarse",
+      },
+      { status: 503 },
+    );
+  }
+
   // Check concurrent review capacity before accepting work
   const { count: activeCount } = await supabaseAdmin
     .from("reviews")

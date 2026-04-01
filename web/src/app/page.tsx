@@ -168,6 +168,14 @@ export default function Home() {
   const [costEstimate, setCostEstimate] = useState<number | null>(null);
   const [costLoading, setCostLoading] = useState(false);
   const tokenCacheRef = useRef<{ name: string; size: number; tokens: number } | null>(null);
+  const [systemStatus, setSystemStatus] = useState<{
+    accepting: boolean; banner: string | null; activeReviews: number; capacity: number;
+  } | null>(null);
+
+  // Fetch system capacity status on mount
+  useEffect(() => {
+    fetch("/api/status").then(r => r.json()).then(setSystemStatus).catch(() => {});
+  }, []);
 
   const onDrop = useCallback((accepted: File[]) => {
     if (accepted[0]) setFile(accepted[0]);
@@ -288,11 +296,53 @@ export default function Home() {
     }
   }
 
-  const canSubmit = !!file && !!email && !!apiKey && !submitting;
+  const accepting = systemStatus?.accepting !== false;
+  const canSubmit = !!file && !!email && !!apiKey && !submitting && accepting;
 
   return (
     <div style={{ background: "var(--board)", minHeight: "100vh" }}>
       <Header />
+
+      {/* Capacity banner */}
+      {systemStatus && (systemStatus.banner || !systemStatus.accepting || systemStatus.activeReviews >= systemStatus.capacity * 0.8) && (
+        <div
+          style={{
+            maxWidth: "720px",
+            margin: "0 auto",
+            padding: "1rem 2.5rem",
+          }}
+        >
+          <div
+            style={{
+              borderLeft: "3px solid var(--red-chalk)",
+              paddingLeft: "1rem",
+              color: "var(--chalk)",
+              fontFamily: "Georgia, serif",
+              fontSize: "1.05rem",
+              lineHeight: 1.6,
+            }}
+          >
+            {!systemStatus.accepting
+              ? (systemStatus.banner || "Submissions are temporarily paused.")
+              : systemStatus.banner
+                ? systemStatus.banner
+                : `The system is busy (${systemStatus.activeReviews}/${systemStatus.capacity} slots in use). Your review may be queued.`}
+            {" "}
+            For faster results, try the CLI:{" "}
+            <code style={{ background: "var(--tray)", padding: "0.15em 0.4em", fontSize: "0.95em" }}>
+              pip install coarse
+            </code>{" "}
+            <a
+              href="https://github.com/Davidvandijcke/coarse"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--red-chalk)", textDecoration: "underline", textUnderlineOffset: "2px" }}
+            >
+              GitHub
+            </a>
+          </div>
+        </div>
+      )}
 
       <main
         style={{
