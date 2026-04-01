@@ -170,12 +170,10 @@ def confirm_or_abort(estimate: CostEstimate, max_cost_usd: float) -> None:
             default=True,
         )
     except (EOFError, OSError):
-        import logging
-        logging.getLogger(__name__).warning(
-            "Non-interactive mode — auto-approving cost estimate ($%.4f)",
-            estimate.total_cost_usd,
+        raise SystemExit(
+            f"Non-interactive mode — aborting (estimated cost ${estimate.total_cost_usd:.4f}). "
+            "Pass --yes to skip confirmation."
         )
-        return
 
     if not confirmed:
         raise SystemExit("Aborted by user.")

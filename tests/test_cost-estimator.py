@@ -108,10 +108,12 @@ def test_confirm_or_abort_negligible_skips_prompt():
     confirm_or_abort(estimate, max_cost_usd=10.0)
 
 
-def test_confirm_or_abort_non_tty_treated_as_approved():
+def test_confirm_or_abort_non_tty_aborts():
+    """Non-interactive mode should abort by default to prevent runaway costs."""
     estimate = _make_estimate(1.0)
     with patch("typer.confirm", side_effect=EOFError("not a tty")):
-        confirm_or_abort(estimate, max_cost_usd=10.0)  # should not raise
+        with pytest.raises(SystemExit, match="Non-interactive mode"):
+            confirm_or_abort(estimate, max_cost_usd=10.0)
 
 
 # ---------------------------------------------------------------------------

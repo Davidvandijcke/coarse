@@ -89,7 +89,8 @@ def review(
     ),
     api_key: Optional[str] = typer.Option(
         None, "--api-key",
-        help="OpenRouter API key (WARNING: visible in shell history; prefer --env-file)",
+        help="OpenRouter API key (WARNING: visible in shell history and process "
+             "listing; prefer --env-file or OPENROUTER_API_KEY env var)",
     ),
     env_file: Optional[Path] = typer.Option(
         None, "--env-file", help="Path to a .env file to load (e.g. ~/keys.env)"
