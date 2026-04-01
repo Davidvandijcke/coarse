@@ -145,9 +145,6 @@ class ReviewRequest(BaseModel):
     max_containers=10,
     secrets=[
         modal.Secret.from_name("coarse-supabase"),
-        modal.Secret.from_name("coarse-mistral", required_keys=[]),
-        modal.Secret.from_name("coarse-gemini", required_keys=[]),
-        modal.Secret.from_name("coarse-openrouter", required_keys=[]),
         modal.Secret.from_name("coarse-webhook"),
         modal.Secret.from_name("coarse-gmail"),
     ],

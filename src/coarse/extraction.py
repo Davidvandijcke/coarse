@@ -393,6 +393,7 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
         ("Docling", _extract_docling),
     ]
     full_markdown = None
+    errors: list[str] = []
     for name, fn in extractors:
         try:
             full_markdown = fn(path)
@@ -404,13 +405,13 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
             api_msg = _classify_api_error(exc)
             if api_msg:
                 raise ExtractionError(api_msg) from exc
-            logger.info("%s unavailable: %s", name, exc)
+            errors.append(f"{name}: {exc}")
+            logger.warning("%s failed: %s", name, exc)
 
     if full_markdown is None:
-        raise ValueError(
-            f"Cannot convert PDF: no extraction backend available for {pdf_path}. "
-            "Set MISTRAL_API_KEY or OPENROUTER_API_KEY, or install offline extraction: "
-            "pip install coarse[docling]"
+        detail = "; ".join(errors)
+        raise ExtractionError(
+            f"Cannot convert PDF: all extraction backends failed. {detail}"
         )
 
     # Normalize Mistral OCR artifacts unconditionally

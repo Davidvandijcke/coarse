@@ -136,7 +136,9 @@ def test_fallback_to_docling(minimal_pdf: Path) -> None:
 
 
 def test_all_backends_fail(minimal_pdf: Path) -> None:
-    """When all backends fail, raises ValueError."""
+    """When all backends fail, raises ExtractionError with failure details."""
+    from coarse.types import ExtractionError
+
     # Ensure no Mistral key (direct check) and no OpenRouter key (resolve_api_key)
     env_clean = {k: v for k, v in os.environ.items()
                  if k not in ("MISTRAL_API_KEY", "OPENROUTER_API_KEY")}
@@ -145,7 +147,7 @@ def test_all_backends_fail(minimal_pdf: Path) -> None:
             "sys.modules",
             {"docling": None, "docling.document_converter": None},
         ):
-            with pytest.raises(ValueError, match="no extraction backend"):
+            with pytest.raises(ExtractionError, match="all extraction backends failed"):
                 extract_text(minimal_pdf, use_cache=False)
 
 
