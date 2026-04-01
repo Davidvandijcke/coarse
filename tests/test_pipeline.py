@@ -439,8 +439,8 @@ def test_compute_comment_target_large_paper():
     structure = _make_structure(sections=sections)
     paper_text = PaperText(full_markdown="x" * 100000, token_estimate=30000)
     target = _compute_comment_target(structure, paper_text)
-    # 15*1.5 + 30*0.3 = 22.5 + 9 = 31.5 → clamped to 25
-    assert target == 25
+    # 15*1.2 + 30*0.3 = 18 + 9 = 27 → clamped to 18
+    assert target == 18
 
 
 def test_compute_comment_target_medium_paper():
@@ -449,8 +449,8 @@ def test_compute_comment_target_medium_paper():
     structure = _make_structure(sections=sections)
     paper_text = PaperText(full_markdown="x" * 30000, token_estimate=10000)
     target = _compute_comment_target(structure, paper_text)
-    # 6*1.5 + 10*0.3 = 9 + 3 = 12
-    assert target == 12
+    # 6*1.2 + 10*0.3 = 7.2 + 3 = 10.2 → 10
+    assert target == 10
 
 
 def test_compute_comment_target_excludes_references():

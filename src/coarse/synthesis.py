@@ -30,7 +30,8 @@ def render_review(review: Review) -> str:
         parts.append("**Outline**\n")
         parts.append(f"{review.overall_feedback.summary}\n")
 
-    parts.append("Below are the most important issues identified by the review panel.\n")
+    if review.overall_feedback.assessment:
+        parts.append(f"{review.overall_feedback.assessment}\n")
 
     for issue in review.overall_feedback.issues:
         parts.append(f"**{issue.title}**\n")

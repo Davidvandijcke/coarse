@@ -155,7 +155,7 @@ def test_section_system_requires_verbatim_quote():
 
 def test_overview_system_specifies_issue_count():
     assert "4" in OVERVIEW_SYSTEM
-    assert "6" in OVERVIEW_SYSTEM
+    assert "5" in OVERVIEW_SYSTEM
 
 
 def test_crossref_system_mentions_deduplication():
@@ -165,7 +165,7 @@ def test_crossref_system_mentions_deduplication():
 # --- Assumption checker ---
 
 def test_assumption_check_system_includes_tone_and_confidence():
-    assert "constructive colleague" in ASSUMPTION_CHECK_SYSTEM
+    assert "constructive" in ASSUMPTION_CHECK_SYSTEM
     assert "rederive" in ASSUMPTION_CHECK_SYSTEM
 
 

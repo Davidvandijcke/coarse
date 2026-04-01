@@ -9,9 +9,9 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from coarse.agents.contradiction import ContradictionCheckAgent
 from coarse.agents.critique import CritiqueAgent
 from coarse.agents.crossref import CrossrefAgent
+from coarse.agents.editorial import EditorialAgent
 from coarse.agents.literature import search_literature
 from coarse.agents.overview import OverviewAgent
 from coarse.agents.section import SectionAgent
@@ -76,10 +76,10 @@ def _verify_with_fallback(
     return verified
 
 
-_SECTION_WEIGHT = 1.5   # comments-per-section multiplier
+_SECTION_WEIGHT = 1.2   # comments-per-section multiplier
 _TOKEN_WEIGHT = 0.3     # comments-per-1k-token multiplier
 _MIN_COMMENTS = 6
-_MAX_COMMENTS = 25
+_MAX_COMMENTS = 18
 _MIN_APPENDIX_CHARS = 500  # skip appendix sections shorter than this
 
 
@@ -305,7 +305,7 @@ def review_paper(
 
     overview_agent = OverviewAgent(client)
     section_agent = SectionAgent(client)
-    crossref_agent = CrossrefAgent(client)
+    editorial_agent = EditorialAgent(client)
 
     reviewable_sections = [
         s for s in structure.sections
@@ -353,40 +353,38 @@ def review_paper(
     if not section_comments:
         logger.error("All section agents failed — review will have no detailed comments")
 
+    # --- Phase 3: Editorial filter (single pass — dedup + contradiction + quality) ---
+    # The editorial agent receives full paper text for quote/absence verification.
     try:
-        deduped_comments = crossref_agent.run(
-            overview, section_comments, comment_target=comment_target,
+        filtered_comments = editorial_agent.run(
+            paper_text.full_markdown, overview, section_comments,
+            comment_target=comment_target,
             title=structure.title, abstract=structure.abstract,
+            contribution_context=contribution_context,
         )
     except Exception:
-        logger.warning("Crossref agent failed, using raw section comments", exc_info=True)
-        deduped_comments = section_comments
+        # Fallback: use legacy crossref → critique pipeline if editorial agent fails
+        logger.warning("Editorial agent failed, falling back to crossref+critique", exc_info=True)
+        crossref_agent = CrossrefAgent(client)
+        critique_agent = CritiqueAgent(client)
+        try:
+            filtered_comments = crossref_agent.run(
+                overview, section_comments, comment_target=comment_target,
+                title=structure.title, abstract=structure.abstract,
+            )
+        except Exception:
+            logger.warning("Crossref fallback also failed", exc_info=True)
+            filtered_comments = section_comments
+        try:
+            filtered_comments = critique_agent.run(
+                overview, filtered_comments, comment_target=comment_target,
+                title=structure.title, abstract=structure.abstract,
+            )
+        except Exception:
+            logger.warning("Critique fallback also failed", exc_info=True)
 
-    # Contradiction check: flag comments that contradict the paper's stated contribution
-    contradiction_agent = ContradictionCheckAgent(client)
-    try:
-        checked_comments = contradiction_agent.run(
-            structure.abstract, contribution_context, deduped_comments,
-        )
-    except Exception:
-        logger.warning("Contradiction check failed, using crossref output", exc_info=True)
-        checked_comments = deduped_comments
-
-    # Final quote verification against full paper text
-    verified_comments = _verify_with_fallback(checked_comments, paper_text.full_markdown)
-
-    critique_agent = CritiqueAgent(client)
-    try:
-        final_comments = critique_agent.run(
-            overview, verified_comments, comment_target=comment_target,
-            title=structure.title, abstract=structure.abstract,
-        )
-    except Exception:
-        logger.warning("Critique agent failed, using verified comments", exc_info=True)
-        final_comments = verified_comments
-
-    # Re-verify quotes after critique (critique re-emits through JSON, re-garbling LaTeX)
-    final_comments = _verify_with_fallback(final_comments, paper_text.full_markdown)
+    # Programmatic quote verification against full paper text
+    final_comments = _verify_with_fallback(filtered_comments, paper_text.full_markdown)
 
     # Ensure sequential numbering 1..N
     final_comments = _renumber_comments(final_comments)

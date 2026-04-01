@@ -126,13 +126,20 @@ class OverviewIssue(BaseModel):
 
 
 class OverviewFeedback(BaseModel):
-    """Macro-level feedback containing 4-8 high-level issues."""
+    """Macro-level feedback containing 4-6 high-level issues."""
     summary: str = Field(
         default="", description="Optional summary paragraph",
     )
+    assessment: str = Field(
+        default="",
+        description=(
+            "2-3 sentence assessment of the paper's contribution, "
+            "significance, and what it does well"
+        ),
+    )
     issues: list[OverviewIssue] = Field(
-        min_length=1, max_length=8,
-        description="Macro-level issues (4-8)",
+        min_length=1, max_length=6,
+        description="Macro-level issues (4-6)",
     )
 
 
@@ -170,7 +177,7 @@ class Review(BaseModel):
         description="Macro-level feedback (4-8 issues)",
     )
     detailed_comments: list[DetailedComment] = Field(
-        description="Detailed review comments (15-25)",
+        description="Detailed review comments (8-18)",
     )
 
 
