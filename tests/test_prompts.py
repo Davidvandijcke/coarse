@@ -1,16 +1,22 @@
 from coarse.agents.overview import _ASSUMPTION_RELEVANT_TYPES
 from coarse.prompts import (
     ASSUMPTION_CHECK_SYSTEM,
+    COMPLETENESS_SYSTEM,
     CRITIQUE_SYSTEM,
+    CROSS_SECTION_SYSTEM,
     CROSSREF_SYSTEM,
     METADATA_SYSTEM,
     OVERVIEW_SYSTEM,
+    SECTION_DISCUSSION_SYSTEM,
     SECTION_LITERATURE_SYSTEM,
     SECTION_METHODOLOGY_SYSTEM,
     SECTION_PROOF_SYSTEM,
     SECTION_SYSTEM,
+    SECTION_SYSTEM_MAP,
     assumption_check_user,
+    completeness_user,
     critique_user,
+    cross_section_user,
     crossref_user,
     overview_user,
     section_user,
@@ -347,3 +353,63 @@ def test_crossref_system_removes_typo_comments():
 def test_crossref_system_downgrades_unsupported_comments():
     """Crossref system should downgrade comments without concrete evidence."""
     assert "DOWNGRADE" in CROSSREF_SYSTEM
+
+
+# --- Completeness prompts ---
+
+def test_completeness_system_is_nonempty_string():
+    assert isinstance(COMPLETENESS_SYSTEM, str)
+    assert len(COMPLETENESS_SYSTEM) > 50
+
+
+def test_completeness_user_includes_title_and_abstract():
+    overview = make_overview()
+    result = completeness_user(
+        "Test Paper", "Abstract about RD.", "## 1. Intro\nText.", overview,
+    )
+    assert "Test Paper" in result
+    assert "Abstract about RD." in result
+
+
+def test_completeness_user_includes_overview_issues():
+    overview = make_overview()
+    result = completeness_user(
+        "Test Paper", "Abstract.", "## 1. Intro\nText.", overview,
+    )
+    for issue in overview.issues:
+        assert issue.title in result
+
+
+# --- Section discussion prompt ---
+
+def test_section_discussion_system_is_nonempty_string():
+    assert isinstance(SECTION_DISCUSSION_SYSTEM, str)
+    assert len(SECTION_DISCUSSION_SYSTEM) > 50
+
+
+def test_section_system_map_includes_discussion():
+    assert "discussion" in SECTION_SYSTEM_MAP
+    assert SECTION_SYSTEM_MAP["discussion"] is SECTION_DISCUSSION_SYSTEM
+
+
+# --- Cross-section prompts ---
+
+def test_cross_section_system_is_nonempty_string():
+    assert isinstance(CROSS_SECTION_SYSTEM, str)
+    assert len(CROSS_SECTION_SYSTEM) > 50
+
+
+def test_cross_section_user_includes_both_section_texts():
+    results_sec = SectionInfo(
+        number=3, title="Main Results",
+        text="Theorem 1 proves consistency.",
+        section_type=SectionType.RESULTS,
+    )
+    discussion_sec = SectionInfo(
+        number=5, title="Implications",
+        text="The estimator works in practice.",
+        section_type=SectionType.DISCUSSION,
+    )
+    result = cross_section_user("Test Paper", results_sec, discussion_sec)
+    assert "Theorem 1 proves consistency." in result
+    assert "The estimator works in practice." in result

@@ -141,6 +141,20 @@ class OverviewFeedback(BaseModel):
         min_length=1,
         description="Macro-level issues",
     )
+    recommendation: str = Field(
+        default="",
+        description=(
+            "Editorial recommendation: one of 'accept', 'minor revision', "
+            "'major revision', or 'reject', with 2-3 sentence justification"
+        ),
+    )
+    revision_targets: list[str] = Field(
+        default_factory=list,
+        description=(
+            "If recommendation is not 'accept': 2-5 specific things a "
+            "revision must accomplish, ordered by importance"
+        ),
+    )
 
 
 class DetailedComment(BaseModel):

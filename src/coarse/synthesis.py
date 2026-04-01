@@ -59,6 +59,16 @@ def render_review(review: Review) -> str:
         parts.append(f"**{_sanitize_html(issue.title)}**\n")
         parts.append(f"{_sanitize_html(issue.body)}\n")
 
+    if review.overall_feedback.recommendation:
+        rec = _sanitize_html(review.overall_feedback.recommendation)
+        parts.append(f"**Recommendation**: {rec}\n")
+
+    if review.overall_feedback.revision_targets:
+        parts.append("**Key revision targets**:\n")
+        for i, target in enumerate(review.overall_feedback.revision_targets, 1):
+            parts.append(f"{i}. {_sanitize_html(target)}")
+        parts.append("")  # blank line
+
     parts.append("**Status**: [Pending]\n")
     parts.append("---\n")
 

@@ -9,11 +9,13 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from coarse.agents.completeness import CompletenessAgent
 from coarse.agents.critique import CritiqueAgent
+from coarse.agents.cross_section import CrossSectionAgent
 from coarse.agents.crossref import CrossrefAgent
 from coarse.agents.editorial import EditorialAgent
 from coarse.agents.literature import search_literature
-from coarse.agents.overview import OverviewAgent
+from coarse.agents.overview import OverviewAgent, merge_overview
 from coarse.agents.section import SectionAgent
 from coarse.agents.verify import ProofVerifyAgent
 from coarse.config import CoarseConfig, load_config
@@ -87,7 +89,7 @@ def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]
 def _detect_section_focus(section: SectionInfo) -> str:
     """Detect section focus based on LLM-detected math content and section type.
 
-    Returns one of: "proof", "methodology", "results", "literature", "general".
+    Returns one of: "proof", "methodology", "results", "literature", "discussion", "general".
     The math_content flag is set during structure analysis by an LLM call.
     """
     if section.math_content:
@@ -98,6 +100,8 @@ def _detect_section_focus(section: SectionInfo) -> str:
         return "results"
     if section.section_type == SectionType.RELATED_WORK:
         return "literature"
+    if section.section_type in (SectionType.DISCUSSION, SectionType.CONCLUSION):
+        return "discussion"
     return "general"
 
 
@@ -295,6 +299,18 @@ def review_paper(
     # --- Phase 1: Overview (single-pass, full paper text) ---
     overview = overview_agent.run(structure, calibration, literature_context)
 
+    # --- Phase 1b: Completeness assessment (runs after overview, before sections) ---
+    completeness_agent = CompletenessAgent(client)
+    try:
+        completeness_issues = completeness_agent.run(
+            structure, overview,
+            calibration=calibration,
+            contribution_context=contribution_context,
+        )
+        overview = merge_overview(overview, completeness_issues, max_total=12)
+    except Exception:
+        logger.warning("Completeness agent failed, skipping", exc_info=True)
+
     # --- Phase 2: Section agents (parallel, with verification for proof sections) ---
     verify_agent = ProofVerifyAgent(client)
 
@@ -328,6 +344,39 @@ def review_paper(
 
     if not section_comments:
         logger.error("All section agents failed — review will have no detailed comments")
+
+    # --- Phase 2b: Cross-section synthesis (results ↔ discussion) ---
+    _RESULTS_TYPES = {SectionType.METHODOLOGY, SectionType.RESULTS, SectionType.OTHER}
+    _DISCUSSION_TYPES = {SectionType.DISCUSSION, SectionType.CONCLUSION}
+
+    results_sections = [
+        s for s in structure.sections if s.section_type in _RESULTS_TYPES and s.math_content
+    ]
+    discussion_sections = [
+        s for s in structure.sections if s.section_type in _DISCUSSION_TYPES
+    ]
+
+    if results_sections and discussion_sections:
+        cross_section_agent = CrossSectionAgent(client)
+        main_results = results_sections[0]
+        cross_section_futures = []
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            for disc_sec in discussion_sections[:3]:
+                cross_section_futures.append(
+                    executor.submit(
+                        cross_section_agent.run,
+                        structure.title, main_results, disc_sec,
+                        abstract=structure.abstract,
+                    )
+                )
+            for future in cross_section_futures:
+                try:
+                    cross_comments = future.result(timeout=900)
+                    section_comments.extend(cross_comments)
+                except Exception:
+                    logger.warning(
+                        "Cross-section synthesis failed, skipping", exc_info=True
+                    )
 
     # --- Phase 3: Editorial filter (single pass — dedup + contradiction + quality) ---
     # The editorial agent receives full paper text for quote/absence verification.

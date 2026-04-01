@@ -1,7 +1,7 @@
 """Tests for agents/overview.py — OverviewAgent."""
 from unittest.mock import MagicMock
 
-from coarse.agents.overview import OverviewAgent, _build_sections_text
+from coarse.agents.overview import OverviewAgent, _build_sections_text, merge_overview
 from coarse.llm import LLMClient
 from coarse.prompts import OVERVIEW_SYSTEM
 from coarse.types import (
@@ -169,8 +169,8 @@ def test_overview_agent_passes_title_and_abstract():
     assert structure.abstract in user_content
 
 
-def test_overview_agent_uses_temperature_03():
-    """client.complete is called with temperature=0.3."""
+def test_overview_agent_uses_temperature_05():
+    """client.complete is called with temperature=0.5."""
     client = _make_client()
     client.complete.return_value = _make_feedback()
 
@@ -178,7 +178,7 @@ def test_overview_agent_uses_temperature_03():
     agent.run(_make_structure())
 
     _, kwargs = client.complete.call_args
-    assert kwargs.get("temperature") == 0.3
+    assert kwargs.get("temperature") == 0.5
 
 
 def test_overview_agent_prompt_caching_layout():
@@ -231,3 +231,65 @@ def test_overview_agent_prompt_caching_short_user_message():
     assert len(user_msg["content"]) < 300
     # Should not contain full section text
     assert "Methodology text here." not in user_msg["content"]
+
+
+# --- merge_overview preserves fields ---
+
+def test_merge_overview_preserves_recommendation_and_revision_targets():
+    """merge_overview with recommendation + revision_targets should preserve them in output."""
+    overview = OverviewFeedback(
+        issues=[
+            OverviewIssue(title=f"Issue {i}", body=f"Body {i}.")
+            for i in range(1, 5)
+        ],
+        recommendation="Major revision. The identification strategy is unconvincing.",
+        revision_targets=[
+            "Add formal sensitivity analysis.",
+            "Include simulation evidence for finite-sample performance.",
+        ],
+    )
+    extra_issues = [
+        OverviewIssue(title="New Gap", body="A structural gap was found."),
+    ]
+
+    result = merge_overview(overview, extra_issues)
+
+    assert result.recommendation == overview.recommendation
+    assert result.revision_targets == overview.revision_targets
+    # Extra issue was merged in
+    assert len(result.issues) == 5
+    assert any(i.title == "New Gap" for i in result.issues)
+
+
+def test_merge_overview_preserves_summary_and_assessment():
+    """merge_overview preserves summary and assessment fields too."""
+    overview = OverviewFeedback(
+        summary="This paper proposes a new estimator.",
+        assessment="The contribution is significant but the proofs need strengthening.",
+        issues=[OverviewIssue(title="Issue 1", body="Body 1.")],
+        recommendation="Minor revision.",
+        revision_targets=["Fix proof of Theorem 2."],
+    )
+    extra_issues = [
+        OverviewIssue(title="Missing Simulation", body="No simulation study."),
+    ]
+
+    result = merge_overview(overview, extra_issues)
+
+    assert result.summary == overview.summary
+    assert result.assessment == overview.assessment
+    assert result.recommendation == overview.recommendation
+    assert result.revision_targets == overview.revision_targets
+
+
+def test_merge_overview_no_extras_returns_original():
+    """merge_overview with empty extra_issues returns the original overview unchanged."""
+    overview = OverviewFeedback(
+        issues=[OverviewIssue(title="Issue 1", body="Body 1.")],
+        recommendation="Accept.",
+        revision_targets=[],
+    )
+
+    result = merge_overview(overview, [])
+
+    assert result is overview

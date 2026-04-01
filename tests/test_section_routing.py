@@ -42,6 +42,16 @@ def test_results_type():
     assert _detect_section_focus(section) == "results"
 
 
-def test_general_fallback():
+def test_discussion_type():
     section = _make_section("This section discusses implications.", SectionType.DISCUSSION)
+    assert _detect_section_focus(section) == "discussion"
+
+
+def test_conclusion_type():
+    section = _make_section("In conclusion, we have shown...", SectionType.CONCLUSION)
+    assert _detect_section_focus(section) == "discussion"
+
+
+def test_general_fallback():
+    section = _make_section("Some other content.", SectionType.OTHER)
     assert _detect_section_focus(section) == "general"

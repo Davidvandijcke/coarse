@@ -488,6 +488,22 @@ it matters for the paper's main claims or publishability, (c) suggest a specific
 (not "discuss further" but "correct equation X" or "add condition Y to Theorem Z" or \
 "include a Monte Carlo exercise demonstrating...")
 - Do not number the issues in the title; they will be numbered automatically
+
+Finally, provide an editorial recommendation and revision targets.
+
+**Recommendation**: State one of: "accept", "minor revision", "major revision", or \
+"reject". Justify in 2-3 sentences. Consider:
+- Is the paper's main result correct and clearly stated?
+- Is the paper complete enough for its claims? A paper that derives a testable \
+restriction but never demonstrates it has bite is incomplete. A paper that proposes \
+a method but includes no simulation or application is incomplete. A paper that claims \
+implications for practice but does not develop them is incomplete.
+- Does the paper meet the standards of a top venue in its field?
+
+**Revision targets**: If not "accept", list 2-5 specific things the revision must \
+accomplish, ordered by importance. Be concrete: not "improve the exposition" but \
+"add a worked example computing the main quantity for a standard parametric model" \
+or "provide a simulation showing the test has power against a specific alternative."
 """
 
 
@@ -568,6 +584,113 @@ Review the following research paper and identify the major high-level issues.
 
 Identify the most important macro-level concerns with this paper's research design, \
 methodology, and framing. Focus on the domain-specific concerns listed above.
+"""
+
+
+# ---------------------------------------------------------------------------
+# Completeness agent (structural gaps, missing content)
+# ---------------------------------------------------------------------------
+
+COMPLETENESS_SYSTEM = """\
+You are a senior referee at a top journal evaluating whether this paper is \
+COMPLETE — not just correct, but ready for publication. Your job is to identify \
+structural gaps: content that is missing but needed for the paper to deliver on \
+its stated claims.
+""" + _CONTENT_BOUNDARY_NOTICE + _TONE_BLOCK + _HUMANIZER_BLOCK + """
+You have access to the paper's stated contributions and the domain-specific \
+evaluation standards. Use both.
+
+Focus on these categories of missing content, in order of importance:
+
+1. **Demonstration that the result has bite**: Does the paper show its main result \
+is non-vacuous? For a testable restriction, is there an example where it is violated \
+by a specific DGP that fails the condition being tested? For an identification result, \
+is there a worked example showing identification succeeds? For an estimator, is there \
+a simulation? If the answer is no, this is typically a major gap. Be specific: name \
+the type of example or simulation that is standard for this kind of result in this field.
+
+2. **Worked special cases**: Does the paper compute its main quantities for at least \
+one concrete, fully-specified model? Theory papers in most fields are expected to \
+include at least one parametric example that lets readers calibrate intuitions. \
+Name a specific standard model from the paper's field that would be natural to use.
+
+3. **Underdeveloped implications**: Does the paper claim implications (e.g., for \
+policy, practice, welfare analysis, downstream methodology) that are stated but not \
+developed? Is there a gap between what the abstract/introduction promises and what \
+the paper actually delivers? Be precise about which claim is underdeveloped and what \
+developing it would require.
+
+4. **Missing inference or implementation discussion**: If the paper derives a \
+theoretical quantity, does it discuss how to estimate it? If estimation requires \
+nonparametric methods, are convergence rates or feasibility discussed? If the \
+quantity involves high-dimensional conditioning, is the curse of dimensionality \
+acknowledged? A paper that claims practical relevance but provides no practical \
+guidance has a notable gap.
+
+5. **Missing comparison to existing approaches**: Does the paper position itself \
+against prior work but never formally compare? For instance, does it claim to \
+generalize an existing result but never verify the original result is recovered \
+as a special case?
+
+Do NOT flag:
+- Errors in what is written (the overview and section agents handle that)
+- Formatting, notation, or exposition issues
+- Generic suggestions that could apply to any paper ("add more simulations")
+- Content the paper explicitly acknowledges is left for future work, UNLESS the \
+omission undermines the paper's central claims
+
+For each gap, produce an issue with:
+- title: Concise description of what is missing (5-12 words)
+- body: 4-8 sentences explaining (a) what is missing, (b) why it matters for the \
+paper's claims or publishability, and (c) a SPECIFIC suggestion for what to add — \
+name the model, the DGP, the simulation design, or the computation. Do not say \
+"add an example"; say "compute equation (N) for [specific model] and verify that \
+[specific property] holds/fails."
+
+Produce 0-4 issues. If the paper is genuinely complete, produce 0.
+"""
+
+
+def completeness_user(
+    title: str,
+    abstract: str,
+    sections_text: str,
+    overview: "OverviewFeedback",
+    calibration: "DomainCalibration | None" = None,
+    contribution_context: "ContributionContext | None" = None,
+) -> str:
+    """User prompt for completeness assessment."""
+    cal_block = ""
+    if calibration:
+        cal_block = "\n" + _format_calibration(calibration) + "\n"
+
+    contrib_block = ""
+    if contribution_context:
+        contrib_block = "\n" + _format_contribution_context(contribution_context) + "\n"
+
+    overview_block = "\n".join(
+        f"- **{issue.title}**: {issue.body}" for issue in overview.issues
+    )
+
+    return f"""\
+Assess the completeness of the following paper. Identify structural gaps — content \
+that is missing but needed for the paper to deliver on its claims.
+
+**Title**: {title}
+
+**Abstract**:
+{abstract}
+{cal_block}{contrib_block}
+**Overview issues already identified** (do NOT repeat these — focus on what they miss):
+{overview_block}
+
+<paper_content>
+{sections_text}
+</paper_content>
+
+Identify 0-4 structural gaps where the paper is missing content it needs to be a \
+complete, publishable contribution. Focus on missing demonstrations, examples, \
+computations, or implementation guidance — not errors in what is written.
 """
 
 
@@ -964,13 +1087,116 @@ Report 1-5 comments. Focus on factual errors about prior work, not citation form
 or "missing references" unless the omission is egregious.
 """
 
+SECTION_DISCUSSION_SYSTEM = """\
+You are an expert reviewer evaluating a discussion, implications, or conclusion \
+section of a research paper.
+""" + _CONTENT_BOUNDARY_NOTICE + _TONE_BLOCK + _CONFIDENCE_GATE + (
+    _FORWARD_REFERENCE_LENIENCY + _ENGAGEMENT_PATTERN + _CONFIDENCE_CALIBRATION
+) + _OCR_ARTIFACT_NOTICE + """
+Focus on:
+
+1. Are the claimed implications actually supported by the formal results in the \
+paper? If the discussion claims "X follows from our Theorem Y", check whether \
+Theorem Y actually implies X, or whether additional assumptions or arguments are \
+needed.
+2. Does the discussion overstate the paper's contribution relative to what was \
+actually proved or demonstrated? Compare the claims here against what the \
+technical sections establish.
+3. Are there qualitative claims about when the results matter or don't matter \
+(e.g., "the correction terms vanish under condition Z") that should be formalized \
+or demonstrated with an example?
+4. If the paper claims practical relevance, does it provide enough information \
+for a practitioner to actually use the result? If not, what specific guidance \
+is missing?
+
+For each issue, produce a structured comment with:
+- title: A concise, specific title (5-10 words)
+- quote: """ + _QUOTE_INSTRUCTIONS + """
+- feedback: Explain the concern with specifics (3-8 sentences). If an implication \
+is overclaimed, state what the formal results actually establish versus what is \
+claimed.
+""" + _REMEDIATION_SPECIFICITY + _DO_NOT_COMMENT_BLOCK + """
+Report 1-5 comments.
+"""
+
 # Map from section focus to specialized system prompt
 SECTION_SYSTEM_MAP: dict[str, str] = {
     "proof": SECTION_PROOF_SYSTEM,
     "methodology": SECTION_METHODOLOGY_SYSTEM,
     "literature": SECTION_LITERATURE_SYSTEM,
+    "discussion": SECTION_DISCUSSION_SYSTEM,
     "general": SECTION_SYSTEM,
 }
+
+
+# ---------------------------------------------------------------------------
+# Cross-section synthesis (pairs results with discussion)
+# ---------------------------------------------------------------------------
+
+CROSS_SECTION_SYSTEM = """\
+You are an expert referee examining whether a paper's discussion and implications \
+are actually supported by its formal results. You are given two related sections: \
+one containing formal results (theorems, lemmas, propositions, estimators) and one \
+containing discussion, implications, or welfare/policy analysis.
+""" + _CONTENT_BOUNDARY_NOTICE + _TONE_BLOCK + _CONFIDENCE_GATE + """
+Your task:
+
+1. For each claim in the discussion section that references a formal result, \
+check whether the formal result actually implies the claim. Common failure modes:
+   - The discussion claims sufficiency when the result only establishes necessity
+   - The discussion claims a quantity is identified when the result only provides \
+a testable restriction
+   - The discussion claims practical applicability but the result requires \
+objects that are infeasible to estimate
+   - The discussion claims the result holds "in general" when the proof only \
+covers a special case
+
+2. For qualitative claims about when the result simplifies, strengthens, or \
+degenerates (e.g., "under condition Z the correction terms vanish"), check whether \
+these claims are formalized anywhere or are merely asserted.
+
+3. Check whether the formal results section proves everything the abstract and \
+introduction promise.
+
+For each issue, produce a structured comment with:
+- title: A concise, specific title (5-10 words)
+- quote: """ + _QUOTE_INSTRUCTIONS + """
+- feedback: State what the formal result establishes, what the discussion claims, \
+and where the gap is (3-8 sentences).
+""" + _REMEDIATION_SPECIFICITY + _DO_NOT_COMMENT_BLOCK + """
+Report 0-3 comments. Only flag genuine gaps between what is proved and what is \
+claimed. If the discussion accurately represents the formal results, report 0.
+"""
+
+
+def cross_section_user(
+    paper_title: str,
+    results_section: "SectionInfo",
+    discussion_section: "SectionInfo",
+    abstract: str = "",
+) -> str:
+    """User prompt for cross-section synthesis."""
+    abstract_block = ""
+    if abstract:
+        abstract_block = f"\n**Paper Abstract**:\n{abstract[:2000]}\n"
+
+    return f"""\
+Check whether the discussion/implications in "{paper_title}" are supported by \
+the formal results.
+{abstract_block}
+**Formal Results Section ({results_section.number}: {results_section.title})**:
+<paper_content>
+{results_section.text}
+</paper_content>
+
+**Discussion/Implications Section ({discussion_section.number}: {discussion_section.title})**:
+<paper_content>
+{discussion_section.text}
+</paper_content>
+
+Identify 0-3 cases where the discussion claims something the formal results do \
+not actually establish.
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -1027,8 +1253,11 @@ equation, quote, or calculation — DELETE these.
    - Comments whose CORE POINT is already covered by an Overview Issue, even if \
 the comment adds a section-specific quote — DELETE these. The overview already \
 covers the point; a redundant comment with a quote is still redundant.
-   - Comments that request "additional analysis" or "further discussion" without \
-identifying a concrete error in what is written — DELETE these.
+   - Comments that merely suggest additional work or improvements without \
+identifying a concrete error in what is written or a specific structural gap \
+needed for publishability — DELETE these. Keep comments that identify a concrete \
+missing component (worked example, simulation, estimation feasibility) with a \
+specific suggestion.
    - Comments that could be copy-pasted to any paper in the same field (generic \
 methodological advice) — DELETE these.
    - Comments about formatting, notation preferences, or LaTeX artifacts — DELETE.
@@ -1132,7 +1361,11 @@ a concrete, verifiable issue in the paper.
 """ + _TONE_BLOCK + """
 REMOVE a comment if ANY of these apply:
 - The feedback asks for "additional analysis," "further experiments," or "more discussion" \
-without pointing to a specific error in the existing text
+without pointing to a specific error in the existing text AND without identifying \
+a specific structural gap in the paper's contribution (e.g., "the paper derives X \
+but never shows X has bite") — DELETE. A comment that identifies a concrete missing \
+component needed for publishability (a worked example, a simulation, an estimation \
+discussion) should be KEPT if it is specific about what is needed and why
 - The comment could be applied to any paper in this field without modification \
 (generic methodological advice)
 - The quote is a paraphrase or summary rather than verbatim text from the paper
@@ -1263,7 +1496,11 @@ calculation that goes beyond what the overview already says — DELETE.
 - Its CORE POINT is already covered by an Overview Issue, even if the comment adds a \
 section-specific quote — DELETE. The overview already covers the point.
 - It requests "additional analysis," "further experiments," or "more discussion" \
-without pointing to a specific error in the existing text — DELETE.
+without pointing to a specific error in the existing text AND without identifying \
+a specific structural gap in the paper's contribution (e.g., "the paper derives X \
+but never shows X has bite") — DELETE. A comment that identifies a concrete missing \
+component needed for publishability (a worked example, a simulation, an estimation \
+discussion) should be KEPT if it is specific about what is needed and why.
 - It could be copy-pasted to any paper in the same field (generic methodological \
 advice) — DELETE.
 - It addresses formatting, notation preferences, LaTeX artifacts, typographical \

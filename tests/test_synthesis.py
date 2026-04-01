@@ -247,3 +247,83 @@ def test_render_review_empty_comments():
     assert "## Detailed Comments (0)" in result
     assert isinstance(result, str)
     assert len(result) > 0
+
+
+# --- Recommendation rendering ---
+
+def test_render_review_recommendation_present():
+    """When recommendation is non-empty, it renders as **Recommendation**: ..."""
+    issues = [OverviewIssue(title=f"I{i}", body=f"b{i}") for i in range(1, 5)]
+    overview = OverviewFeedback(
+        issues=issues,
+        recommendation="Major revision. The core identification strategy needs strengthening.",
+    )
+    review = Review(
+        title="Test Paper", domain="social_sciences/economics",
+        taxonomy="academic/research_paper", date="3/3/2026, 11:23:50 AM",
+        overall_feedback=overview,
+        detailed_comments=[
+            DetailedComment(
+                number=1, title="C1",
+                quote="Verbatim quote text from section one of the paper.",
+                feedback="f1",
+            )
+        ],
+    )
+    result = render_review(review)
+    assert "**Recommendation**: Major revision." in result
+    # Recommendation should appear before the overall Status line
+    rec_idx = result.index("**Recommendation**")
+    status_idx = result.index("**Status**: [Pending]")
+    assert rec_idx < status_idx
+
+
+def test_render_review_recommendation_empty():
+    """When recommendation is empty string, **Recommendation** should not appear."""
+    review = _make_review()
+    result = render_review(review)
+    assert "**Recommendation**" not in result
+
+
+# --- Revision targets rendering ---
+
+def test_render_review_revision_targets_present():
+    """When revision_targets is non-empty, they render as numbered list."""
+    issues = [OverviewIssue(title=f"I{i}", body=f"b{i}") for i in range(1, 5)]
+    overview = OverviewFeedback(
+        issues=issues,
+        recommendation="Major revision.",
+        revision_targets=[
+            "Strengthen identification strategy with formal sensitivity analysis.",
+            "Add simulation study demonstrating finite-sample performance.",
+            "Clarify the connection between Theorem 2 and the policy implications.",
+        ],
+    )
+    review = Review(
+        title="Test Paper", domain="social_sciences/economics",
+        taxonomy="academic/research_paper", date="3/3/2026, 11:23:50 AM",
+        overall_feedback=overview,
+        detailed_comments=[
+            DetailedComment(
+                number=1, title="C1",
+                quote="Verbatim quote text from section one of the paper.",
+                feedback="f1",
+            )
+        ],
+    )
+    result = render_review(review)
+    assert "**Key revision targets**:" in result
+    assert "1. Strengthen identification strategy" in result
+    assert "2. Add simulation study" in result
+    assert "3. Clarify the connection" in result
+    # Revision targets should appear before the overall Status line
+    targets_idx = result.index("**Key revision targets**:")
+    status_idx = result.index("**Status**: [Pending]")
+    assert targets_idx < status_idx
+
+
+def test_render_review_revision_targets_empty():
+    """When revision_targets is empty list, **Key revision targets** should not appear."""
+    review = _make_review()
+    result = render_review(review)
+    assert "**Key revision targets**" not in result

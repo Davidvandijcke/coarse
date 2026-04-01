@@ -217,3 +217,65 @@ def test_detailed_comment_accepts_long_quote():
         feedback="Feedback text.",
     )
     assert len(c.quote) >= 20
+
+
+# --- OverviewFeedback new fields: recommendation & revision_targets ---
+
+def test_overview_feedback_recommendation_default():
+    """recommendation defaults to empty string."""
+    fb = OverviewFeedback(issues=[make_issue(1)])
+    assert fb.recommendation == ""
+
+
+def test_overview_feedback_revision_targets_default():
+    """revision_targets defaults to empty list."""
+    fb = OverviewFeedback(issues=[make_issue(1)])
+    assert fb.revision_targets == []
+
+
+def test_overview_feedback_with_recommendation():
+    """OverviewFeedback accepts a non-empty recommendation."""
+    fb = OverviewFeedback(
+        issues=[make_issue(1)],
+        recommendation="Major revision. The identification needs work.",
+    )
+    assert fb.recommendation == "Major revision. The identification needs work."
+
+
+def test_overview_feedback_with_revision_targets():
+    """OverviewFeedback accepts non-empty revision_targets."""
+    targets = [
+        "Add formal sensitivity analysis.",
+        "Include simulation study.",
+    ]
+    fb = OverviewFeedback(
+        issues=[make_issue(1)],
+        revision_targets=targets,
+    )
+    assert fb.revision_targets == targets
+    assert len(fb.revision_targets) == 2
+
+
+def test_review_roundtrip_json_with_new_fields():
+    """Review with recommendation + revision_targets survives JSON roundtrip."""
+    overview = OverviewFeedback(
+        issues=[make_issue(i) for i in range(1, 5)],
+        recommendation="Minor revision. Address the robustness concerns.",
+        revision_targets=[
+            "Add bootstrap confidence intervals.",
+            "Discuss external validity limitations.",
+        ],
+    )
+    review = Review(
+        title="Test Paper",
+        domain="social_sciences/economics",
+        taxonomy="academic/research_paper",
+        date="03/03/2026",
+        overall_feedback=overview,
+        detailed_comments=[make_comment(1)],
+    )
+    serialized = review.model_dump_json()
+    deserialized = Review.model_validate(json.loads(serialized))
+    assert deserialized == review
+    assert deserialized.overall_feedback.recommendation == overview.recommendation
+    assert deserialized.overall_feedback.revision_targets == overview.revision_targets

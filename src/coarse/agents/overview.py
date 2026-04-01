@@ -23,7 +23,7 @@ from coarse.types import (
 
 logger = logging.getLogger(__name__)
 
-_OVERVIEW_TEMPERATURE = 0.3
+_OVERVIEW_TEMPERATURE = 0.5
 
 
 def _build_sections_text(sections: list[SectionInfo]) -> str:
@@ -163,7 +163,7 @@ def merge_overview(
         merged.append(issue)
         existing_titles.add(norm)
 
-    return OverviewFeedback(issues=merged)
+    return overview.model_copy(update={"issues": merged})
 
 
 def _normalize_title(title: str) -> str:
