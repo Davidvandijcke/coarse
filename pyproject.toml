@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "coarse"
+version = "1.0.0"
+description = "Free, open-source AI academic paper reviewer. BYOK — bring your own key."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [{ name = "David Van Dijcke" }]
+keywords = ["academic", "paper", "review", "ai", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "litellm>=1.60",
+    "instructor>=1.7",
+    "pydantic>=2.0",
+    "typer>=0.12",
+    "rich>=13.0",
+    "tomli-w>=1.0",
+    "pymupdf>=1.24",
+    "python-dotenv>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Davidvandijcke/coarse"
+Repository = "https://github.com/Davidvandijcke/coarse"
+Issues = "https://github.com/Davidvandijcke/coarse/issues"
+Changelog = "https://github.com/Davidvandijcke/coarse/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+docling = ["docling>=2.0"]
+formats = ["mammoth>=1.6", "markdownify>=0.12", "ebooklib>=0.18"]
+all = ["coarse[docling]", "coarse[formats]"]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+
+[project.scripts]
+coarse = "coarse.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/coarse"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not slow'"
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]

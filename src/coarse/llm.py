@@ -1,0 +1,283 @@
+"""LLM client for coarse.
+
+Wraps litellm + instructor for structured output. Tracks cumulative cost across calls.
+API keys are set in env vars by the caller; litellm picks them up automatically.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import re
+import threading
+
+import instructor
+import litellm
+from pydantic import BaseModel
+
+from coarse.config import PROVIDER_ENV_VARS, CoarseConfig, load_config
+from coarse.models import JSON_MODE_PREFIXES, MARKDOWN_JSON_PREFIXES
+
+logger = logging.getLogger(__name__)
+
+# Suppress litellm noise
+litellm.suppress_debug_info = True
+
+# Register models missing from litellm's registry.
+# litellm.model_cost is the lookup used by _clamp_max_tokens.
+# Values from OpenRouter /api/v1/models (verified 2026-03-04).
+_CUSTOM_MODEL_INFO: dict[str, dict] = {
+    "qwen/qwen3.5-plus-02-15": {
+        "max_tokens": 1_000_000,
+        "max_output_tokens": 65_536,
+        "input_cost_per_token": 0.26e-6,
+        "output_cost_per_token": 1.56e-6,
+    },
+    "moonshotai/kimi-k2.5": {
+        "max_tokens": 131_072,
+        "max_output_tokens": 32_768,
+        "input_cost_per_token": 0.35e-6,
+        "output_cost_per_token": 0.7e-6,
+    },
+}
+for _model_id, _info in _CUSTOM_MODEL_INFO.items():
+    litellm.model_cost[_model_id] = _info
+    litellm.model_cost[f"openrouter/{_model_id}"] = _info
+
+
+_CTRL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_DEGENERATE_RE = re.compile(r"(.)\1{50,}")  # 50+ consecutive identical chars
+
+
+class DegenerateReasoningError(RuntimeError):
+    """Raised when a model produces degenerate reasoning (e.g. repeated chars)."""
+
+
+def _check_degenerate_reasoning(response) -> None:
+    """Detect reasoning models stuck in repetition loops and fail fast.
+
+    Some reasoning models (e.g. Kimi k2.5) occasionally enter a degenerate
+    state where reasoning_content is just repeated characters, consuming all
+    tokens and producing no useful content. Detecting this early prevents
+    wasting retries and money.
+    """
+    for choice in getattr(response, "choices", []):
+        msg = getattr(choice, "message", None)
+        if msg is None:
+            continue
+        reasoning = getattr(msg, "reasoning_content", None)
+        if not reasoning or msg.content is not None:
+            continue
+        # content is None and reasoning exists — check if reasoning is degenerate
+        if _DEGENERATE_RE.search(reasoning):
+            raise DegenerateReasoningError(
+                f"Model produced degenerate reasoning ({len(reasoning)} chars of "
+                f"repeated characters) with no content output. This is a known "
+                f"failure mode of some reasoning models. Try a different model."
+            )
+
+
+def _inject_openrouter_privacy(model: str, kwargs: dict) -> dict:
+    """Add provider.data_collection=deny for OpenRouter-routed models.
+
+    Tells OpenRouter to route only to providers that do not retain or train on
+    user data. See https://openrouter.ai/docs/guides/privacy/data-collection.
+    No-op for direct provider calls (Anthropic/OpenAI/Google APIs) — the flag
+    is OpenRouter-specific.
+    """
+    if not model.startswith("openrouter/"):
+        return kwargs
+    extra_body = dict(kwargs.get("extra_body") or {})
+    provider_cfg = dict(extra_body.get("provider") or {})
+    provider_cfg.setdefault("data_collection", "deny")
+    extra_body["provider"] = provider_cfg
+    return {**kwargs, "extra_body": extra_body}
+
+
+def _sanitized_completion(*args, **kwargs):
+    """Wrap litellm.completion to strip control characters and detect degenerate output.
+
+    Some models (e.g. MiMo) emit control characters in JSON output that break
+    Pydantic parsing.  Stripping \x00-\x1f (except \t and \n) is safe for JSON.
+    """
+    kwargs = _inject_openrouter_privacy(kwargs.get("model", ""), kwargs)
+    response = litellm.completion(*args, **kwargs)
+    _check_degenerate_reasoning(response)
+    for choice in getattr(response, "choices", []):
+        msg = getattr(choice, "message", None)
+        if msg and hasattr(msg, "content") and isinstance(msg.content, str):
+            msg.content = _CTRL_CHAR_RE.sub("", msg.content)
+    return response
+
+
+class LLMClient:
+    """Wraps litellm + instructor for structured output. Tracks cumulative cost."""
+
+    def __init__(self, model: str | None = None, config: CoarseConfig | None = None) -> None:
+        if config is None:
+            config = load_config()
+        self._model = model or config.default_model
+        self._model = _normalize_model(self._model)
+        mode = _select_instructor_mode(self._model)
+        self._client = instructor.from_litellm(_sanitized_completion, mode=mode)
+        self._cost_usd: float = 0.0
+        self._lock = threading.Lock()
+
+    def complete(
+        self,
+        messages: list[dict],
+        response_model: type[BaseModel],
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+        timeout: int = 600,
+        **kwargs,
+    ) -> BaseModel:
+        """Single structured LLM call. Returns parsed Pydantic model."""
+        # Clamp max_tokens to model's known limit
+        clamped = _clamp_max_tokens(self._model, max_tokens)
+
+        # MD_JSON models (Kimi) need lower temperature and higher max_tokens
+        if any(p in self._model.lower() for p in MARKDOWN_JSON_PREFIXES):
+            temperature = min(temperature, 0.1)
+            clamped = max(clamped, 16384)
+
+        response, completion = self._client.chat.completions.create_with_completion(
+            model=self._model,
+            messages=messages,
+            response_model=response_model,
+            max_tokens=clamped,
+            temperature=temperature,
+            timeout=timeout,
+            max_retries=3,
+            **kwargs,
+        )
+        try:
+            cost = litellm.completion_cost(completion_response=completion)
+            if cost is not None:
+                with self._lock:
+                    self._cost_usd += cost
+        except Exception:
+            logger.debug("Cost tracking failed for model %s", self._model)
+        return response
+
+    def add_cost(self, cost_usd: float) -> None:
+        """Register an external cost (e.g. from a direct litellm.completion call)."""
+        with self._lock:
+            self._cost_usd += cost_usd
+
+    @property
+    def model(self) -> str:
+        """The resolved model ID for this client."""
+        return self._model
+
+    @property
+    def cost_usd(self) -> float:
+        """Total USD spent across all complete() calls this session."""
+        return self._cost_usd
+
+    @property
+    def supports_prompt_caching(self) -> bool:
+        """Whether the model supports Anthropic-style prompt caching.
+
+        Only True for direct Anthropic API calls (not OpenRouter-proxied),
+        since OpenRouter does not forward cache_control to Anthropic.
+        """
+        lower = self._model.lower()
+        return "anthropic" in lower and not lower.startswith("openrouter/")
+
+
+def _normalize_model(model: str) -> str:
+    """Ensure model string has the right provider prefix for litellm routing.
+
+    If OPENROUTER_API_KEY is set and model looks like 'qwen/qwen3.5-plus'
+    (third-party model without 'openrouter/' prefix), prepend 'openrouter/'.
+    """
+    if model.startswith("openrouter/"):
+        return model
+    # Direct provider models — keep as-is only if the provider's API key is set.
+    # Otherwise, fall through to OpenRouter routing below.
+    # Derive from PROVIDER_ENV_VARS; gemini also accepts GOOGLE_API_KEY.
+    prefix = model.split("/")[0].lower() if "/" in model else ""
+    if prefix in PROVIDER_ENV_VARS:
+        env_vars = [PROVIDER_ENV_VARS[prefix]]
+        if prefix == "gemini":
+            env_vars.append("GOOGLE_API_KEY")
+        if any(os.environ.get(v) for v in env_vars):
+            return model
+        # No direct key — fall through to OpenRouter routing
+    # If OPENROUTER_API_KEY is set and model has a slash (like qwen/qwen3.5-plus),
+    # route through OpenRouter
+    if "/" in model and os.environ.get("OPENROUTER_API_KEY"):
+        # litellm uses gemini/ for Google AI Studio, but OpenRouter uses google/
+        if model.startswith("gemini/"):
+            model = "google/" + model.removeprefix("gemini/")
+        return f"openrouter/{model}"
+    return model
+
+
+def _select_instructor_mode(model: str) -> instructor.Mode:
+    """Select the best instructor mode for the model."""
+    lower = model.lower()
+    # OpenRouter-proxied models
+    if lower.startswith("openrouter/"):
+        # Check if it's a markdown-JSON model first (e.g. Kimi via OpenRouter)
+        for prefix in MARKDOWN_JSON_PREFIXES:
+            if prefix in lower:
+                return instructor.Mode.MD_JSON
+        return instructor.Mode.JSON
+    # Markdown-JSON models (Kimi) — need MD_JSON mode
+    for prefix in MARKDOWN_JSON_PREFIXES:
+        if prefix in lower:
+            return instructor.Mode.MD_JSON
+    # Known model families that work better with JSON mode
+    for prefix in JSON_MODE_PREFIXES:
+        if prefix in lower:
+            return instructor.Mode.JSON
+    return instructor.Mode.TOOLS
+
+
+def _lookup_model_cost(model: str) -> dict | None:
+    """Look up model info in litellm's cost registry, trying prefix variants."""
+    info = litellm.model_cost.get(model)
+    if info is None and "/" in model:
+        info = litellm.model_cost.get(model.split("/", 1)[1])
+    if info is None and model.startswith("openrouter/"):
+        info = litellm.model_cost.get(model.removeprefix("openrouter/"))
+    return info
+
+
+def _clamp_max_tokens(model: str, requested: int) -> int:
+    """Clamp max_tokens to the model's known output limit.
+
+    Many models error on max_tokens > their actual output window.
+    Falls back to a safe default of 4096 if model isn't in litellm's registry.
+    """
+    info = _lookup_model_cost(model)
+
+    if info is not None:
+        model_max = info.get("max_output_tokens") or info.get("max_tokens") or 4096
+        return min(requested, model_max)
+
+    # Unknown model — use a conservative default
+    logger.debug("Unknown model %s, clamping max_tokens %d -> 16384", model, requested)
+    return min(requested, 16384)
+
+
+def model_cost_per_token(model: str) -> tuple[float, float]:
+    """Return (input_cost_per_token, output_cost_per_token) for a given model.
+
+    Accepts litellm model strings (e.g. 'openai/gpt-4o' or 'gpt-4o').
+    Returns (0.0, 0.0) if model not found.
+    """
+    costs = _lookup_model_cost(model)
+    if costs is None:
+        return (0.0, 0.0)
+    return (
+        costs.get("input_cost_per_token", 0.0),
+        costs.get("output_cost_per_token", 0.0),
+    )
+
+
+def estimate_call_cost(model: str, tokens_in: int, tokens_out: int) -> float:
+    """Deterministic cost estimate in USD given model and token counts."""
+    input_cost, output_cost = model_cost_per_token(model)
+    return input_cost * tokens_in + output_cost * tokens_out

@@ -1,0 +1,94 @@
+name: Daily capacity monitor
+on:
+  schedule:
+    - cron: '0 8 * * *'  # 8 AM UTC daily
+  workflow_dispatch: {}   # Allow manual trigger
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query review counts
+        id: counts
+        run: |
+          # Monthly review count
+          SINCE=$(date -u -d '-30 days' +%Y-%m-%dT%H:%M:%S)
+          MONTHLY=$(curl -sf "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/count_reviews_since" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"since\": \"${SINCE}\"}")
+          echo "monthly=$MONTHLY" >> "$GITHUB_OUTPUT"
+
+          # Daily review count
+          SINCE_DAY=$(date -u -d '-1 day' +%Y-%m-%dT%H:%M:%S)
+          DAILY=$(curl -sf "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/count_reviews_since" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"since\": \"${SINCE_DAY}\"}")
+          echo "daily=$DAILY" >> "$GITHUB_OUTPUT"
+
+          echo "Monthly reviews: $MONTHLY"
+          echo "Daily reviews: $DAILY"
+
+          # Determine alert level
+          ALERT="none"
+          BODY=""
+
+          if [ "$DAILY" -gt 40 ] 2>/dev/null; then
+            ALERT="warning"
+            BODY="Daily reviews ($DAILY) approaching Gmail 500 emails/day limit.\n\n"
+          fi
+
+          if [ "$MONTHLY" -gt 300 ] 2>/dev/null; then
+            ALERT="warning"
+            BODY="${BODY}Monthly reviews ($MONTHLY) approaching Modal free tier ($30/mo).\n\n"
+          fi
+
+          if [ "$MONTHLY" -gt 400 ] 2>/dev/null; then
+            ALERT="critical"
+            BODY="${BODY}CRITICAL: Monthly reviews ($MONTHLY) exceeded safe threshold. Auto-pausing submissions.\n\n"
+          fi
+
+          BODY="${BODY}See deploy/CAPACITY.md for expansion instructions."
+
+          echo "alert=$ALERT" >> "$GITHUB_OUTPUT"
+          # Use delimiter for multiline body
+          {
+            echo "body<<ENDOFBODY"
+            echo -e "$BODY"
+            echo "ENDOFBODY"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Auto-pause submissions (critical)
+        if: steps.counts.outputs.alert == 'critical'
+        run: |
+          curl -sf "${{ secrets.SUPABASE_URL }}/rest/v1/system_status?id=eq.1" \
+            -X PATCH \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d '{"accepting_reviews": false, "banner_message": "Monthly capacity reached. Please use the CLI: pip install coarse", "updated_at": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}'
+          echo "Submissions auto-paused."
+
+      - name: Send alert email
+        if: steps.counts.outputs.alert != 'none'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.GMAIL_USER }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "[coarse] Capacity ${{ steps.counts.outputs.alert }}: ${{ steps.counts.outputs.monthly }} reviews this month"
+          to: ${{ secrets.ALERT_EMAIL }}
+          from: coarse-monitor <${{ secrets.GMAIL_USER }}>
+          body: |
+            coarse capacity monitor
+
+            Monthly reviews (30d): ${{ steps.counts.outputs.monthly }}
+            Daily reviews (24h): ${{ steps.counts.outputs.daily }}
+
+            ${{ steps.counts.outputs.body }}
