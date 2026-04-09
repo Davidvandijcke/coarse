@@ -16,3 +16,7 @@ r3d_review_*.md
 quality_gap_analysis.md
 *.pem
 *.key
+
+# Build caches
+*.tsbuildinfo
+*.extraction_cache.json
