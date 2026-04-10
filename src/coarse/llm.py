@@ -77,12 +77,19 @@ def _check_degenerate_reasoning(response) -> None:
 
 
 def _inject_openrouter_privacy(model: str, kwargs: dict) -> dict:
-    """Add provider.data_collection=deny for OpenRouter-routed models.
+    """Prepare kwargs for an OpenRouter-routed call: privacy flag + explicit api_key.
 
-    Tells OpenRouter to route only to providers that do not retain or train on
-    user data. See https://openrouter.ai/docs/guides/privacy/data-collection.
-    No-op for direct provider calls (Anthropic/OpenAI/Google APIs) — the flag
-    is OpenRouter-specific.
+    Privacy: adds provider.data_collection=deny so OpenRouter only routes to
+    providers that do not retain or train on user data. See
+    https://openrouter.ai/docs/guides/privacy/data-collection.
+
+    Auth: passes OPENROUTER_API_KEY explicitly via api_key. Relying on litellm's
+    env-var auto-lookup has bitten us in production (Modal container) with
+    'Missing Authentication header' errors even when the env var is set at the
+    moment of the call. Passing api_key explicitly removes the ambiguity.
+
+    No-op for direct provider calls (Anthropic/OpenAI/Google APIs) — both
+    behaviors are OpenRouter-specific.
     """
     if not model.startswith("openrouter/"):
         return kwargs
@@ -90,7 +97,12 @@ def _inject_openrouter_privacy(model: str, kwargs: dict) -> dict:
     provider_cfg = dict(extra_body.get("provider") or {})
     provider_cfg.setdefault("data_collection", "deny")
     extra_body["provider"] = provider_cfg
-    return {**kwargs, "extra_body": extra_body}
+    result = {**kwargs, "extra_body": extra_body}
+    if "api_key" not in result:
+        or_key = os.environ.get("OPENROUTER_API_KEY")
+        if or_key:
+            result["api_key"] = or_key
+    return result
 
 
 def _sanitized_completion(*args, **kwargs):

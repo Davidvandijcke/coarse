@@ -120,6 +120,32 @@ def test_openrouter_privacy_respects_explicit_user_override():
     assert result["extra_body"]["provider"]["data_collection"] == "allow"
 
 
+def test_openrouter_api_key_injected_from_env(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+    result = _inject_openrouter_privacy("openrouter/anthropic/claude-sonnet-4.6", {})
+    assert result["api_key"] == "sk-or-v1-test"
+
+
+def test_openrouter_api_key_not_injected_without_env(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    result = _inject_openrouter_privacy("openrouter/qwen/qwen3.5-plus", {})
+    assert "api_key" not in result
+
+
+def test_openrouter_api_key_respects_caller_override(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-from-env")
+    result = _inject_openrouter_privacy(
+        "openrouter/qwen/qwen3.5-plus", {"api_key": "sk-or-v1-from-caller"}
+    )
+    assert result["api_key"] == "sk-or-v1-from-caller"
+
+
+def test_openrouter_api_key_skipped_for_direct_provider_calls(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+    result = _inject_openrouter_privacy("anthropic/claude-sonnet-4.6", {})
+    assert "api_key" not in result
+
+
 def test_complete_instructor_validation_error(mock_instructor_client):
     try:
         _SimpleModel()  # missing required 'value' field -> ValidationError
