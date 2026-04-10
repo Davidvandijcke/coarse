@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 # Maps provider name -> environment variable name.
 # Extensible: add entries as more providers are supported.
+# Note: "mistral" is kept here for users who want to call Mistral chat models
+# directly (e.g. `coarse review --model mistral/mistral-large`). Mistral OCR
+# (for PDF extraction) is NOT routed through this — it always goes through
+# OpenRouter's file-parser plugin; see src/coarse/extraction.py.
 PROVIDER_ENV_VARS: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",

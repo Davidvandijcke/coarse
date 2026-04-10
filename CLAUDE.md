@@ -139,43 +139,15 @@ Explanation of issue + constructive remediation guidance.
 
 ## Git Workflow
 
-### Branch Naming
+**See `CONTRIBUTING.md` for the full workflow.** Short version:
 
-```
-feat/<issue>-<description>    # New features
-fix/<issue>-<description>     # Bug fixes
-docs/<description>            # Documentation only
-```
+- **`main`** — stable, tagged releases only. Protected: changes land via release PR from `dev`.
+- **`dev`** — active development. Feature work branches off `dev` and PRs back into `dev`.
+- **Release cycle**: `feat/my-thing` → PR into `dev` → merge → periodically PR `dev` → `main` + version bump + tag.
+- **Commits**: conventional commits (`feat(scope):`, `fix(scope):`, `docs:`, `test(scope):`, `chore(scope):`).
+- **Pre-PR**: `make check` (ruff + pytest), update `CHANGELOG.md` under `## Unreleased`, new code has tests in `tests/test_{module}.py`. Version bumps happen only on release PRs from `dev` to `main`, not on feature PRs.
 
-### Conventional Commits
-
-```
-feat(pipeline): add parallel section processing
-fix(extraction): handle scanned PDFs without text layer
-docs: update changelog for v0.1.1
-test(agents): add edge case for empty sections
-refactor(llm): simplify cost tracking
-```
-
-### Before Every Commit
-
-1. `uv run ruff check src/ tests/` — fix lint errors
-2. `uv run pytest tests/ -v` — all tests pass
-3. Verify version consistency: `pyproject.toml` matches `src/coarse/__init__.py`
-
-### Pre-PR Checklist
-
-1. **CHANGELOG.md** — Add entry for the change. Every PR, no exceptions.
-2. **Tests** — New functionality has tests. Existing tests pass.
-3. **Lint** — `ruff check` passes.
-4. **Version** — Bump in both `pyproject.toml` and `__init__.py` if releasing.
-
-### CI Pipeline (.github/workflows/ci.yml)
-
-Runs on every push to main and every PR:
-- **Ruff lint** — advisory (non-blocking)
-- **pytest** — blocking
-- **Version consistency** — blocking (pyproject.toml must match __init__.py)
+CI (`.github/workflows/ci.yml`) runs on every push to `main` or `dev` and on every PR. Pytest and version consistency (pyproject.toml must match `src/coarse/__init__.py`) are blocking; ruff lint is advisory.
 
 ## Development Rules
 
@@ -191,7 +163,7 @@ Runs on every push to main and every PR:
 
 **`src/coarse/models.py` is the single source of truth for ALL model IDs.** Never hardcode model strings in any other file — always `from coarse.models import DEFAULT_MODEL, VISION_MODEL, CHEAP_MODELS`.
 
-Current models (verified 2026-03-04):
+Current models (verified 2026-04-10):
 - **Default**: `qwen/qwen3.5-plus-02-15` (via OpenRouter, 1M ctx, $0.26/1.56 per 1M tok)
 - **Vision**: `gemini/gemini-3-flash-preview` (1M ctx, $0.50/3.00 per 1M tok) — post-extraction QA (litellm uses `gemini/` prefix)
 - **OCR**: Mistral OCR, always routed through OpenRouter's `file-parser` plugin (never direct). Required: only `OPENROUTER_API_KEY`.

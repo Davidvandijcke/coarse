@@ -3,7 +3,8 @@
 Usage:
     uv run python scripts/ocr_reviewer3.py
 
-Requires MISTRAL_API_KEY in environment or .env file.
+Requires OPENROUTER_API_KEY in environment or .env file — extraction
+routes through OpenRouter's Mistral OCR file-parser plugin.
 """
 from pathlib import Path
 

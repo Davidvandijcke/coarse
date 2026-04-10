@@ -208,7 +208,7 @@ def do_review(req_dict: dict):
         print(f"[{job_id}] Import OK — OPENROUTER_API_KEY={'set' if has_or_key else 'MISSING'}")
         print(f"[{job_id}] Starting pipeline")
 
-        config = CoarseConfig(use_coding_agents=False, extraction_qa=True)
+        config = CoarseConfig(extraction_qa=True)
         review, markdown, paper_text = review_paper(
             pdf_path, model=model, skip_cost_gate=True, config=config
         )
