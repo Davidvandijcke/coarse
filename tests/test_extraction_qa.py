@@ -107,6 +107,20 @@ def test_select_qa_pages_large_pdf():
     assert len(result) <= 15
 
 
+def test_select_qa_pages_clamps_to_num_pages():
+    """Mistral OCR sometimes emits an extra trailing chunk (e.g. 57 chunks for
+    a 56-page PDF). _select_qa_pages must never return a page number greater
+    than num_pages, otherwise render_pdf_pages logs 'Page N out of range'."""
+    # 56-page PDF with 57 chunks; last chunk has high-complexity markers that
+    # would otherwise score into the selected set.
+    chunks = ["plain text content here"] * 56 + [
+        "See glyph[lscript] and \\begin{equation} trailing \\end{equation}"
+    ]
+    result = _select_qa_pages(56, chunks)
+    assert max(result) <= 56
+    assert 57 not in result
+
+
 def test_select_qa_pages_garbled_formula_pages_prioritized():
     """Pages with glyph[...] or formula-not-decoded should always be selected."""
     chunks = ["plain text content here"] * 20

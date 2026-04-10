@@ -5,7 +5,9 @@ import { useDropzone } from "react-dropzone";
 import { useRouter } from "next/navigation";
 import { CharcoalRule, HeroMarks } from "@/components/charcoal";
 import ModelPicker from "@/components/ModelPicker";
+import OpenRouterLoginButton from "@/components/OpenRouterLoginButton";
 import { estimateTokensFromPdf, estimateTokensFromText, estimateTokensFromDocx, estimateTokensFromEpub, getModelPricing, estimateReviewCost } from "@/lib/estimateCost";
+import { beginLogin, completeLogin, loadStoredKey, saveStoredKey, clearStoredKey } from "@/lib/openrouterAuth";
 
 /* ── Split-flap AI name display ────────────────────────────── */
 const AI_NAMES = ["Claude,", "Gemini,", "Qwen,", "ChatGPT,", "DeepSeek,", "Kimi,", "Grok,", "MiniMax,", "Mistral,", "Llama,"];
@@ -168,6 +170,7 @@ export default function Home() {
   const [costEstimate, setCostEstimate] = useState<number | null>(null);
   const [costLoading, setCostLoading] = useState(false);
   const tokenCacheRef = useRef<{ name: string; size: number; tokens: number } | null>(null);
+  const oauthConsumedRef = useRef(false);
   const [systemStatus, setSystemStatus] = useState<{
     accepting: boolean; banner: string | null; activeReviews: number; capacity: number;
   } | null>(null);
@@ -175,6 +178,40 @@ export default function Home() {
   // Fetch system capacity status on mount
   useEffect(() => {
     fetch("/api/status").then(r => r.json()).then(setSystemStatus).catch(() => {});
+  }, []);
+
+  // Hydrate OpenRouter key from localStorage and handle OAuth callback (?code=...)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const stored = loadStoredKey();
+
+    if (!code) {
+      if (stored) setApiKey(stored);
+      return;
+    }
+
+    if (oauthConsumedRef.current) return;
+    oauthConsumedRef.current = true;
+    // Strip ?code= immediately so a mid-flight reload won't re-submit a consumed code.
+    window.history.replaceState({}, "", window.location.pathname);
+
+    completeLogin(code)
+      .then((key) => {
+        setApiKey(key);
+        try {
+          saveStoredKey(key);
+        } catch {
+          setError(
+            "Logged in, but couldn't save the key to your browser. You'll need to log in again next visit.",
+          );
+        }
+      })
+      .catch((err) => {
+        console.error("OpenRouter login failed", err);
+        setError("OpenRouter login failed. Please try again or paste a key manually.");
+        if (stored) setApiKey(stored);
+      });
   }, []);
 
   const onDrop = useCallback((accepted: File[]) => {
@@ -652,6 +689,34 @@ export default function Home() {
                     get one →
                   </a>
                 </FieldLabel>
+                <div style={{ marginBottom: "0.9rem" }}>
+                  <OpenRouterLoginButton
+                    apiKey={apiKey}
+                    onLogin={() => {
+                      beginLogin(window.location.origin + "/").catch((err) => {
+                        setError(
+                          `OpenRouter login could not start: ${err instanceof Error ? err.message : String(err)}`,
+                        );
+                      });
+                    }}
+                    onLogout={() => {
+                      clearStoredKey();
+                      setApiKey("");
+                    }}
+                  />
+                </div>
+                {!apiKey && (
+                  <p
+                    style={{
+                      fontFamily: "var(--font-chalk)",
+                      fontSize: "1rem",
+                      color: "var(--dust)",
+                      margin: "0 0 0.4rem",
+                    }}
+                  >
+                    — or paste a key —
+                  </p>
+                )}
                 <input
                   type="password"
                   required
@@ -669,7 +734,7 @@ export default function Home() {
                     marginTop: "0.4rem",
                   }}
                 >
-                  Used once. Never stored.
+                  Stored on your device only. Never saved on our servers.
                 </p>
               </div>
             </div>

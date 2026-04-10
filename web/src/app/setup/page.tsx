@@ -266,6 +266,32 @@ export default function SetupPage() {
             Takes about 2 minutes. You&apos;ll need a credit card for ~$1 in
             credits.
           </p>
+          <div
+            style={{
+              marginTop: "1.25rem",
+              padding: "0.75rem 1rem",
+              background: "rgba(224, 201, 112, 0.06)",
+              borderLeft: "3px solid var(--yellow-chalk)",
+              borderRadius: "0 2px 2px 0",
+            }}
+          >
+            <p
+              style={{
+                fontFamily: "Georgia, serif",
+                fontSize: "1rem",
+                lineHeight: 1.6,
+                color: "var(--chalk)",
+                margin: 0,
+              }}
+            >
+              <strong style={{ color: "var(--chalk-bright)" }}>Faster option:</strong>{" "}
+              on the main form you can click{" "}
+              <strong style={{ color: "var(--chalk-bright)" }}>&ldquo;Log in with OpenRouter&rdquo;</strong>{" "}
+              to authorize coarse and skip manual key creation. You still need an
+              OpenRouter account with credits (steps 1 and 2 below), and we still
+              recommend setting a per-key spend limit (step 4).
+            </p>
+          </div>
         </section>
 
         <CharcoalRule />

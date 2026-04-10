@@ -2,11 +2,18 @@
 
 ## Unreleased
 
+## v1.1.1 — 2026-04-10
+
+### Added
+
+- **Web: Log in with OpenRouter** — the submission form now has a "Log in with OpenRouter" button that runs OpenRouter's browser-only OAuth PKCE flow and fills in the API key automatically. The returned key is stored in the browser's localStorage so users stay logged in across visits; a "Log out" control clears it. The manual paste field is kept as a fallback for users who prefer to use a scoped key. The server contract is unchanged — the key is still only sent in the `/api/submit` body when a review is submitted and never persisted server-side. Closes #12.
+
 ### Changed
 
 - **Mistral OCR is now OpenRouter-only** — removed the `_extract_mistral_direct` backend that tried to hit Mistral's API directly with a `MISTRAL_API_KEY`. All PDF OCR now routes through OpenRouter's `file-parser` plugin, so users only ever need an `OPENROUTER_API_KEY`. The OCR → Docling fallback chain is unchanged for offline use.
 - **Raised Modal concurrency from 10 → 20 containers**, removed the web-side hard rejection gate so bursts beyond the container limit are queued by Modal instead of erroring out.
-- **OpenRouter OCR retry budget raised from 3 to 5 attempts.** Total exponential backoff window is now 1s + 2s + 4s + 8s + 16s = 31s, giving more headroom for slow recovery on the file-parser plugin.
+- **OpenRouter OCR retry budget raised from 5 to 10 attempts** with a 32s per-retry backoff cap. Sequence is now 1s + 2s + 4s + 8s + 16s + 32s × 4 = 159s max, giving much more headroom for Mistral OCR's upstream timeouts while keeping the total wait bounded. A new cost guard inspects the `usage` field of every 200-with-error-body response and refuses to retry if the request was actually billed, so the retry bump can't multiply the user's API cost.
+- **PDF extraction chain now has three tiers: Mistral OCR → pdf-text (OpenRouter) → Docling.** The new middle tier uses OpenRouter's free `pdf-text` file-parser engine, which extracts embedded PDF text without involving Mistral OCR at all. It catches Mistral OCR upstream outages (persistent 504 timeouts) without paying Docling's torch/RapidOCR startup cost, and falls through to Docling for scanned image-only PDFs.
 - **Modal function memory raised from 2 GB to 4 GB.** Large PDFs (8+ MB) plus the Docling torch/RapidOCR stack can exceed 2 GB when OCR falls through to offline mode. 4 GB keeps the offline fallback usable for big documents.
 - **PDFs are no longer deleted from Supabase Storage on the `finally` path** of the Modal worker. They're only deleted on the success path now; failed reviews keep their PDF so Modal's infrastructure retries (or a manual resubmit of the same job_id) can actually find it. Stale PDFs from failed runs are swept by the daily cleanup cron at 24h.
 
@@ -17,6 +24,9 @@
 - **OpenRouter OCR retry logic** — added bounded retries (3 → 5 attempts, exponential backoff 1s/2s/4s/8s/16s) on connection errors, read timeouts, and transient HTTP statuses (408, 429, 500, 502, 503, 504). Non-transient 4xx errors (401 bad key, 402 spend limit) fail fast without wasting retries. Diagnostic logging on every retry and every unexpected response shape.
 - **Retry OpenRouter OCR when the error is wrapped in a 200 response body.** The file-parser plugin occasionally returns `HTTP 200` with `{"error": {"code": 504, "message": "Timed out parsing ..."}}` instead of a raw `504`. The previous retry logic only matched on transport status codes, so it treated these as immediate failures. Now retries whenever the body's `error.code` is in the same retryable set (408, 429, 500, 502, 503, 504).
 - **Modal-level retries work again.** Previously, if Modal infrastructure retried a review (after an OOM or container crash), the retry would 404 on the PDF because the `finally` block had already deleted it from Supabase Storage. See the PDF storage change above.
+- **Extraction QA no longer logs spurious "Page N out of range" warnings.** When Mistral OCR emitted more `<!-- PAGE BREAK -->` markers than the PDF had pages (trailing empty chunks, or a page split mid-content), `_select_qa_pages` could propose a page number that fitz rejected. Now clamps scored page numbers and the final selection set to `num_pages`.
+- **Math section detection logs the underlying exception** instead of a bare "failed" message, so transient LLM errors are actually diagnosable from the Modal worker logs.
+- **Math section detection no longer silently fails for Claude-family models.** The LLM call passed `max_tokens=256`, which was fine for Qwen/DeepSeek but too tight for Claude 4-family models (Opus, Sonnet) that sometimes write a prose preamble before emitting the tool call. At 256 the preamble alone could hit `finish_reason='length'` and instructor raised `InstructorRetryException("The output is incomplete due to a max_tokens length limit.")` before any JSON was produced, forcing the keyword-heuristic fallback. Bumped to 1024 and tightened `MATH_DETECTION_SYSTEM` to tell the model to skip the preamble and emit the structured response directly. Diagnosed from real user review `1e786d50`.
 
 ## v1.1.0 — 2026-04-10
 
