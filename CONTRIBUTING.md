@@ -133,12 +133,31 @@ Version bumps happen **only on release PRs from `dev` to `main`**. Feature PRs i
 
 ### Pre-PR checklist
 
+If you use Claude Code, run `/pre-pr` — it runs every check below plus the
+security scanner and five parallel review agents. Otherwise, run them
+manually:
+
+- [ ] `python3 scripts/security_scanner.py` reports no CRITICAL findings (or `make security`)
+- [ ] `bash scripts/doc-sync-check.sh` exits 0
 - [ ] `uv run ruff check src/ tests/` passes (or `make lint`)
 - [ ] `uv run pytest tests/ -v` passes (or `make test`)
 - [ ] `CHANGELOG.md` updated under `## Unreleased` in the appropriate subsection (`Added` / `Changed` / `Fixed` / `Removed`)
 - [ ] New code has tests in `tests/test_<module>.py`
 - [ ] Commit messages follow conventional commits
 - [ ] PR targets `dev` (not `main`) — unless you're the maintainer cutting a release
+
+### Claude Code slash commands
+
+Workflow automation lives in `.claude/commands/`. Run with a `/` in chat.
+
+| Command | When to use it |
+|---|---|
+| `/pre-pr` | Before every push. Security gate + doc sync + 5 parallel review agents + lint/tests/changelog. |
+| `/security-review` | Standalone security audit. Blocking gate inside `/pre-pr`; also runs in CI via `.github/workflows/security.yml`. |
+| `/architecture-review` | After a big refactor or new agent. Import graph + layer check + 3 parallel structural agents. |
+| `/module-review` | Focused audit of one module against the 11-point bug checklist. Supports `--module <path>`, `--changed`, `--all`. |
+| `/worktree-start` | Create a new worktree off `dev` for a feature/fix. |
+| `/dev-loop` | Supervised autonomous development loop for component builds. |
 
 ## Submitting a PR
 
