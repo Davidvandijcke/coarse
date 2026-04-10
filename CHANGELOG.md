@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Added
+
+- **Security scanner + `/security-review` command** — new zero-dep `scripts/security_scanner.py` (stdlib only) scans the repo for known leaked secret fingerprints (stored as SHA-256 hashes, never plaintext), provider-key patterns (OpenAI / Anthropic / Google / OpenRouter / Perplexity / Supabase / Stripe / GitHub / AWS / private keys / URL-embedded creds), insecure `.env` permissions, and model-ID string literals outside `src/coarse/models.py`. Skips docstrings via AST and supports inline `# security: ignore` suppression. Backed by 14 tests in `tests/test_security.py` (synthetic fingerprint via monkeypatch — no real key material in the test fixtures). Runs in CI (`.github/workflows/security.yml --strict`), from `make security`, and from the `/security-review` slash command which adds 3 parallel in-session agents for API-key lifecycle, HTTP surface, and prompt-injection audits.
+- **`/architecture-review` command** — lightweight macro-level structural review with inline AST-based import-graph analysis (cycles, layer violations, oversized files, fan-in leaders) plus 3 parallel in-session agents for coupling, data flow, and simplification.
+- **`/module-review` command** — focused per-module audit against coarse's 11-point bug checklist (model-IDs-only-in-models.py, LLMClient wrapper, instructor/Pydantic, prompts centralization, no-print, test coverage, context managers, cost tracking, resolve_api_key, extraction robustness, quote verification). Supports `--module`, `--changed`, `--all`, `--review-only`.
+- **`scripts/doc-sync-check.sh`** — lightweight bash sync check used by `/pre-pr`: verifies every `src/coarse/*.py` is listed in CLAUDE.md, CHANGELOG has an `## Unreleased` section, `pyproject.toml` version matches `src/coarse/__init__.py`, and no new model-ID literals slipped into the diff outside `models.py`.
+- **Pre-commit hooks** — `.pre-commit-config.yaml` wires ruff, ruff-format, trailing-whitespace, end-of-file-fixer, check-yaml/toml, large-file guard, private-key detector, merge-conflict check, plus the local security scanner. Install with `make install-hooks`.
+- **CI security workflow** — `.github/workflows/security.yml` runs the scanner in `--strict` mode on every push and PR to `main`/`dev`, plus advisory `pip-audit`.
+- **CLAUDE.md: Worktree Discipline + Parallel Development sections** documenting the `/private/tmp/coarse-<slug>/` pattern, full-path rule for Edit/Write, and the 4-concurrent-worktree cap for parallel Claude Code sessions.
+- **CLAUDE.md: Slash Commands section** listing every command and its purpose.
+- **Makefile targets**: `make security`, `make install-hooks`.
+
+### Changed
+
+- **`/pre-pr` upgraded** — new Step 0 is a BLOCKING security gate via `security_scanner.py` (CRITICAL halts, `--strict` also halts on HIGH); new Step 1.5 runs `doc-sync-check.sh`; git diff base fixed from `main...HEAD` to `dev...HEAD` (feature PRs target `dev` per CONTRIBUTING.md); added a 6th review agent that re-runs the scanner against the diff and checks new code for `os.getenv("*_API_KEY")` bypasses, missing HTTP timeouts, and prompt-injection-unsafe templates.
+- **`/worktree-start` bases worktrees off `dev`** (was `main`). Worktree slug format now `coarse-<issue>-<slug>`. Reminder output mentions the shell-cwd-resets-between-Bash-calls trap and the `gh pr create --base dev` convention.
+- **CLAUDE.md package structure** — added the 5 agents that had drifted off the tree (`completeness.py`, `cross_section.py`, `editorial.py`, `contradiction.py`, plus top-level `recall.py`). Marks `crossref.py`, `contradiction.py`, `critique.py` as legacy (superseded by `editorial.py`).
+- **Stripped 10 cached curl commands** containing inline Supabase/OpenRouter secrets from `.claude/settings.local.json` (local-only file, never tracked in git, `.gitignore` already covers `.claude/`). Tightened `.env` and `web/.env.local` permissions from 0o644 → 0o600.
+
 ## v1.1.1 — 2026-04-10
 
 ### Added

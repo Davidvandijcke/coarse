@@ -1,0 +1,34 @@
+# Pre-commit hooks for coarse.
+# Install once per clone with: make install-hooks
+# Run on every commit automatically after that.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: detect-private-key
+      - id: check-merge-conflict
+
+  # Coarse's own zero-dep secret scanner — catches known leaked fingerprints
+  # and provider-key patterns before they reach the remote.
+  - repo: local
+    hooks:
+      - id: security-scanner
+        name: security-scanner
+        entry: python3 scripts/security_scanner.py
+        language: system
+        pass_filenames: false
+        always_run: true
