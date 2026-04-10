@@ -2,18 +2,20 @@
 
 ## Unreleased
 
+## v1.1.0 — 2026-04-10
+
 ### Added
 
 - **Multi-format support** — `extract_file()` router supports .txt, .md, .tex, .latex, .html, .docx, and .epub in addition to PDF. Quality-first strategy: Docling (if installed) for .docx/.html/.tex, with lightweight fallbacks (mammoth, markdownify, regex). PDFs always use Mistral OCR first. New optional dependency group: `pip install coarse[formats]` for .docx/.html/.epub fallback support; .txt/.md/.tex require no extra dependencies.
-- **No-retention provider routing** — All OpenRouter-routed requests now include `provider.data_collection: "deny"`, instructing OpenRouter to route only to model providers that do not retain or train on user data. No-op for direct Anthropic/OpenAI/Google API calls. Verified working across all 8 default models in the web picker.
-
-### Fixed
-
-- **OpenRouter auth: pass `api_key` explicitly** — `_inject_openrouter_privacy()` now also injects `OPENROUTER_API_KEY` from env into the litellm call kwargs for `openrouter/*` models. Fixes a production failure on Modal where reviews aborted with `401 "Missing Authentication header"` despite the env var being set at the moment of the check. Relying on litellm's implicit env-var lookup was flaky; passing the key directly is deterministic.
+- **No-retention provider routing** — All OpenRouter-routed requests now include `provider.data_collection: "deny"`, instructing OpenRouter to route only to model providers that do not retain or train on user data. No-op for direct Anthropic/OpenAI/Google API calls.
 
 ### Changed
 
 - **Literature search: Perplexity Sonar Pro** — Primary literature search now uses `perplexity/sonar-pro-search` via OpenRouter for web-grounded results with real citations (~12s, ~$0.03). Returns both related work and open questions/known limitations. arXiv pipeline kept as automatic fallback when OPENROUTER_API_KEY is unavailable or Perplexity fails.
+
+### Fixed
+
+- **OpenRouter auth: pass `api_key` explicitly** — `_inject_openrouter_privacy()` now also injects `OPENROUTER_API_KEY` from env into the litellm call kwargs for `openrouter/*` models. Fixes a production failure on Modal where reviews aborted with `401 "Missing Authentication header"` despite the env var being set at the moment of the check. Relying on litellm's implicit env-var lookup was flaky; passing the key directly is deterministic.
 
 ## v1.0.0 — 2026-03-09
 
