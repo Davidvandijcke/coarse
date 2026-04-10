@@ -1,8 +1,22 @@
 import type { NextConfig } from "next";
 
+// Next.js Fast Refresh uses eval() in dev, so 'unsafe-eval' is required there.
+// Production keeps the strict policy.
+const isDev = process.env.NODE_ENV !== "production";
+const scriptSrc = [
+  "script-src",
+  "'self'",
+  "'unsafe-inline'",
+  isDev ? "'unsafe-eval'" : null,
+  "https://www.googletagmanager.com",
+  "https://cdnjs.cloudflare.com",
+]
+  .filter(Boolean)
+  .join(" ");
+
 const cspDirectives = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdnjs.cloudflare.com",
+  scriptSrc,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
