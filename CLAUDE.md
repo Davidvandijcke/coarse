@@ -22,7 +22,7 @@ uv run python -m coarse paper.pdf
 
 ```
 paper (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)
-    → [extraction.py]    Mistral OCR / Docling fallback → PaperText (markdown)
+    → [extraction.py]    Mistral OCR via OpenRouter / Docling fallback → PaperText (markdown)
     → [extraction_qa.py] Vision LLM spot-check (auto-triggers on garbled text)
     → [structure.py]     Parse headings + LLM → PaperStructure (sections, math detection, domain)
     → [calibrate_domain] Domain-specific review criteria (parallel with literature)
@@ -194,8 +194,8 @@ Runs on every push to main and every PR:
 Current models (verified 2026-03-04):
 - **Default**: `qwen/qwen3.5-plus-02-15` (via OpenRouter, 1M ctx, $0.26/1.56 per 1M tok)
 - **Vision**: `gemini/gemini-3-flash-preview` (1M ctx, $0.50/3.00 per 1M tok) — post-extraction QA (litellm uses `gemini/` prefix)
-- **OCR**: `mistral/mistral-ocr-latest` — PDF text extraction (Mistral OCR via litellm)
-- **OpenRouter Extraction**: `google/gemini-3-flash-preview` — fallback extraction via OpenRouter file-parser plugin
+- **OCR**: Mistral OCR, always routed through OpenRouter's `file-parser` plugin (never direct). Required: only `OPENROUTER_API_KEY`.
+- **OpenRouter Extraction**: `google/gemini-3-flash-preview` — the host model that carries the file-parser plugin request
 - **Literature Search**: `perplexity/sonar-pro-search` — web-grounded literature search via OpenRouter (~$0.03)
 - **Quality Eval**: `gemini/gemini-3-flash-preview` — dev-only quality evaluation (single-judge or panel)
 - **Cheap (OpenAI)**: `openai/gpt-5.1-codex-mini` ($0.25/2.00)

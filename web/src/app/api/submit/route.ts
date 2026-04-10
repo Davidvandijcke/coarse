@@ -5,8 +5,6 @@ import { checkRateLimit } from "@/lib/rateLimit";
 
 export const maxDuration = 30;
 
-const MAX_CONCURRENT_REVIEWS = 10;
-
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -49,22 +47,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: statusRow.banner_message || "Submissions are temporarily paused. Please try again later or use the CLI: pip install coarse",
-      },
-      { status: 503 },
-    );
-  }
-
-  // Check concurrent review capacity before accepting work
-  const { count: activeCount } = await supabaseAdmin
-    .from("reviews")
-    .select("id", { count: "exact", head: true })
-    .in("status", ["queued", "running"]);
-
-  if (activeCount !== null && activeCount >= MAX_CONCURRENT_REVIEWS) {
-    return NextResponse.json(
-      {
-        error:
-          "We are seeing high traffic right now. Please try again later or check out the command line version on our GitHub: https://github.com/Davidvandijcke/coarse",
       },
       { status: 503 },
     );
