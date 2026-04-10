@@ -9,15 +9,18 @@ The web app runs on four free services:
 | **Modal** | Serverless Python worker | $30/month compute credits |
 | **Gmail** | Email notifications | 500 emails/day (app password) |
 
-Users provide their own OpenRouter API key, so **you only pay** for Mistral OCR + Gemini Flash extraction (~$0.02–0.07 per review). Everything else is free.
+Users provide their own OpenRouter API key, which covers **everything**: review agents, literature search, and Mistral OCR for PDF extraction (all routed through OpenRouter's file-parser plugin). The operator pays only for Modal compute (~$0.08–0.10 per review) and Gmail SMTP.
 
 ---
 
 ## Prerequisites
 
 - GitHub repo (public, for free GitHub Actions)
-- API keys: `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`, `GEMINI_API_KEY`
 - Accounts on: [Supabase](https://supabase.com), [Modal](https://modal.com), [Vercel](https://vercel.com)
+- A Gmail account with an App Password for notification emails
+- A shared secret for the Modal webhook (`python -c "import secrets; print(secrets.token_urlsafe(32))"`)
+
+No LLM provider API keys are needed on the deployment side — users supply their own.
 
 ---
 
@@ -49,12 +52,11 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
 
    | Secret name | Environment variables |
    |-------------|----------------------|
-   | `coarse-openrouter` | `OPENROUTER_API_KEY` (fallback if user doesn't provide one) |
-   | `coarse-mistral` | `MISTRAL_API_KEY` |
-   | `coarse-gemini` | `GEMINI_API_KEY` |
    | `coarse-supabase` | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` |
    | `coarse-webhook` | `MODAL_WEBHOOK_SECRET` (generate: `python -c "import secrets; print(secrets.token_urlsafe(32))"`) |
    | `coarse-gmail` | `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `SITE_URL` (e.g. `https://coarse.vercel.app`) |
+
+   **No LLM provider secrets are mounted.** The user's OpenRouter key arrives with each review request and is set into the container's env for the duration of the run, then unset. See `modal_worker.py` for the pattern.
 
 3. Deploy:
    ```bash

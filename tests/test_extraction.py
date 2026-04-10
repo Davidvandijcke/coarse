@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,9 +21,33 @@ from coarse.types import ExtractionError, PaperText
 
 
 def _mock_ocr_response(pages_markdown: list[str]):
-    """Create a mock litellm.ocr() response with pages."""
-    pages = [SimpleNamespace(markdown=md) for md in pages_markdown]
-    return SimpleNamespace(pages=pages)
+    """Create a mock OpenRouter file-parser response.
+
+    The real response shape is:
+    {"choices": [{"message": {"annotations": [{"type": "file",
+      "file": {"content": [{"type": "text", "text": "..."}, ...]}}]}}]}
+
+    Each "text" item represents one page. Returned as a MagicMock with
+    status_code=200 and .json() returning the dict, so it can be used as
+    the return value for patch("requests.post", ...).
+    """
+    content_items = [{"type": "text", "text": md} for md in pages_markdown]
+    data = {
+        "choices": [{
+            "message": {
+                "annotations": [{
+                    "type": "file",
+                    "file": {"content": content_items},
+                }],
+                "content": None,
+            }
+        }]
+    }
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = data
+    resp.raise_for_status = MagicMock()
+    return resp
 
 
 @pytest.fixture
@@ -45,8 +68,8 @@ def minimal_pdf(tmp_path: Path) -> Path:
 
 
 def test_extract_text_returns_paper_text(minimal_pdf: Path, mock_ocr_pages) -> None:
-    with patch("litellm.ocr", return_value=_mock_ocr_response(mock_ocr_pages)):
-        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
+    with patch("requests.post", return_value=_mock_ocr_response(mock_ocr_pages)):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert isinstance(result, PaperText)
     assert isinstance(result.full_markdown, str)
@@ -55,8 +78,8 @@ def test_extract_text_returns_paper_text(minimal_pdf: Path, mock_ocr_pages) -> N
 
 
 def test_extract_text_contains_page_breaks(minimal_pdf: Path, mock_ocr_pages) -> None:
-    with patch("litellm.ocr", return_value=_mock_ocr_response(mock_ocr_pages)):
-        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
+    with patch("requests.post", return_value=_mock_ocr_response(mock_ocr_pages)):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert "<!-- PAGE BREAK -->" in result.full_markdown
     assert "# Test Paper" in result.full_markdown
@@ -65,8 +88,8 @@ def test_extract_text_contains_page_breaks(minimal_pdf: Path, mock_ocr_pages) ->
 
 def test_extract_text_joins_pages_with_page_break(minimal_pdf: Path) -> None:
     pages = ["Page 1 content", "Page 2 content", "Page 3 content"]
-    with patch("litellm.ocr", return_value=_mock_ocr_response(pages)):
-        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
+    with patch("requests.post", return_value=_mock_ocr_response(pages)):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert result.full_markdown.count("<!-- PAGE BREAK -->") == 2
 
@@ -87,8 +110,8 @@ def test_token_estimate_heuristic() -> None:
 def test_extract_text_caching(minimal_pdf: Path, mock_ocr_pages) -> None:
     """Extraction result should be cached and reloaded on second call."""
     mock_fn = MagicMock(return_value=_mock_ocr_response(mock_ocr_pages))
-    with patch("litellm.ocr", mock_fn):
-        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
+    with patch("requests.post", mock_fn):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
             result1 = extract_text(minimal_pdf, use_cache=True)
             # Second call should use cache — ocr not called again
             result2 = extract_text(minimal_pdf, use_cache=True)
@@ -100,8 +123,8 @@ def test_extract_text_caching(minimal_pdf: Path, mock_ocr_pages) -> None:
 def test_extract_text_no_cache(minimal_pdf: Path, mock_ocr_pages) -> None:
     """With use_cache=False, OCR is always called."""
     mock_fn = MagicMock(return_value=_mock_ocr_response(mock_ocr_pages))
-    with patch("litellm.ocr", mock_fn):
-        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
+    with patch("requests.post", mock_fn):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
             extract_text(minimal_pdf, use_cache=False)
             extract_text(minimal_pdf, use_cache=False)
 
@@ -109,7 +132,7 @@ def test_extract_text_no_cache(minimal_pdf: Path, mock_ocr_pages) -> None:
 
 
 def test_fallback_to_docling(minimal_pdf: Path) -> None:
-    """When Mistral OCR is unavailable, should fall back to Docling."""
+    """When OpenRouter OCR is unavailable, should fall back to Docling."""
     mock_doc = MagicMock()
     mock_doc.export_to_markdown.return_value = "# Docling Fallback\n\nContent here."
     mock_result = MagicMock()
@@ -122,9 +145,9 @@ def test_fallback_to_docling(minimal_pdf: Path) -> None:
     mock_docling = MagicMock()
     mock_docling.document_converter.DocumentConverter = mock_converter_cls
 
-    # Ensure no Mistral key (direct check) and no OpenRouter key (resolve_api_key)
+    # Ensure no OpenRouter key (resolve_api_key) so the OpenRouter backend skips
     env_clean = {k: v for k, v in os.environ.items()
-                 if k not in ("MISTRAL_API_KEY", "OPENROUTER_API_KEY")}
+                 if k not in ("OPENROUTER_API_KEY",)}
     with patch.dict(os.environ, env_clean, clear=True):
         with patch.dict("sys.modules", {
             "docling": mock_docling,
@@ -139,9 +162,9 @@ def test_all_backends_fail(minimal_pdf: Path) -> None:
     """When all backends fail, raises ExtractionError with failure details."""
     from coarse.types import ExtractionError
 
-    # Ensure no Mistral key (direct check) and no OpenRouter key (resolve_api_key)
+    # Ensure no OpenRouter key (resolve_api_key) so OpenRouter backend skips
     env_clean = {k: v for k, v in os.environ.items()
-                 if k not in ("MISTRAL_API_KEY", "OPENROUTER_API_KEY")}
+                 if k not in ("OPENROUTER_API_KEY",)}
     with patch.dict(os.environ, env_clean, clear=True):
         with patch.dict(
             "sys.modules",
@@ -149,6 +172,185 @@ def test_all_backends_fail(minimal_pdf: Path) -> None:
         ):
             with pytest.raises(ExtractionError, match="all extraction backends failed"):
                 extract_text(minimal_pdf, use_cache=False)
+
+
+# --- OpenRouter OCR error handling and retry ---
+
+
+def _mock_error_response(status: int, body: dict | str):
+    """Build a mock requests.Response with a given status and JSON body."""
+    resp = MagicMock()
+    resp.status_code = status
+    if isinstance(body, dict):
+        resp.json.return_value = body
+    else:
+        resp.json.side_effect = ValueError(f"invalid json: {body}")
+    if status >= 400:
+        import requests as _r
+        http_err = _r.HTTPError(f"{status} Error", response=resp)
+        resp.raise_for_status.side_effect = http_err
+    else:
+        resp.raise_for_status = MagicMock()
+    return resp
+
+
+def test_openrouter_ocr_http_200_with_error_body(minimal_pdf: Path) -> None:
+    """HTTP 200 with {'error': {...}} body should raise a clean ExtractionError,
+    not KeyError: 'choices'. This is the exact failure mode we saw in production.
+
+    The error message is intentionally one that doesn't match any keyword in
+    _classify_api_error, so we can see our own ExtractionError text pass through.
+    """
+    error_response = _mock_error_response(200, {
+        "error": {"message": "file-parser plugin temporarily unavailable", "code": "plugin_error"},
+    })
+    with patch("requests.post", return_value=error_response):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+            with patch.dict(
+                "sys.modules",
+                {"docling": None, "docling.document_converter": None},
+            ):
+                with pytest.raises(ExtractionError) as exc_info:
+                    extract_text(minimal_pdf, use_cache=False)
+                # Must NOT be a KeyError: 'choices' — that was the production bug
+                assert "choices" not in str(exc_info.value) or "no choices" in str(exc_info.value)
+                assert "plugin" in str(exc_info.value) or "backends failed" in str(exc_info.value)
+
+
+def test_openrouter_ocr_classifies_402_as_spend_limit(minimal_pdf: Path) -> None:
+    """HTTP 200 with a credits-related error body should be classified into a
+    user-friendly spend limit message by the extraction orchestrator."""
+    error_response = _mock_error_response(200, {
+        "error": {"message": "Insufficient credits", "code": 402},
+    })
+    with patch("requests.post", return_value=error_response):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+            with patch.dict(
+                "sys.modules",
+                {"docling": None, "docling.document_converter": None},
+            ):
+                with pytest.raises(ExtractionError, match="spend limit"):
+                    extract_text(minimal_pdf, use_cache=False)
+
+
+def test_openrouter_ocr_no_choices_in_response(minimal_pdf: Path) -> None:
+    """HTTP 200 with no 'choices' and no 'error' should raise with diagnostic info."""
+    odd_response = _mock_error_response(200, {"something_else": "value"})
+    with patch("requests.post", return_value=odd_response):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+            with patch.dict(
+                "sys.modules",
+                {"docling": None, "docling.document_converter": None},
+            ):
+                with pytest.raises(ExtractionError, match="no choices"):
+                    extract_text(minimal_pdf, use_cache=False)
+
+
+def test_openrouter_ocr_malformed_annotation_falls_back_to_content(
+    minimal_pdf: Path,
+) -> None:
+    """Malformed annotations (e.g. missing 'file' key) should not crash;
+    should fall back to message.content instead."""
+    resp = _mock_error_response(200, {
+        "choices": [{
+            "message": {
+                "annotations": [{"type": "file"}],  # missing 'file' key entirely
+                "content": "Fallback markdown text",
+            }
+        }]
+    })
+    with patch("requests.post", return_value=resp):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+            result = extract_text(minimal_pdf, use_cache=False)
+    assert "Fallback markdown text" in result.full_markdown
+
+
+def test_openrouter_ocr_empty_content_raises(minimal_pdf: Path) -> None:
+    """When both annotations and content are empty, raise ExtractionError."""
+    empty_resp = _mock_error_response(200, {
+        "choices": [{"message": {"annotations": [], "content": ""}}]
+    })
+    with patch("requests.post", return_value=empty_resp):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+            with patch.dict(
+                "sys.modules",
+                {"docling": None, "docling.document_converter": None},
+            ):
+                with pytest.raises(ExtractionError, match="empty content"):
+                    extract_text(minimal_pdf, use_cache=False)
+
+
+def test_openrouter_ocr_retries_on_connection_error(
+    minimal_pdf: Path, mock_ocr_pages,
+) -> None:
+    """Transient connection errors should be retried up to _OCR_MAX_RETRIES."""
+    import requests as _r
+
+    success = _mock_ocr_response(mock_ocr_pages)
+    call_count = {"n": 0}
+
+    def flaky_post(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] < 3:
+            raise _r.ConnectionError("simulated network blip")
+        return success
+
+    with patch("requests.post", side_effect=flaky_post):
+        with patch("time.sleep"):  # don't actually wait in tests
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                result = extract_text(minimal_pdf, use_cache=False)
+    assert "# Test Paper" in result.full_markdown
+    assert call_count["n"] == 3  # two failures + one success
+
+
+def test_openrouter_ocr_gives_up_after_max_retries(minimal_pdf: Path) -> None:
+    """Persistent connection errors should raise after the retry budget is spent."""
+    import requests as _r
+
+    def always_fails(*args, **kwargs):
+        raise _r.ConnectionError("down")
+
+    with patch("requests.post", side_effect=always_fails):
+        with patch("time.sleep"):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                with patch.dict(
+                    "sys.modules",
+                    {"docling": None, "docling.document_converter": None},
+                ):
+                    with pytest.raises(ExtractionError, match="network error after"):
+                        extract_text(minimal_pdf, use_cache=False)
+
+
+def test_openrouter_ocr_retries_on_503(
+    minimal_pdf: Path, mock_ocr_pages,
+) -> None:
+    """HTTP 503 should trigger a retry; subsequent success should be returned."""
+    success = _mock_ocr_response(mock_ocr_pages)
+    bad = _mock_error_response(503, {"error": "service unavailable"})
+    # First call 503, second call succeeds
+    with patch("requests.post", side_effect=[bad, success]):
+        with patch("time.sleep"):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                result = extract_text(minimal_pdf, use_cache=False)
+    assert "# Test Paper" in result.full_markdown
+
+
+def test_openrouter_ocr_does_not_retry_on_401(minimal_pdf: Path) -> None:
+    """4xx errors (except 408/429) are not transient — don't waste retries on them."""
+    bad = _mock_error_response(401, {"error": "Invalid API key"})
+    post_mock = MagicMock(return_value=bad)
+    with patch("requests.post", post_mock):
+        with patch("time.sleep"):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                with patch.dict(
+                    "sys.modules",
+                    {"docling": None, "docling.document_converter": None},
+                ):
+                    # 401 propagates through _classify_api_error → ExtractionError
+                    with pytest.raises(ExtractionError):
+                        extract_text(minimal_pdf, use_cache=False)
+    # Exactly one call — no retry on 401
+    assert post_mock.call_count == 1
 
 
 # --- Garble detection and normalization ---
@@ -190,8 +392,8 @@ def test_normalize_ocr_garble_preserves_clean_text():
 
 def test_extract_text_sets_garble_ratio(minimal_pdf: Path, mock_ocr_pages) -> None:
     """Extraction should compute and store garble ratio."""
-    with patch("litellm.ocr", return_value=_mock_ocr_response(mock_ocr_pages)):
-        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
+    with patch("requests.post", return_value=_mock_ocr_response(mock_ocr_pages)):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert hasattr(result, "garble_ratio")
     assert result.garble_ratio == 0.0  # clean mock data
@@ -200,8 +402,8 @@ def test_extract_text_sets_garble_ratio(minimal_pdf: Path, mock_ocr_pages) -> No
 def test_extract_text_normalizes_garbled_ocr(minimal_pdf: Path) -> None:
     """Garbled OCR output should be auto-normalized."""
     garbled_pages = ["The ®nite case shows /C40x/C41"]
-    with patch("litellm.ocr", return_value=_mock_ocr_response(garbled_pages)):
-        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
+    with patch("requests.post", return_value=_mock_ocr_response(garbled_pages)):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert "finite" in result.full_markdown
     assert "®nite" not in result.full_markdown
@@ -265,8 +467,8 @@ def test_garble_ratio_detects_mistral_artifacts():
 def test_extract_text_normalizes_mistral_artifacts(minimal_pdf: Path) -> None:
     """Mistral OCR artifacts should be normalized during extraction."""
     pages = ["Let glyph[lscript] &gt; 0 with <!-- formula-not-decoded --> here"]
-    with patch("litellm.ocr", return_value=_mock_ocr_response(pages)):
-        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
+    with patch("requests.post", return_value=_mock_ocr_response(pages)):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
             result = extract_text(minimal_pdf, use_cache=False)
     assert "ℓ" in result.full_markdown
     assert "> 0" in result.full_markdown
@@ -338,8 +540,8 @@ def test_extract_file_missing() -> None:
 
 def test_extract_file_pdf_delegates(minimal_pdf: Path, mock_ocr_pages) -> None:
     """PDF files delegate to extract_text."""
-    with patch("litellm.ocr", return_value=_mock_ocr_response(mock_ocr_pages)):
-        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}):
+    with patch("requests.post", return_value=_mock_ocr_response(mock_ocr_pages)):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
             result = extract_file(minimal_pdf, use_cache=False)
     assert isinstance(result, PaperText)
     assert "# Test Paper" in result.full_markdown

@@ -25,6 +25,12 @@ _repo_root = Path(__file__).resolve().parent.parent
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
+    # Docling's OCR stack (and a few other PDF/image libs) link against
+    # libGL and glib at runtime. debian_slim doesn't ship these, so without
+    # them Docling crashes on first import with `libGL.so.1: cannot open
+    # shared object file`. That's the offline fallback when the OpenRouter
+    # OCR path fails, so it must actually work.
+    .apt_install("libgl1", "libglib2.0-0")
     .pip_install(
         # Install deps only (coarse source is baked into image below)
         "litellm>=1.60",
@@ -199,8 +205,7 @@ def do_review(req_dict: dict):
         from coarse import review_paper
         from coarse.config import CoarseConfig
         has_or_key = bool(os.environ.get("OPENROUTER_API_KEY"))
-        has_mi_key = bool(os.environ.get("MISTRAL_API_KEY"))
-        print(f"[{job_id}] Import OK — OPENROUTER_API_KEY={'set' if has_or_key else 'MISSING'}, MISTRAL_API_KEY={'set' if has_mi_key else 'MISSING'}")
+        print(f"[{job_id}] Import OK — OPENROUTER_API_KEY={'set' if has_or_key else 'MISSING'}")
         print(f"[{job_id}] Starting pipeline")
 
         config = CoarseConfig(use_coding_agents=False, extraction_qa=True)

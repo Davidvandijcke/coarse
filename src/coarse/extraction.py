@@ -2,7 +2,7 @@
 
 Supports PDF, TXT, MD, DOCX, TEX/LATEX, HTML, and EPUB.
 
-PDF priority: Mistral OCR (direct) → OpenRouter → Docling.
+PDF priority: Mistral OCR via OpenRouter file-parser plugin → Docling (offline).
 DOCX/HTML/TEX: Docling (if installed) → lightweight fallback (mammoth/markdownify/regex).
 TXT/MD: Direct read. EPUB: ebooklib + markdownify.
 """
@@ -109,40 +109,154 @@ def _save_cache(pdf_path: Path, paper_text: PaperText) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _extract_mistral_direct(path: Path) -> str:
-    """Extract via Mistral OCR API (requires MISTRAL_API_KEY)."""
-    import os
-
-    from litellm import ocr
-
-    from coarse.models import OCR_MODEL
-
-    # Only use a real Mistral key here — the OpenRouter fallback in
-    # resolve_api_key() would send an OpenRouter key to Mistral's API,
-    # which fails and blocks the OpenRouter extraction backend.
-    key = os.environ.get("MISTRAL_API_KEY")
-    if not key:
-        raise ValueError("No MISTRAL_API_KEY")
-
-    response = ocr(
-        model=OCR_MODEL,
-        document={"type": "document_url", "document_url": f"file://{path.resolve()}"},
-        api_key=key,
-    )
-    pages = response.pages
-    if not pages:
-        raise ValueError("Mistral OCR returned no pages")
-    return PAGE_BREAK.join(page.markdown for page in pages)
-
-
 _MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+
+# Retry config for transient OpenRouter failures. Only applied to idempotent
+# POSTs; network errors and these specific HTTP statuses are retried.
+_OCR_RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+_OCR_MAX_RETRIES = 3  # total attempts = 1 + _OCR_MAX_RETRIES
+_OCR_BACKOFF_BASE = 2.0  # seconds; actual wait = base ** attempt
+
+# Truncate diagnostic log output so a runaway response body doesn't flood logs.
+_OCR_LOG_TRUNCATE = 500
+
+
+def _post_openrouter_ocr(
+    *,
+    url: str,
+    headers: dict,
+    payload: dict,
+    timeout: int,
+) -> "requests.Response":  # noqa: F821
+    """POST to OpenRouter with bounded retries on transient failures.
+
+    Retries on connection errors, read timeouts, and specific 5xx/429/408
+    statuses. Does NOT retry on 4xx (except 408, 429) since those are
+    user-actionable (bad key, content policy, etc.).
+
+    Raises ExtractionError with context if all attempts fail with network
+    errors. Otherwise returns the last Response (caller must still check
+    `raise_for_status()` and body).
+    """
+    import time
+
+    import requests
+
+    last_network_exc: Exception | None = None
+    for attempt in range(_OCR_MAX_RETRIES + 1):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            last_network_exc = exc
+            if attempt < _OCR_MAX_RETRIES:
+                wait = _OCR_BACKOFF_BASE ** attempt
+                logger.warning(
+                    "OpenRouter OCR network error (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1, _OCR_MAX_RETRIES + 1, wait, exc,
+                )
+                time.sleep(wait)
+                continue
+            raise ExtractionError(
+                f"OpenRouter OCR network error after {_OCR_MAX_RETRIES + 1} attempts: {exc}"
+            ) from exc
+
+        if resp.status_code in _OCR_RETRY_STATUSES and attempt < _OCR_MAX_RETRIES:
+            wait = _OCR_BACKOFF_BASE ** attempt
+            logger.warning(
+                "OpenRouter OCR returned %d (attempt %d/%d), retrying in %.1fs",
+                resp.status_code, attempt + 1, _OCR_MAX_RETRIES + 1, wait,
+            )
+            time.sleep(wait)
+            continue
+
+        return resp
+
+    # Unreachable: the loop either returns on success or raises on final network error
+    raise ExtractionError(  # pragma: no cover
+        f"OpenRouter OCR retry loop exited unexpectedly (last exc: {last_network_exc})"
+    )
+
+
+def _parse_openrouter_ocr_response(resp: "requests.Response") -> str:  # noqa: F821
+    """Parse an OpenRouter OCR response into a single markdown string.
+
+    Handles several failure modes OpenRouter exposes:
+    - HTTP 200 with `{"error": {...}}` (plugin failed mid-request)
+    - HTTP 200 with empty `choices`
+    - Malformed annotation structure
+    - Empty content fallback
+    """
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise ExtractionError(
+            f"OpenRouter returned invalid JSON (HTTP {resp.status_code}): {exc}"
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise ExtractionError(
+            f"OpenRouter OCR response was not a JSON object: {type(data).__name__}"
+        )
+
+    # OpenRouter can return HTTP 200 with an error body (rate limit, plugin
+    # failure, content policy, etc.). Surface a clean error instead of
+    # crashing on KeyError: 'choices'.
+    if "error" in data and not data.get("choices"):
+        err = data["error"]
+        msg = err.get("message") if isinstance(err, dict) else None
+        logger.warning("OpenRouter OCR returned error body: %s", str(err)[:_OCR_LOG_TRUNCATE])
+        raise ExtractionError(f"OpenRouter OCR error: {msg or err}")
+
+    choices = data.get("choices")
+    if not choices:
+        logger.warning(
+            "OpenRouter OCR unexpected response (no choices): keys=%s body=%s",
+            sorted(data.keys()), str(data)[:_OCR_LOG_TRUNCATE],
+        )
+        raise ExtractionError(
+            f"OpenRouter OCR returned no choices (response keys: {sorted(data.keys())})"
+        )
+
+    first_choice = choices[0] if isinstance(choices, list) else {}
+    message = (first_choice or {}).get("message") or {}
+
+    # Try annotations first (raw OCR output, no model paraphrasing).
+    # File-parser's documented response shape (message.annotations):
+    #   [{"type": "file", "file": {"content":
+    #       [{"type": "text", "text": ...}, ...]}}]
+    annotations = message.get("annotations") or []
+    for ann in annotations:
+        if not isinstance(ann, dict) or ann.get("type") != "file":
+            continue
+        file_obj = ann.get("file") or {}
+        content_items = file_obj.get("content") or []
+        texts = [
+            item.get("text", "")
+            for item in content_items
+            if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
+        ]
+        if texts:
+            return PAGE_BREAK.join(texts)
+
+    # Fallback: model response (the prompt asks for verbatim text when the
+    # plugin output is unavailable or the model paraphrased anyway).
+    content = message.get("content")
+    if not content or not isinstance(content, str) or not content.strip():
+        logger.warning(
+            "OpenRouter OCR returned no usable content; message keys=%s",
+            sorted(message.keys()),
+        )
+        raise ExtractionError("OpenRouter OCR returned empty content")
+    return content
 
 
 def _extract_mistral_openrouter(path: Path) -> str:
-    """Extract via OpenRouter's Mistral OCR file-parser plugin."""
-    import base64
+    """Extract via OpenRouter's Mistral OCR file-parser plugin.
 
-    import requests
+    This is the only Mistral OCR path — all Mistral OCR calls route through
+    OpenRouter so users only ever need an OPENROUTER_API_KEY.
+    """
+    import base64
 
     from coarse.config import resolve_api_key
     from coarse.models import OPENROUTER_EXTRACTION_MODEL
@@ -162,13 +276,13 @@ def _extract_mistral_openrouter(path: Path) -> str:
     with open(path, "rb") as f:
         pdf_b64 = base64.b64encode(f.read()).decode()
 
-    resp = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
+    resp = _post_openrouter_ocr(
+        url="https://openrouter.ai/api/v1/chat/completions",
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
-        json={
+        payload={
             "model": OPENROUTER_EXTRACTION_MODEL,
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": OPENROUTER_EXTRACTION_PROMPT},
@@ -182,32 +296,7 @@ def _extract_mistral_openrouter(path: Path) -> str:
         timeout=300,
     )
     resp.raise_for_status()
-    try:
-        data = resp.json()
-    except ValueError as e:
-        raise ExtractionError(
-            f"OpenRouter returned invalid JSON (HTTP {resp.status_code}): {e}"
-        ) from e
-
-    # Try annotations first (raw OCR output, no model modification)
-    annotations = (
-        data.get("choices", [{}])[0].get("message", {}).get("annotations", [])
-    )
-    for ann in annotations:
-        if ann.get("type") == "file":
-            texts = [
-                p["text"]
-                for p in ann["file"].get("content", [])
-                if p.get("type") == "text"
-            ]
-            if texts:
-                return PAGE_BREAK.join(texts)
-
-    # Fallback: model response (asked to return text verbatim)
-    content = data["choices"][0]["message"]["content"]
-    if not content:
-        raise ValueError("No content from OpenRouter OCR")
-    return content
+    return _parse_openrouter_ocr_response(resp)
 
 
 def _extract_docling(path: Path) -> str:
@@ -350,7 +439,7 @@ from coarse.garble import garble_ratio as compute_garble_ratio, normalize_ocr_ga
 def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
     """Extract text from a PDF file.
 
-    Tries Mistral OCR (direct API, then OpenRouter plugin) for high-quality
+    Tries Mistral OCR via OpenRouter's file-parser plugin for high-quality
     LaTeX extraction, falling back to Docling for offline use.
 
     Args:
@@ -386,9 +475,8 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
         if cached is not None:
             return cached
 
-    # Priority: Mistral direct → OpenRouter → Docling
+    # Priority: Mistral OCR via OpenRouter → Docling (offline fallback)
     extractors = [
-        ("Mistral OCR (direct)", _extract_mistral_direct),
         ("Mistral OCR (OpenRouter)", _extract_mistral_openrouter),
         ("Docling", _extract_docling),
     ]
