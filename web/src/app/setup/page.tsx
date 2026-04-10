@@ -355,7 +355,8 @@ export default function SetupPage() {
               >
                 Settings → Credits
               </a>
-              . Add $5 — enough for 4-5 reviews with an open-source model or 1 review with Claude. Unused credits don&apos;t
+              . Add at least $10 — enough for ~10 reviews with an open-source
+              model or 3–5 reviews with Claude. Unused credits don&apos;t
               expire.
             </p>
 
@@ -380,7 +381,7 @@ export default function SetupPage() {
                       color: "var(--chalk)",
                     }}
                   >
-                    $5.00
+                    $10.00
                   </div>
                 </div>
                 <MockButton highlight>Add credits</MockButton>
@@ -513,8 +514,11 @@ export default function SetupPage() {
               , click the{" "}
               <strong style={{ color: "var(--chalk-bright)" }}>&#8942;</strong>
               {" "}menu next to your new key and choose &ldquo;Edit&rdquo;. Set a
-              credit limit (e.g. $5). The key stops working once the limit is
-              hit — zero risk of surprise charges.
+              credit limit of{" "}
+              <strong style={{ color: "var(--chalk-bright)" }}>at least $10</strong>
+              . The key stops working once the limit is hit — zero risk of
+              surprise charges — but set it high enough that a single review
+              doesn&apos;t exhaust it, or the review will fail mid-run.
             </p>
 
             <ChalkSketch annotation="key menu">
@@ -590,7 +594,7 @@ export default function SetupPage() {
                       width: "80px",
                     }}
                   >
-                    $5.00
+                    $10.00
                   </div>
                   <MockButton highlight>Save</MockButton>
                 </div>
@@ -635,6 +639,38 @@ export default function SetupPage() {
                 discarded — it is never stored. But you don&apos;t have to trust
                 us: the per-key limit guarantees it can never spend more than you
                 allow, even in the worst case.
+              </p>
+            </div>
+
+            <div
+              style={{
+                marginTop: "0.75rem",
+                padding: "0.75rem 1rem",
+                background: "rgba(224, 201, 112, 0.06)",
+                borderLeft: "3px solid var(--yellow-chalk)",
+                borderRadius: "0 2px 2px 0",
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: "Georgia, serif",
+                  fontSize: "1rem",
+                  lineHeight: 1.6,
+                  color: "var(--chalk)",
+                  margin: 0,
+                }}
+              >
+                <strong style={{ color: "var(--chalk-bright)" }}>
+                  A note on cost estimates:
+                </strong>{" "}
+                coarse shows an approximate cost before each review (typically
+                $0.25&ndash;$2). That&apos;s a heuristic with a ~15% buffer, not
+                a hard ceiling. Actual cost can run up to ~2&times; the estimate
+                on complex papers depending on how much the model reasons,
+                how the critique agent rewrites comments, and whether
+                proof-verification kicks in for math-heavy sections. If your
+                per-key limit is set right at the estimate, a single review can
+                drain it and fail mid-run. Leave headroom.
               </p>
             </div>
           </Step>
