@@ -1,7 +1,7 @@
 ---
 name: Bug Report
 about: Report a bug in coarse
-labels: bug
+labels: ["bug", "needs triage"]
 ---
 
 ## Describe the bug

@@ -169,3 +169,7 @@ Open an issue at [github.com/Davidvandijcke/coarse/issues](https://github.com/Da
 - OS
 - Steps to reproduce
 - Error output / logs
+
+Maintainers apply `area: *` and `priority: *` labels during triage — contributors don't need to pick these. Every new issue gets a `needs triage` label automatically; once a maintainer has looked at it, that label is removed.
+
+**Security issues**: if you find something sensitive (exposed secrets, auth bypass, etc.), please email david.van.dijcke@gmail.com instead of opening a public issue. Use the `security` label for non-sensitive security-related improvements.

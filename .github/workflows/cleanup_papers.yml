@@ -1,0 +1,102 @@
+name: Clean up residual papers
+
+# The Modal worker deletes each paper from the Supabase `papers` bucket in its
+# `finally` block, but that cleanup swallows exceptions and occasionally leaks
+# files (e.g. when the container dies before reaching the finally block, or
+# when the storage API is briefly unreachable during cleanup).
+#
+# This cron is the safety net: every day, delete any paper older than 24 hours.
+# Modal's review timeout is 2 hours, so anything older than a day is
+# unambiguously stale.
+
+on:
+  schedule:
+    - cron: '15 6 * * *'  # 06:15 UTC daily, offset from monitor (08:00)
+  workflow_dispatch: {}
+
+permissions: read-all
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete papers older than 24h
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          python3 <<'PY'
+          import json, os, sys
+          from datetime import datetime, timedelta, timezone
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+
+          URL = os.environ["SUPABASE_URL"].rstrip("/")
+          KEY = os.environ["SUPABASE_SERVICE_KEY"]
+
+          def api(method, path, body=None):
+              headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}"}
+              data = None
+              if body is not None:
+                  data = json.dumps(body).encode()
+                  headers["Content-Type"] = "application/json"
+              req = Request(URL + path, data=data, method=method, headers=headers)
+              with urlopen(req, timeout=30) as resp:
+                  raw = resp.read()
+                  return json.loads(raw) if raw else None
+
+          # List all files in the papers bucket (up to 1000; alert if exceeded)
+          files = api("POST", "/storage/v1/object/list/papers", {"limit": 1000, "prefix": ""})
+          if not isinstance(files, list):
+              print(f"ERROR: unexpected list response type: {type(files).__name__}", file=sys.stderr)
+              print(f"body: {files}", file=sys.stderr)
+              sys.exit(1)
+
+          if len(files) >= 1000:
+              print(
+                  "WARNING: bucket has >= 1000 files; cleanup only covers the first page. "
+                  "Consider paginating if this becomes routine.",
+                  file=sys.stderr,
+              )
+
+          # Reviews can run for up to 2h (Modal timeout). Anything older than
+          # 24h is definitely stale — failed cleanup or orphaned residual.
+          cutoff_iso = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat().replace("+00:00", "Z")
+
+          stale = [
+              f for f in files
+              if isinstance(f, dict)
+              and f.get("name")
+              and f.get("created_at", "") < cutoff_iso
+          ]
+
+          print(f"Total files in bucket: {len(files)}")
+          print(f"Cutoff (24h ago):      {cutoff_iso}")
+          print(f"Stale candidates:      {len(stale)}")
+
+          if not stale:
+              print("Nothing to clean up.")
+              sys.exit(0)
+
+          # Delete one file at a time. The bulk delete endpoint exists but
+          # per-file DELETE is simpler to diagnose on partial failure, and
+          # cleanup volume is small (typically single digits per day).
+          deleted = 0
+          failures: list[str] = []
+          for f in stale:
+              name = f["name"]
+              try:
+                  api("DELETE", f"/storage/v1/object/papers/{name}")
+                  deleted += 1
+              except (HTTPError, URLError) as exc:
+                  failures.append(f"{name}: {exc}")
+
+          print(f"Deleted: {deleted}/{len(stale)}")
+          if failures:
+              print("Failures:", file=sys.stderr)
+              for msg in failures:
+                  print(f"  {msg}", file=sys.stderr)
+              # Non-fatal: next run will retry. Exit 0 so the workflow stays
+              # green unless the list call itself broke.
+          PY
