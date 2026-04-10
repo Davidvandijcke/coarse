@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.1.1 — 2026-04-10
+
 ### Added
 
 - **Web: Log in with OpenRouter** — the submission form now has a "Log in with OpenRouter" button that runs OpenRouter's browser-only OAuth PKCE flow and fills in the API key automatically. The returned key is stored in the browser's localStorage so users stay logged in across visits; a "Log out" control clears it. The manual paste field is kept as a fallback for users who prefer to use a scoped key. The server contract is unchanged — the key is still only sent in the `/api/submit` body when a review is submitted and never persisted server-side. Closes #12.
