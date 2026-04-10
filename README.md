@@ -102,9 +102,13 @@ Use `--cheap` to automatically select the cheapest model for which you have an A
 
 ## API keys
 
-Only `OPENROUTER_API_KEY` is needed. For step-by-step setup instructions, see the
-[API key guide](https://coarse.vercel.app/setup). For direct provider access (lower latency),
-set the provider-specific key instead:
+Only `OPENROUTER_API_KEY` is needed. This covers everything: review agents,
+literature search, and PDF extraction (Mistral OCR is always routed through
+OpenRouter's file-parser plugin, so there's no separate key for it). For
+step-by-step setup instructions, see the [API key guide](https://coarse.vercel.app/setup).
+
+For direct provider access to chat models (lower latency, separate billing),
+you can set the provider-specific key instead:
 
 | Provider   | Environment variable   |
 |------------|------------------------|

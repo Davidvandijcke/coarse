@@ -40,7 +40,7 @@ WHERE id = 1;
 
 **Expand**: Add a payment method in the Modal dashboard. Modal charges per compute-second beyond the free tier — no plan upgrade needed.
 
-**Emergency**: Reduce `max_containers` from 10 to 5 in `deploy/modal_worker.py` and redeploy (`modal deploy deploy/modal_worker.py`) to slow the burn rate. Or pause submissions via SQL above.
+**Emergency**: Reduce `max_containers` from 20 to 10 (or lower) in `deploy/modal_worker.py` and redeploy (`modal deploy deploy/modal_worker.py`) to slow the burn rate. Also update `MAX_CONCURRENT_REVIEWS` in `web/src/app/api/status/route.ts` to match so the frontend busy banner is accurate. Or pause submissions via SQL above.
 
 ---
 
