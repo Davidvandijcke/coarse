@@ -46,7 +46,7 @@ jobs:
             BODY="${BODY}Monthly reviews ($MONTHLY) approaching Modal free tier ($30/mo).\n\n"
           fi
 
-          if [ "$MONTHLY" -gt 400 ] 2>/dev/null; then
+          if [ "$MONTHLY" -gt 800 ] 2>/dev/null; then
             ALERT="critical"
             BODY="${BODY}CRITICAL: Monthly reviews ($MONTHLY) exceeded safe threshold. Auto-pausing submissions.\n\n"
           fi

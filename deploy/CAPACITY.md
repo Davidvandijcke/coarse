@@ -36,7 +36,7 @@ WHERE id = 1;
 
 **Check**: [Modal dashboard](https://modal.com) > Usage tab.
 
-**Thresholds**: A typical review uses ~$0.08–0.10 of compute. 300 reviews/month ≈ free tier. The daily monitoring cron alerts at 300 and auto-pauses at 400.
+**Thresholds**: A typical review uses ~$0.08–0.10 of compute. 300 reviews/month ≈ free tier. The daily monitoring cron alerts at 300 and auto-pauses at 800.
 
 **Expand**: Add a payment method in the Modal dashboard. Modal charges per compute-second beyond the free tier — no plan upgrade needed.
 
@@ -104,7 +104,7 @@ The daily monitoring cron (`.github/workflows/monitor.yml`) runs at 8 AM UTC and
 | Threshold | Action |
 |-----------|--------|
 | Monthly reviews > 300 | Warning email — approaching Modal free tier |
-| Monthly reviews > 400 | Auto-pauses submissions + alert email |
+| Monthly reviews > 800 | Auto-pauses submissions + alert email |
 | Daily reviews > 40 | Warning email — approaching Gmail daily limit |
 
 The cron uses these GitHub repo secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `ALERT_EMAIL`.
