@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 export const revalidate = 10; // ISR: revalidate every 10 seconds
 
-const MAX_CONCURRENT_REVIEWS = 10;
+const MAX_CONCURRENT_REVIEWS = 20;
 
 export async function GET() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

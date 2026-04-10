@@ -5,7 +5,7 @@ import { checkRateLimit } from "@/lib/rateLimit";
 
 export const maxDuration = 30;
 
-const MAX_CONCURRENT_REVIEWS = 10;
+const MAX_CONCURRENT_REVIEWS = 20;
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

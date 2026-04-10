@@ -142,7 +142,7 @@ class ReviewRequest(BaseModel):
     image=image,
     timeout=7200,
     memory=2048,
-    max_containers=10,
+    max_containers=20,
     secrets=[
         modal.Secret.from_name("coarse-supabase"),
         modal.Secret.from_name("coarse-webhook"),
