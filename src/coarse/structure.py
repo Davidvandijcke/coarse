@@ -306,8 +306,11 @@ def _detect_math_sections(
             messages, MathSectionDetection, max_tokens=256, temperature=0.1,
         )
         math_indices = set(result.math_section_indices)
-    except Exception:
-        logger.warning("Math section detection failed, falling back to keyword detection")
+    except Exception as exc:
+        logger.warning(
+            "Math section detection failed (%s: %s), falling back to keyword detection",
+            type(exc).__name__, exc,
+        )
         return _detect_math_sections_keyword(sections)
 
     return [

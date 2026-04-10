@@ -2,7 +2,7 @@
 
 Supports PDF, TXT, MD, DOCX, TEX/LATEX, HTML, and EPUB.
 
-PDF priority: Mistral OCR via OpenRouter file-parser plugin → Docling (offline).
+PDF priority: Mistral OCR via OpenRouter → pdf-text via OpenRouter → Docling (offline).
 DOCX/HTML/TEX: Docling (if installed) → lightweight fallback (mammoth/markdownify/regex).
 TXT/MD: Direct read. EPUB: ebooklib + markdownify.
 """
@@ -114,12 +114,43 @@ _MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 # Retry config for transient OpenRouter failures. Only applied to idempotent
 # POSTs; network errors and these specific HTTP statuses are retried.
 _OCR_RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
-_OCR_MAX_RETRIES = 5  # total attempts = 1 + _OCR_MAX_RETRIES
-_OCR_BACKOFF_BASE = 2.0  # seconds; actual wait = base ** attempt
-# With base=2 and max_retries=5, backoff sequence is 1s + 2s + 4s + 8s + 16s = 31s total.
+_OCR_MAX_RETRIES = 9  # total attempts = 1 + _OCR_MAX_RETRIES (10 total)
+_OCR_BACKOFF_BASE = 2.0  # seconds; actual wait = min(base ** attempt, _OCR_MAX_BACKOFF)
+_OCR_MAX_BACKOFF = 32.0  # cap per-retry wait so 10 attempts don't blow the timeout budget
+# Backoff sequence: 1 + 2 + 4 + 8 + 16 + 32 + 32 + 32 + 32 = 159s max across 9 retries.
 
 # Truncate diagnostic log output so a runaway response body doesn't flood logs.
 _OCR_LOG_TRUNCATE = 500
+
+
+def _response_was_billed(resp) -> bool:
+    """Return True if the response reports non-zero usage/cost.
+
+    OpenRouter normally reports zero usage when the file-parser plugin fails
+    upstream, so retrying an error body is free. This guard protects against
+    the edge case where a billed request also returned an error body — without
+    it, 10 retries could in principle multiply the user's API cost. If we
+    can't parse the response, we assume it wasn't billed (conservative only
+    in the sense that we'd rather retry once more than wrongly give up on a
+    response that was actually free).
+    """
+    try:
+        data = resp.json()
+    except (ValueError, AttributeError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    usage = data.get("usage")
+    if not isinstance(usage, dict):
+        return False
+    for key in ("total_cost", "cost"):
+        val = usage.get(key)
+        if isinstance(val, (int, float)) and val > 0:
+            return True
+    total_tokens = usage.get("total_tokens")
+    if isinstance(total_tokens, (int, float)) and total_tokens > 0:
+        return True
+    return False
 
 
 def _body_retry_code(resp) -> int | None:
@@ -169,6 +200,9 @@ def _post_openrouter_ocr(
 
     import requests
 
+    def _wait_for(attempt: int) -> float:
+        return min(_OCR_BACKOFF_BASE ** attempt, _OCR_MAX_BACKOFF)
+
     last_network_exc: Exception | None = None
     for attempt in range(_OCR_MAX_RETRIES + 1):
         try:
@@ -176,7 +210,7 @@ def _post_openrouter_ocr(
         except (requests.ConnectionError, requests.Timeout) as exc:
             last_network_exc = exc
             if attempt < _OCR_MAX_RETRIES:
-                wait = _OCR_BACKOFF_BASE ** attempt
+                wait = _wait_for(attempt)
                 logger.warning(
                     "OpenRouter OCR network error (attempt %d/%d), retrying in %.1fs: %s",
                     attempt + 1, _OCR_MAX_RETRIES + 1, wait, exc,
@@ -188,7 +222,7 @@ def _post_openrouter_ocr(
             ) from exc
 
         if resp.status_code in _OCR_RETRY_STATUSES and attempt < _OCR_MAX_RETRIES:
-            wait = _OCR_BACKOFF_BASE ** attempt
+            wait = _wait_for(attempt)
             logger.warning(
                 "OpenRouter OCR returned %d (attempt %d/%d), retrying in %.1fs",
                 resp.status_code, attempt + 1, _OCR_MAX_RETRIES + 1, wait,
@@ -199,10 +233,20 @@ def _post_openrouter_ocr(
         # HTTP 200 with a retryable error body (e.g. {"error": {"code": 504}}).
         # OpenRouter's plugin layer uses this shape when the upstream provider
         # (Mistral OCR) times out or hiccups. Treat it the same as a raw HTTP
-        # status in _OCR_RETRY_STATUSES.
+        # status in _OCR_RETRY_STATUSES — but only if usage is zero. A billed
+        # error response means the request actually cost money, and retrying
+        # would double-charge the user; stop and let the caller fall through
+        # to the next extractor.
         body_code = _body_retry_code(resp)
         if body_code is not None and attempt < _OCR_MAX_RETRIES:
-            wait = _OCR_BACKOFF_BASE ** attempt
+            if _response_was_billed(resp):
+                logger.warning(
+                    "OpenRouter OCR returned 200 with body error code %d AND "
+                    "non-zero usage — not retrying to avoid double-billing the user",
+                    body_code,
+                )
+                return resp
+            wait = _wait_for(attempt)
             logger.warning(
                 "OpenRouter OCR returned 200 with body error code %d (attempt %d/%d), retrying in %.1fs",
                 body_code, attempt + 1, _OCR_MAX_RETRIES + 1, wait,
@@ -291,11 +335,14 @@ def _parse_openrouter_ocr_response(resp: "requests.Response") -> str:  # noqa: F
     return content
 
 
-def _extract_mistral_openrouter(path: Path) -> str:
-    """Extract via OpenRouter's Mistral OCR file-parser plugin.
+def _extract_openrouter_file_parser(path: Path, engine: str) -> str:
+    """Extract PDF text via OpenRouter's file-parser plugin.
 
-    This is the only Mistral OCR path — all Mistral OCR calls route through
-    OpenRouter so users only ever need an OPENROUTER_API_KEY.
+    engine:
+        "mistral-ocr" — vision-based OCR, best quality for LaTeX/math, paid,
+                        known to be flaky (upstream timeouts).
+        "pdf-text"    — native embedded-text extraction, free, fast, reliable.
+                        Won't work on scanned image-only PDFs.
     """
     import base64
 
@@ -332,12 +379,22 @@ def _extract_mistral_openrouter(path: Path) -> str:
                     "file_data": f"data:application/pdf;base64,{pdf_b64}",
                 }},
             ]}],
-            "plugins": [{"id": "file-parser", "pdf": {"engine": "mistral-ocr"}}],
+            "plugins": [{"id": "file-parser", "pdf": {"engine": engine}}],
         },
         timeout=300,
     )
     resp.raise_for_status()
     return _parse_openrouter_ocr_response(resp)
+
+
+def _extract_mistral_openrouter(path: Path) -> str:
+    """Extract via OpenRouter's Mistral OCR file-parser plugin."""
+    return _extract_openrouter_file_parser(path, engine="mistral-ocr")
+
+
+def _extract_pdftext_openrouter(path: Path) -> str:
+    """Extract via OpenRouter's native pdf-text file-parser plugin (free)."""
+    return _extract_openrouter_file_parser(path, engine="pdf-text")
 
 
 def _extract_docling(path: Path) -> str:
@@ -516,9 +573,13 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
         if cached is not None:
             return cached
 
-    # Priority: Mistral OCR via OpenRouter → Docling (offline fallback)
+    # Priority: Mistral OCR (best LaTeX quality) → pdf-text (free, fast,
+    # reliable embedded-text extraction) → Docling (offline last resort).
+    # The pdf-text middle tier catches Mistral OCR upstream outages without
+    # paying Docling's torch/RapidOCR startup cost.
     extractors = [
         ("Mistral OCR (OpenRouter)", _extract_mistral_openrouter),
+        ("pdf-text (OpenRouter)", _extract_pdftext_openrouter),
         ("Docling", _extract_docling),
     ]
     full_markdown = None

@@ -126,10 +126,16 @@ def _select_qa_pages(num_pages: int, page_chunks: list[str]) -> list[int]:
     if num_pages <= 5:
         return list(range(1, num_pages + 1))
 
-    # Score each page by complexity (math, tables, short content, garble)
+    # Score each page by complexity (math, tables, short content, garble).
+    # Mistral OCR occasionally emits more PAGE_BREAK markers than the PDF has
+    # pages (trailing empty chunk, or a page split mid-content). Ignore any
+    # chunks beyond num_pages so we never propose a page number fitz can't
+    # render — that used to surface as a "Page N out of range" warning.
     scored: list[tuple[int, float]] = []
     for i, chunk in enumerate(page_chunks):
         page_num = i + 1
+        if page_num > num_pages:
+            break
         score = 0.0
         if "glyph[" in chunk or "formula-not-decoded" in chunk:
             score += 3.0  # highest priority: garbled formulas
@@ -158,7 +164,7 @@ def _select_qa_pages(num_pages: int, page_chunks: list[str]) -> list[int]:
             if len(selected) >= max_pages:
                 break
 
-    return sorted(selected)
+    return sorted(p for p in selected if 1 <= p <= num_pages)
 
 
 # ---------------------------------------------------------------------------

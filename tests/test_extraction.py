@@ -392,7 +392,14 @@ def test_openrouter_ocr_does_not_retry_on_200_with_body_error_402(
 def test_openrouter_ocr_retries_on_200_body_504_then_gives_up(
     minimal_pdf: Path,
 ) -> None:
-    """Persistent 200-with-504-body should exhaust retries and raise."""
+    """Persistent 200-with-504-body should exhaust retries and raise.
+
+    Both OpenRouter extractors (mistral-ocr and pdf-text) go through the
+    same retry loop, so we expect 2 × (_OCR_MAX_RETRIES + 1) total posts
+    before the chain falls through to (disabled) Docling and raises.
+    """
+    from coarse.extraction import _OCR_MAX_RETRIES
+
     timeout_body = _mock_error_response(200, {
         "error": {"message": "Timed out parsing", "code": 504},
     })
@@ -406,8 +413,78 @@ def test_openrouter_ocr_retries_on_200_body_504_then_gives_up(
                 ):
                     with pytest.raises(ExtractionError, match="Timed out parsing"):
                         extract_text(minimal_pdf, use_cache=False)
-    # _OCR_MAX_RETRIES + 1 = 6 total attempts
-    assert post_mock.call_count == 6
+    # Both mistral-ocr and pdf-text exhausted their retries.
+    assert post_mock.call_count == 2 * (_OCR_MAX_RETRIES + 1)
+
+
+def test_pdftext_fallback_runs_when_mistral_ocr_persistently_fails(
+    minimal_pdf: Path, mock_ocr_pages,
+) -> None:
+    """When mistral-ocr exhausts retries with a transient body error, the
+    extractor chain should fall through to the pdf-text engine before Docling."""
+    from coarse.extraction import _OCR_MAX_RETRIES
+
+    timeout_body = _mock_error_response(200, {
+        "error": {"message": "Timed out parsing", "code": 504},
+    })
+    pdftext_success = _mock_ocr_response(mock_ocr_pages)
+
+    # Return timeout body for all mistral-ocr attempts, then success on the
+    # single pdf-text attempt that follows.
+    responses = [timeout_body] * (_OCR_MAX_RETRIES + 1) + [pdftext_success]
+    posted_engines: list[str] = []
+
+    def spy_post(url, headers, json, timeout):  # noqa: A002
+        plugins = json.get("plugins") or []
+        engine = plugins[0].get("pdf", {}).get("engine") if plugins else None
+        posted_engines.append(engine)
+        return responses[len(posted_engines) - 1]
+
+    with patch("requests.post", side_effect=spy_post):
+        with patch("time.sleep"):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                result = extract_text(minimal_pdf, use_cache=False)
+
+    assert "# Test Paper" in result.full_markdown
+    # First N calls are mistral-ocr retries, last call is pdf-text fallback.
+    assert posted_engines[:_OCR_MAX_RETRIES + 1] == ["mistral-ocr"] * (_OCR_MAX_RETRIES + 1)
+    assert posted_engines[-1] == "pdf-text"
+
+
+def test_ocr_retry_stops_when_response_is_billed(minimal_pdf: Path) -> None:
+    """A 200-with-error-body that ALSO reports non-zero usage must not be
+    retried — retrying would double-charge the user for a billed error."""
+    billed_timeout = _mock_error_response(200, {
+        "error": {"message": "Timed out parsing", "code": 504},
+        "usage": {"total_tokens": 123, "total_cost": 0.0042},
+    })
+    mistral_post_count = {"n": 0}
+    pdftext_post_count = {"n": 0}
+
+    def spy_post(url, headers, json, timeout):  # noqa: A002
+        plugins = json.get("plugins") or []
+        engine = plugins[0].get("pdf", {}).get("engine") if plugins else None
+        if engine == "mistral-ocr":
+            mistral_post_count["n"] += 1
+        elif engine == "pdf-text":
+            pdftext_post_count["n"] += 1
+        return billed_timeout
+
+    with patch("requests.post", side_effect=spy_post):
+        with patch("time.sleep"):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                with patch.dict(
+                    "sys.modules",
+                    {"docling": None, "docling.document_converter": None},
+                ):
+                    with pytest.raises(ExtractionError):
+                        extract_text(minimal_pdf, use_cache=False)
+
+    # Mistral OCR made exactly ONE billed call, then bailed out without retry.
+    assert mistral_post_count["n"] == 1
+    # pdf-text fallback is still tried — but the same billing guard applies
+    # there too, so it also bails after one call.
+    assert pdftext_post_count["n"] == 1
 
 
 def test_openrouter_ocr_does_not_retry_on_401(minimal_pdf: Path) -> None:
