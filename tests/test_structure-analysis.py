@@ -289,11 +289,17 @@ def test_analyze_structure_uses_low_temperature(mock_client):
 
 
 def test_analyze_structure_low_max_tokens(mock_client):
-    """Both metadata and math detection calls should use low max_tokens."""
+    """Both metadata and math detection calls should use a bounded max_tokens
+    budget — not the 4096 default — since the structured output is small.
+
+    Metadata stays tight at 256; math detection needs 1024 so Claude-family
+    models have headroom for their prose preamble before emitting the tool
+    call (see test_detect_math_sections_passes_large_max_tokens_budget).
+    """
     paper_text = make_paper_text()
     analyze_structure(paper_text, mock_client)
     for c in mock_client.complete.call_args_list:
-        assert c[1]["max_tokens"] <= 512
+        assert c[1]["max_tokens"] <= 1024
 
 
 def test_analyze_structure_propagates_llm_error(mock_client):
@@ -396,6 +402,66 @@ def test_detect_math_sections_falls_back_on_error():
     result = _detect_math_sections(sections, client)
     assert not result[0].math_content
     assert result[1].math_content  # keyword fallback detects "theorem" and "prove"
+
+
+def test_detect_math_sections_passes_large_max_tokens_budget():
+    """Claude 4-family models write a prose preamble before emitting the
+    structured output, so the math detection budget has to be large enough
+    to survive that. 256 was too tight in production (Opus 4.6 hit
+    finish_reason='length' before any JSON was produced and instructor
+    raised InstructorRetryException). We now pass >=1024, and the keyword
+    fallback still takes over if the model does exhaust whatever budget
+    we pass."""
+    sections = [
+        SectionInfo(
+            number=1, title="Intro", text="intro",
+            section_type=SectionType.INTRODUCTION,
+        ),
+    ]
+    client = MagicMock()
+    client.complete.return_value = MathSectionDetection(math_section_indices=[])
+
+    _detect_math_sections(sections, client)
+
+    assert client.complete.called
+    max_tokens = client.complete.call_args.kwargs.get("max_tokens")
+    if max_tokens is None and len(client.complete.call_args.args) >= 3:
+        max_tokens = client.complete.call_args.args[2]
+    assert max_tokens is not None, "max_tokens must be passed explicitly"
+    assert max_tokens >= 1024, (
+        f"max_tokens={max_tokens} is too tight for Claude-family preambles; "
+        f"256 caused InstructorRetryException in production (see review "
+        f"1e786d50)"
+    )
+
+
+def test_detect_math_sections_falls_back_on_instructor_length_limit():
+    """The specific production failure mode: instructor raises because the
+    model hit finish_reason='length' before emitting any structured output.
+    The fallback must still produce a valid result (via keyword detection),
+    not crash the pipeline."""
+    sections = [
+        SectionInfo(
+            number=1, title="Intro", text="intro text",
+            section_type=SectionType.INTRODUCTION,
+        ),
+        SectionInfo(
+            number=2, title="Empirical Strategy",
+            text="We prove that the difference-in-differences estimator "
+                 "is consistent under the parallel trends assumption.",
+            section_type=SectionType.METHODOLOGY,
+        ),
+    ]
+    client = MagicMock()
+    # Mimic instructor's own exception message so the fallback path is
+    # exercised with a realistic error.
+    client.complete.side_effect = RuntimeError(
+        "The output is incomplete due to a max_tokens length limit."
+    )
+
+    result = _detect_math_sections(sections, client)
+    assert not result[0].math_content
+    assert result[1].math_content  # keyword hit on "prove" and "theorem"-adjacent text
 
 
 # ---------------------------------------------------------------------------

@@ -302,8 +302,15 @@ def _detect_math_sections(
         {"role": "user", "content": math_detection_user(sections)},
     ]
     try:
+        # max_tokens=1024 (not 256): Claude 4-family models sometimes write a
+        # prose preamble before emitting the structured output. At 256 the
+        # preamble alone can hit finish_reason='length' and instructor raises
+        # InstructorRetryException("output is incomplete due to a max_tokens
+        # length limit") before any JSON is produced. The actual indices
+        # payload is tiny (<50 tokens), so the higher ceiling only costs more
+        # when the model actually talks, which the prompt now discourages.
         result = client.complete(
-            messages, MathSectionDetection, max_tokens=256, temperature=0.1,
+            messages, MathSectionDetection, max_tokens=1024, temperature=0.1,
         )
         math_indices = set(result.math_section_indices)
     except Exception as exc:

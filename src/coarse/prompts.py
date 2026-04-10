@@ -1228,7 +1228,11 @@ A section does NOT need mathematical verification if it merely:
 - Contains only tables, figures, or empirical results without derivations
 - Is a references/bibliography section
 
-Return the 0-based indices of sections that need mathematical verification.\
+Return the 0-based indices of sections that need mathematical verification.
+
+Respond with only the structured output. Do not include any analysis, \
+reasoning, or explanation before the structured response — emit the \
+indices directly.\
 """
 
 

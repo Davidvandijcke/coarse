@@ -20,6 +20,7 @@
 - **Modal-level retries work again.** Previously, if Modal infrastructure retried a review (after an OOM or container crash), the retry would 404 on the PDF because the `finally` block had already deleted it from Supabase Storage. See the PDF storage change above.
 - **Extraction QA no longer logs spurious "Page N out of range" warnings.** When Mistral OCR emitted more `<!-- PAGE BREAK -->` markers than the PDF had pages (trailing empty chunks, or a page split mid-content), `_select_qa_pages` could propose a page number that fitz rejected. Now clamps scored page numbers and the final selection set to `num_pages`.
 - **Math section detection logs the underlying exception** instead of a bare "failed" message, so transient LLM errors are actually diagnosable from the Modal worker logs.
+- **Math section detection no longer silently fails for Claude-family models.** The LLM call passed `max_tokens=256`, which was fine for Qwen/DeepSeek but too tight for Claude 4-family models (Opus, Sonnet) that sometimes write a prose preamble before emitting the tool call. At 256 the preamble alone could hit `finish_reason='length'` and instructor raised `InstructorRetryException("The output is incomplete due to a max_tokens length limit.")` before any JSON was produced, forcing the keyword-heuristic fallback. Bumped to 1024 and tightened `MATH_DETECTION_SYSTEM` to tell the model to skip the preamble and emit the structured response directly. Diagnosed from real user review `1e786d50`.
 
 ## v1.1.0 — 2026-04-10
 
