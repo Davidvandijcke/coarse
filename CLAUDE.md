@@ -22,7 +22,7 @@ uv run python -m coarse paper.pdf
 
 ```
 paper (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)
-    → [extraction.py]    Mistral OCR via OpenRouter / Docling fallback → PaperText (markdown)
+    → [extraction.py]    Mistral OCR (OpenRouter) → pdf-text (OpenRouter) → Docling → PaperText (markdown)
     → [extraction_qa.py] Vision LLM spot-check (auto-triggers on garbled text)
     → [structure.py]     Parse headings + LLM → PaperStructure (sections, math detection, domain)
     → [calibrate_domain] Domain-specific review criteria (parallel with literature)
