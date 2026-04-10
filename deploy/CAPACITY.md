@@ -11,7 +11,7 @@ Run this in the **Supabase SQL Editor** (no deploy needed):
 ```sql
 UPDATE system_status
 SET accepting_reviews = false,
-    banner_message = 'We are at capacity right now. Please use the command-line version: pip install coarse',
+    banner_message = 'We are at capacity right now. Please use the command-line version: pip install coarse-ink',
     updated_at = now()
 WHERE id = 1;
 ```
@@ -77,7 +77,7 @@ UPDATE reviews SET paper_markdown = null WHERE completed_at < now() - interval '
 
 **Expand**: Upgrade to Vercel Pro ($20/month) for 1 TB bandwidth and 60-second function timeout.
 
-**Emergency**: Pause submissions via SQL above. The CLI (`pip install coarse`) works independently of the web app.
+**Emergency**: Pause submissions via SQL above. The CLI (`pip install coarse-ink`) works independently of the web app.
 
 ---
 

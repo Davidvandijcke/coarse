@@ -270,7 +270,7 @@ wheels = [
 ]
 
 [[package]]
-name = "coarse"
+name = "coarse-ink"
 version = "1.1.2"
 source = { editable = "." }
 dependencies = [
@@ -306,8 +306,8 @@ formats = [
 
 [package.metadata]
 requires-dist = [
-    { name = "coarse", extras = ["docling"], marker = "extra == 'all'" },
-    { name = "coarse", extras = ["formats"], marker = "extra == 'all'" },
+    { name = "coarse-ink", extras = ["docling"], marker = "extra == 'all'" },
+    { name = "coarse-ink", extras = ["formats"], marker = "extra == 'all'" },
     { name = "docling", marker = "extra == 'docling'", specifier = ">=2.0" },
     { name = "ebooklib", marker = "extra == 'formats'", specifier = ">=0.18" },
     { name = "instructor", specifier = ">=1.7" },

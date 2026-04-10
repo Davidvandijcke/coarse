@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   if (statusRow && !statusRow.accepting_reviews) {
     return NextResponse.json(
       {
-        error: statusRow.banner_message || "Submissions are temporarily paused. Please try again later or use the CLI: pip install coarse",
+        error: statusRow.banner_message || "Submissions are temporarily paused. Please try again later or use the CLI: pip install coarse-ink",
       },
       { status: 503 },
     );

@@ -367,7 +367,7 @@ export default function Home() {
             {" "}
             For faster results, try the CLI:{" "}
             <code style={{ background: "var(--tray)", padding: "0.15em 0.4em", fontSize: "0.95em" }}>
-              pip install coarse
+              pip install coarse-ink
             </code>{" "}
             <a
               href="https://github.com/Davidvandijcke/coarse"
