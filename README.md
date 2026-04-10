@@ -107,6 +107,12 @@ literature search, and PDF extraction (Mistral OCR is always routed through
 OpenRouter's file-parser plugin, so there's no separate key for it). For
 step-by-step setup instructions, see the [API key guide](https://coarse.vercel.app/setup).
 
+> **Set your OpenRouter per-key spend limit to at least $10** (ideally matching
+> the `max_cost_usd` default of `$10`). If the limit is hit mid-review the run
+> will fail and you'll need to raise the limit and resubmit. Cost estimates
+> shown before each review are approximate (~15% buffer) — they're a guide,
+> not a hard ceiling, so leave yourself headroom.
+
 For direct provider access to chat models (lower latency, separate billing),
 you can set the provider-specific key instead:
 
@@ -131,6 +137,11 @@ coarse estimates cost before running and asks for confirmation. The estimate inc
 |-----------------|---------------|
 | Short (< 20pp)  | $0.25 - $0.50 |
 | Long (30+ pp)   | $0.50 - $1    |
+
+**Actual costs can run up to ~2× the estimate** on complex papers depending on
+model reasoning depth, critique agent rewrites, and proof-verification chains
+for math-heavy sections. The 15% buffer is a first approximation, not a ceiling.
+Make sure your OpenRouter per-key spend limit has headroom above the estimate.
 
 The default spending cap is **$10 per review** (`max_cost_usd` in config). Use `--yes` to skip the
 confirmation prompt. Use `--no-qa` to skip the post-extraction quality check (vision LLM).
