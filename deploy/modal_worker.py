@@ -147,7 +147,9 @@ class ReviewRequest(BaseModel):
 @app.function(
     image=image,
     timeout=7200,
-    memory=2048,
+    # 4 GB: large PDFs + Docling's torch/RapidOCR stack can blow past 2 GB when
+    # the OpenRouter OCR path fails and we fall through to offline extraction.
+    memory=4096,
     max_containers=20,
     secrets=[
         modal.Secret.from_name("coarse-supabase"),
@@ -227,6 +229,16 @@ def do_review(req_dict: dict):
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", job_id).execute()
 
+        # Delete the PDF from Supabase Storage on success only. Failed reviews
+        # keep their PDF so Modal's infrastructure-level retries (or a manual
+        # resubmit of the same job_id) can find it. The cleanup_papers cron
+        # (.github/workflows/cleanup_papers.yml) sweeps any PDF older than 24h,
+        # which is well above the 2-hour Modal review timeout.
+        try:
+            db.storage.from_("papers").remove([pdf_storage_path])
+        except Exception:
+            pass  # Non-critical; cleanup cron will sweep it
+
         # Send completion email
         if email:
             _send_email(
@@ -262,15 +274,12 @@ def do_review(req_dict: dict):
         if original_key is not None:
             os.environ["OPENROUTER_API_KEY"] = original_key
 
-        # Clean up temp file
+        # Clean up temp file on local disk (always — no retry needs this).
+        # NOTE: we intentionally do NOT delete the PDF from Supabase Storage
+        # here. On the success path it's deleted above; on failure it stays
+        # so the cleanup cron can sweep it at 24h and Modal can retry.
         if os.path.exists(pdf_path):
             os.unlink(pdf_path)
-
-        # Delete PDF from storage (user's paper, no reason to retain)
-        try:
-            db.storage.from_("papers").remove([pdf_storage_path])
-        except Exception:
-            pass  # Non-critical; don't fail the review
 
 
 @app.function(

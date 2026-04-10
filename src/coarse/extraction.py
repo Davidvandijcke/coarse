@@ -114,11 +114,38 @@ _MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 # Retry config for transient OpenRouter failures. Only applied to idempotent
 # POSTs; network errors and these specific HTTP statuses are retried.
 _OCR_RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
-_OCR_MAX_RETRIES = 3  # total attempts = 1 + _OCR_MAX_RETRIES
+_OCR_MAX_RETRIES = 5  # total attempts = 1 + _OCR_MAX_RETRIES
 _OCR_BACKOFF_BASE = 2.0  # seconds; actual wait = base ** attempt
+# With base=2 and max_retries=5, backoff sequence is 1s + 2s + 4s + 8s + 16s = 31s total.
 
 # Truncate diagnostic log output so a runaway response body doesn't flood logs.
 _OCR_LOG_TRUNCATE = 500
+
+
+def _body_retry_code(resp) -> int | None:
+    """Return a retryable error code if the response body wraps one, else None.
+
+    OpenRouter's plugin layer (including the Mistral OCR file-parser) sometimes
+    returns HTTP 200 with an error body like
+    ``{"error": {"message": "Timed out parsing tmp.pdf", "code": 504}}``
+    when the upstream provider hiccups. Without checking the body, the transport-
+    level retry loop would see HTTP 200, return the response as "successful",
+    and then the parser would raise ExtractionError and the review would fall
+    through to Docling. We want to retry these just like a raw HTTP 504.
+    """
+    try:
+        data = resp.json()
+    except (ValueError, AttributeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    err = data.get("error")
+    if not isinstance(err, dict):
+        return None
+    code = err.get("code")
+    if isinstance(code, int) and code in _OCR_RETRY_STATUSES:
+        return code
+    return None
 
 
 def _post_openrouter_ocr(
@@ -165,6 +192,20 @@ def _post_openrouter_ocr(
             logger.warning(
                 "OpenRouter OCR returned %d (attempt %d/%d), retrying in %.1fs",
                 resp.status_code, attempt + 1, _OCR_MAX_RETRIES + 1, wait,
+            )
+            time.sleep(wait)
+            continue
+
+        # HTTP 200 with a retryable error body (e.g. {"error": {"code": 504}}).
+        # OpenRouter's plugin layer uses this shape when the upstream provider
+        # (Mistral OCR) times out or hiccups. Treat it the same as a raw HTTP
+        # status in _OCR_RETRY_STATUSES.
+        body_code = _body_retry_code(resp)
+        if body_code is not None and attempt < _OCR_MAX_RETRIES:
+            wait = _OCR_BACKOFF_BASE ** attempt
+            logger.warning(
+                "OpenRouter OCR returned 200 with body error code %d (attempt %d/%d), retrying in %.1fs",
+                body_code, attempt + 1, _OCR_MAX_RETRIES + 1, wait,
             )
             time.sleep(wait)
             continue

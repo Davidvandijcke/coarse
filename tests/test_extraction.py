@@ -335,6 +335,81 @@ def test_openrouter_ocr_retries_on_503(
     assert "# Test Paper" in result.full_markdown
 
 
+def test_openrouter_ocr_retries_on_200_with_body_error_504(
+    minimal_pdf: Path, mock_ocr_pages,
+) -> None:
+    """The real production failure mode: HTTP 200 with {error: {code: 504,
+    message: "Timed out parsing tmp.pdf"}}. Should be retried just like raw 504."""
+    success = _mock_ocr_response(mock_ocr_pages)
+    timeout_body = _mock_error_response(200, {
+        "error": {"message": "Timed out parsing tmp.pdf", "code": 504},
+    })
+    # First call returns the 200-with-504 body, second call succeeds
+    with patch("requests.post", side_effect=[timeout_body, success]):
+        with patch("time.sleep"):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                result = extract_text(minimal_pdf, use_cache=False)
+    assert "# Test Paper" in result.full_markdown
+
+
+def test_openrouter_ocr_retries_on_200_with_body_error_502(
+    minimal_pdf: Path, mock_ocr_pages,
+) -> None:
+    """200 with {error: {code: 502}} is also a transient upstream error."""
+    success = _mock_ocr_response(mock_ocr_pages)
+    bad_gateway = _mock_error_response(200, {
+        "error": {"message": "Upstream bad gateway", "code": 502},
+    })
+    with patch("requests.post", side_effect=[bad_gateway, success]):
+        with patch("time.sleep"):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                result = extract_text(minimal_pdf, use_cache=False)
+    assert "# Test Paper" in result.full_markdown
+
+
+def test_openrouter_ocr_does_not_retry_on_200_with_body_error_402(
+    minimal_pdf: Path,
+) -> None:
+    """Non-retryable body codes (402 spend limit, 401 auth) should fail fast —
+    no point wasting retries on a billing problem."""
+    spend_limit = _mock_error_response(200, {
+        "error": {"message": "Insufficient credits", "code": 402},
+    })
+    post_mock = MagicMock(return_value=spend_limit)
+    with patch("requests.post", post_mock):
+        with patch("time.sleep"):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                with patch.dict(
+                    "sys.modules",
+                    {"docling": None, "docling.document_converter": None},
+                ):
+                    with pytest.raises(ExtractionError):
+                        extract_text(minimal_pdf, use_cache=False)
+    # Exactly one call — no retry on 402
+    assert post_mock.call_count == 1
+
+
+def test_openrouter_ocr_retries_on_200_body_504_then_gives_up(
+    minimal_pdf: Path,
+) -> None:
+    """Persistent 200-with-504-body should exhaust retries and raise."""
+    timeout_body = _mock_error_response(200, {
+        "error": {"message": "Timed out parsing", "code": 504},
+    })
+    post_mock = MagicMock(return_value=timeout_body)
+    with patch("requests.post", post_mock):
+        with patch("time.sleep"):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                with patch.dict(
+                    "sys.modules",
+                    {"docling": None, "docling.document_converter": None},
+                ):
+                    with pytest.raises(ExtractionError, match="Timed out parsing"):
+                        extract_text(minimal_pdf, use_cache=False)
+    # _OCR_MAX_RETRIES + 1 = 6 total attempts
+    assert post_mock.call_count == 6
+
+
 def test_openrouter_ocr_does_not_retry_on_401(minimal_pdf: Path) -> None:
     """4xx errors (except 408/429) are not transient — don't waste retries on them."""
     bad = _mock_error_response(401, {"error": "Invalid API key"})
