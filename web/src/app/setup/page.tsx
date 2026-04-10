@@ -513,8 +513,8 @@ export default function SetupPage() {
               </a>
               , click the{" "}
               <strong style={{ color: "var(--chalk-bright)" }}>&#8942;</strong>
-              {" "}menu next to your new key and choose &ldquo;Edit&rdquo;. Set a
-              credit limit of{" "}
+              {" "}menu next to your new key and choose &ldquo;Edit&rdquo;.
+              Again, we recommend setting a credit limit of{" "}
               <strong style={{ color: "var(--chalk-bright)" }}>at least $10</strong>
               . The key stops working once the limit is hit — zero risk of
               surprise charges — but set it high enough that a single review
