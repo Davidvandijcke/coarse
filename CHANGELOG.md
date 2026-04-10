@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **`llm.py` no longer hardcodes model IDs** — the `_CUSTOM_MODEL_INFO` dict keyed on literal `"qwen/qwen3.5-plus-02-15"` and `"moonshotai/kimi-k2.5"` now imports `DEFAULT_MODEL` and the new `KIMI_K2_5_MODEL` constant from `coarse.models`, restoring the "model IDs live in `models.py` only" invariant from CLAUDE.md. The security scanner's `hardcoded-model-id` check was also extended to cover `moonshotai`, `kimi`, `groq`, `together`, `xai`, and `cohere` provider prefixes so future drift gets caught.
+
 ### Added
 
 - **Security scanner + `/security-review` command** — new zero-dep `scripts/security_scanner.py` (stdlib only) scans the repo for known leaked secret fingerprints (stored as SHA-256 hashes, never plaintext), provider-key patterns (OpenAI / Anthropic / Google / OpenRouter / Perplexity / Supabase / Stripe / GitHub / AWS / private keys / URL-embedded creds), insecure `.env` permissions, and model-ID string literals outside `src/coarse/models.py`. Skips docstrings via AST and supports inline `# security: ignore` suppression. Backed by 14 tests in `tests/test_security.py` (synthetic fingerprint via monkeypatch — no real key material in the test fixtures). Runs in CI (`.github/workflows/security.yml --strict`), from `make security`, and from the `/security-review` slash command which adds 3 parallel in-session agents for API-key lifecycle, HTTP surface, and prompt-injection audits.
