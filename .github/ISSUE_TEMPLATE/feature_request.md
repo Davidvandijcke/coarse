@@ -1,7 +1,7 @@
 ---
 name: Feature Request
 about: Suggest an improvement to coarse
-labels: enhancement
+labels: ["enhancement", "needs triage"]
 ---
 
 ## Problem / motivation
