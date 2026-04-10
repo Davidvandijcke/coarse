@@ -1,0 +1,90 @@
+name: Enforce review retention (90 days)
+
+# The public privacy policy at https://coarse.vercel.app/privacy states:
+#   "Reviews: stored for 90 days, then deleted"
+# This cron enforces that policy by deleting rows from `reviews` whose
+# created_at is older than 90 days. The `review_emails` table has an
+# on-delete-cascade foreign key to `reviews`, so it cleans up automatically.
+#
+# Runs daily at 06:30 UTC, 15 minutes after the papers-bucket cleanup cron.
+
+on:
+  schedule:
+    - cron: '30 6 * * *'  # 06:30 UTC daily
+  workflow_dispatch: {}
+
+permissions: read-all
+
+jobs:
+  enforce_retention:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete reviews older than 90 days
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          python3 <<'PY'
+          import os
+          import sys
+          from datetime import datetime, timedelta, timezone
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+
+          URL = os.environ["SUPABASE_URL"].rstrip("/")
+          KEY = os.environ["SUPABASE_SERVICE_KEY"]
+          BASE_HEADERS = {
+              "apikey": KEY,
+              "Authorization": f"Bearer {KEY}",
+          }
+
+          # 90 days matches the public privacy policy. Uses created_at rather
+          # than completed_at so that failed/queued/running rows are also
+          # cleaned up — a row that's been sitting for 90 days is stale
+          # regardless of status.
+          cutoff = (
+              datetime.now(timezone.utc) - timedelta(days=90)
+          ).isoformat().replace("+00:00", "Z")
+
+          # Count first (HEAD + Prefer: count=exact). The count is returned
+          # in the content-range header as "*/N".
+          count_req = Request(
+              f"{URL}/rest/v1/reviews?select=id&created_at=lt.{cutoff}",
+              headers={**BASE_HEADERS, "Prefer": "count=exact"},
+              method="HEAD",
+          )
+          try:
+              with urlopen(count_req, timeout=30) as resp:
+                  content_range = resp.headers.get("content-range", "")
+          except HTTPError as exc:
+              print(f"ERROR counting: {exc.code} {exc.read().decode()[:300]}", file=sys.stderr)
+              sys.exit(1)
+
+          try:
+              total = int(content_range.rsplit("/", 1)[-1])
+          except (ValueError, IndexError):
+              print(f"ERROR parsing content-range: {content_range!r}", file=sys.stderr)
+              sys.exit(1)
+
+          print(f"Cutoff:                {cutoff}")
+          print(f"Reviews to delete:     {total}")
+
+          if total == 0:
+              print("Nothing to delete.")
+              sys.exit(0)
+
+          # DELETE. The review_emails foreign key cascades, so this also
+          # removes the associated email records in the same transaction.
+          delete_req = Request(
+              f"{URL}/rest/v1/reviews?created_at=lt.{cutoff}",
+              headers=BASE_HEADERS,
+              method="DELETE",
+          )
+          try:
+              with urlopen(delete_req, timeout=60) as resp:
+                  print(f"Deleted {total} reviews older than 90 days (HTTP {resp.status})")
+          except HTTPError as exc:
+              print(f"ERROR deleting: {exc.code} {exc.read().decode()[:300]}", file=sys.stderr)
+              sys.exit(1)
+          PY
