@@ -1,4 +1,4 @@
-.PHONY: test test-all lint format check
+.PHONY: test test-all lint format check security install-hooks
 
 test:
 	uv run pytest tests/ -v
@@ -12,4 +12,10 @@ lint:
 format:
 	uv run ruff format src/ tests/
 
-check: lint test
+security:
+	python3 scripts/security_scanner.py
+
+check: lint security test
+
+install-hooks:
+	uv run --with pre-commit pre-commit install
