@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **Web: Log in with OpenRouter** — the submission form now has a "Log in with OpenRouter" button that runs OpenRouter's browser-only OAuth PKCE flow and fills in the API key automatically. The returned key is stored in the browser's localStorage so users stay logged in across visits; a "Log out" control clears it. The manual paste field is kept as a fallback for users who prefer to use a scoped key. The server contract is unchanged — the key is still only sent in the `/api/submit` body when a review is submitted and never persisted server-side. Closes #12.
+
 ### Changed
 
 - **Mistral OCR is now OpenRouter-only** — removed the `_extract_mistral_direct` backend that tried to hit Mistral's API directly with a `MISTRAL_API_KEY`. All PDF OCR now routes through OpenRouter's `file-parser` plugin, so users only ever need an `OPENROUTER_API_KEY`. The OCR → Docling fallback chain is unchanged for offline use.
