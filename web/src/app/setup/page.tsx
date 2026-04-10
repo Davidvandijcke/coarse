@@ -356,7 +356,7 @@ export default function SetupPage() {
                 Settings → Credits
               </a>
               . Add at least $10 — enough for ~10 reviews with an open-source
-              model or 3–5 reviews with Claude. Unused credits don&apos;t
+              model or 2 reviews with Claude. Unused credits don&apos;t
               expire.
             </p>
 
