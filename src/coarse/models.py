@@ -10,6 +10,9 @@ Last verified: 2026-03-04
 # Primary review model (routed via OpenRouter for non-direct providers)
 DEFAULT_MODEL = "qwen/qwen3.5-plus-02-15"
 
+# Secondary reasoning model; carries its own litellm cost entry.
+KIMI_K2_5_MODEL = "moonshotai/kimi-k2.5"
+
 # Vision model for post-extraction QA (multimodal, spot-checks Docling output)
 # litellm uses 'gemini/' prefix for Google AI Studio (not 'google/')
 VISION_MODEL = "gemini/gemini-3-flash-preview"
@@ -46,4 +49,3 @@ JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini")
 # These models struggle with both tool-calling and raw JSON but handle
 # markdown-wrapped JSON well.  Also need temperature ≤ 0.1 and higher max_tokens.
 MARKDOWN_JSON_PREFIXES = ("moonshotai", "kimi")
-

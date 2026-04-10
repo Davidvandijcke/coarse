@@ -46,28 +46,68 @@ ALLOWED_SECRET_PATHS = {
 
 # Directories never walked.
 SKIP_DIRS = {
-    ".git", ".venv", "venv", "env", "node_modules", "dist", "build",
-    "__pycache__", ".ruff_cache", ".pytest_cache", ".mypy_cache",
-    ".next", ".vercel", ".modal", ".coarse", "reviews", "data",
+    ".git",
+    ".venv",
+    "venv",
+    "env",
+    "node_modules",
+    "dist",
+    "build",
+    "__pycache__",
+    ".ruff_cache",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".next",
+    ".vercel",
+    ".modal",
+    ".coarse",
+    "reviews",
+    "data",
     ".extraction_cache",
 }
 
 # Extensions worth opening.
 TEXT_EXTS = {
-    ".py", ".pyi", ".sh", ".bash", ".zsh",
-    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-    ".json", ".jsonc", ".yaml", ".yml", ".toml",
-    ".md", ".mdx", ".txt", ".rst",
-    ".html", ".css", ".scss",
-    ".ini", ".cfg", ".conf",
+    ".py",
+    ".pyi",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".json",
+    ".jsonc",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".md",
+    ".mdx",
+    ".txt",
+    ".rst",
+    ".html",
+    ".css",
+    ".scss",
+    ".ini",
+    ".cfg",
+    ".conf",
 }
 
 # Extensionless or dotfile names to also scan.
 TEXT_BASENAMES = {
-    "Makefile", "Dockerfile", ".gitignore",
-    ".env", ".env.example", ".env.local",
-    ".env.production", ".env.production.local",
-    ".env.development", ".env.development.local",
+    "Makefile",
+    "Dockerfile",
+    ".gitignore",
+    ".env",
+    ".env.example",
+    ".env.local",
+    ".env.production",
+    ".env.production.local",
+    ".env.development",
+    ".env.development.local",
 }
 
 MAX_FILE_SIZE = 500_000
@@ -96,10 +136,8 @@ IGNORE_MARKER = "security: ignore"
 # then add the hash below. NEVER paste the plaintext key into this file.
 LEAKED_FINGERPRINT_HASHES: dict[str, str] = {
     # Scrubbed from .claude/settings.local.json on 2026-04-10.
-    "42bd174bc504f8f76c9bad6b330b69f4c2a714fc16ece57b25777d0801ba97db":
-        "Supabase service-role key",
-    "b656462688773c2f4a33370e556088dcb3fa4dcd97b5ef2274af8e2239e2526c":
-        "OpenRouter API key",
+    "42bd174bc504f8f76c9bad6b330b69f4c2a714fc16ece57b25777d0801ba97db": "Supabase service-role key",
+    "b656462688773c2f4a33370e556088dcb3fa4dcd97b5ef2274af8e2239e2526c": "OpenRouter API key",
 }
 
 # Tokenizer used to extract candidate secret strings for hash matching.
@@ -120,63 +158,69 @@ def _fingerprint_hits(line: str) -> list[str]:
             hits.append(label)
     return hits
 
+
 # Generic provider key patterns. Matches outside ALLOWED_SECRET_PATHS are HIGH
 # unless a placeholder marker is present on the same line.
 PROVIDER_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
-    ("OpenAI key",
-     re.compile(r"sk-(?:proj-)?[A-Za-z0-9_-]{32,}"),
-     "OPENAI_API_KEY"),
-    ("OpenRouter key",
-     re.compile(r"sk-or-v1-[a-f0-9]{40,}"),
-     "OPENROUTER_API_KEY"),
-    ("Anthropic key",
-     re.compile(r"sk-ant-[A-Za-z0-9_-]{40,}"),
-     "ANTHROPIC_API_KEY"),
-    ("Google AI key",
-     re.compile(r"AIza[A-Za-z0-9_-]{35}"),
-     "GEMINI_API_KEY"),
-    ("Perplexity key",
-     re.compile(r"pplx-[A-Za-z0-9]{32,}"),
-     "PERPLEXITY_API_KEY"),
-    ("GitHub token",
-     re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"),
-     "GITHUB_TOKEN"),
-    ("AWS access key",
-     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-     "AWS_ACCESS_KEY_ID"),
-    ("Supabase secret",
-     re.compile(r"\bsb_secret_[A-Za-z0-9_]{20,}"),
-     "SUPABASE_SERVICE_ROLE_KEY"),
-    ("Stripe key",
-     re.compile(r"\bsk_(?:test|live)_[A-Za-z0-9]{24,}"),
-     "STRIPE_SECRET_KEY"),
-    ("Private key block",
-     re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"),
-     "PRIVATE_KEY"),
-    ("URL-embedded credentials",
-     re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s:/@]+:[^\s@/]{4,}@"),
-     "URL_CREDS"),
+    ("OpenAI key", re.compile(r"sk-(?:proj-)?[A-Za-z0-9_-]{32,}"), "OPENAI_API_KEY"),
+    ("OpenRouter key", re.compile(r"sk-or-v1-[a-f0-9]{40,}"), "OPENROUTER_API_KEY"),
+    ("Anthropic key", re.compile(r"sk-ant-[A-Za-z0-9_-]{40,}"), "ANTHROPIC_API_KEY"),
+    ("Google AI key", re.compile(r"AIza[A-Za-z0-9_-]{35}"), "GEMINI_API_KEY"),
+    ("Perplexity key", re.compile(r"pplx-[A-Za-z0-9]{32,}"), "PERPLEXITY_API_KEY"),
+    ("GitHub token", re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"), "GITHUB_TOKEN"),
+    ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "AWS_ACCESS_KEY_ID"),
+    ("Supabase secret", re.compile(r"\bsb_secret_[A-Za-z0-9_]{20,}"), "SUPABASE_SERVICE_ROLE_KEY"),
+    ("Stripe key", re.compile(r"\bsk_(?:test|live)_[A-Za-z0-9]{24,}"), "STRIPE_SECRET_KEY"),
+    (
+        "Private key block",
+        re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"),
+        "PRIVATE_KEY",
+    ),
+    (
+        "URL-embedded credentials",
+        re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s:/@]+:[^\s@/]{4,}@"),
+        "URL_CREDS",
+    ),
 ]
 
 # Lowercased substrings that downgrade a provider-key match to a placeholder.
 PLACEHOLDER_MARKERS = (
-    "xxxxxxxx", "your_key", "your-key", "your_api_key", "your-api-key",
-    "example", "placeholder", "changeme", "replace_me", "<your", "dummy",
-    "sk-or-v1-aaaa", "sk-or-v1-0000", "sk-or-v1-xxxx", "sk-ant-xxxx",
-    "sk-proj-xxxx", "aizax", "pplx-xxxx", "fake", "test_key", "test-key",
+    "xxxxxxxx",
+    "your_key",
+    "your-key",
+    "your_api_key",
+    "your-api-key",
+    "example",
+    "placeholder",
+    "changeme",
+    "replace_me",
+    "<your",
+    "dummy",
+    "sk-or-v1-aaaa",
+    "sk-or-v1-0000",
+    "sk-or-v1-xxxx",
+    "sk-ant-xxxx",
+    "sk-proj-xxxx",
+    "aizax",
+    "pplx-xxxx",
+    "fake",
+    "test_key",
+    "test-key",
 )
 
 # Any "<provider>/<id>" string literal in src/coarse/ outside models.py is a
 # violation of the "model IDs live in models.py only" rule from CLAUDE.md.
 # Excludes `<provider>/auto` which is a routing hint used by resolve_api_key.
 MODEL_ID_PATTERN = re.compile(
-    r'["\'](?:openai|anthropic|google|gemini|perplexity|mistral|qwen|openrouter|deepseek)/'
+    r'["\'](?:openai|anthropic|google|gemini|perplexity|mistral|qwen|openrouter|'
+    r"deepseek|moonshotai|kimi|groq|together|xai|cohere)/"
     r'(?!auto["\'])[A-Za-z0-9._-]+["\']'
 )
 
 # ---------------------------------------------------------------------------
 # Finding
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Finding:
@@ -200,6 +244,7 @@ SEVERITY_RANK = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 # ---------------------------------------------------------------------------
 # Walk helpers
 # ---------------------------------------------------------------------------
+
 
 def _should_scan(path: Path) -> bool:
     if path.name in TEXT_BASENAMES:
@@ -253,6 +298,7 @@ def _is_allowed_secret_path(rel: Path) -> bool:
 # Scanners
 # ---------------------------------------------------------------------------
 
+
 def scan_secrets(root: Path) -> list[Finding]:
     findings: list[Finding] = []
     for abs_path, rel in _iter_files(root):
@@ -265,14 +311,16 @@ def scan_secrets(root: Path) -> list[Finding]:
                 continue
             if not allowed:
                 for label in _fingerprint_hits(line):
-                    findings.append(Finding(
-                        severity="CRITICAL",
-                        kind="leaked-fingerprint",
-                        path=rel_s,
-                        line=i,
-                        message=f"Known leaked {label} present outside allowed env files",
-                        excerpt=_excerpt(line),
-                    ))
+                    findings.append(
+                        Finding(
+                            severity="CRITICAL",
+                            kind="leaked-fingerprint",
+                            path=rel_s,
+                            line=i,
+                            message=f"Known leaked {label} present outside allowed env files",
+                            excerpt=_excerpt(line),
+                        )
+                    )
             if allowed:
                 continue
             lower = line.lower()
@@ -281,14 +329,16 @@ def scan_secrets(root: Path) -> list[Finding]:
             for label, rx, envname in PROVIDER_PATTERNS:
                 if not rx.search(line):
                     continue
-                findings.append(Finding(
-                    severity="HIGH",
-                    kind="secret-pattern",
-                    path=rel_s,
-                    line=i,
-                    message=f"{label} literal — move to {envname} env var",
-                    excerpt=_excerpt(line),
-                ))
+                findings.append(
+                    Finding(
+                        severity="HIGH",
+                        kind="secret-pattern",
+                        path=rel_s,
+                        line=i,
+                        message=f"{label} literal — move to {envname} env var",
+                        excerpt=_excerpt(line),
+                    )
+                )
                 break
     return findings
 
@@ -301,13 +351,15 @@ def scan_env_permissions(root: Path) -> list[Finding]:
             continue
         mode = p.stat().st_mode & 0o777
         if mode & 0o077:
-            findings.append(Finding(
-                severity="HIGH",
-                kind="env-perm",
-                path=rel_s,
-                line=0,
-                message=f"mode {oct(mode)} is group/other-readable; run: chmod 600 {rel_s}",
-            ))
+            findings.append(
+                Finding(
+                    severity="HIGH",
+                    kind="env-perm",
+                    path=rel_s,
+                    line=0,
+                    message=f"mode {oct(mode)} is group/other-readable; run: chmod 600 {rel_s}",
+                )
+            )
     return findings
 
 
@@ -319,23 +371,28 @@ def _docstring_line_numbers(source: str) -> set[int]:
     docstrings. Falls back to an empty set if the file cannot be parsed.
     """
     import ast
+
     try:
         tree = ast.parse(source)
     except SyntaxError:
         return set()
     inside: set[int] = set()
+
     def _maybe_add(node: ast.AST) -> None:
         body = getattr(node, "body", None)
         if not body:
             return
         first = body[0]
-        if (isinstance(first, ast.Expr)
-                and isinstance(first.value, ast.Constant)
-                and isinstance(first.value.value, str)):
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
             start = first.lineno
             end = getattr(first, "end_lineno", start) or start
             for ln in range(start, end + 1):
                 inside.add(ln)
+
     _maybe_add(tree)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -363,14 +420,16 @@ def scan_model_id_literals(root: Path) -> list[Finding]:
             if IGNORE_MARKER in line:
                 continue
             if MODEL_ID_PATTERN.search(line):
-                findings.append(Finding(
-                    severity="MEDIUM",
-                    kind="hardcoded-model-id",
-                    path=rel.as_posix(),
-                    line=i,
-                    message="Model ID literal outside src/coarse/models.py",
-                    excerpt=_excerpt(line),
-                ))
+                findings.append(
+                    Finding(
+                        severity="MEDIUM",
+                        kind="hardcoded-model-id",
+                        path=rel.as_posix(),
+                        line=i,
+                        message="Model ID literal outside src/coarse/models.py",
+                        excerpt=_excerpt(line),
+                    )
+                )
     return findings
 
 
@@ -384,27 +443,33 @@ def scan_env_example(root: Path) -> list[Finding]:
         if IGNORE_MARKER in line:
             continue
         for label in _fingerprint_hits(line):
-            findings.append(Finding(
-                severity="CRITICAL",
-                kind="env-example-leaked",
-                path=rel,
-                line=i,
-                message=f"Real {label} in .env.example — replace with placeholder",
-                excerpt=_excerpt(line),
-            ))
+            findings.append(
+                Finding(
+                    severity="CRITICAL",
+                    kind="env-example-leaked",
+                    path=rel,
+                    line=i,
+                    message=f"Real {label} in .env.example — replace with placeholder",
+                    excerpt=_excerpt(line),
+                )
+            )
         lower = line.lower()
         if any(ph in lower for ph in PLACEHOLDER_MARKERS):
             continue
         for label, rx, _ in PROVIDER_PATTERNS:
             if rx.search(line):
-                findings.append(Finding(
-                    severity="HIGH",
-                    kind="env-example-real-secret",
-                    path=rel,
-                    line=i,
-                    message=f"{label} in .env.example looks real (no placeholder marker on line)",
-                    excerpt=_excerpt(line),
-                ))
+                findings.append(
+                    Finding(
+                        severity="HIGH",
+                        kind="env-example-real-secret",
+                        path=rel,
+                        line=i,
+                        message=(
+                            f"{label} in .env.example looks real (no placeholder marker on line)"
+                        ),
+                        excerpt=_excerpt(line),
+                    )
+                )
                 break
     return findings
 
@@ -412,6 +477,7 @@ def scan_env_example(root: Path) -> list[Finding]:
 # ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
+
 
 def print_human(findings: list[Finding]) -> None:
     if not findings:
@@ -421,8 +487,10 @@ def print_human(findings: list[Finding]) -> None:
     for f in findings:
         print(f.fmt())
         print()
-    counts = {sev: sum(1 for f in findings if f.severity == sev)
-              for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW")}
+    counts = {
+        sev: sum(1 for f in findings if f.severity == sev)
+        for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+    }
     summary = " ".join(f"{k}={v}" for k, v in counts.items())
     print(f"security: {len(findings)} finding(s)  [{summary}]")
 
@@ -444,17 +512,25 @@ def print_json(findings: list[Finding]) -> None:
 
 ALL_SCOPES = ("secrets", "perms", "model-ids", "env-example")
 
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Zero-dep security scanner for coarse",
     )
-    ap.add_argument("--root", type=Path, default=REPO_ROOT,
-                    help="Repo root to scan (default: auto-detect).")
+    ap.add_argument(
+        "--root", type=Path, default=REPO_ROOT, help="Repo root to scan (default: auto-detect)."
+    )
     ap.add_argument("--json", action="store_true", help="Emit JSON for CI.")
-    ap.add_argument("--strict", action="store_true",
-                    help="Exit 2 on HIGH findings (default: only CRITICAL blocks).")
-    ap.add_argument("--scope", default=",".join(ALL_SCOPES),
-                    help=f"Comma-separated scopes: {','.join(ALL_SCOPES)}")
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit 2 on HIGH findings (default: only CRITICAL blocks).",
+    )
+    ap.add_argument(
+        "--scope",
+        default=",".join(ALL_SCOPES),
+        help=f"Comma-separated scopes: {','.join(ALL_SCOPES)}",
+    )
     args = ap.parse_args(argv)
 
     scopes = {s.strip() for s in args.scope.split(",") if s.strip()}
