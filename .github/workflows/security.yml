@@ -1,0 +1,28 @@
+name: security
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Static secret + model-ID scan
+        run: python3 scripts/security_scanner.py --strict
+
+      - name: Dependency vulnerability audit (advisory)
+        continue-on-error: true
+        run: |
+          pip install --quiet pip-audit
+          pip-audit --strict --desc 2>&1 | tail -80
