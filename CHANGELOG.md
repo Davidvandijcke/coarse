@@ -6,12 +6,17 @@
 
 - **Mistral OCR is now OpenRouter-only** — removed the `_extract_mistral_direct` backend that tried to hit Mistral's API directly with a `MISTRAL_API_KEY`. All PDF OCR now routes through OpenRouter's `file-parser` plugin, so users only ever need an `OPENROUTER_API_KEY`. The OCR → Docling fallback chain is unchanged for offline use.
 - **Raised Modal concurrency from 10 → 20 containers**, removed the web-side hard rejection gate so bursts beyond the container limit are queued by Modal instead of erroring out.
+- **OpenRouter OCR retry budget raised from 3 to 5 attempts.** Total exponential backoff window is now 1s + 2s + 4s + 8s + 16s = 31s, giving more headroom for slow recovery on the file-parser plugin.
+- **Modal function memory raised from 2 GB to 4 GB.** Large PDFs (8+ MB) plus the Docling torch/RapidOCR stack can exceed 2 GB when OCR falls through to offline mode. 4 GB keeps the offline fallback usable for big documents.
+- **PDFs are no longer deleted from Supabase Storage on the `finally` path** of the Modal worker. They're only deleted on the success path now; failed reviews keep their PDF so Modal's infrastructure retries (or a manual resubmit of the same job_id) can actually find it. Stale PDFs from failed runs are swept by the daily cleanup cron at 24h.
 
 ### Fixed
 
 - **Docling fallback works in production** — added `libgl1` + `libglib2.0-0` to the Modal image. Without them, Docling crashed on first import with `libGL.so.1: cannot open shared object file`, meaning the "offline fallback" wasn't actually a fallback when the OpenRouter OCR path failed.
 - **OpenRouter OCR error handling** — when OpenRouter returns HTTP 200 with an error body (rate limit, plugin unavailable, content policy), extraction no longer crashes with `KeyError: 'choices'`. Instead it raises a clean `ExtractionError` with the provider's error message, which the orchestrator can then classify into a user-facing message. Also handles missing `choices`, malformed annotations, empty content, and non-dict JSON responses.
-- **OpenRouter OCR retry logic** — added bounded retries (3 attempts, exponential backoff 1s/2s/4s) on connection errors, read timeouts, and transient HTTP statuses (408, 429, 500, 502, 503, 504). Non-transient 4xx errors (401 bad key, 402 spend limit) fail fast without wasting retries. Diagnostic logging on every retry and every unexpected response shape.
+- **OpenRouter OCR retry logic** — added bounded retries (3 → 5 attempts, exponential backoff 1s/2s/4s/8s/16s) on connection errors, read timeouts, and transient HTTP statuses (408, 429, 500, 502, 503, 504). Non-transient 4xx errors (401 bad key, 402 spend limit) fail fast without wasting retries. Diagnostic logging on every retry and every unexpected response shape.
+- **Retry OpenRouter OCR when the error is wrapped in a 200 response body.** The file-parser plugin occasionally returns `HTTP 200` with `{"error": {"code": 504, "message": "Timed out parsing ..."}}` instead of a raw `504`. The previous retry logic only matched on transport status codes, so it treated these as immediate failures. Now retries whenever the body's `error.code` is in the same retryable set (408, 429, 500, 502, 503, 504).
+- **Modal-level retries work again.** Previously, if Modal infrastructure retried a review (after an OOM or container crash), the retry would 404 on the PDF because the `finally` block had already deleted it from Supabase Storage. See the PDF storage change above.
 
 ## v1.1.0 — 2026-04-10
 
