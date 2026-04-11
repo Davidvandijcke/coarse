@@ -136,6 +136,32 @@ def _classify_api_error(exc: BaseException) -> str | None:
     return None
 
 
+def _is_retryable_failure(exc: BaseException) -> bool:
+    """True when keeping the source PDF can help a near-term retry succeed."""
+    if isinstance(exc, SystemExit):
+        return True
+
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    resp = getattr(exc, "response", None)
+    if resp is not None and not isinstance(status, int):
+        status = getattr(resp, "status_code", None)
+
+    if isinstance(status, int):
+        return status == 429 or status >= 500
+
+    msg = str(exc).lower()
+    return any(kw in msg for kw in (
+        "timeout",
+        "timed out",
+        "temporar",
+        "rate limit",
+        "too many requests",
+        "service unavailable",
+        "bad gateway",
+        "gateway timeout",
+    ))
+
+
 class ReviewRequest(BaseModel):
     job_id: str
     pdf_storage_path: str
@@ -266,6 +292,15 @@ def do_review(req_dict: dict):
             "error_message": error_msg,
             "duration_seconds": duration,
         }).eq("id", job_id).execute()
+
+        # Prevent unbounded storage growth from repeated non-retryable failures
+        # (e.g., invalid/exhausted API keys). Keep PDFs only when a retry is
+        # likely to succeed soon (timeouts, 5xx, rate limits).
+        if not _is_retryable_failure(e):
+            try:
+                db.storage.from_("papers").remove([pdf_storage_path])
+            except Exception:
+                pass
         raise
     finally:
         # Restore original API key to prevent leaking user keys across container reuses.
