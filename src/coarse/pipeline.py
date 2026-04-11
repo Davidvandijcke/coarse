@@ -83,6 +83,39 @@ def _verify_with_fallback(
 
 _MIN_APPENDIX_CHARS = 500  # skip appendix sections shorter than this
 
+# Minimum text length for proof_verify to run on a math-flagged section.
+# proof_verify chains an adversarial re-derivation pass after the section
+# agent and costs one full-budget LLM call (~$0.30 on sonnet-4.6,
+# proportionally more on reasoning models). Running it on a section that's
+# just one inline equation in a footnote isn't worth that cost — there's
+# nothing to adversarially verify in 150 chars of text. This threshold is
+# set deliberately LOW so short lemmas with their proofs aren't missed
+# (typical lemma-with-short-proof paragraphs run 300-800 chars), and
+# sections that have ANY extracted formal claim (`section.claims` non-
+# empty) bypass the length check entirely — we always verify real formal
+# statements regardless of how short the section is.
+_MIN_PROOF_VERIFY_SECTION_CHARS = 500
+
+
+def _section_needs_proof_verify(section: SectionInfo) -> bool:
+    """Return True iff proof_verify should chain after the section agent.
+
+    Requires the LLM-set ``math_content`` flag AND one of:
+    - at least one extracted formal claim (Theorem/Lemma/etc), OR
+    - section text length >= ``_MIN_PROOF_VERIFY_SECTION_CHARS``.
+
+    The claims-non-empty bypass is important: a short formal lemma with
+    a one-line proof might have only 250 characters of text but still
+    deserves verification because the paper explicitly called it out
+    as a formal result. The length threshold filters the opposite case:
+    a discussion section that happened to have one inline equation.
+    """
+    if not section.math_content:
+        return False
+    if section.claims:
+        return True
+    return len(section.text) >= _MIN_PROOF_VERIFY_SECTION_CHARS
+
 
 def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]:
     """Renumber comments sequentially 1..N."""
@@ -133,7 +166,7 @@ def _review_section(
         abstract=abstract,
         document_form=document_form,
     )
-    if focus == "proof" and comments:
+    if focus == "proof" and comments and _section_needs_proof_verify(section):
         comments = verify_agent.run(
             section,
             paper_title,

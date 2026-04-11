@@ -9,6 +9,7 @@ from coarse.config import CoarseConfig
 from coarse.pipeline import (
     _renumber_comments,
     _review_section,
+    _section_needs_proof_verify,
     review_paper,
 )
 from coarse.types import (
@@ -445,10 +446,13 @@ def test_renumber_comments_empty():
 
 
 def test_review_section_chains_verify_for_proof():
-    """_review_section with focus='proof' calls both section agent and verify agent."""
+    """_review_section with focus='proof' + math_content + long text calls both agents."""
     section_agent = MagicMock()
     verify_agent = MagicMock()
-    section = _make_section(1)
+    # _make_section produces text="Content of section 1. " * 40 ≈ 800 chars,
+    # so it passes the proof_verify length threshold. Set math_content=True
+    # because the threshold now requires the LLM-detected flag too.
+    section = _make_section(1).model_copy(update={"math_content": True})
     first_pass = [_make_comment(1)]
     verified = [_make_comment(1), _make_comment(2)]
 
@@ -503,6 +507,102 @@ def test_review_section_skips_verify_for_non_proof():
     section_agent.run.assert_called_once()
     verify_agent.run.assert_not_called()
     assert result == comments
+
+
+# ---------------------------------------------------------------------------
+# _section_needs_proof_verify — threshold gates trivial math sections
+# ---------------------------------------------------------------------------
+
+
+def _math_section(text: str, claims: list[str] | None = None) -> SectionInfo:
+    return SectionInfo(
+        number=1,
+        title="Section 1",
+        text=text,
+        section_type=SectionType.METHODOLOGY,
+        math_content=True,
+        claims=claims or [],
+    )
+
+
+def test_section_needs_proof_verify_requires_math_content_flag():
+    """Without the LLM-set math_content flag, proof_verify never runs even
+    if the section has formal-looking structure — the flag IS the signal."""
+    section = SectionInfo(
+        number=1,
+        title="Section 1",
+        text="x" * 2000,
+        section_type=SectionType.METHODOLOGY,
+        math_content=False,
+    )
+    assert _section_needs_proof_verify(section) is False
+
+
+def test_section_needs_proof_verify_short_section_with_formal_claim():
+    """A short section that contains an extracted formal claim is verified
+    regardless of length. This covers the short-lemma-with-proof case —
+    a 250-char "Lemma 1: X. Proof: Y." paragraph still deserves adversarial
+    verification because the paper explicitly marked it as a formal result.
+    """
+    section = _math_section(
+        text="Lemma 1: Every P is Q. Proof: By induction on n.",
+        claims=["Lemma 1: Every P is Q"],
+    )
+    assert len(section.text) < 500
+    assert _section_needs_proof_verify(section) is True
+
+
+def test_section_needs_proof_verify_long_section_without_claims():
+    """A section with math_content=True but no extracted claims still
+    passes the gate as long as it's long enough to contain meaningful
+    math content (>=500 chars)."""
+    section = _math_section(text="x" * 600)
+    assert _section_needs_proof_verify(section) is True
+
+
+def test_section_needs_proof_verify_short_section_without_claims_skipped():
+    """A math-flagged section that's too short and has no extracted
+    formal claims is skipped. This is the case the threshold is meant to
+    filter: a discussion section with one inline equation in a footnote
+    isn't worth a full proof_verify call."""
+    section = _math_section(text="The value x = 42 is notable.", claims=[])
+    assert len(section.text) < 500
+    assert _section_needs_proof_verify(section) is False
+
+
+def test_review_section_skips_verify_when_threshold_fails():
+    """_review_section with focus='proof' but a short math-flagged section
+    that has no formal claims must NOT call verify_agent — the threshold
+    gate at _section_needs_proof_verify filters it out."""
+    section_agent = MagicMock()
+    verify_agent = MagicMock()
+    # Short section (~30 chars), math_content flagged, no claims → skip
+    section = SectionInfo(
+        number=1,
+        title="Section 1",
+        text="The value x = 42 is notable.",
+        section_type=SectionType.METHODOLOGY,
+        math_content=True,
+    )
+    first_pass = [_make_comment(1)]
+    section_agent.run.return_value = first_pass
+
+    result = _review_section(
+        section_agent,
+        verify_agent,
+        section,
+        "Paper",
+        overview=None,
+        calibration=None,
+        focus="proof",
+        literature_context="",
+        all_sections=[],
+        abstract="abstract",
+    )
+
+    section_agent.run.assert_called_once()
+    verify_agent.run.assert_not_called()
+    assert result == first_pass
 
 
 def test_appendix_filter_includes_long_appendix():
