@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.1.3 — 2026-04-11
+
+First release under the new `coarse-ink` PyPI name. `uvx coarse-ink review paper.pdf ...` now works end-to-end. The PyPI version history for `coarse-ink` skips 1.1.1 and 1.1.2 — 1.1.0 was published manually from an earlier branch while the rename was still in draft, and this release catches up to the in-repo version. Also ships new incident monitoring and structured error classification for backend observability.
+
 ### Fixed
 
 - **PyPI distribution renamed to `coarse-ink`** — the bare `coarse` name on PyPI was already taken by an unrelated, abandoned package (`coarse==0.0.1` by a different author), so `uvx coarse` / `pip install coarse` resolved to the wrong package and users hit `Package 'coarse' does not provide any executables` (#17). Installing is now `uvx coarse-ink review paper.pdf ...` or `pip install coarse-ink`. The Python import name (`import coarse`) and the `coarse` CLI command are unchanged — a `coarse-ink` console script is also registered so `uvx coarse-ink ...` resolves directly, and `uv tool install coarse-ink` still puts a `coarse` command on your PATH.
