@@ -111,10 +111,7 @@ def _classify_api_error(exc: BaseException) -> str | None:
     Returns None if the error isn't a recognized API issue (falls back
     to the generic sanitized message).
     """
-    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-    resp = getattr(exc, "response", None)
-    if resp is not None and not isinstance(status, int):
-        status = getattr(resp, "status_code", None)
+    status = _extract_status_code(exc)
     msg = str(exc).lower()
 
     if status == 401 or "invalid" in msg and "key" in msg or "unauthorized" in msg:
@@ -141,10 +138,7 @@ def _is_retryable_failure(exc: BaseException) -> bool:
     if isinstance(exc, SystemExit):
         return True
 
-    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-    resp = getattr(exc, "response", None)
-    if resp is not None and not isinstance(status, int):
-        status = getattr(resp, "status_code", None)
+    status = _extract_status_code(exc)
 
     if isinstance(status, int):
         return status in (408, 429) or status >= 500
@@ -160,6 +154,15 @@ def _is_retryable_failure(exc: BaseException) -> bool:
         "bad gateway",
         "gateway timeout",
     ))
+
+
+def _extract_status_code(exc: BaseException) -> int | None:
+    """Best-effort extraction of HTTP-like status code from provider errors."""
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    resp = getattr(exc, "response", None)
+    if resp is not None and not isinstance(status, int):
+        status = getattr(resp, "status_code", None)
+    return status if isinstance(status, int) else None
 
 
 class ReviewRequest(BaseModel):
