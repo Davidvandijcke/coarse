@@ -105,7 +105,14 @@ The daily monitoring cron (`.github/workflows/monitor.yml`) runs at 8 AM UTC and
 |-----------|--------|
 | Monthly reviews > 300 | Warning email — approaching Modal free tier |
 | Monthly reviews > 800 | Auto-pauses submissions + alert email |
-| Daily reviews > 40 | Warning email — approaching Gmail daily limit |
+| Daily reviews > 200 | Warning email — approaching Gmail daily limit (see note below) |
+
+Note on the daily threshold: each review sends up to 2 emails (confirm +
+complete), so 200 reviews/day ≈ 400 emails, leaving a ~100-email buffer
+below Gmail's free-tier 500/day sender cap. The frontend also has a hard
+cutoff at 240 reviews in `web/src/lib/emailCapacity.ts` that disables the
+email input in the submit form — this cron warns the maintainer first so
+there's time to react before the gate auto-fires.
 
 The cron uses these GitHub repo secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `ALERT_EMAIL`.
 

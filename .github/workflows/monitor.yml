@@ -36,7 +36,13 @@ jobs:
           ALERT="none"
           BODY=""
 
-          if [ "$DAILY" -gt 40 ] 2>/dev/null; then
+          # 200 reviews/day ≈ 400 emails, leaving 100-email headroom below
+          # Gmail's 500/day sender cap. The frontend email-capacity gate in
+          # web/src/lib/emailCapacity.ts kicks in harder at 240; this warning
+          # gives the maintainer time to react before the gate auto-disables
+          # the email input for users. Old threshold (40) was from the pre-
+          # launch era when volume was <1 review/day.
+          if [ "$DAILY" -gt 200 ] 2>/dev/null; then
             ALERT="warning"
             BODY="Daily reviews ($DAILY) approaching Gmail 500 emails/day limit.\n\n"
           fi
