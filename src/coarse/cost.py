@@ -17,7 +17,12 @@ from rich.table import Table
 
 from coarse.config import CoarseConfig, has_provider_key
 from coarse.llm import estimate_call_cost, estimate_reasoning_overhead_tokens
-from coarse.models import LITERATURE_SEARCH_MODEL, OCR_MODEL, is_reasoning_model
+from coarse.models import (
+    LITERATURE_SEARCH_MODEL,
+    OCR_MODEL,
+    STAGE_MODELS,
+    is_reasoning_model,
+)
 from coarse.types import CostEstimate, CostStage, PaperText
 
 # ---------------------------------------------------------------------------
@@ -119,6 +124,7 @@ def build_cost_estimate(
     section_count: int | None = None,
     is_pdf: bool = True,
     model: str | None = None,
+    stage_overrides: dict[str, str] | None = None,
 ) -> CostEstimate:
     """Return a CostEstimate with per-stage breakdowns using heuristic token budgets.
 
@@ -136,8 +142,20 @@ def build_cost_estimate(
             ``config.default_model``. Callers that received a ``--model``
             CLI flag should pass it here so the quoted cost reflects the
             model the user actually asked for, not the config default.
+        stage_overrides: Optional per-stage model overrides merged on top
+            of the default ``STAGE_MODELS`` map. Keys must be valid stage
+            names. Used so the cost table reflects the same routing the
+            pipeline will execute.
     """
     model = model or config.default_model
+    # Merge the default STAGE_MODELS routing with any caller-provided
+    # overrides. Caller's keys take precedence (same resolution order as
+    # pipeline.py's StageRouter).
+    effective_overrides: dict[str, str] = {**STAGE_MODELS, **(stage_overrides or {})}
+
+    def _stage_model(name: str) -> str:
+        return effective_overrides.get(name, model)
+
     total_tokens = max(0, paper_text.token_estimate)
     if section_count is None:
         section_count = _estimate_section_count(total_tokens)
@@ -198,13 +216,13 @@ def build_cost_estimate(
         )
 
     # Structure analysis (metadata + math detection) — both cheap.
-    _append_model_stage(stages, "metadata", model, 500, 256)
-    _append_model_stage(stages, "math_detection", model, 2000, 1024)
+    _append_model_stage(stages, "metadata", _stage_model("metadata"), 500, 256)
+    _append_model_stage(stages, "math_detection", _stage_model("math_detection"), 2000, 1024)
 
     # Parallel trio: calibration, literature search, contribution
     # extraction. All use the default model except Perplexity literature
     # search, which is flat-fee.
-    _append_model_stage(stages, "calibration", model, 1500, 2048)
+    _append_model_stage(stages, "calibration", _stage_model("calibration"), 1500, 2048)
 
     if has_provider_key("openrouter", config):
         stages.append(
@@ -218,16 +236,24 @@ def build_cost_estimate(
         )
     else:
         # arXiv fallback: query-gen (512 out) + ranking (2048 out) —
-        # two LLM calls on the default model.
+        # two LLM calls on the default model. literature_search isn't
+        # in STAGE_NAMES today; the arXiv fallback path runs on whatever
+        # the main review model is, so we use `model` directly here.
         _append_model_stage(stages, "literature_query_gen", model, 1500, 512)
         _append_model_stage(stages, "literature_ranking", model, 4000, 2048)
 
-    _append_model_stage(stages, "contribution_extraction", model, 3000, 2048)
+    _append_model_stage(
+        stages,
+        "contribution_extraction",
+        _stage_model("contribution_extraction"),
+        3000,
+        2048,
+    )
 
     # Overview: a single agent call. There is NO 3-judge panel — the
     # `OverviewAgent.run()` at src/coarse/agents/overview.py:80 makes
     # one `client.complete(..., max_tokens=8192)` call and returns.
-    _append_model_stage(stages, "overview", model, total_tokens + 3000, 8192)
+    _append_model_stage(stages, "overview", _stage_model("overview"), total_tokens + 3000, 8192)
 
     # Completeness agent. Reads the full paper via `_build_sections_text`
     # plus overview + contribution context — so input is `total_tokens`,
@@ -235,7 +261,7 @@ def build_cost_estimate(
     _append_model_stage(
         stages,
         "completeness",
-        model,
+        _stage_model("completeness"),
         total_tokens + _OVERVIEW_CONTEXT_OVERHEAD,
         4096,
     )
@@ -243,17 +269,19 @@ def build_cost_estimate(
     # Section agents (parallel, one per reviewable section). max_tokens=
     # 16384 but most runs use 8–12k; budget at 10k and let the buffer
     # cover the tail.
+    section_model = _stage_model("section")
     for i in range(section_count):
-        _append_model_stage(stages, f"section_{i + 1}", model, section_input, 10000)
+        _append_model_stage(stages, f"section_{i + 1}", section_model, section_input, 10000)
 
     # Proof verify (chained after section agents for math sections only).
     # max_tokens=16384. Input = section text + section's own comments +
     # overview/calibration context.
+    verify_model = _stage_model("verify")
     for i in range(math_section_count):
         _append_model_stage(
             stages,
             f"proof_verify_{i + 1}",
-            model,
+            verify_model,
             section_input + _OVERVIEW_CONTEXT_OVERHEAD,
             16384,
         )
@@ -261,11 +289,12 @@ def build_cost_estimate(
     # Cross-section synthesis (up to 3 calls — main results × top-3
     # discussion sections — only when both section types are present and
     # the results section has math). max_tokens=8192.
+    cross_section_model = _stage_model("cross_section")
     for i in range(cross_section_count):
         _append_model_stage(
             stages,
             f"cross_section_{i + 1}",
-            model,
+            cross_section_model,
             section_text_tokens * 2 + _OVERVIEW_CONTEXT_OVERHEAD,
             8192,
         )
@@ -274,7 +303,7 @@ def build_cost_estimate(
     # agent). Reads all downstream comments plus the full paper markdown
     # for quote verification. max_tokens=32768 but most runs use 20–25k;
     # budget at 24k.
-    _append_model_stage(stages, "editorial", model, editorial_in, 24000)
+    _append_model_stage(stages, "editorial", _stage_model("editorial"), editorial_in, 24000)
 
     total = sum(s.estimated_cost_usd for s in stages) * _COST_BUFFER
     return CostEstimate(stages=stages, total_cost_usd=total)
@@ -334,6 +363,7 @@ def run_cost_gate(
     section_count: int | None = None,
     is_pdf: bool = True,
     model: str | None = None,
+    stage_overrides: dict[str, str] | None = None,
 ) -> CostEstimate:
     """Build estimate, display it, prompt for confirmation. Returns CostEstimate."""
     estimate = build_cost_estimate(
@@ -342,6 +372,7 @@ def run_cost_gate(
         section_count=section_count,
         is_pdf=is_pdf,
         model=model,
+        stage_overrides=stage_overrides,
     )
     display_cost_estimate(estimate)
     confirm_or_abort(estimate, config.max_cost_usd)
