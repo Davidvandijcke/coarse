@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "coarse-ink"
-version = "1.1.3"
+version = "1.1.4"
 description = "Free, open-source AI academic paper reviewer. BYOK — bring your own key."
 readme = "README.md"
 license = "MIT"
@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "litellm>=1.60",
+    "litellm>=1.83.0",
     "instructor>=1.7",
     "pydantic>=2.0",
     "typer>=0.12",

@@ -7,7 +7,6 @@ API keys are set in env vars by the caller; litellm picks them up automatically.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import threading
 
@@ -15,7 +14,13 @@ import instructor
 import litellm
 from pydantic import BaseModel
 
-from coarse.config import PROVIDER_ENV_VARS, CoarseConfig, load_config
+from coarse.config import (
+    PROVIDER_ENV_VARS,
+    CoarseConfig,
+    has_provider_key,
+    load_config,
+    resolve_api_key,
+)
 from coarse.models import (
     DEFAULT_MODEL,
     JSON_MODE_PREFIXES,
@@ -115,18 +120,37 @@ def _inject_openrouter_privacy(model: str, kwargs: dict) -> dict:
     provider_cfg.setdefault("data_collection", "deny")
     extra_body["provider"] = provider_cfg
     result = {**kwargs, "extra_body": extra_body}
+    # Strip a caller-provided api_key too: a whitespace-only value from any
+    # upstream path (e.g. a future helper that plumbs the key explicitly
+    # instead of via env) would otherwise still produce a `Bearer ` header.
+    caller_key = result.get("api_key")
+    if caller_key is not None:
+        caller_key = str(caller_key).strip()
+        if caller_key:
+            result["api_key"] = caller_key
+        else:
+            result.pop("api_key", None)
     if "api_key" not in result:
-        or_key = os.environ.get("OPENROUTER_API_KEY")
+        # resolve_api_key() goes through _clean_env internally, so a
+        # whitespace-only env value is treated as unset. It also respects
+        # ~/.coarse/config.toml keys, which bare env reads would miss.
+        or_key = resolve_api_key("openrouter")
         if or_key:
             result["api_key"] = or_key
     return result
 
 
 def _sanitized_completion(*args, **kwargs):
-    """Wrap litellm.completion to strip control characters and detect degenerate output.
+    """Wrap non-streaming litellm.completion: strip control chars, detect degenerate output.
 
-    Some models (e.g. MiMo) emit control characters in JSON output that break
-    Pydantic parsing.  Stripping \x00-\x1f (except \t and \n) is safe for JSON.
+    Some models (e.g. MiMo) emit literal control characters in JSON output that
+    break Pydantic parsing. Stripping \\x00-\\x1f (except \\t and \\n) is safe
+    for JSON. We also strip the 6-char ``\\u0000`` escape form because it
+    survives _CTRL_CHAR_RE and is reconstituted as a real NUL by json.loads,
+    which later crashes the Supabase write with Postgres 22P05.
+
+    Streaming responses (CustomStreamWrapper) are not supported — the choices
+    iteration silently no-ops on them.
     """
     kwargs = _inject_openrouter_privacy(kwargs.get("model", ""), kwargs)
     response = litellm.completion(*args, **kwargs)
@@ -135,6 +159,7 @@ def _sanitized_completion(*args, **kwargs):
         msg = getattr(choice, "message", None)
         if msg and hasattr(msg, "content") and isinstance(msg.content, str):
             msg.content = _CTRL_CHAR_RE.sub("", msg.content)
+            msg.content = msg.content.replace("\\u0000", "")
     return response
 
 
@@ -145,7 +170,7 @@ class LLMClient:
         if config is None:
             config = load_config()
         self._model = model or config.default_model
-        self._model = _normalize_model(self._model)
+        self._model = _normalize_model(self._model, config)
         mode = _select_instructor_mode(self._model)
         self._client = instructor.from_litellm(_sanitized_completion, mode=mode)
         self._cost_usd: float = 0.0
@@ -175,19 +200,27 @@ class LLMClient:
 
         clamped = _clamp_max_tokens(self._model, requested)
 
-        # MD_JSON models (Kimi) need lower temperature and higher max_tokens
+        # MD_JSON models (Kimi) need lower temperature and higher max_tokens.
+        # Re-clamp after raising the floor so we don't exceed the model ceiling
+        # on Kimi variants with smaller output windows.
         if any(p in self._model.lower() for p in MARKDOWN_JSON_PREFIXES):
             temperature = min(temperature, 0.1)
-            clamped = max(clamped, 16384)
+            clamped = _clamp_max_tokens(self._model, max(clamped, 16384))
 
         # For reasoning models, also cap the thinking budget server-side
         # via litellm's unified `reasoning_effort` param. litellm routes
         # this to the right provider field (e.g. OpenAI's reasoning_effort)
         # and — because we set litellm.drop_params=True — silently drops
         # it for providers that don't accept it.
+        #
+        # Use an explicit `.get() is None` check rather than `setdefault`
+        # so a caller passing `reasoning_effort=None` gets the default
+        # instead of silently disabling it (setdefault would treat None
+        # as "already set"). A caller can still disable by passing a
+        # real string like "low" or by passing a non-None sentinel.
         call_kwargs = dict(kwargs)
-        if self._is_reasoning:
-            call_kwargs.setdefault("reasoning_effort", REASONING_EFFORT_DEFAULT)
+        if self._is_reasoning and call_kwargs.get("reasoning_effort") is None:
+            call_kwargs["reasoning_effort"] = REASONING_EFFORT_DEFAULT
 
         response, completion = self._client.chat.completions.create_with_completion(
             model=self._model,
@@ -205,8 +238,45 @@ class LLMClient:
                 with self._lock:
                     self._cost_usd += cost
         except Exception:
-            logger.debug("Cost tracking failed for model %s", self._model)
+            logger.debug("Cost tracking failed for model %s", self._model, exc_info=True)
         return response
+
+    def complete_text(
+        self,
+        messages: list[dict],
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+        timeout: int = 600,
+        **kwargs,
+    ) -> str:
+        """Unstructured text completion — returns the raw response string.
+
+        Used for models where instructor's structured output makes no sense
+        (e.g. Perplexity Sonar Pro, which returns prose with citations).
+        Cost is tracked like complete(); control characters are still
+        stripped via _sanitized_completion.
+        """
+        clamped = _clamp_max_tokens(self._model, max_tokens)
+        response = _sanitized_completion(
+            model=self._model,
+            messages=messages,
+            max_tokens=clamped,
+            temperature=temperature,
+            timeout=timeout,
+            **kwargs,
+        )
+        try:
+            cost = litellm.completion_cost(completion_response=response)
+            if cost is not None:
+                with self._lock:
+                    self._cost_usd += cost
+        except Exception:
+            logger.debug("Cost tracking failed for model %s", self._model, exc_info=True)
+
+        content = response.choices[0].message.content
+        if not content or not content.strip():
+            raise ValueError(f"Model {self._model} returned empty response")
+        return content.strip()
 
     def add_cost(self, cost_usd: float) -> None:
         """Register an external cost (e.g. from a direct litellm.completion call)."""
@@ -224,8 +294,15 @@ class LLMClient:
         return self._cost_usd
 
     @property
-    def is_reasoning_model(self) -> bool:
-        """Whether the resolved model uses hidden reasoning tokens."""
+    def is_reasoning(self) -> bool:
+        """Whether the resolved model uses hidden reasoning tokens.
+
+        Fixed at construction from the resolved model ID. Deliberately
+        named `is_reasoning` (not `is_reasoning_model`) to avoid a
+        readability trap where `self.is_reasoning_model` and the
+        module-level `is_reasoning_model(...)` function would look the
+        same at a glance without the parentheses.
+        """
         return self._is_reasoning
 
     @property
@@ -239,28 +316,23 @@ class LLMClient:
         return "anthropic" in lower and not lower.startswith("openrouter/")
 
 
-def _normalize_model(model: str) -> str:
+def _normalize_model(model: str, config: CoarseConfig | None = None) -> str:
     """Ensure model string has the right provider prefix for litellm routing.
 
-    If OPENROUTER_API_KEY is set and model looks like 'qwen/qwen3.5-plus'
-    (third-party model without 'openrouter/' prefix), prepend 'openrouter/'.
+    If the named direct provider has no key (env or config) and an OpenRouter
+    key is available, rewrite to 'openrouter/<model>' so the call goes through
+    OpenRouter. Config-file keys count — not just env vars.
     """
     if model.startswith("openrouter/"):
         return model
-    # Direct provider models — keep as-is only if the provider's API key is set.
-    # Otherwise, fall through to OpenRouter routing below.
-    # Derive from PROVIDER_ENV_VARS; gemini also accepts GOOGLE_API_KEY.
     prefix = model.split("/")[0].lower() if "/" in model else ""
-    if prefix in PROVIDER_ENV_VARS:
-        env_vars = [PROVIDER_ENV_VARS[prefix]]
-        if prefix == "gemini":
-            env_vars.append("GOOGLE_API_KEY")
-        if any(os.environ.get(v) for v in env_vars):
-            return model
-        # No direct key — fall through to OpenRouter routing
-    # If OPENROUTER_API_KEY is set and model has a slash (like qwen/qwen3.5-plus),
-    # route through OpenRouter
-    if "/" in model and os.environ.get("OPENROUTER_API_KEY"):
+    # has_provider_key() goes through _clean_env and also checks
+    # ~/.coarse/config.toml keys, so whitespace-only env values don't flip
+    # routing to the direct-provider branch and config-file-only users
+    # still get routed correctly.
+    if prefix in PROVIDER_ENV_VARS and has_provider_key(prefix, config):
+        return model
+    if "/" in model and resolve_api_key("openrouter", config):
         # litellm uses gemini/ for Google AI Studio, but OpenRouter uses google/
         if model.startswith("gemini/"):
             model = "google/" + model.removeprefix("gemini/")
@@ -290,20 +362,47 @@ def _select_instructor_mode(model: str) -> instructor.Mode:
 
 
 def _lookup_model_cost(model: str) -> dict | None:
-    """Look up model info in litellm's cost registry, trying prefix variants."""
+    """Look up model info in litellm's cost registry, trying prefix variants.
+
+    litellm's registry is inconsistent about how it keys provider models:
+    some entries live under a bare `provider/model` form, others only
+    under `openrouter/provider/model` (this is how the current Claude 4.6
+    entries are stored — `openrouter/anthropic/claude-sonnet-4.6` hits
+    but `anthropic/claude-sonnet-4.6` doesn't). Try both directions so
+    the cost gate returns accurate numbers regardless of which form the
+    caller passed.
+    """
     info = litellm.model_cost.get(model)
     if info is None and "/" in model:
         info = litellm.model_cost.get(model.split("/", 1)[1])
     if info is None and model.startswith("openrouter/"):
         info = litellm.model_cost.get(model.removeprefix("openrouter/"))
+    # Bare provider/model → try with the openrouter/ prefix added.
+    # (Some entries, notably anthropic/claude-{sonnet,opus}-4.6, only
+    # exist under the openrouter/ form in litellm's registry.)
+    if info is None and "/" in model and not model.startswith("openrouter/"):
+        info = litellm.model_cost.get("openrouter/" + model)
     return info
+
+
+_UNKNOWN_MODEL_CEILING = 16_384
+# Reasoning models need a larger fallback ceiling so the 8x multiplier
+# applied upstream in LLMClient.complete() isn't immediately clamped back
+# down to 16k when the model ID isn't in litellm's registry (common case
+# for brand-new thinking variants: kimi-k2-thinking, qwen3-*-thinking,
+# deepseek-r* distills). 65k accommodates 8 * 8192 = 65536 without
+# clamping, which is the typical caller budget for the heavier agent
+# stages (overview, sections, crossref, critique).
+_UNKNOWN_REASONING_MODEL_CEILING = 65_536
 
 
 def _clamp_max_tokens(model: str, requested: int) -> int:
     """Clamp max_tokens to the model's known output limit.
 
     Many models error on max_tokens > their actual output window.
-    Falls back to a safe default of 4096 if model isn't in litellm's registry.
+    Falls back to a safe default if the model isn't in litellm's registry;
+    the fallback is higher for reasoning models so the reasoning-bump
+    multiplier in LLMClient.complete() isn't immediately neutralized.
     """
     info = _lookup_model_cost(model)
 
@@ -311,9 +410,13 @@ def _clamp_max_tokens(model: str, requested: int) -> int:
         model_max = info.get("max_output_tokens") or info.get("max_tokens") or 4096
         return min(requested, model_max)
 
-    # Unknown model — use a conservative default
-    logger.debug("Unknown model %s, clamping max_tokens %d -> 16384", model, requested)
-    return min(requested, 16384)
+    # Unknown model — use a conservative default, but give reasoning
+    # models enough headroom that the upstream 8x multiplier still works.
+    ceiling = (
+        _UNKNOWN_REASONING_MODEL_CEILING if is_reasoning_model(model) else _UNKNOWN_MODEL_CEILING
+    )
+    logger.debug("Unknown model %s, clamping max_tokens %d -> %d", model, requested, ceiling)
+    return min(requested, ceiling)
 
 
 def model_cost_per_token(model: str) -> tuple[float, float]:
@@ -345,6 +448,12 @@ def model_cost_per_token(model: str) -> tuple[float, float]:
 #
 # Without this adjustment, the pre-flight cost gate under-quotes reasoning
 # models by 3-5x and the user sees a surprise bill post-run.
+#
+# Note: this is the *cost overhead* multiplier. The request-budget
+# multiplier is 8x and lives in `models.py::REASONING_MAX_TOKENS_MULTIPLIER` —
+# they're intentionally asymmetric because reasoning_effort="medium" is
+# expected to cap actual usage well below the raised ceiling. If you change
+# one, check the other.
 _REASONING_OVERHEAD_MULTIPLIER: float = 4.0
 
 

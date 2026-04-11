@@ -1,11 +1,12 @@
 from enum import Enum
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 
 class PaperText(BaseModel):
     """Extracted PDF content as markdown with metadata."""
+
     full_markdown: str = Field(description="Full paper content as markdown")
     token_estimate: int = Field(
         description="Approximate token count of the full text",
@@ -31,6 +32,7 @@ class SectionType(str, Enum):
 
 class SectionInfo(BaseModel):
     """A single section of the paper with classified type and extracted content."""
+
     number: int | float | str = Field(
         description="Section number (e.g. 1, 2.1, 'A')",
     )
@@ -41,10 +43,12 @@ class SectionInfo(BaseModel):
         description="Classified section type",
     )
     page_start: int = Field(
-        default=0, description="Starting page number (0 if unknown)",
+        default=0,
+        description="Starting page number (0 if unknown)",
     )
     page_end: int = Field(
-        default=0, description="Ending page number (0 if unknown)",
+        default=0,
+        description="Ending page number (0 if unknown)",
     )
     claims: list[str] = Field(
         default_factory=list,
@@ -75,6 +79,7 @@ class SectionInfo(BaseModel):
 
 class PaperStructure(BaseModel):
     """Parsed paper structure with metadata and ordered sections."""
+
     title: str = Field(description="Paper title")
     domain: str = Field(
         description="Academic domain (e.g. 'social_sciences/economics')",
@@ -90,6 +95,7 @@ class PaperStructure(BaseModel):
 
 class PaperMetadata(BaseModel):
     """Response model for cheap text-LLM metadata extraction."""
+
     title: str = Field(description="Exact paper title as it appears on the first page")
     domain: str
     taxonomy: str
@@ -97,6 +103,7 @@ class PaperMetadata(BaseModel):
 
 class ContributionContext(BaseModel):
     """Paper's stated contribution extracted for downstream constraint injection."""
+
     main_claims: list[str] = Field(
         min_length=1,
         description="Paper's stated contributions (verbatim or close paraphrase)",
@@ -121,14 +128,17 @@ class ContributionContext(BaseModel):
 
 class OverviewIssue(BaseModel):
     """A single macro-level issue identified in the paper."""
+
     title: str = Field(description="Short title summarizing the issue")
     body: str = Field(description="Detailed explanation of the issue")
 
 
 class OverviewFeedback(BaseModel):
     """Macro-level feedback containing high-level issues."""
+
     summary: str = Field(
-        default="", description="Optional summary paragraph",
+        default="",
+        description="Optional summary paragraph",
     )
     assessment: str = Field(
         default="",
@@ -159,6 +169,7 @@ class OverviewFeedback(BaseModel):
 
 class DetailedComment(BaseModel):
     """A single detailed review comment with verbatim quote and feedback."""
+
     number: int = Field(description="Sequential comment number")
     title: str = Field(
         description="Short title summarizing the comment",
@@ -171,18 +182,22 @@ class DetailedComment(BaseModel):
         description="Constructive feedback with remediation guidance",
     )
     status: Literal["Pending"] = Field(
-        default="Pending", description="Review status",
+        default="Pending",
+        description="Review status",
     )
     severity: Literal["critical", "major", "minor"] = Field(
-        default="major", description="Issue severity level",
+        default="major",
+        description="Issue severity level",
     )
     confidence: Literal["high", "medium", "low"] = Field(
-        default="medium", description="Reviewer confidence",
+        default="medium",
+        description="Reviewer confidence",
     )
 
 
 class Review(BaseModel):
     """Complete paper review with overall feedback and detailed comments."""
+
     title: str = Field(description="Paper title")
     domain: str = Field(description="Academic domain")
     taxonomy: str = Field(description="Document type")
@@ -197,15 +212,14 @@ class Review(BaseModel):
 
 class DomainCalibration(BaseModel):
     """Domain-specific review criteria generated dynamically from paper content."""
+
     methodology_concerns: list[str] = Field(
         description="3-5 key methodological concerns for this type of paper"
     )
     assumption_red_flags: list[str] = Field(
         description="Assumptions that commonly fail in this domain"
     )
-    what_not_to_check: list[str] = Field(
-        description="What is irrelevant for this paper type"
-    )
+    what_not_to_check: list[str] = Field(description="What is irrelevant for this paper type")
     evaluation_standards: list[str] = Field(
         description="What a top-tier journal in this field expects"
     )
@@ -213,11 +227,11 @@ class DomainCalibration(BaseModel):
 
 class MathSectionDetection(BaseModel):
     """Response model for LLM-based math section detection."""
+
     math_section_indices: list[int] = Field(
         default_factory=list,
         description=(
-            "Indices (0-based) of sections containing "
-            "mathematical content needing verification"
+            "Indices (0-based) of sections containing mathematical content needing verification"
         ),
     )
 
@@ -228,6 +242,7 @@ class ExtractionError(Exception):
 
 class CostStage(BaseModel):
     """Cost breakdown for a single pipeline stage."""
+
     name: str = Field(
         description="Pipeline stage name (e.g. 'structure', 'overview')",
     )
@@ -245,6 +260,7 @@ class CostStage(BaseModel):
 
 class CostEstimate(BaseModel):
     """Pre-flight cost estimate for the full review pipeline."""
+
     stages: list[CostStage] = Field(
         description="Breakdown by pipeline stage",
     )

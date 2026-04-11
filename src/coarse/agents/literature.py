@@ -3,21 +3,26 @@
 Primary path: Perplexity Sonar Pro Search via OpenRouter (web-grounded, ~12s, ~$0.03).
 Fallback path: arXiv API + 2 LLM calls (free API, slower, arXiv-only coverage).
 """
+
 from __future__ import annotations
 
 import logging
-import os
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
-import litellm
 from pydantic import BaseModel, Field
 
-from coarse.llm import LLMClient, _inject_openrouter_privacy
+from coarse.config import has_provider_key
+from coarse.llm import LLMClient
 from coarse.models import LITERATURE_SEARCH_MODEL
-from coarse.prompts import PERPLEXITY_PROMPT
+from coarse.prompts import (
+    ARXIV_QUERY_GEN_SYSTEM,
+    ARXIV_RANKING_SYSTEM,
+    PERPLEXITY_SYSTEM,
+    perplexity_user,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +41,7 @@ _NS = {"atom": "http://www.w3.org/2005/Atom"}
 @dataclass
 class ArxivPaper:
     """Minimal representation of an arXiv search result."""
+
     arxiv_id: str
     title: str
     authors: list[str]
@@ -47,13 +53,16 @@ class ArxivPaper:
 # LLM response models
 # ---------------------------------------------------------------------------
 
+
 class _SearchQueries(BaseModel):
     """LLM-generated search queries for arXiv."""
+
     queries: list[str] = Field(min_length=1, max_length=5)
 
 
 class _RankedResult(BaseModel):
     """A single ranked search result."""
+
     arxiv_id: str
     relevance_score: float = Field(ge=0.0, le=1.0)
     reason: str
@@ -61,6 +70,7 @@ class _RankedResult(BaseModel):
 
 class _RankedResults(BaseModel):
     """LLM-ranked search results with optional refinement queries."""
+
     ranked: list[_RankedResult]
     refinement_queries: list[str] = Field(default_factory=list, max_length=3)
 
@@ -69,51 +79,45 @@ class _RankedResults(BaseModel):
 # Perplexity Sonar Pro Search (primary path)
 # ---------------------------------------------------------------------------
 
+
 def _search_perplexity(title: str, abstract: str, client: LLMClient) -> str:
-    """Single Perplexity Sonar Pro Search call via OpenRouter.
+    """Single Perplexity Sonar Pro Search call via LLMClient.complete_text.
 
-    Returns formatted literature context string, or raises on failure.
+    Returns formatted literature context string, or raises on failure. Routes
+    through LLMClient so OpenRouter privacy / api_key / control-char stripping
+    all apply uniformly with the rest of the pipeline.
     """
-    prompt = PERPLEXITY_PROMPT.format(title=title, abstract=abstract[:1500])
-
-    model = f"openrouter/{LITERATURE_SEARCH_MODEL}"
-    completion_kwargs = _inject_openrouter_privacy(model, {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 4096,
-        "temperature": _PERPLEXITY_TEMPERATURE,
-        "timeout": 60,
-    })
-    response = litellm.completion(**completion_kwargs)
-
-    content = response.choices[0].message.content
-    if not content or not content.strip():
-        raise ValueError("Perplexity returned empty response")
-
-    # Track cost
-    try:
-        cost = litellm.completion_cost(completion_response=response)
-        if cost:
-            client.add_cost(cost)
-    except Exception:
-        pass
-
-    return content.strip()
+    perplexity_client = LLMClient(model=LITERATURE_SEARCH_MODEL)
+    messages = [
+        {"role": "system", "content": PERPLEXITY_SYSTEM},
+        {"role": "user", "content": perplexity_user(title, abstract[:1500])},
+    ]
+    content = perplexity_client.complete_text(
+        messages,
+        max_tokens=4096,
+        temperature=_PERPLEXITY_TEMPERATURE,
+        timeout=60,
+    )
+    client.add_cost(perplexity_client.cost_usd)
+    return content
 
 
 # ---------------------------------------------------------------------------
 # arXiv API helpers (stdlib only) — fallback path
 # ---------------------------------------------------------------------------
 
+
 def _search_arxiv(query: str, max_results: int = _MAX_RESULTS_PER_QUERY) -> list[ArxivPaper]:
     """Search arXiv API and parse Atom XML response."""
-    params = urllib.parse.urlencode({
-        "search_query": f"all:{query}",
-        "start": 0,
-        "max_results": max_results,
-        "sortBy": "relevance",
-        "sortOrder": "descending",
-    })
+    params = urllib.parse.urlencode(
+        {
+            "search_query": f"all:{query}",
+            "start": 0,
+            "max_results": max_results,
+            "sortBy": "relevance",
+            "sortOrder": "descending",
+        }
+    )
     url = f"{_ARXIV_API}?{params}"
 
     try:
@@ -143,55 +147,29 @@ def _parse_arxiv_response(xml_data: bytes) -> list[ArxivPaper]:
         abstract = " ".join(abstract.split())
 
         authors = [
-            name.text.strip()
-            for name in entry.findall("atom:author/atom:name", _NS)
-            if name.text
+            name.text.strip() for name in entry.findall("atom:author/atom:name", _NS) if name.text
         ]
 
         published = entry.findtext("atom:published", default="", namespaces=_NS)[:10]
 
         if title:
-            papers.append(ArxivPaper(
-                arxiv_id=arxiv_id,
-                title=title,
-                authors=authors,
-                abstract=abstract[:500],
-                published=published,
-            ))
+            papers.append(
+                ArxivPaper(
+                    arxiv_id=arxiv_id,
+                    title=title,
+                    authors=authors,
+                    abstract=abstract[:500],
+                    published=published,
+                )
+            )
 
     return papers
 
 
 # ---------------------------------------------------------------------------
-# LLM prompt templates (arXiv fallback)
-# ---------------------------------------------------------------------------
-
-_QUERY_GEN_SYSTEM = """\
-You are a research librarian. Given a paper's title and abstract, generate 3-5 \
-diverse search queries for finding related work on arXiv. Include:
-- The paper's core method/technique
-- The application domain
-- Key theoretical concepts
-- Alternative approaches to the same problem
-Keep queries concise (3-8 words each).
-"""
-
-_RANKING_SYSTEM = """\
-You are a research relevance assessor. Given a target paper and a list of arXiv \
-search results, score each result's relevance (0.0-1.0) to the target paper.
-
-Score 0.8-1.0: Directly related — same method, same problem, or a paper the \
-target likely cites or should cite.
-Score 0.5-0.7: Moderately related — related technique or application domain.
-Score 0.0-0.4: Tangentially related or irrelevant.
-
-Also suggest 0-3 refinement queries if important areas of related work are missing.
-"""
-
-
-# ---------------------------------------------------------------------------
 # arXiv fallback pipeline
 # ---------------------------------------------------------------------------
+
 
 def _search_arxiv_pipeline(
     title: str,
@@ -243,6 +221,7 @@ def _search_arxiv_pipeline(
 # Main dispatcher
 # ---------------------------------------------------------------------------
 
+
 def search_literature(
     title: str,
     abstract: str,
@@ -253,7 +232,7 @@ def search_literature(
     Uses Perplexity Sonar Pro Search if OPENROUTER_API_KEY is set,
     falling back to the arXiv pipeline on failure or missing key.
     """
-    if os.environ.get("OPENROUTER_API_KEY"):
+    if has_provider_key("openrouter"):
         try:
             result = _search_perplexity(title, abstract, client)
             logger.info("Literature search completed via Perplexity")
@@ -267,7 +246,7 @@ def search_literature(
 def _generate_queries(title: str, abstract: str, client: LLMClient) -> list[str]:
     """Generate arXiv search queries from paper metadata."""
     messages = [
-        {"role": "system", "content": _QUERY_GEN_SYSTEM},
+        {"role": "system", "content": ARXIV_QUERY_GEN_SYSTEM},
         {
             "role": "user",
             "content": (
@@ -279,7 +258,9 @@ def _generate_queries(title: str, abstract: str, client: LLMClient) -> list[str]
     ]
     try:
         result = client.complete(
-            messages, _SearchQueries, max_tokens=512,
+            messages,
+            _SearchQueries,
+            max_tokens=512,
             temperature=_QUERY_GEN_TEMPERATURE,
         )
         return result.queries
@@ -303,7 +284,7 @@ def _rank_results(
     )
 
     messages = [
-        {"role": "system", "content": _RANKING_SYSTEM},
+        {"role": "system", "content": ARXIV_RANKING_SYSTEM},
         {
             "role": "user",
             "content": (
@@ -317,7 +298,9 @@ def _rank_results(
     ]
     try:
         result = client.complete(
-            messages, _RankedResults, max_tokens=2048,
+            messages,
+            _RankedResults,
+            max_tokens=2048,
             temperature=_RANKING_TEMPERATURE,
         )
         ranked = sorted(result.ranked, key=lambda r: r.relevance_score, reverse=True)

@@ -56,12 +56,14 @@ def test_all_prefixes_are_lowercase():
 REASONING_POSITIVE_CASES = [
     # OpenAI o-series
     "openai/o1",
+    "openai/o1-mini",
     "openai/o1-pro",
     "openai/o3",
     "openai/o3-mini",
     "openai/o3-mini-high",
     "openai/o3-pro",
     "openai/o3-deep-research",
+    "openai/o4",
     "openai/o4-mini-deep-research",
     # OpenAI GPT-5 Pro family (the actual failure from review 3ee351e6)
     "openai/gpt-5-pro",

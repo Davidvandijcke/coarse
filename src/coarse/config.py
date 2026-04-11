@@ -4,6 +4,7 @@ Reads/writes ~/.coarse/config.toml. API key resolution checks env vars first,
 then the config file. Note: litellm has its own env-var-based key resolution at
 call time; resolve_api_key() is for pre-flight checks and CLI prompting only.
 """
+
 from __future__ import annotations
 
 import logging
@@ -62,9 +63,10 @@ def load_config() -> CoarseConfig:
         mode = path.stat().st_mode
         if mode & 0o077:  # group or world readable/writable
             logger.warning(
-                "Config file %s has insecure permissions (%o). "
-                "Run: chmod 600 %s",
-                path, mode & 0o777, path,
+                "Config file %s has insecure permissions (%o). Run: chmod 600 %s",
+                path,
+                mode & 0o777,
+                path,
             )
     except OSError:
         pass
@@ -102,6 +104,39 @@ def _normalize_provider(provider: str) -> str:
     return provider.split("/")[0].strip().lower()
 
 
+def _clean_env(name: str) -> str | None:
+    """Read an env var and return its stripped value, or None if unset/blank.
+
+    Whitespace-only values are treated as unset — they're otherwise truthy in
+    plain `if os.environ.get(...)` checks but produce an empty `Authorization:
+    Bearer ` header downstream, which OpenRouter rejects with 401 "Missing
+    Authentication header".
+    """
+    value = (os.environ.get(name) or "").strip()
+    return value or None
+
+
+def has_provider_key(provider: str, config: CoarseConfig | None = None) -> bool:
+    """Return True if the DIRECT provider has an API key (env or config file).
+
+    Unlike resolve_api_key(), this does NOT fall back to OPENROUTER_API_KEY —
+    it only returns True when the named provider itself has a key.  Used by
+    routing logic that decides whether to call a provider directly or proxy
+    through OpenRouter. Whitespace-only keys are treated as absent (see
+    _clean_env).
+    """
+    name = _normalize_provider(provider)
+    env_var = PROVIDER_ENV_VARS.get(name)
+    if env_var and _clean_env(env_var):
+        return True
+    if name == "gemini" and _clean_env("GOOGLE_API_KEY"):
+        return True
+    if config is None:
+        config = load_config()
+    cfg_key = (config.api_keys.get(name) or "").strip()
+    return bool(cfg_key)
+
+
 def resolve_api_key(provider: str, config: CoarseConfig | None = None) -> str | None:
     """Return API key for provider; env vars take priority over config file.
 
@@ -110,32 +145,33 @@ def resolve_api_key(provider: str, config: CoarseConfig | None = None) -> str | 
         config: Optional pre-loaded config; if None, load_config() is called.
 
     Returns:
-        API key string, or None if not found.
+        API key string, or None if not found. Whitespace-only values are
+        treated as absent.
     """
     name = _normalize_provider(provider)
 
     # Check environment variable first
     env_var = PROVIDER_ENV_VARS.get(name)
     if env_var:
-        value = os.environ.get(env_var)
+        value = _clean_env(env_var)
         if value:
             return value
 
     # litellm's gemini/ prefix uses GEMINI_API_KEY, but users often set GOOGLE_API_KEY
     if name == "gemini":
-        google_key = os.environ.get("GOOGLE_API_KEY")
+        google_key = _clean_env("GOOGLE_API_KEY")
         if google_key:
             return google_key
 
     # Fall back to config file
     if config is None:
         config = load_config()
-    cfg_key = config.api_keys.get(name)
+    cfg_key = (config.api_keys.get(name) or "").strip()
     if cfg_key:
         return cfg_key
 
     # Last resort: OpenRouter can proxy most providers
-    or_key = os.environ.get("OPENROUTER_API_KEY")
+    or_key = _clean_env("OPENROUTER_API_KEY")
     if or_key:
         return or_key
 

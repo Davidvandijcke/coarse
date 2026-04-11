@@ -11,8 +11,10 @@ Secrets: Create in Modal dashboard:
   coarse-webhook      MODAL_WEBHOOK_SECRET
   coarse-gmail        GMAIL_USER, GMAIL_APP_PASSWORD
 """
+
 from __future__ import annotations
 
+import hmac
 from pathlib import Path
 
 import modal
@@ -88,8 +90,15 @@ def _sanitize_error(msg: str) -> str:
 
     # OpenRouter keys: sk-or-v1-...
     msg = re.sub(r"sk-or-v1-[a-zA-Z0-9]{20,}", "[key]", msg)
+    # Anthropic keys: sk-ant-... (caught by generic sk- below but listed
+    # explicitly so the provider coverage is obvious at a glance).
+    msg = re.sub(r"sk-ant-[a-zA-Z0-9_-]{20,}", "[key]", msg)
     # Standard OpenAI-style keys: sk-...
     msg = re.sub(r"sk-[a-zA-Z0-9-]{20,}", "[key]", msg)
+    # Groq keys: gsk_...
+    msg = re.sub(r"gsk_[a-zA-Z0-9_]{20,}", "[key]", msg)
+    # Perplexity keys: pplx-...
+    msg = re.sub(r"pplx-[a-zA-Z0-9]{20,}", "[key]", msg)
     # Gemini/Google API keys: AIza...
     msg = re.sub(r"AIza[a-zA-Z0-9_-]{30,}", "[key]", msg)
     # JWTs / Supabase service keys: eyJ...
@@ -119,12 +128,22 @@ def _classify_api_error(exc: BaseException) -> str | None:
 
     if status == 401 or "invalid" in msg and "key" in msg or "unauthorized" in msg:
         return "Invalid API key. Check that your key is correct and active."
-    if status == 402 or any(kw in msg for kw in (
-        "spend limit", "insufficient", "quota exceeded",
-        "payment required", "billing", "credits", "exceeded your",
-    )):
-        return ("API key spend limit reached. Add credits or raise your "
-                "limit on your provider dashboard, then try again.")
+    if status == 402 or any(
+        kw in msg
+        for kw in (
+            "spend limit",
+            "insufficient",
+            "quota exceeded",
+            "payment required",
+            "billing",
+            "credits",
+            "exceeded your",
+        )
+    ):
+        return (
+            "API key spend limit reached. Add credits or raise your "
+            "limit on your provider dashboard, then try again."
+        )
     if status == 403:
         return (
             "OpenRouter denied this request (HTTP 403). This usually means "
@@ -136,8 +155,10 @@ def _classify_api_error(exc: BaseException) -> str | None:
             "review."
         )
     if status == 429:
-        return ("Rate limited by the API provider. Wait a minute and try again, "
-                "or check your rate limits on your provider dashboard.")
+        return (
+            "Rate limited by the API provider. Wait a minute and try again, "
+            "or check your rate limits on your provider dashboard."
+        )
     # ExtractionError from coarse may already have a user-friendly message
     if type(exc).__name__ == "ExtractionError":
         return str(exc)
@@ -193,10 +214,13 @@ def do_review(req_dict: dict):
     db.table("reviews").update({"status": "running"}).eq("id", job_id).execute()
     print(f"[{job_id}] Status set to running")
 
-    # Use user's key; restore original afterward to prevent leaks across container reuses
-    original_key = os.environ.get("OPENROUTER_API_KEY")
-    if user_api_key:
-        os.environ["OPENROUTER_API_KEY"] = user_api_key
+    # Whitespace-only key is truthy but yields an empty `Bearer ` header →
+    # OpenRouter 401 "Missing Authentication header" cascading through every
+    # LLM call. Strip before installing.
+    original_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip() or None
+    cleaned_user_key = (user_api_key or "").strip()
+    if cleaned_user_key:
+        os.environ["OPENROUTER_API_KEY"] = cleaned_user_key
 
     # Download file from Supabase Storage
     pdf_bytes = db.storage.from_("papers").download(pdf_storage_path)
@@ -214,7 +238,8 @@ def do_review(req_dict: dict):
         print(f"[{job_id}] Importing coarse...")
         from coarse import review_paper
         from coarse.config import CoarseConfig
-        has_or_key = bool(os.environ.get("OPENROUTER_API_KEY"))
+
+        has_or_key = bool(cleaned_user_key or original_key)
         print(f"[{job_id}] Import OK — OPENROUTER_API_KEY={'set' if has_or_key else 'MISSING'}")
         print(f"[{job_id}] Starting pipeline")
 
@@ -226,16 +251,18 @@ def do_review(req_dict: dict):
 
         duration = int(time.time() - start)
 
-        db.table("reviews").update({
-            "status": "done",
-            "paper_title": review.title,
-            "model": model,
-            "domain": review.domain,
-            "result_markdown": markdown,
-            "paper_markdown": paper_text.full_markdown,
-            "duration_seconds": duration,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", job_id).execute()
+        db.table("reviews").update(
+            {
+                "status": "done",
+                "paper_title": review.title,
+                "model": model,
+                "domain": review.domain,
+                "result_markdown": markdown,
+                "paper_markdown": paper_text.full_markdown,
+                "duration_seconds": duration,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", job_id).execute()
 
         # Delete the PDF from Supabase Storage on success only. Failed reviews
         # keep their PDF so Modal's infrastructure-level retries (or a manual
@@ -269,11 +296,13 @@ def do_review(req_dict: dict):
             error_msg = "Review timed out"
         else:
             error_msg = _classify_api_error(e) or _sanitize_error(str(e))
-        db.table("reviews").update({
-            "status": "failed",
-            "error_message": error_msg,
-            "duration_seconds": duration,
-        }).eq("id", job_id).execute()
+        db.table("reviews").update(
+            {
+                "status": "failed",
+                "error_message": error_msg,
+                "duration_seconds": duration,
+            }
+        ).eq("id", job_id).execute()
         raise
     finally:
         # Restore original API key to prevent leaking user keys across container reuses.
@@ -308,7 +337,9 @@ def run_review(request: Request, req: ReviewRequest):
 
     expected = os.environ.get("MODAL_WEBHOOK_SECRET", "")
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    if not expected or not token or token != expected:
+    # `hmac.compare_digest` requires same-type non-empty inputs, so keep the
+    # truthiness guard before the constant-time compare.
+    if not expected or not token or not hmac.compare_digest(token, expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     do_review.spawn(req.model_dump())

@@ -6,6 +6,7 @@ PDF priority: Mistral OCR via OpenRouter → pdf-text via OpenRouter → Docling
 DOCX/HTML/TEX: Docling (if installed) → lightweight fallback (mammoth/markdownify/regex).
 TXT/MD: Direct read. EPUB: ebooklib + markdownify.
 """
+
 from __future__ import annotations
 
 import html
@@ -14,11 +15,42 @@ import logging
 import re
 from pathlib import Path
 
+from coarse.garble import garble_ratio as compute_garble_ratio
+from coarse.garble import normalize_ocr_garble
 from coarse.types import ExtractionError, PaperText
 
 logger = logging.getLogger(__name__)
 
 PAGE_BREAK = "\n\n<!-- PAGE BREAK -->\n\n"
+
+
+# Secret-scrub patterns used on backend failure strings before they reach
+# logger.warning() or the raised ExtractionError. Kept as a small duplicate
+# of deploy/modal_worker.py::_sanitize_error — cross-importing between
+# src/ and deploy/ would be worse than 10 lines of duplication.
+_SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"Bearer\s+\S+", re.IGNORECASE), "Bearer [key]"),
+    (re.compile(r"sk-or-v1-[a-zA-Z0-9]{20,}"), "[key]"),
+    (re.compile(r"sk-ant-[a-zA-Z0-9_-]{20,}"), "[key]"),
+    (re.compile(r"sk-[a-zA-Z0-9-]{20,}"), "[key]"),
+    (re.compile(r"gsk_[a-zA-Z0-9_]{20,}"), "[key]"),
+    (re.compile(r"pplx-[a-zA-Z0-9]{20,}"), "[key]"),
+    (re.compile(r"AIza[a-zA-Z0-9_-]{30,}"), "[key]"),
+    (re.compile(r"eyJ[a-zA-Z0-9_-]{20,}"), "[key]"),
+)
+
+
+def _scrub_secrets(msg: str) -> str:
+    """Strip API keys and bearer tokens from an error string.
+
+    Applied to backend-failure strings before they are logged or embedded in
+    an ExtractionError. Without this, litellm-wrapped exceptions whose
+    stringification embeds request headers can surface Authorization
+    tokens to CLI users' terminals and logs.
+    """
+    for pattern, replacement in _SECRET_PATTERNS:
+        msg = pattern.sub(replacement, msg)
+    return msg
 
 
 def _get_api_error_status(exc: Exception) -> int | None:
@@ -43,14 +75,24 @@ def _classify_api_error(exc: Exception) -> str | None:
     status = _get_api_error_status(exc)
     msg = str(exc).lower()
 
-    if status == 401 or "invalid.*key" in msg or "unauthorized" in msg:
+    if status == 401 or ("invalid" in msg and "key" in msg) or "unauthorized" in msg:
         return "Invalid API key. Check that your key is correct and active."
-    if status == 402 or any(kw in msg for kw in (
-        "spend limit", "insufficient", "quota exceeded",
-        "payment required", "billing", "credits", "exceeded your",
-    )):
-        return ("API key spend limit reached. Add credits or raise your "
-                "limit in your provider dashboard.")
+    if status == 402 or any(
+        kw in msg
+        for kw in (
+            "spend limit",
+            "insufficient",
+            "quota exceeded",
+            "payment required",
+            "billing",
+            "credits",
+            "exceeded your",
+        )
+    ):
+        return (
+            "API key spend limit reached. Add credits or raise your "
+            "limit in your provider dashboard."
+        )
     if status == 403:
         return (
             "OpenRouter denied the PDF extraction request (HTTP 403). This "
@@ -64,10 +106,20 @@ def _classify_api_error(exc: Exception) -> str | None:
     # Don't classify 429 (rate limit) or 5xx here — those are transient.
     return None
 
-SUPPORTED_EXTENSIONS = frozenset({
-    ".pdf", ".txt", ".md", ".tex", ".latex",
-    ".html", ".htm", ".docx", ".epub",
-})
+
+SUPPORTED_EXTENSIONS = frozenset(
+    {
+        ".pdf",
+        ".txt",
+        ".md",
+        ".tex",
+        ".latex",
+        ".html",
+        ".htm",
+        ".docx",
+        ".epub",
+    }
+)
 
 
 def _cache_path(pdf_path: Path) -> Path:
@@ -151,15 +203,12 @@ def _response_was_billed(resp) -> bool:
     usage = data.get("usage")
     if not isinstance(usage, dict):
         return False
+
     # bool is a subclass of int in Python — reject it explicitly so a
     # malformed `usage: {"total_cost": true}` can't trip the billing guard
     # on an otherwise-free error response.
     def _positive_number(val: object) -> bool:
-        return (
-            isinstance(val, (int, float))
-            and not isinstance(val, bool)
-            and val > 0
-        )
+        return isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0
 
     for key in ("total_cost", "cost"):
         if _positive_number(usage.get(key)):
@@ -217,7 +266,7 @@ def _post_openrouter_ocr(
     import requests
 
     def _wait_for(attempt: int) -> float:
-        return min(_OCR_BACKOFF_BASE ** attempt, _OCR_MAX_BACKOFF)
+        return min(_OCR_BACKOFF_BASE**attempt, _OCR_MAX_BACKOFF)
 
     last_network_exc: Exception | None = None
     for attempt in range(_OCR_MAX_RETRIES + 1):
@@ -232,7 +281,10 @@ def _post_openrouter_ocr(
                 wait = _wait_for(attempt)
                 logger.warning(
                     "OpenRouter OCR network error (attempt %d/%d), retrying in %.1fs: %s",
-                    attempt + 1, _OCR_MAX_RETRIES + 1, wait, exc,
+                    attempt + 1,
+                    _OCR_MAX_RETRIES + 1,
+                    wait,
+                    exc,
                 )
                 time.sleep(wait)
                 continue
@@ -244,7 +296,10 @@ def _post_openrouter_ocr(
             wait = _wait_for(attempt)
             logger.warning(
                 "OpenRouter OCR returned %d (attempt %d/%d), retrying in %.1fs",
-                resp.status_code, attempt + 1, _OCR_MAX_RETRIES + 1, wait,
+                resp.status_code,
+                attempt + 1,
+                _OCR_MAX_RETRIES + 1,
+                wait,
             )
             time.sleep(wait)
             continue
@@ -267,8 +322,12 @@ def _post_openrouter_ocr(
                 return resp
             wait = _wait_for(attempt)
             logger.warning(
-                "OpenRouter OCR returned 200 with body error code %d (attempt %d/%d), retrying in %.1fs",
-                body_code, attempt + 1, _OCR_MAX_RETRIES + 1, wait,
+                "OpenRouter OCR returned 200 with body error code %d "
+                "(attempt %d/%d), retrying in %.1fs",
+                body_code,
+                attempt + 1,
+                _OCR_MAX_RETRIES + 1,
+                wait,
             )
             time.sleep(wait)
             continue
@@ -315,7 +374,8 @@ def _parse_openrouter_ocr_response(resp: "requests.Response") -> str:  # noqa: F
     if not choices:
         logger.warning(
             "OpenRouter OCR unexpected response (no choices): keys=%s body=%s",
-            sorted(data.keys()), str(data)[:_OCR_LOG_TRUNCATE],
+            sorted(data.keys()),
+            str(data)[:_OCR_LOG_TRUNCATE],
         )
         raise ExtractionError(
             f"OpenRouter OCR returned no choices (response keys: {sorted(data.keys())})"
@@ -391,13 +451,21 @@ def _extract_openrouter_file_parser(path: Path, engine: str) -> str:
         },
         payload={
             "model": OPENROUTER_EXTRACTION_MODEL,
-            "messages": [{"role": "user", "content": [
-                {"type": "text", "text": OPENROUTER_EXTRACTION_PROMPT},
-                {"type": "file", "file": {
-                    "filename": path.name,
-                    "file_data": f"data:application/pdf;base64,{pdf_b64}",
-                }},
-            ]}],
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": OPENROUTER_EXTRACTION_PROMPT},
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": path.name,
+                                "file_data": f"data:application/pdf;base64,{pdf_b64}",
+                            },
+                        },
+                    ],
+                }
+            ],
             "plugins": [{"id": "file-parser", "pdf": {"engine": engine}}],
         },
         timeout=300,
@@ -422,9 +490,7 @@ def _extract_docling(path: Path) -> str:
 
     converter = DocumentConverter()
     result = converter.convert(str(path))
-    return result.document.export_to_markdown(
-        page_break_placeholder="<!-- PAGE BREAK -->"
-    )
+    return result.document.export_to_markdown(page_break_placeholder="<!-- PAGE BREAK -->")
 
 
 # ---------------------------------------------------------------------------
@@ -438,9 +504,7 @@ def _extract_plaintext(path: Path) -> str:
 
 
 # LaTeX heading patterns: \section{...}, \subsection{...}, etc.
-_LATEX_HEADING_RE = re.compile(
-    r"\\(section|subsection|subsubsection|paragraph)\*?\{([^}]*)\}"
-)
+_LATEX_HEADING_RE = re.compile(r"\\(section|subsection|subsubsection|paragraph)\*?\{([^}]*)\}")
 _LATEX_HEADING_LEVEL = {
     "section": "#",
     "subsection": "##",
@@ -465,9 +529,7 @@ def _extract_latex_regex(path: Path) -> str:
     # Strip preamble lines
     text = _LATEX_PREAMBLE_RE.sub("", text)
     # Convert LaTeX headings to markdown headings
-    text = _LATEX_HEADING_RE.sub(
-        lambda m: f"{_LATEX_HEADING_LEVEL[m.group(1)]} {m.group(2)}", text
-    )
+    text = _LATEX_HEADING_RE.sub(lambda m: f"{_LATEX_HEADING_LEVEL[m.group(1)]} {m.group(2)}", text)
     # Clean up excessive blank lines from stripping
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -490,9 +552,7 @@ def _extract_docx_mammoth(path: Path) -> str:
     try:
         import mammoth
     except ImportError:
-        raise ExtractionError(
-            "DOCX extraction requires mammoth: pip install coarse-ink[formats]"
-        )
+        raise ExtractionError("DOCX extraction requires mammoth: pip install coarse-ink[formats]")
     with open(path, "rb") as f:
         result = mammoth.convert_to_markdown(f)
     return result.value
@@ -528,9 +588,18 @@ def _extract_epub(path: Path) -> str:
 
 # Mistral OCR glyph[...] artifact → Unicode mapping
 _GLYPH_MAP: dict[str, str] = {
-    "lscript": "ℓ", "epsilon1": "ε", "negationslash": "≠", "square": "□",
-    "element": "∈", "arrowright": "→", "lessequal": "≤", "greaterequal": "≥",
-    "infinity": "∞", "summation": "Σ", "integral": "∫", "partialdiff": "∂",
+    "lscript": "ℓ",
+    "epsilon1": "ε",
+    "negationslash": "≠",
+    "square": "□",
+    "element": "∈",
+    "arrowright": "→",
+    "lessequal": "≤",
+    "greaterequal": "≥",
+    "infinity": "∞",
+    "summation": "Σ",
+    "integral": "∫",
+    "partialdiff": "∂",
 }
 _GLYPH_RE = re.compile(r"glyph\[(\w+)\]")
 
@@ -543,9 +612,6 @@ def normalize_mistral_artifacts(text: str) -> str:
     result = result.replace("<!-- formula-not-decoded -->", "")
     result = html.unescape(result)
     return result
-
-
-from coarse.garble import garble_ratio as compute_garble_ratio, normalize_ocr_garble  # noqa: E402, F401
 
 
 # ---------------------------------------------------------------------------
@@ -614,14 +680,13 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
             api_msg = _classify_api_error(exc)
             if api_msg:
                 raise ExtractionError(api_msg) from exc
-            errors.append(f"{name}: {exc}")
-            logger.warning("%s failed: %s", name, exc)
+            scrubbed = _scrub_secrets(str(exc))
+            errors.append(f"{name}: {scrubbed}")
+            logger.warning("%s failed: %s", name, scrubbed)
 
     if full_markdown is None:
-        detail = "; ".join(errors)
-        raise ExtractionError(
-            f"Cannot convert PDF: all extraction backends failed. {detail}"
-        )
+        detail = _scrub_secrets("; ".join(errors))
+        raise ExtractionError(f"Cannot convert PDF: all extraction backends failed. {detail}")
 
     # Normalize Mistral OCR artifacts unconditionally
     full_markdown = normalize_mistral_artifacts(full_markdown)
@@ -694,8 +759,7 @@ def extract_file(file_path: str | Path, use_cache: bool = True) -> PaperText:
     ext = path.suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
         raise ExtractionError(
-            f"Unsupported file format: {ext}. "
-            f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+            f"Unsupported file format: {ext}. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
         )
 
     # PDFs: existing Mistral OCR → OpenRouter → Docling pipeline

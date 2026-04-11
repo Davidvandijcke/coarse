@@ -7,6 +7,7 @@ from coarse.config import CoarseConfig
 from coarse.llm import (
     LLMClient,
     _inject_openrouter_privacy,
+    _sanitized_completion,
     estimate_call_cost,
     estimate_reasoning_overhead_tokens,
     model_cost_per_token,
@@ -148,6 +149,84 @@ def test_openrouter_api_key_skipped_for_direct_provider_calls(monkeypatch):
     assert "api_key" not in result
 
 
+@pytest.mark.parametrize("whitespace_key", [" ", "\n", "\t", "  \n\t  "])
+def test_openrouter_api_key_rejects_whitespace_only_env(monkeypatch, whitespace_key):
+    # A whitespace-only env var is truthy but produces `Authorization: Bearer <ws>`
+    # which OpenRouter rejects with 401 "Missing Authentication header". Drop it.
+    monkeypatch.setenv("OPENROUTER_API_KEY", whitespace_key)
+    result = _inject_openrouter_privacy("openrouter/anthropic/claude-sonnet-4.6", {})
+    assert "api_key" not in result
+
+
+def test_openrouter_api_key_stripped_before_injection(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "  sk-or-v1-padded  \n")
+    result = _inject_openrouter_privacy("openrouter/anthropic/claude-sonnet-4.6", {})
+    assert result["api_key"] == "sk-or-v1-padded"
+
+
+def test_openrouter_api_key_empty_string_env_treated_as_unset(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    result = _inject_openrouter_privacy("openrouter/anthropic/claude-sonnet-4.6", {})
+    assert "api_key" not in result
+
+
+@pytest.mark.parametrize("whitespace_key", ["", " ", "\n", "\t", "  \n\t  "])
+def test_openrouter_privacy_strips_caller_provided_api_key(monkeypatch, whitespace_key):
+    # Caller-provided whitespace api_key must be dropped too — otherwise the
+    # env-var fix can be bypassed by any future helper that plumbs api_key
+    # explicitly through kwargs.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-env-fallback")
+    result = _inject_openrouter_privacy(
+        "openrouter/anthropic/claude-sonnet-4.6", {"api_key": whitespace_key}
+    )
+    # Whitespace caller key is dropped and we fall back to the (valid) env var
+    assert result["api_key"] == "sk-or-v1-env-fallback"
+
+
+def test_openrouter_privacy_strips_caller_key_with_no_env_fallback(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    result = _inject_openrouter_privacy(
+        "openrouter/anthropic/claude-sonnet-4.6", {"api_key": " \n "}
+    )
+    assert "api_key" not in result
+
+
+def test_openrouter_privacy_trims_padded_caller_key(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    result = _inject_openrouter_privacy(
+        "openrouter/anthropic/claude-sonnet-4.6", {"api_key": "  sk-or-v1-caller  "}
+    )
+    assert result["api_key"] == "sk-or-v1-caller"
+
+
+def test_sanitized_completion_forwards_stripped_api_key_from_env(monkeypatch):
+    # End-to-end: the same path instructor takes — _sanitized_completion ->
+    # _inject_openrouter_privacy -> litellm.completion. Regression guard
+    # against a future refactor that moves the injection call site.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "  sk-or-v1-e2e  ")
+    captured = {}
+
+    msg = MagicMock()
+    msg.content = "{}"
+    msg.reasoning_content = None
+    choice = MagicMock()
+    choice.message = msg
+    mock_response = MagicMock()
+    mock_response.choices = [choice]
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return mock_response
+
+    with patch("coarse.llm.litellm.completion", side_effect=fake_completion):
+        _sanitized_completion(
+            model="openrouter/anthropic/claude-sonnet-4.6",
+            messages=[{"role": "user", "content": "x"}],
+        )
+
+    assert captured.get("api_key") == "sk-or-v1-e2e"
+
+
 # ---------------------------------------------------------------------------
 # Reasoning-model path
 # ---------------------------------------------------------------------------
@@ -165,12 +244,12 @@ def _reasoning_client(model_id: str, mock_instructor_client) -> LLMClient:
 
 def test_is_reasoning_property_true_for_gpt5_pro(mock_instructor_client):
     client = _reasoning_client("openai/gpt-5.4-pro", mock_instructor_client)
-    assert client.is_reasoning_model is True
+    assert client.is_reasoning is True
 
 
 def test_is_reasoning_property_false_for_regular_gpt5(mock_instructor_client):
     client = _reasoning_client("openai/gpt-5.4", mock_instructor_client)
-    assert client.is_reasoning_model is False
+    assert client.is_reasoning is False
 
 
 def test_complete_bumps_max_tokens_for_reasoning_model(mock_instructor_client):
@@ -254,6 +333,96 @@ def test_complete_respects_caller_reasoning_effort_override(mock_instructor_clie
     assert call.kwargs["reasoning_effort"] == "high"
 
 
+def test_complete_replaces_caller_none_reasoning_effort_with_default(
+    mock_instructor_client,
+):
+    """A caller threading `reasoning_effort=None` (e.g. from a config that
+    defaults to None) must NOT silently disable reasoning. The default kicks
+    in for None; callers can disable by passing a real string like "low"."""
+    client = _reasoning_client("openai/o3", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            reasoning_effort=None,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert call.kwargs["reasoning_effort"] == REASONING_EFFORT_DEFAULT
+
+
+def test_complete_kimi_thinking_gets_both_reasoning_and_md_json_bumps(
+    mock_instructor_client,
+):
+    """moonshotai/kimi-k2-thinking matches BOTH the reasoning path (via
+    'thinking' substring) and the MD_JSON path (via 'moonshotai'/'kimi'
+    prefix). A future refactor that reorders the two branches could
+    regress silently. Pin the composition: the final max_tokens must
+    respect the max of both bumps."""
+    client = _reasoning_client("moonshotai/kimi-k2-thinking", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=2048,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    # Both bumps should have fired: reasoning 8x = 16384, MD_JSON floor = 16384.
+    # The final value must be at least the larger of the two.
+    assert call.kwargs["max_tokens"] >= 16384
+
+
+def test_complete_reasoning_bump_respects_model_ceiling(mock_instructor_client):
+    """The bumped value must still be clamped by _clamp_max_tokens to the
+    model's registered ceiling. If a future _clamp_max_tokens change drops
+    reasoning models, this test catches it."""
+    client = _reasoning_client("openai/o3", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=200_000,  # deliberately above any reasonable ceiling
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    # Must be clamped below what we asked for, but still well above the
+    # nominal 200k (which would be > o3's real output window).
+    assert call.kwargs["max_tokens"] < 200_000 * 8
+    # And must be strictly larger than the caller's nominal request, proving
+    # the bump ran before the clamp.
+    assert call.kwargs["max_tokens"] > 0
+
+
+def test_complete_reasoning_bump_for_unknown_reasoning_model(mock_instructor_client):
+    """A reasoning model not in litellm's registry (e.g. brand-new thinking
+    variant) should still get the 8x headroom rather than being capped to
+    the 16k unknown-model fallback. Regression for the case where the
+    headline fix was silently neutralized by _clamp_max_tokens."""
+    # Fake model ID that matches REASONING_MODEL_SUBSTRINGS ("thinking")
+    # but is NOT in litellm's cost registry.
+    client = _reasoning_client("made-up-vendor/new-thinking-model-v1", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=8192,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    # Without the reasoning-aware unknown fallback, this would have been
+    # clamped to 16384. With it, the 8x bump (65536) stays intact because
+    # _UNKNOWN_REASONING_MODEL_CEILING is 65536.
+    assert call.kwargs["max_tokens"] > 16384, (
+        f"unknown reasoning model was clamped to {call.kwargs['max_tokens']}, "
+        f"defeating the 8x multiplier"
+    )
+
+
 def test_reasoning_multiplier_applies_before_clamp(mock_instructor_client):
     """The multiplier bumps the caller's request; _clamp_max_tokens then
     enforces the model's real ceiling. This test pins the relationship by
@@ -277,8 +446,28 @@ def test_reasoning_multiplier_applies_before_clamp(mock_instructor_client):
 # ---------------------------------------------------------------------------
 
 
+def test_litellm_drop_params_enabled_at_module_import():
+    """Load-bearing for the 'silently drop reasoning_effort on providers
+    that don't support it' strategy. If this gets disabled, Qwen thinking
+    / DeepSeek R1 / Kimi thinking calls will error on the reasoning_effort
+    kwarg at runtime."""
+    import litellm
+
+    import coarse.llm  # noqa: F401 — import triggers the module-level set
+
+    assert litellm.drop_params is True
+
+
 def test_reasoning_overhead_zero_for_regular_model():
     assert estimate_reasoning_overhead_tokens("openai/gpt-4o", 1500) == 0
+
+
+def test_estimate_call_cost_unknown_reasoning_model_returns_zero():
+    """For a reasoning model not in litellm's cost registry,
+    model_cost_per_token returns (0, 0), so cost should be 0 even though
+    the reasoning overhead multiplier fires. Documents the fallback."""
+    cost = estimate_call_cost("made-up-vendor/new-thinking-model-v1", 1000, 500)
+    assert cost == 0.0
 
 
 def test_reasoning_overhead_nonzero_for_reasoning_model():
@@ -305,6 +494,128 @@ def test_estimate_call_cost_reasoning_is_more_expensive_than_regular():
     )
     # Sanity: the overhead should be meaningful (>20% uplift), not a rounding bump
     assert reasoning_cost >= naive_cost * 1.2
+
+
+def _sanitizer_response_with(content: str):
+    """Build a minimal litellm-style response object for _sanitized_completion."""
+    msg = MagicMock()
+    msg.content = content
+    msg.reasoning_content = None
+    choice = MagicMock()
+    choice.message = msg
+    response = MagicMock()
+    response.choices = [choice]
+    return response
+
+
+def test_sanitized_completion_strips_literal_control_chars():
+    """Literal \\x00-\\x1f (except tab/newline) in msg.content must be removed."""
+    raw = "before\x00middle\x01tab\there\nnewlineOK\x1fend"
+    response = _sanitizer_response_with(raw)
+
+    with patch("coarse.llm.litellm.completion", return_value=response):
+        result = _sanitized_completion(model="test/mock")
+
+    cleaned = result.choices[0].message.content
+    assert "\x00" not in cleaned
+    assert "\x01" not in cleaned
+    assert "\x1f" not in cleaned
+    assert "\t" in cleaned  # tab preserved
+    assert "\n" in cleaned  # newline preserved
+    assert cleaned == "beforemiddletab\there\nnewlineOKend"
+
+
+def test_sanitized_completion_strips_json_u0000_escape_before_parse():
+    """Regression for production bug: gpt-5.4 emitted JSON with \\u0000 escape
+    sequences inside string fields. _CTRL_CHAR_RE only matches literal control
+    chars, so the 6-byte \\u0000 escape passed through untouched, and json.loads
+    then reconstituted it as a real \\x00 inside the parsed Pydantic field.
+    That NUL byte then crashed the Supabase write with Postgres 22P05.
+
+    The fix strips the escape form before Instructor/Pydantic sees the content.
+    """
+    import json
+
+    # Six printable ASCII bytes, NOT a literal NUL. Must use a raw-ish build
+    # so Python's string literal parser doesn't fold \u0000 into \x00.
+    raw_json = '{"quote": "text ' + "\\u0000" + ' more", "keep": "tab\\tend"}'
+    # Sanity-check the test fixture itself:
+    assert "\x00" not in raw_json  # no literal NUL yet
+    assert "\\u0000" in raw_json  # escape sequence is present as 6 chars
+
+    response = _sanitizer_response_with(raw_json)
+    with patch("coarse.llm.litellm.completion", return_value=response):
+        result = _sanitized_completion(model="test/mock")
+
+    cleaned = result.choices[0].message.content
+    parsed = json.loads(cleaned)
+
+    # The fix: no \x00 should survive the json.loads round-trip.
+    assert "\x00" not in parsed["quote"], f"NUL byte leaked into parsed field: {parsed['quote']!r}"
+    assert parsed["quote"] == "text  more"  # space preserved either side
+    # Legit escape sequences (\t) must still round-trip correctly.
+    assert parsed["keep"] == "tab\tend"
+
+
+def test_sanitized_completion_strips_multiple_u0000_escapes():
+    """Pin global replacement: every \\u0000 occurrence must be stripped,
+    not just the first. Guards against a future switch to `.replace(..., 1)`.
+    """
+    import json
+
+    raw = '{"q": "a' + "\\u0000" + "b" + "\\u0000" + "c" + "\\u0000" + 'd"}'
+    response = _sanitizer_response_with(raw)
+    with patch("coarse.llm.litellm.completion", return_value=response):
+        result = _sanitized_completion(model="test/mock")
+
+    parsed = json.loads(result.choices[0].message.content)
+    assert "\x00" not in parsed["q"]
+    assert parsed["q"] == "abcd"
+
+
+def test_sanitized_completion_handles_none_content():
+    """The `isinstance(msg.content, str)` guard must no-op on None content
+    without raising. Some providers (e.g. reasoning-only responses) return
+    a message with content=None.
+    """
+    response = _sanitizer_response_with(None)
+    with patch("coarse.llm.litellm.completion", return_value=response):
+        result = _sanitized_completion(model="test/mock")
+    assert result.choices[0].message.content is None
+
+
+def test_complete_text_returns_raw_content(mock_instructor_client):
+    """complete_text bypasses instructor and returns the raw response string."""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "  some perplexity citations  "
+
+    with (
+        patch("coarse.llm._sanitized_completion", return_value=mock_response),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.042),
+    ):
+        client = LLMClient(model=TEST_MODEL, config=CoarseConfig())
+        result = client.complete_text(
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+    assert result == "some perplexity citations"
+    assert abs(client.cost_usd - 0.042) < 1e-9
+
+
+def test_complete_text_raises_on_empty_response(mock_instructor_client):
+    """complete_text raises ValueError rather than silently returning empty string."""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "   "
+
+    with (
+        patch("coarse.llm._sanitized_completion", return_value=mock_response),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(model=TEST_MODEL, config=CoarseConfig())
+        with pytest.raises(ValueError):
+            client.complete_text(messages=[{"role": "user", "content": "hi"}])
 
 
 def test_complete_instructor_validation_error(mock_instructor_client):
