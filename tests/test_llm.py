@@ -618,6 +618,41 @@ def test_complete_text_raises_on_empty_response(mock_instructor_client):
             client.complete_text(messages=[{"role": "user", "content": "hi"}])
 
 
+def test_supports_prompt_caching_direct_anthropic(mock_instructor_client):
+    """Direct anthropic/* routing supports prompt caching (unchanged)."""
+    client = LLMClient(model="anthropic/claude-sonnet-4.6", config=CoarseConfig())
+    assert client.supports_prompt_caching is True
+
+
+def test_supports_prompt_caching_openrouter_anthropic(mock_instructor_client):
+    """OpenRouter → Anthropic routing now ALSO supports prompt caching.
+
+    Regression guard: the previous behavior gated OpenRouter-routed Claude
+    out of the cache path under the (stale) assumption that OpenRouter
+    didn't forward cache_control. OpenRouter has supported forwarding
+    explicit per-block cache_control breakpoints to Anthropic since
+    mid-2024. Since coarse users can only upload OpenRouter keys, this
+    gate effectively disabled caching in production; removing it is
+    the entire point of this fix.
+    """
+    client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.6", config=CoarseConfig())
+    assert client.supports_prompt_caching is True
+
+
+def test_supports_prompt_caching_non_anthropic_models(mock_instructor_client):
+    """Non-Anthropic models (qwen, openai, etc.) do not support caching."""
+    for model_id in (
+        "qwen/qwen3.5-plus-02-15",
+        "openrouter/qwen/qwen3.5-plus-02-15",
+        "openai/gpt-5.4",
+        "openrouter/openai/gpt-5.4",
+    ):
+        client = LLMClient(model=model_id, config=CoarseConfig())
+        assert client.supports_prompt_caching is False, (
+            f"{model_id} should not support prompt caching"
+        )
+
+
 def test_complete_instructor_validation_error(mock_instructor_client):
     try:
         _SimpleModel()  # missing required 'value' field -> ValidationError

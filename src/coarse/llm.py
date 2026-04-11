@@ -309,11 +309,23 @@ class LLMClient:
     def supports_prompt_caching(self) -> bool:
         """Whether the model supports Anthropic-style prompt caching.
 
-        Only True for direct Anthropic API calls (not OpenRouter-proxied),
-        since OpenRouter does not forward cache_control to Anthropic.
+        True for any Claude model regardless of whether the request is
+        routed direct to Anthropic or proxied through OpenRouter. The
+        older "OpenRouter doesn't forward cache_control" concern is
+        stale: OpenRouter has forwarded explicit per-block cache_control
+        breakpoints to the Anthropic provider since mid-2024. Verified
+        against their current docs at
+        https://openrouter.ai/docs/guides/best-practices/prompt-caching
+        on 2026-04-11.
+
+        Cost impact: cache reads are billed at 0.1× input price (90% off)
+        and cache writes at 1.25× (25% premium). A cache block pays off
+        the moment it's read at least once. In coarse's pipeline the
+        section-agent system prompt is shared across N parallel calls
+        (N=8-25 on typical papers), so turning caching ON for OpenRouter-
+        routed Claude gives 1 write + (N-1) reads immediately.
         """
-        lower = self._model.lower()
-        return "anthropic" in lower and not lower.startswith("openrouter/")
+        return "anthropic" in self._model.lower()
 
 
 def _normalize_model(model: str, config: CoarseConfig | None = None) -> str:
