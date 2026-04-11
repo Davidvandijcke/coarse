@@ -19,7 +19,10 @@ export async function GET() {
 
   const [statusResult, countResult] = await Promise.all([
     supabase.from("system_status").select("accepting_reviews, banner_message").eq("id", 1).single(),
-    supabase.from("reviews").select("id", { count: "exact", head: true }).in("status", ["queued", "running"]),
+    supabase
+      .from("reviews")
+      .select("id, review_emails!inner(review_id)", { count: "exact", head: true })
+      .in("status", ["queued", "running"]),
   ]);
 
   const accepting = statusResult.data?.accepting_reviews ?? true;
