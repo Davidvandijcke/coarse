@@ -53,10 +53,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { count: activeReviews } = await supabaseAdmin
+  const { count: activeReviews, error: activeReviewsError } = await supabaseAdmin
     .from("reviews")
     .select("id", { count: "exact", head: true })
     .in("status", ["queued", "running"]);
+
+  if (activeReviewsError) {
+    return NextResponse.json(
+      {
+        error: "Unable to verify current system load. Please try again in a few minutes.",
+      },
+      { status: 503 },
+    );
+  }
 
   if ((activeReviews ?? 0) >= MAX_CONCURRENT_REVIEWS) {
     return NextResponse.json(
