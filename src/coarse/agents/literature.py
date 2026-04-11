@@ -12,13 +12,17 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
-import litellm
 from pydantic import BaseModel, Field
 
-from coarse.config import _clean_env
-from coarse.llm import LLMClient, _inject_openrouter_privacy
+from coarse.config import has_provider_key
+from coarse.llm import LLMClient
 from coarse.models import LITERATURE_SEARCH_MODEL
-from coarse.prompts import PERPLEXITY_SYSTEM, perplexity_user
+from coarse.prompts import (
+    ARXIV_QUERY_GEN_SYSTEM,
+    ARXIV_RANKING_SYSTEM,
+    PERPLEXITY_SYSTEM,
+    perplexity_user,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,41 +81,25 @@ class _RankedResults(BaseModel):
 
 
 def _search_perplexity(title: str, abstract: str, client: LLMClient) -> str:
-    """Single Perplexity Sonar Pro Search call via OpenRouter.
+    """Single Perplexity Sonar Pro Search call via LLMClient.complete_text.
 
-    Returns formatted literature context string, or raises on failure.
+    Returns formatted literature context string, or raises on failure. Routes
+    through LLMClient so OpenRouter privacy / api_key / control-char stripping
+    all apply uniformly with the rest of the pipeline.
     """
-    user_msg = perplexity_user(title, abstract[:1500])
-
-    model = f"openrouter/{LITERATURE_SEARCH_MODEL}"
-    completion_kwargs = _inject_openrouter_privacy(
-        model,
-        {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": PERPLEXITY_SYSTEM},
-                {"role": "user", "content": user_msg},
-            ],
-            "max_tokens": 4096,
-            "temperature": _PERPLEXITY_TEMPERATURE,
-            "timeout": 60,
-        },
+    perplexity_client = LLMClient(model=LITERATURE_SEARCH_MODEL)
+    messages = [
+        {"role": "system", "content": PERPLEXITY_SYSTEM},
+        {"role": "user", "content": perplexity_user(title, abstract[:1500])},
+    ]
+    content = perplexity_client.complete_text(
+        messages,
+        max_tokens=4096,
+        temperature=_PERPLEXITY_TEMPERATURE,
+        timeout=60,
     )
-    response = litellm.completion(**completion_kwargs)
-
-    content = response.choices[0].message.content
-    if not content or not content.strip():
-        raise ValueError("Perplexity returned empty response")
-
-    # Track cost
-    try:
-        cost = litellm.completion_cost(completion_response=response)
-        if cost:
-            client.add_cost(cost)
-    except Exception:
-        pass
-
-    return content.strip()
+    client.add_cost(perplexity_client.cost_usd)
+    return content
 
 
 # ---------------------------------------------------------------------------
@@ -176,33 +164,6 @@ def _parse_arxiv_response(xml_data: bytes) -> list[ArxivPaper]:
             )
 
     return papers
-
-
-# ---------------------------------------------------------------------------
-# LLM prompt templates (arXiv fallback)
-# ---------------------------------------------------------------------------
-
-_QUERY_GEN_SYSTEM = """\
-You are a research librarian. Given a paper's title and abstract, generate 3-5 \
-diverse search queries for finding related work on arXiv. Include:
-- The paper's core method/technique
-- The application domain
-- Key theoretical concepts
-- Alternative approaches to the same problem
-Keep queries concise (3-8 words each).
-"""
-
-_RANKING_SYSTEM = """\
-You are a research relevance assessor. Given a target paper and a list of arXiv \
-search results, score each result's relevance (0.0-1.0) to the target paper.
-
-Score 0.8-1.0: Directly related — same method, same problem, or a paper the \
-target likely cites or should cite.
-Score 0.5-0.7: Moderately related — related technique or application domain.
-Score 0.0-0.4: Tangentially related or irrelevant.
-
-Also suggest 0-3 refinement queries if important areas of related work are missing.
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +232,7 @@ def search_literature(
     Uses Perplexity Sonar Pro Search if OPENROUTER_API_KEY is set,
     falling back to the arXiv pipeline on failure or missing key.
     """
-    if _clean_env("OPENROUTER_API_KEY"):
+    if has_provider_key("openrouter"):
         try:
             result = _search_perplexity(title, abstract, client)
             logger.info("Literature search completed via Perplexity")
@@ -285,7 +246,7 @@ def search_literature(
 def _generate_queries(title: str, abstract: str, client: LLMClient) -> list[str]:
     """Generate arXiv search queries from paper metadata."""
     messages = [
-        {"role": "system", "content": _QUERY_GEN_SYSTEM},
+        {"role": "system", "content": ARXIV_QUERY_GEN_SYSTEM},
         {
             "role": "user",
             "content": (
@@ -323,7 +284,7 @@ def _rank_results(
     )
 
     messages = [
-        {"role": "system", "content": _RANKING_SYSTEM},
+        {"role": "system", "content": ARXIV_RANKING_SYSTEM},
         {
             "role": "user",
             "content": (

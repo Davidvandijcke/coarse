@@ -205,41 +205,41 @@ def test_search_literature_no_results():
 
 
 def test_search_perplexity_happy_path():
-    """_search_perplexity returns content and tracks cost."""
-    mock_client = MagicMock()
+    """_search_perplexity returns content and tracks cost via LLMClient.complete_text."""
+    caller_client = MagicMock()
 
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = "## Related Work\n1. Paper A by Author (2020)"
+    perplexity_client = MagicMock()
+    perplexity_client.complete_text.return_value = "## Related Work\n1. Paper A by Author (2020)"
+    perplexity_client.cost_usd = 0.025
 
-    with patch("coarse.agents.literature.litellm") as mock_litellm:
-        mock_litellm.completion.return_value = mock_response
-        mock_litellm.completion_cost.return_value = 0.025
-
-        result = _search_perplexity("Test Title", "Test abstract", mock_client)
+    with patch(
+        "coarse.agents.literature.LLMClient",
+        return_value=perplexity_client,
+    ):
+        result = _search_perplexity("Test Title", "Test abstract", caller_client)
 
     assert "Paper A" in result
-    mock_client.add_cost.assert_called_once_with(0.025)
+    perplexity_client.complete_text.assert_called_once()
+    caller_client.add_cost.assert_called_once_with(0.025)
 
 
 def test_search_perplexity_sends_system_and_user_messages():
     """_search_perplexity splits the prompt into a system + user conversation,
     and the user message wraps the abstract in a <paper_abstract> fence."""
-    mock_client = MagicMock()
+    caller_client = MagicMock()
 
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = "Literature results"
+    perplexity_client = MagicMock()
+    perplexity_client.complete_text.return_value = "Literature results"
+    perplexity_client.cost_usd = 0.01
 
-    with patch("coarse.agents.literature.litellm") as mock_litellm:
-        mock_litellm.completion.return_value = mock_response
-        mock_litellm.completion_cost.return_value = 0.01
+    with patch(
+        "coarse.agents.literature.LLMClient",
+        return_value=perplexity_client,
+    ):
+        _search_perplexity("Test Title", "Untrusted abstract.", caller_client)
 
-        _search_perplexity("Test Title", "Untrusted abstract.", mock_client)
-
-    # Inspect the kwargs handed to litellm.completion
-    call_kwargs = mock_litellm.completion.call_args.kwargs
-    messages = call_kwargs["messages"]
+    # Inspect the messages handed to complete_text (first positional arg)
+    messages = perplexity_client.complete_text.call_args.args[0]
     assert len(messages) == 2
     assert messages[0]["role"] == "system"
     assert messages[1]["role"] == "user"
@@ -252,18 +252,18 @@ def test_search_perplexity_sends_system_and_user_messages():
 
 
 def test_search_perplexity_empty_response_raises():
-    """_search_perplexity raises ValueError on empty response."""
-    mock_client = MagicMock()
+    """_search_perplexity surfaces ValueError from complete_text on empty response."""
+    caller_client = MagicMock()
 
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = ""
+    perplexity_client = MagicMock()
+    perplexity_client.complete_text.side_effect = ValueError("empty response")
 
-    with patch("coarse.agents.literature.litellm") as mock_litellm:
-        mock_litellm.completion.return_value = mock_response
-
+    with patch(
+        "coarse.agents.literature.LLMClient",
+        return_value=perplexity_client,
+    ):
         try:
-            _search_perplexity("Test", "Abstract", mock_client)
+            _search_perplexity("Test", "Abstract", caller_client)
             assert False, "Should have raised ValueError"
         except ValueError:
             pass
