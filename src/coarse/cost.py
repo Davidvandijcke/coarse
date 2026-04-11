@@ -101,6 +101,15 @@ def build_cost_estimate(
     # For reasoning models, include the hidden reasoning overhead in the
     # displayed tokens_out so the table's numbers match the dollar column
     # and users can see where the bill is actually coming from.
+    #
+    # NOTE: this inflates `CostStage.estimated_tokens_out` beyond the
+    # visible output budget the caller requested. Consumers that sum or
+    # compare the field across stages are reading "billable output
+    # tokens", not "visible output tokens" — for reasoning stages the
+    # former includes the hidden reasoning contribution. The
+    # `(+reasoning)` suffix on the stage name is the signal that the
+    # value is inflated. Do not re-apply `estimate_reasoning_overhead_tokens`
+    # on top of this number downstream.
     is_reasoning = is_reasoning_model(model)
 
     for name, tokens_in, tokens_out in stage_defs:

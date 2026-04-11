@@ -165,12 +165,12 @@ def _reasoning_client(model_id: str, mock_instructor_client) -> LLMClient:
 
 def test_is_reasoning_property_true_for_gpt5_pro(mock_instructor_client):
     client = _reasoning_client("openai/gpt-5.4-pro", mock_instructor_client)
-    assert client.is_reasoning_model is True
+    assert client.is_reasoning is True
 
 
 def test_is_reasoning_property_false_for_regular_gpt5(mock_instructor_client):
     client = _reasoning_client("openai/gpt-5.4", mock_instructor_client)
-    assert client.is_reasoning_model is False
+    assert client.is_reasoning is False
 
 
 def test_complete_bumps_max_tokens_for_reasoning_model(mock_instructor_client):
@@ -254,6 +254,96 @@ def test_complete_respects_caller_reasoning_effort_override(mock_instructor_clie
     assert call.kwargs["reasoning_effort"] == "high"
 
 
+def test_complete_replaces_caller_none_reasoning_effort_with_default(
+    mock_instructor_client,
+):
+    """A caller threading `reasoning_effort=None` (e.g. from a config that
+    defaults to None) must NOT silently disable reasoning. The default kicks
+    in for None; callers can disable by passing a real string like "low"."""
+    client = _reasoning_client("openai/o3", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            reasoning_effort=None,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert call.kwargs["reasoning_effort"] == REASONING_EFFORT_DEFAULT
+
+
+def test_complete_kimi_thinking_gets_both_reasoning_and_md_json_bumps(
+    mock_instructor_client,
+):
+    """moonshotai/kimi-k2-thinking matches BOTH the reasoning path (via
+    'thinking' substring) and the MD_JSON path (via 'moonshotai'/'kimi'
+    prefix). A future refactor that reorders the two branches could
+    regress silently. Pin the composition: the final max_tokens must
+    respect the max of both bumps."""
+    client = _reasoning_client("moonshotai/kimi-k2-thinking", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=2048,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    # Both bumps should have fired: reasoning 8x = 16384, MD_JSON floor = 16384.
+    # The final value must be at least the larger of the two.
+    assert call.kwargs["max_tokens"] >= 16384
+
+
+def test_complete_reasoning_bump_respects_model_ceiling(mock_instructor_client):
+    """The bumped value must still be clamped by _clamp_max_tokens to the
+    model's registered ceiling. If a future _clamp_max_tokens change drops
+    reasoning models, this test catches it."""
+    client = _reasoning_client("openai/o3", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=200_000,  # deliberately above any reasonable ceiling
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    # Must be clamped below what we asked for, but still well above the
+    # nominal 200k (which would be > o3's real output window).
+    assert call.kwargs["max_tokens"] < 200_000 * 8
+    # And must be strictly larger than the caller's nominal request, proving
+    # the bump ran before the clamp.
+    assert call.kwargs["max_tokens"] > 0
+
+
+def test_complete_reasoning_bump_for_unknown_reasoning_model(mock_instructor_client):
+    """A reasoning model not in litellm's registry (e.g. brand-new thinking
+    variant) should still get the 8x headroom rather than being capped to
+    the 16k unknown-model fallback. Regression for the case where the
+    headline fix was silently neutralized by _clamp_max_tokens."""
+    # Fake model ID that matches REASONING_MODEL_SUBSTRINGS ("thinking")
+    # but is NOT in litellm's cost registry.
+    client = _reasoning_client("made-up-vendor/new-thinking-model-v1", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=8192,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    # Without the reasoning-aware unknown fallback, this would have been
+    # clamped to 16384. With it, the 8x bump (65536) stays intact because
+    # _UNKNOWN_REASONING_MODEL_CEILING is 65536.
+    assert call.kwargs["max_tokens"] > 16384, (
+        f"unknown reasoning model was clamped to {call.kwargs['max_tokens']}, "
+        f"defeating the 8x multiplier"
+    )
+
+
 def test_reasoning_multiplier_applies_before_clamp(mock_instructor_client):
     """The multiplier bumps the caller's request; _clamp_max_tokens then
     enforces the model's real ceiling. This test pins the relationship by
@@ -277,8 +367,28 @@ def test_reasoning_multiplier_applies_before_clamp(mock_instructor_client):
 # ---------------------------------------------------------------------------
 
 
+def test_litellm_drop_params_enabled_at_module_import():
+    """Load-bearing for the 'silently drop reasoning_effort on providers
+    that don't support it' strategy. If this gets disabled, Qwen thinking
+    / DeepSeek R1 / Kimi thinking calls will error on the reasoning_effort
+    kwarg at runtime."""
+    import litellm
+
+    import coarse.llm  # noqa: F401 — import triggers the module-level set
+
+    assert litellm.drop_params is True
+
+
 def test_reasoning_overhead_zero_for_regular_model():
     assert estimate_reasoning_overhead_tokens("openai/gpt-4o", 1500) == 0
+
+
+def test_estimate_call_cost_unknown_reasoning_model_returns_zero():
+    """For a reasoning model not in litellm's cost registry,
+    model_cost_per_token returns (0, 0), so cost should be 0 even though
+    the reasoning overhead multiplier fires. Documents the fallback."""
+    cost = estimate_call_cost("made-up-vendor/new-thinking-model-v1", 1000, 500)
+    assert cost == 0.0
 
 
 def test_reasoning_overhead_nonzero_for_reasoning_model():

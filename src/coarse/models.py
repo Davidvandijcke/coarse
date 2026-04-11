@@ -112,6 +112,12 @@ REASONING_MODEL_SUBSTRINGS: tuple[str, ...] = (
 # multiplier on the typical 8k overview budget gives 64k, which covers that
 # case with slack. The real model_max ceiling in _clamp_max_tokens will
 # still cap to what the model actually supports.
+#
+# Note: this is the *request budget* multiplier. The cost-estimate overhead
+# multiplier is 4x and lives in `llm.py::_REASONING_OVERHEAD_MULTIPLIER` —
+# they're intentionally asymmetric because reasoning_effort="medium" is
+# expected to cap actual usage well below the raised ceiling. If you change
+# one, check the other.
 REASONING_MAX_TOKENS_MULTIPLIER: int = 8
 
 # Default reasoning effort passed to litellm's unified `reasoning_effort`

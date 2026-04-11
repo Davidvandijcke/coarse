@@ -185,9 +185,15 @@ class LLMClient:
         # this to the right provider field (e.g. OpenAI's reasoning_effort)
         # and — because we set litellm.drop_params=True — silently drops
         # it for providers that don't accept it.
+        #
+        # Use an explicit `.get() is None` check rather than `setdefault`
+        # so a caller passing `reasoning_effort=None` gets the default
+        # instead of silently disabling it (setdefault would treat None
+        # as "already set"). A caller can still disable by passing a
+        # real string like "low" or by passing a non-None sentinel.
         call_kwargs = dict(kwargs)
-        if self._is_reasoning:
-            call_kwargs.setdefault("reasoning_effort", REASONING_EFFORT_DEFAULT)
+        if self._is_reasoning and call_kwargs.get("reasoning_effort") is None:
+            call_kwargs["reasoning_effort"] = REASONING_EFFORT_DEFAULT
 
         response, completion = self._client.chat.completions.create_with_completion(
             model=self._model,
@@ -224,8 +230,15 @@ class LLMClient:
         return self._cost_usd
 
     @property
-    def is_reasoning_model(self) -> bool:
-        """Whether the resolved model uses hidden reasoning tokens."""
+    def is_reasoning(self) -> bool:
+        """Whether the resolved model uses hidden reasoning tokens.
+
+        Fixed at construction from the resolved model ID. Deliberately
+        named `is_reasoning` (not `is_reasoning_model`) to avoid a
+        readability trap where `self.is_reasoning_model` and the
+        module-level `is_reasoning_model(...)` function would look the
+        same at a glance without the parentheses.
+        """
         return self._is_reasoning
 
     @property
@@ -299,11 +312,24 @@ def _lookup_model_cost(model: str) -> dict | None:
     return info
 
 
+_UNKNOWN_MODEL_CEILING = 16_384
+# Reasoning models need a larger fallback ceiling so the 8x multiplier
+# applied upstream in LLMClient.complete() isn't immediately clamped back
+# down to 16k when the model ID isn't in litellm's registry (common case
+# for brand-new thinking variants: kimi-k2-thinking, qwen3-*-thinking,
+# deepseek-r* distills). 65k accommodates 8 * 8192 = 65536 without
+# clamping, which is the typical caller budget for the heavier agent
+# stages (overview, sections, crossref, critique).
+_UNKNOWN_REASONING_MODEL_CEILING = 65_536
+
+
 def _clamp_max_tokens(model: str, requested: int) -> int:
     """Clamp max_tokens to the model's known output limit.
 
     Many models error on max_tokens > their actual output window.
-    Falls back to a safe default of 4096 if model isn't in litellm's registry.
+    Falls back to a safe default if the model isn't in litellm's registry;
+    the fallback is higher for reasoning models so the reasoning-bump
+    multiplier in LLMClient.complete() isn't immediately neutralized.
     """
     info = _lookup_model_cost(model)
 
@@ -311,9 +337,13 @@ def _clamp_max_tokens(model: str, requested: int) -> int:
         model_max = info.get("max_output_tokens") or info.get("max_tokens") or 4096
         return min(requested, model_max)
 
-    # Unknown model — use a conservative default
-    logger.debug("Unknown model %s, clamping max_tokens %d -> 16384", model, requested)
-    return min(requested, 16384)
+    # Unknown model — use a conservative default, but give reasoning
+    # models enough headroom that the upstream 8x multiplier still works.
+    ceiling = (
+        _UNKNOWN_REASONING_MODEL_CEILING if is_reasoning_model(model) else _UNKNOWN_MODEL_CEILING
+    )
+    logger.debug("Unknown model %s, clamping max_tokens %d -> %d", model, requested, ceiling)
+    return min(requested, ceiling)
 
 
 def model_cost_per_token(model: str) -> tuple[float, float]:
@@ -345,6 +375,12 @@ def model_cost_per_token(model: str) -> tuple[float, float]:
 #
 # Without this adjustment, the pre-flight cost gate under-quotes reasoning
 # models by 3-5x and the user sees a surprise bill post-run.
+#
+# Note: this is the *cost overhead* multiplier. The request-budget
+# multiplier is 8x and lives in `models.py::REASONING_MAX_TOKENS_MULTIPLIER` —
+# they're intentionally asymmetric because reasoning_effort="medium" is
+# expected to cap actual usage well below the raised ceiling. If you change
+# one, check the other.
 _REASONING_OVERHEAD_MULTIPLIER: float = 4.0
 
 
