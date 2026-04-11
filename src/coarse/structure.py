@@ -4,6 +4,7 @@ Parses Docling-produced markdown to extract paper structure: sections are
 identified by heading hierarchy, section text is a direct substring of
 full_markdown. Domain/taxonomy classification is a cheap text-LLM call.
 """
+
 from __future__ import annotations
 
 import logging
@@ -86,7 +87,7 @@ def _extract_claims_and_definitions(text: str) -> tuple[list[str], list[str]]:
         label = m.group(2).strip()
 
         # Statement = everything after the header in this paragraph
-        statement = para[m.end():].strip()
+        statement = para[m.end() :].strip()
         # Strip leading punctuation, bold markers, whitespace
         statement = re.sub(r"^[.*:)\s]+", "", statement)
 
@@ -141,16 +142,17 @@ def _parse_sections_from_markdown(markdown: str) -> list[SectionInfo]:
     matches = list(_HEADING_RE.finditer(markdown))
     if not matches:
         # No headings found — treat entire document as one section
-        return [SectionInfo(
-            number=1,
-            title="Full Document",
-            text=markdown.strip(),
-            section_type=SectionType.OTHER,
-        )]
+        return [
+            SectionInfo(
+                number=1,
+                title="Full Document",
+                text=markdown.strip(),
+                section_type=SectionType.OTHER,
+            )
+        ]
 
     sections: list[SectionInfo] = []
     for i, match in enumerate(matches):
-        level = len(match.group(1))
         title = match.group(2).strip()
 
         # Section text: from end of this heading line to start of next heading (or EOF)
@@ -164,14 +166,16 @@ def _parse_sections_from_markdown(markdown: str) -> list[SectionInfo]:
         section_type = _classify_section_type(title)
         sec_claims, sec_defs = _extract_claims_and_definitions(text)
 
-        sections.append(SectionInfo(
-            number=number,
-            title=title,
-            text=text,
-            section_type=section_type,
-            claims=sec_claims,
-            definitions=sec_defs,
-        ))
+        sections.append(
+            SectionInfo(
+                number=number,
+                title=title,
+                text=text,
+                section_type=section_type,
+                claims=sec_claims,
+                definitions=sec_defs,
+            )
+        )
 
     return sections
 
@@ -211,7 +215,7 @@ def _extract_title(markdown: str) -> str:
 
     # All headings are section names — try text before the first heading
     if matches:
-        preamble = markdown[:matches[0].start()].strip()
+        preamble = markdown[: matches[0].start()].strip()
         if preamble:
             # Take the first non-empty line from the preamble
             for line in preamble.split("\n"):
@@ -236,7 +240,7 @@ def _extract_abstract(sections: list[SectionInfo], markdown: str) -> str:
     # Fallback: first paragraph (text before any heading)
     match = _HEADING_RE.search(markdown)
     if match and match.start() > 0:
-        return markdown[:match.start()].strip()[:2000]
+        return markdown[: match.start()].strip()[:2000]
 
     # Last resort: first 500 chars
     return markdown[:500].strip()
@@ -252,19 +256,24 @@ def _get_metadata(
     headings_str = ", ".join(headings[:20])
     messages = [
         {"role": "system", "content": METADATA_SYSTEM},
-        {"role": "user", "content": (
-            f"Extract the title and classify this paper.\n\n"
-            f"**First page**:\n{first_page}\n\n"
-            f"**Abstract**: {abstract[:1000]}\n"
-            f"**Headings**: {headings_str}\n"
-        )},
+        {
+            "role": "user",
+            "content": (
+                f"Extract the title and classify this paper.\n\n"
+                f"**First page**:\n{first_page}\n\n"
+                f"**Abstract**: {abstract[:1000]}\n"
+                f"**Headings**: {headings_str}\n"
+            ),
+        },
     ]
     try:
         return client.complete(messages, PaperMetadata, max_tokens=256, temperature=0.1)
     except Exception:
         logger.warning("Metadata extraction failed, using defaults")
         return PaperMetadata(
-            title="", domain="unknown", taxonomy="academic/research_paper",
+            title="",
+            domain="unknown",
+            taxonomy="academic/research_paper",
         )
 
 
@@ -272,10 +281,22 @@ def _get_metadata(
 # Math section detection
 # ---------------------------------------------------------------------------
 
-_PROOF_KEYWORDS = frozenset([
-    "theorem", "proof", "lemma", "proposition", "corollary", "q.e.d", "qed",
-    "∎", "□", "we prove", "we show that", "it follows that",
-])
+_PROOF_KEYWORDS = frozenset(
+    [
+        "theorem",
+        "proof",
+        "lemma",
+        "proposition",
+        "corollary",
+        "q.e.d",
+        "qed",
+        "∎",
+        "□",
+        "we prove",
+        "we show that",
+        "it follows that",
+    ]
+)
 
 
 def _detect_math_sections_keyword(sections: list[SectionInfo]) -> list[SectionInfo]:
@@ -310,13 +331,17 @@ def _detect_math_sections(
         # payload is tiny (<50 tokens), so the higher ceiling only costs more
         # when the model actually talks, which the prompt now discourages.
         result = client.complete(
-            messages, MathSectionDetection, max_tokens=1024, temperature=0.1,
+            messages,
+            MathSectionDetection,
+            max_tokens=1024,
+            temperature=0.1,
         )
         math_indices = set(result.math_section_indices)
     except Exception as exc:
         logger.warning(
             "Math section detection failed (%s: %s), falling back to keyword detection",
-            type(exc).__name__, exc,
+            type(exc).__name__,
+            exc,
         )
         return _detect_math_sections_keyword(sections)
 
