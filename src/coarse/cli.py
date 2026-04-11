@@ -1,4 +1,5 @@
 """CLI for coarse — AI academic paper reviewer."""
+
 from __future__ import annotations
 
 import os
@@ -14,6 +15,7 @@ from rich.status import Status
 from coarse.config import (
     PROVIDER_ENV_VARS,
     CoarseConfig,
+    has_provider_key,
     load_config,
     resolve_api_key,
     save_config,
@@ -31,10 +33,17 @@ app = typer.Typer(
 console = Console()
 
 
-def _pick_cheap_model() -> str | None:
-    """Find the cheapest available model based on which API keys are set."""
+def _pick_cheap_model(config: CoarseConfig) -> str | None:
+    """Find the cheapest available model based on which API keys are set.
+
+    Respects both env-var and config-file keys (via has_provider_key) so
+    users who configured keys in ~/.coarse/config.toml aren't forced to
+    export them as env vars for --cheap to work.
+    """
+    env_to_provider = {v: k for k, v in PROVIDER_ENV_VARS.items()}
     for env_var, model in CHEAP_MODELS.items():
-        if os.environ.get(env_var):
+        provider = env_to_provider.get(env_var)
+        if provider and has_provider_key(provider, config):
             return model
     return None
 
@@ -78,7 +87,8 @@ def setup() -> None:
 @app.command()
 def review(
     pdf: Path = typer.Argument(
-        ..., exists=True,
+        ...,
+        exists=True,
         help="Path to paper file (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)",
     ),
     output: Optional[Path] = typer.Option(
@@ -88,16 +98,15 @@ def review(
         None, "--model", "-m", help="LiteLLM model string (e.g. openai/gpt-4o)"
     ),
     api_key: Optional[str] = typer.Option(
-        None, "--api-key",
+        None,
+        "--api-key",
         help="OpenRouter API key (WARNING: visible in shell history and process "
-             "listing; prefer --env-file or OPENROUTER_API_KEY env var)",
+        "listing; prefer --env-file or OPENROUTER_API_KEY env var)",
     ),
     env_file: Optional[Path] = typer.Option(
         None, "--env-file", help="Path to a .env file to load (e.g. ~/keys.env)"
     ),
-    cheap: bool = typer.Option(
-        False, "--cheap", help="Use cheapest available model"
-    ),
+    cheap: bool = typer.Option(False, "--cheap", help="Use cheapest available model"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation prompt"),
     no_qa: bool = typer.Option(False, "--no-qa", help="Skip post-extraction quality check"),
     eval_ref: Optional[Path] = typer.Option(
@@ -115,6 +124,7 @@ def review(
     # Load env file / API key before anything else so config picks them up
     if env_file is not None:
         from dotenv import load_dotenv
+
         load_dotenv(env_file, override=True)
     if api_key is not None:
         os.environ["OPENROUTER_API_KEY"] = api_key
@@ -131,7 +141,7 @@ def review(
         config = config.model_copy(update={"extraction_qa": False})
     # Resolve model: --cheap > --model > config default
     if cheap:
-        resolved_model = _pick_cheap_model()
+        resolved_model = _pick_cheap_model(config)
         if resolved_model is None:
             console.print("[red]--cheap: no API key found for any provider.[/red]")
             raise typer.Exit(code=1)
@@ -199,13 +209,17 @@ def review(
         with Status(f"Running quality evaluation ({mode})...", console=console):
             if eval_panel:
                 report, _ = evaluate_review_panel(
-                    markdown, reference_text, client=quality_client,
+                    markdown,
+                    reference_text,
+                    client=quality_client,
                     paper_text=paper_text.full_markdown,
                     paper_pdf=pdf_path,
                 )
             else:
                 report = evaluate_review(
-                    markdown, reference_text, client=quality_client,
+                    markdown,
+                    reference_text,
+                    client=quality_client,
                     paper_text=paper_text.full_markdown,
                     paper_pdf=pdf_path,
                 )
