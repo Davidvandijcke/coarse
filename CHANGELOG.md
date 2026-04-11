@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- **Automated incident posting to X/Twitter** — new `deploy/incident_monitor.py` Modal app (`coarse-monitor`) that runs every 2 minutes, watches four independent signals (backend error spike, queue stall, Modal `/health` down, upstream provider 5xx pattern), and posts an "investigating" tweet when the backend is actually broken. Auto-resolves (threaded reply) once signals have been clear for 10 minutes. Explicitly ignores user-side errors (bad API keys, spending limits, 429s from the user's own provider) so it never tweets because someone pasted a dead key. Ships in `INCIDENT_MONITOR_MODE=dry_run` by default; flip to `live` via Modal secret once dry-run logs look right. Includes 30 min cooldown between incidents to suppress flapping and an `INCIDENT_MONITOR_ENABLED=false` kill switch.
+- **Structured error classification on failed reviews** — new `reviews.error_category` column distinguishes `user_auth` / `user_quota` / `user_forbidden` / `user_rate_limit` from `provider_5xx` / `extraction` / `backend_timeout` / `backend_unknown`. Classifier lives in `deploy/error_classify.py` so the incident monitor can query it without re-parsing unstructured `error_message` strings. Requires `deploy/migrate_incidents.sql` to be applied to Supabase.
+
+## v1.1.2 — 2026-04-11
+
+Internal tooling release. No user-facing changes to the `coarse` package on
+PyPI — this release ships dev-workflow automation (security scanner, slash
+commands, pre-commit hooks, CI gates) plus a small refactor that re-aligns
+`src/coarse/llm.py` with the "model IDs live in `models.py` only" rule.
+
 ### Fixed
 
 - **`llm.py` no longer hardcodes model IDs** — the `_CUSTOM_MODEL_INFO` dict keyed on literal `"qwen/qwen3.5-plus-02-15"` and `"moonshotai/kimi-k2.5"` now imports `DEFAULT_MODEL` and the new `KIMI_K2_5_MODEL` constant from `coarse.models`, restoring the "model IDs live in `models.py` only" invariant from CLAUDE.md. The security scanner's `hardcoded-model-id` check was also extended to cover `moonshotai`, `kimi`, `groq`, `together`, `xai`, and `cohere` provider prefixes so future drift gets caught.
