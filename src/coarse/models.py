@@ -11,87 +11,7 @@ Last verified: 2026-03-04
 DEFAULT_MODEL = "qwen/qwen3.5-plus-02-15"
 
 # Secondary reasoning model; carries its own litellm cost entry.
-# Also used as CHEAP_STAGE_FALLBACK_MODEL below — keep the definition
-# here (above the cheap-tier block) so the forward reference resolves.
 KIMI_K2_5_MODEL = "moonshotai/kimi-k2.5"
-
-# Cheap-tier model pinned to stages that don't need SOTA reasoning
-# (metadata, math_detection, contribution_extraction, calibration).
-# See src/coarse/routing.py::STAGE_MODELS and gh issue #46 for the
-# full stage classification.
-#
-# Verified against OpenRouter on 2026-04-11:
-# - 202k context
-# - $1.40 / $4.40 per 1M tok on DeepInfra
-# - Supports response_format (instructor JSON mode works)
-# - Not detected as a reasoning model (no 8x headroom multiplier)
-#
-# glm-5.1's weights are from Z.AI (Zhipu, a Chinese company), but we
-# restrict inference routing to US-HQ providers via CHEAP_STAGE_PROVIDERS
-# below. Request data does NOT touch Z.AI's own hosting (HQ=SG,
-# datacenters=SG).
-CHEAP_STAGE_MODEL = "z-ai/glm-5.1"
-
-# Cheap-tier model-level fallback. When the primary CHEAP_STAGE_MODEL
-# call fails (provider outage, transient OpenRouter error, etc.), the
-# StageRouter-constructed cheap client retries on this fallback before
-# surfacing the error upstream. kimi-k2.5 was chosen because:
-#
-# - All three US-HQ allowlisted providers (DeepInfra, Parasail, Fireworks)
-#   serve it with `response_format` + `tools` support, so the same
-#   CHEAP_STAGE_PROVIDERS allowlist applies without modification.
-# - It's in MARKDOWN_JSON_PREFIXES below, so its dedicated LLMClient uses
-#   instructor MD_JSON mode (matching kimi's known behavior of producing
-#   markdown-wrapped JSON) rather than the JSON mode the glm-5.1 client
-#   uses. Client-level fallback (not OpenRouter's server-side `models`
-#   preference) is the only way to respect both modes cleanly.
-# - Context window is large (128k), pricing is in the same tier as
-#   glm-5.1, and it's already registered in litellm's cost table via
-#   _CUSTOM_MODEL_INFO in llm.py.
-CHEAP_STAGE_FALLBACK_MODEL = KIMI_K2_5_MODEL
-
-# US-HQ provider allowlist for CHEAP_STAGE_MODEL *and*
-# CHEAP_STAGE_FALLBACK_MODEL. Applied via OpenRouter's `provider.only`
-# routing preference so request data stays on US servers even though
-# the model weights are from Chinese companies. All three providers are
-# US-HQ (verified via /api/v1/providers on 2026-04-11) and support
-# `response_format` + `tools` for BOTH models (required for instructor
-# JSON / MD_JSON mode).
-#
-# DeepInfra: primary (HQ=US, no Chinese datacenters).
-# Parasail + Fireworks: US-HQ fallbacks to handle DeepInfra outages.
-#
-# Z.AI (Zhipu's own hosting, SG) and Moonshot AI (kimi's own hosting, SG)
-# are explicitly NOT listed — both route to non-US servers, which is
-# exactly what this allowlist exists to prevent.
-CHEAP_STAGE_PROVIDERS: tuple[str, ...] = ("DeepInfra", "Parasail", "Fireworks")
-
-# Per-stage model routing. Stages listed here are classified as
-# "cheap-safe" (structured classification / short extraction, no stylistic
-# sensitivity downstream) and always use CHEAP_STAGE_MODEL regardless of
-# what base model the user passed via --model. Reasoning-heavy stages
-# (overview, section, editorial, verify, completeness, cross_section) are
-# NOT listed here and use the base model as-is.
-#
-# Worked example: user runs `coarse-ink review paper.pdf --model
-# anthropic/claude-opus-4.6`. Without STAGE_MODELS, every stage pays opus
-# rates (~$15/$75 per 1M tok), including the 500-token metadata
-# classification and the 2000-token math-section detection. With
-# STAGE_MODELS, those four stages route to CHEAP_STAGE_MODEL (z-ai/glm-5.1
-# on DeepInfra via the US-HQ allowlist in routing.py) while the overview
-# + section + editorial + verify stages continue to use opus. Estimated
-# savings: ~$0.30-0.40 per review.
-#
-# Rationale: theory-driven, not empirically validated — see gh issue #46.
-# If quality degrades on a user's paper, they can pass
-# --stage-override <stage>=<model> to bring any of these back to the
-# base model on a per-run basis.
-STAGE_MODELS: dict[str, str] = {
-    "metadata": CHEAP_STAGE_MODEL,
-    "math_detection": CHEAP_STAGE_MODEL,
-    "contribution_extraction": CHEAP_STAGE_MODEL,
-    "calibration": CHEAP_STAGE_MODEL,
-}
 
 # Vision model for post-extraction QA (multimodal, spot-checks Docling output)
 # litellm uses 'gemini/' prefix for Google AI Studio (not 'google/')
@@ -123,7 +43,7 @@ LITERATURE_SEARCH_MODEL = "perplexity/sonar-pro-search"
 RECALL_JUDGE_MODEL = QUALITY_MODEL
 
 # Model families that need JSON mode instead of tool-calling
-JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini", "z-ai")
+JSON_MODE_PREFIXES = ("qwen", "deepseek", "mistral", "together", "gemini")
 
 # Model families that need markdown-JSON mode (instructor MD_JSON)
 # These models struggle with both tool-calling and raw JSON but handle

@@ -97,7 +97,7 @@ def test_review_paper_calls_stages_in_order():
         call_order.append("extract")
         return paper_text
 
-    def fake_analyze(pt, client, math_client=None):
+    def fake_analyze(pt, client):
         call_order.append("structure")
         return structure
 
@@ -364,24 +364,18 @@ def test_review_paper_section_comments_flattened():
 
 
 def test_review_paper_uses_provided_config():
-    """Provided CoarseConfig with custom model is used; load_config() is not called.
-
-    The StageRouter constructs LLMClient instances lazily via
-    ``coarse.routing.LLMClient``, so patch that symbol (not
-    ``coarse.pipeline.LLMClient``) to intercept the per-stage construction.
-    """
+    """Provided CoarseConfig with custom model is used; load_config() is not called."""
     config = CoarseConfig(default_model="anthropic/claude-3-5-haiku-20241022")
     overview = _make_overview()
     captured_models: list[str] = []
 
-    def fake_llm_client(model=None, config=None, **kwargs):
+    def fake_llm_client(model=None, config=None):
         captured_models.append(model)
         mock = MagicMock()
         return mock
 
     with (
         patch("coarse.pipeline.load_config") as mock_load_config,
-        patch("coarse.routing.LLMClient", side_effect=fake_llm_client),
         patch("coarse.pipeline.LLMClient", side_effect=fake_llm_client),
         patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=_make_structure()),
@@ -404,12 +398,10 @@ def test_review_paper_uses_provided_config():
         review_paper("paper.pdf", skip_cost_gate=True, config=config)
 
     mock_load_config.assert_not_called()
-    # With STAGE_MODELS empty in the Phase 0 scaffolding, every stage
-    # resolves to the base model. The router builds one client per
-    # unique resolved model — so the provided default_model should appear
-    # at least once in captured_models (vision QA may also construct its
-    # own client via coarse.pipeline.LLMClient, which we patch the same way).
-    assert "anthropic/claude-3-5-haiku-20241022" in captured_models
+    # LLMClient is called at least once for main model; vision QA may be skipped
+    # if no GEMINI_API_KEY is available (e.g. in CI)
+    assert captured_models[0] == "anthropic/claude-3-5-haiku-20241022"
+    assert len(captured_models) >= 1
 
 
 # ---------------------------------------------------------------------------

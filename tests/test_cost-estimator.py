@@ -71,22 +71,9 @@ def test_build_cost_estimate_zero_cost_unknown_model():
     with patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}, clear=False):
         estimate = build_cost_estimate(_paper(), config)
     assert len(estimate.stages) > 0
-    # Stages that DON'T route through the unknown base model:
-    # - pdf_extraction (flat-fee OCR)
-    # - metadata / math_detection / contribution_extraction / calibration
-    #   (pinned to CHEAP_STAGE_MODEL=glm-5.1 via STAGE_MODELS — has known
-    #   pricing in _CUSTOM_MODEL_INFO, so non-zero)
-    # Every remaining LLM stage runs on the unknown base model and
-    # should be zero because litellm can't price it.
-    base_routed = [
-        s
-        for s in estimate.stages
-        if s.name != "pdf_extraction"
-        and s.name not in {"metadata", "math_detection", "contribution_extraction", "calibration"}
-    ]
-    assert all(s.estimated_cost_usd == 0.0 for s in base_routed), [
-        (s.name, s.model, s.estimated_cost_usd) for s in base_routed
-    ]
+    # pdf_extraction stage has fixed cost; all LLM stages should be zero for unknown model
+    llm_stages = [s for s in estimate.stages if s.name != "pdf_extraction"]
+    assert all(s.estimated_cost_usd == 0.0 for s in llm_stages)
 
 
 def test_total_cost_matches_sum_with_buffer():
@@ -242,23 +229,10 @@ def test_model_override_takes_precedence_over_config_default():
             section_count=4,
             model="openai/o3",  # reasoning override
         )
-    # Every stage that uses the review model should now be flagged
-    # reasoning (o3 is reasoning), which would be impossible if the
-    # override were ignored (qwen is not). Exclude:
-    # - Flat-fee stages (pdf_extraction, literature_search) that don't
-    #   run on the review model.
-    # - extraction_qa, which uses the vision model (non-reasoning).
-    # - The 4 cheap-safe stages in STAGE_MODELS (gh #46), which are
-    #   pinned to CHEAP_STAGE_MODEL (non-reasoning) regardless of the
-    #   review model.
+    # Every LLM stage should now be flagged reasoning (o3 is reasoning),
+    # which would be impossible if the override were ignored (qwen is not).
     flat = {"pdf_extraction", "literature_search", "extraction_qa"}
-    cheap_stages = {
-        "metadata",
-        "math_detection",
-        "contribution_extraction",
-        "calibration",
-    }
-    non_flat = [s for s in est.stages if s.name not in flat and s.name not in cheap_stages]
+    non_flat = [s for s in est.stages if s.name not in flat]
     assert all("(+reasoning)" in s.name for s in non_flat), [s.name for s in non_flat]
 
 
@@ -312,33 +286,19 @@ def test_build_cost_estimate_flags_reasoning_stages():
     so the user can see the reasoning overhead is baked into the estimate.
 
     Regression for review 3ee351e6 where GPT-5.4 Pro burned 15k hidden
-    tokens per stage. Stages that use a model OTHER than the review
-    model are excluded — their reasoning flag depends on their own model,
-    not the default. These are:
-    - pdf_extraction / literature_search: flat-fee, not the review model
-    - extraction_qa: uses config.vision_model (non-reasoning)
-    - metadata / math_detection / contribution_extraction / calibration:
-      pinned to CHEAP_STAGE_MODEL (non-reasoning) by STAGE_MODELS (gh #46)
+    tokens per stage. pdf_extraction, literature_search, and extraction_qa
+    use their own non-reasoning models (OCR, Perplexity, vision), so they
+    should NOT get the suffix.
     """
     config = _config(model="openai/gpt-5.4-pro")
     with patch("coarse.cost.has_provider_key", return_value=True):
         estimate = build_cost_estimate(_paper(), config, section_count=4)
 
+    # Stages that use a model OTHER than the review model are excluded —
+    # their reasoning flag depends on their own model, not the default.
     exempt_prefixes = ("pdf_extraction", "literature_search", "extraction_qa")
-    cheap_stages = {
-        "metadata",
-        "math_detection",
-        "contribution_extraction",
-        "calibration",
-    }
     for s in estimate.stages:
         if s.name.startswith(exempt_prefixes):
-            continue
-        if s.name in cheap_stages:
-            assert "(+reasoning)" not in s.name, (
-                f"cheap stage {s.name} should NOT be reasoning (routed to "
-                f"CHEAP_STAGE_MODEL via STAGE_MODELS)"
-            )
             continue
         assert "(+reasoning)" in s.name, f"stage {s.name} should be flagged as reasoning"
 
