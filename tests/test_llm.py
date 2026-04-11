@@ -479,24 +479,31 @@ def test_sanitized_completion_strips_json_u0000_escape_before_parse():
     assert parsed["keep"] == "tab\tend"
 
 
-def test_sanitized_completion_is_case_insensitive_for_u_escape():
-    """JSON allows either case for the hex digits in \\uXXXX escapes."""
+def test_sanitized_completion_strips_multiple_u0000_escapes():
+    """Pin global replacement: every \\u0000 occurrence must be stripped,
+    not just the first. Guards against a future switch to `.replace(..., 1)`.
+    """
     import json
 
-    variants = [
-        '{"x": "a' + "\\u0000" + 'b"}',
-        '{"x": "a' + "\\U0000" + 'b"}',  # uppercase U (not strictly valid JSON, but defensive)
-        '{"x": "a' + "\\u0000".upper() + 'b"}',
-    ]
-    for raw in variants:
-        response = _sanitizer_response_with(raw)
-        with patch("coarse.llm.litellm.completion", return_value=response):
-            result = _sanitized_completion(model="test/mock")
-        cleaned = result.choices[0].message.content
-        # At minimum the standard lowercase form must be stripped and parseable.
-        if "\\u0000" in raw:
-            parsed = json.loads(cleaned)
-            assert "\x00" not in parsed["x"]
+    raw = '{"q": "a' + "\\u0000" + "b" + "\\u0000" + "c" + "\\u0000" + 'd"}'
+    response = _sanitizer_response_with(raw)
+    with patch("coarse.llm.litellm.completion", return_value=response):
+        result = _sanitized_completion(model="test/mock")
+
+    parsed = json.loads(result.choices[0].message.content)
+    assert "\x00" not in parsed["q"]
+    assert parsed["q"] == "abcd"
+
+
+def test_sanitized_completion_handles_none_content():
+    """The `isinstance(msg.content, str)` guard must no-op on None content
+    without raising. Some providers (e.g. reasoning-only responses) return
+    a message with content=None.
+    """
+    response = _sanitizer_response_with(None)
+    with patch("coarse.llm.litellm.completion", return_value=response):
+        result = _sanitized_completion(model="test/mock")
+    assert result.choices[0].message.content is None
 
 
 def test_complete_instructor_validation_error(mock_instructor_client):
