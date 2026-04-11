@@ -90,13 +90,13 @@ jobs:
                   api("DELETE", f"/storage/v1/object/papers/{name}")
                   deleted += 1
               except (HTTPError, URLError) as exc:
-                  failures.append(f"{name}: {exc}")
+                  failures.append(str(exc))
 
           print(f"Deleted: {deleted}/{len(stale)}")
           if failures:
               print("Failures:", file=sys.stderr)
-              for msg in failures:
-                  print(f"  {msg}", file=sys.stderr)
+              for i, msg in enumerate(failures, start=1):
+                  print(f"  failure #{i}: {msg}", file=sys.stderr)
               # Non-fatal: next run will retry. Exit 0 so the workflow stays
               # green unless the list call itself broke.
           PY
