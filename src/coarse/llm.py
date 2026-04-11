@@ -381,7 +381,7 @@ def _lookup_model_cost(model: str) -> dict | None:
     # (Some entries, notably anthropic/claude-{sonnet,opus}-4.6, only
     # exist under the openrouter/ form in litellm's registry.)
     if info is None and "/" in model and not model.startswith("openrouter/"):
-        info = litellm.model_cost.get(f"openrouter/{model}")
+        info = litellm.model_cost.get("openrouter/" + model)
     return info
 
 
