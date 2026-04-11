@@ -2,6 +2,7 @@ import { createClient, type PostgrestError } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { isEmailCapacityReached } from "@/lib/emailCapacity";
 
 export const maxDuration = 30;
 
@@ -75,11 +76,17 @@ export async function POST(request: NextRequest) {
   if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return NextResponse.json({ error: "Invalid review ID" }, { status: 400 });
   }
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
-  }
-  if (email.length > 254) {
-    return NextResponse.json({ error: "Email too long" }, { status: 400 });
+  // Email is optional when the daily email-capacity gate is active. Re-check
+  // server-side so a client can't bypass the regex by lying about capacity.
+  const emailSkipped =
+    email.length === 0 && (await isEmailCapacityReached(supabaseAdmin));
+  if (!emailSkipped) {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
+    }
+    if (email.length > 254) {
+      return NextResponse.json({ error: "Email too long" }, { status: 400 });
+    }
   }
   if (!apiKey) {
     return NextResponse.json({ error: "OpenRouter API key required" }, { status: 400 });
@@ -223,10 +230,11 @@ export async function POST(request: NextRequest) {
       });
   }
 
-  // Send confirmation email
+  // Send confirmation email (only when a real address was provided — the
+  // email-capacity gate lets users submit without one).
   const paperFilename = reviewRow.paper_filename ?? "your paper";
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://coarse.vercel.app";
-  if (mailer) {
+  if (mailer && email) {
     await mailer.sendMail({
       from: `coarse <${process.env.GMAIL_USER}>`,
       to: email,

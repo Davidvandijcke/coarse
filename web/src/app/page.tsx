@@ -173,6 +173,7 @@ export default function Home() {
   const oauthConsumedRef = useRef(false);
   const [systemStatus, setSystemStatus] = useState<{
     accepting: boolean; banner: string | null; activeReviews: number; capacity: number;
+    emailCapacityReached?: boolean;
   } | null>(null);
 
   // Fetch system capacity status on mount
@@ -284,7 +285,8 @@ export default function Home() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file || !email || !apiKey) return;
+    if (!file || !apiKey) return;
+    if (!email && !(systemStatus?.emailCapacityReached === true)) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -337,7 +339,9 @@ export default function Home() {
   }
 
   const accepting = systemStatus?.accepting !== false;
-  const canSubmit = !!file && !!email && !!apiKey && !submitting && accepting;
+  const emailDisabled = systemStatus?.emailCapacityReached === true;
+  const canSubmit =
+    !!file && !!apiKey && !submitting && accepting && (emailDisabled || !!email);
 
   return (
     <div style={{ background: "var(--board)", minHeight: "100vh" }}>
@@ -660,22 +664,26 @@ export default function Home() {
                 <FieldLabel>Email</FieldLabel>
                 <input
                   type="email"
-                  required
-                  value={email}
+                  required={!emailDisabled}
+                  disabled={emailDisabled}
+                  value={emailDisabled ? "" : email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@university.edu"
+                  placeholder={emailDisabled ? "— unavailable —" : "you@university.edu"}
                   aria-label="Email address"
                   className="field-line"
+                  style={emailDisabled ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
                 />
                 <p
                   style={{
                     fontFamily: "var(--font-chalk)",
                     fontSize: "1.1rem",
-                    color: "var(--dust)",
+                    color: emailDisabled ? "var(--red-chalk)" : "var(--dust)",
                     marginTop: "0.4rem",
                   }}
                 >
-                  We&apos;ll email you when it&apos;s done.
+                  {emailDisabled
+                    ? "Daily email cap hit — save your review key to retrieve it."
+                    : <>We&apos;ll email you when it&apos;s done.</>}
                 </p>
               </div>
 
