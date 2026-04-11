@@ -53,33 +53,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Count only truly submitted jobs (rows with a matching review_emails record),
-  // not presign placeholders that never completed submission.
-  const { count: activeReviews, error: activeReviewsError } = await supabaseAdmin
-    .from("reviews")
-    .select("id, review_emails!inner(review_id)", { count: "exact", head: true })
-    .in("status", ["queued", "running"]);
-
-  if (activeReviewsError) {
-    return NextResponse.json(
-      {
-        error: "Unable to verify current system load. Please try again in a few minutes.",
-      },
-      { status: 503 },
-    );
-  }
-
-  if ((activeReviews ?? 0) >= MAX_CONCURRENT_REVIEWS) {
-    return NextResponse.json(
-      {
-        error: "We're seeing high traffic right now. Please try again in a few minutes.",
-      },
-      { status: 503 },
-    );
-  }
-
-  const mailer = getMailer();
-
   // Parse JSON body (no file — file was uploaded directly to Supabase via presign)
   let id = "";
   let email = "";
@@ -135,12 +108,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Review not found — presign first" }, { status: 404 });
   }
 
-  // Update model on the review record
-  if (model) {
-    await supabaseAdmin.from("reviews").update({ model }).eq("id", id);
-  }
-
-  // Store email in separate table (not readable by anon key)
+  // Store email in separate table (not readable by anon key). We do this before
+  // the capacity check so concurrent requests are visible to the active-review count.
   const { error: emailError } = await supabaseAdmin
     .from("review_emails")
     .insert({ review_id: id, email });
@@ -148,6 +117,40 @@ export async function POST(request: NextRequest) {
     await supabaseAdmin.from("reviews").delete().eq("id", id);
     return NextResponse.json({ error: "Failed to save contact info" }, { status: 500 });
   }
+
+  // Count only truly submitted jobs (rows with a matching review_emails record),
+  // not presign placeholders that never completed submission.
+  const { count: activeReviews, error: activeReviewsError } = await supabaseAdmin
+    .from("reviews")
+    .select("id, review_emails!inner(review_id)", { count: "exact", head: true })
+    .in("status", ["queued", "running"]);
+
+  if (activeReviewsError) {
+    await supabaseAdmin.from("review_emails").delete().eq("review_id", id);
+    return NextResponse.json(
+      {
+        error: "Unable to verify current system load. Please try again in a few minutes.",
+      },
+      { status: 503 },
+    );
+  }
+
+  if ((activeReviews ?? 0) > MAX_CONCURRENT_REVIEWS) {
+    await supabaseAdmin.from("review_emails").delete().eq("review_id", id);
+    return NextResponse.json(
+      {
+        error: "We're seeing high traffic right now. Please try again in a few minutes.",
+      },
+      { status: 503 },
+    );
+  }
+
+  // Update model on the review record
+  if (model) {
+    await supabaseAdmin.from("reviews").update({ model }).eq("id", id);
+  }
+
+  const mailer = getMailer();
 
   // Trigger Modal worker (fire-and-forget — the worker updates Supabase directly)
   const modalUrl = process.env.MODAL_FUNCTION_URL;
