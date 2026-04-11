@@ -6,6 +6,9 @@
 
 - chore(deps): bump aiohttp→3.13.5, requests→2.33.1, pygments→2.20.0, litellm→1.83.4 to address 15 CVEs (#35)
 - fix(prompts): fence untrusted paper content in PROOF_VERIFY, CONTRIBUTION_EXTRACTION, and PERPLEXITY templates to mitigate prompt injection (#36)
+- fix(deploy): use hmac.compare_digest for webhook token check in modal_worker (#41)
+- fix(deploy): extend _sanitize_error to cover Groq, Perplexity, and Anthropic key prefixes (#41)
+- fix(extraction): scrub bearer tokens and API keys from error messages before raise/log on CLI path (#41)
 
 ### Added
 
