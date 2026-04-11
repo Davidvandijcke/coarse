@@ -114,11 +114,26 @@ export async function POST(request: NextRequest) {
     await supabaseAdmin.from("reviews").update({ model }).eq("id", id);
   }
 
-  // Store email in separate table (not readable by anon key)
+  // Store email in separate table (not readable by anon key).
+  //
+  // If this insert raises a Postgres unique_violation (SQLSTATE 23505), the
+  // review_id was already submitted — almost always a double-click on the
+  // submit button where the browser fires two POSTs with the same presigned
+  // id. Treat it as an idempotent success: submit 1 already did all the
+  // downstream work (review_secrets insert, Modal fetch, confirmation email),
+  // so submit 2 must NOT re-fire the Modal worker (which would race submit 1
+  // on the same job_id and leak a second worker). Return 200 with the same id
+  // so the client's success handler runs.
+  //
+  // Any other error is a real failure → roll back the reviews row. The cascade
+  // clears review_secrets too if it somehow got inserted on a prior attempt.
   const { error: emailError } = await supabaseAdmin
     .from("review_emails")
     .insert({ review_id: id, email });
   if (emailError) {
+    if ((emailError as { code?: string }).code === "23505") {
+      return NextResponse.json({ id });
+    }
     await supabaseAdmin.from("reviews").delete().eq("id", id);
     return NextResponse.json({ error: "Failed to save contact info" }, { status: 500 });
   }
