@@ -125,8 +125,11 @@ def _inject_openrouter_privacy(model: str, kwargs: dict) -> dict:
 def _sanitized_completion(*args, **kwargs):
     """Wrap litellm.completion to strip control characters and detect degenerate output.
 
-    Some models (e.g. MiMo) emit control characters in JSON output that break
-    Pydantic parsing.  Stripping \x00-\x1f (except \t and \n) is safe for JSON.
+    Some models (e.g. MiMo) emit literal control characters in JSON output that
+    break Pydantic parsing. Stripping \\x00-\\x1f (except \\t and \\n) is safe
+    for JSON. We also strip the 6-char ``\\u0000`` escape form because it
+    survives _CTRL_CHAR_RE and is reconstituted as a real NUL by json.loads,
+    which later crashes the Supabase write with Postgres 22P05.
     """
     kwargs = _inject_openrouter_privacy(kwargs.get("model", ""), kwargs)
     response = litellm.completion(*args, **kwargs)
@@ -135,6 +138,7 @@ def _sanitized_completion(*args, **kwargs):
         msg = getattr(choice, "message", None)
         if msg and hasattr(msg, "content") and isinstance(msg.content, str):
             msg.content = _CTRL_CHAR_RE.sub("", msg.content)
+            msg.content = msg.content.replace("\\u0000", "")
     return response
 
 
