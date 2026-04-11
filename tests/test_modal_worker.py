@@ -101,38 +101,116 @@ def modal_worker():
     return _load_modal_worker()
 
 
+def test_sanitize_error_scrubs_openrouter_key(modal_worker) -> None:
+    """OpenRouter keys (sk-or-v1-...) must be redacted (regression guard)."""
+    raw = "OpenRouter 401: invalid sk-or-v1-abcdefghijklmnopqrstuvwxyz0123"  # security: ignore
+    cleaned = modal_worker._sanitize_error(raw)
+    assert "sk-or-v1-abcdef" not in cleaned
+    assert "[key]" in cleaned
+    assert "OpenRouter 401" in cleaned  # non-secret context preserved
+
+
 def test_sanitize_error_scrubs_groq_key(modal_worker) -> None:
     """Groq keys (gsk_...) must be redacted."""
-    raw = "Groq 401: invalid key gsk_abcdefghijklmnopqrstuvwxyz0123"
+    raw = "Groq 401: invalid key gsk_abcdefghijklmnopqrstuvwxyz0123"  # security: ignore
     cleaned = modal_worker._sanitize_error(raw)
     assert "gsk_abcdef" not in cleaned
-    assert "[key]" in cleaned or "[redacted]" in cleaned
+    assert "[key]" in cleaned
+    assert "Groq 401" in cleaned
 
 
 def test_sanitize_error_scrubs_perplexity_key(modal_worker) -> None:
     """Perplexity keys (pplx-...) must be redacted."""
-    raw = "Perplexity 401: pplx-abcdefghijklmnopqrstuvwxyz"
+    raw = "Perplexity 401: pplx-abcdefghijklmnopqrstuvwxyz"  # security: ignore
     cleaned = modal_worker._sanitize_error(raw)
     assert "pplx-abcdef" not in cleaned
-    assert "[key]" in cleaned or "[redacted]" in cleaned
+    assert "[key]" in cleaned
+    assert "Perplexity 401" in cleaned
 
 
 def test_sanitize_error_scrubs_anthropic_key(modal_worker) -> None:
-    """Anthropic keys (sk-ant-...) must be redacted explicitly."""
+    """Anthropic keys (sk-ant-...) must be redacted explicitly (before generic sk-)."""
     raw = "Anthropic 401: sk-ant-abcdefghijklmnopqrstuvwxyz0123"  # security: ignore
     cleaned = modal_worker._sanitize_error(raw)
-    assert "sk-ant-abcdef" not in cleaned
-    assert "[key]" in cleaned or "[redacted]" in cleaned
+    # The WHOLE match must be replaced — not left with a dangling `ant-...` tail.
+    assert "sk-ant-" not in cleaned
+    assert "ant-abcdef" not in cleaned
+    assert "[key]" in cleaned
+    assert "Anthropic 401" in cleaned
 
 
-def test_run_review_uses_constant_time_compare(modal_worker) -> None:
-    """run_review must route token comparison through hmac.compare_digest."""
-    import hmac as _hmac
+def _make_req(job_id: str = "j1"):
+    return types.SimpleNamespace(job_id=job_id, model_dump=lambda: {"job_id": job_id})
 
-    # Module-level `hmac` import is present.
-    assert getattr(modal_worker, "hmac", None) is _hmac
-    # And the run_review source references compare_digest directly.
-    import inspect
 
-    src = inspect.getsource(modal_worker.run_review)
-    assert "hmac.compare_digest" in src
+def _make_request(auth_header: str | None):
+    headers: dict[str, str] = {}
+    if auth_header is not None:
+        headers["Authorization"] = auth_header
+    return types.SimpleNamespace(headers=headers)
+
+
+def _fake_hmac(return_value: bool):
+    from unittest.mock import MagicMock
+
+    mock = MagicMock(return_value=return_value)
+    return types.SimpleNamespace(compare_digest=mock), mock
+
+
+def test_run_review_rejects_empty_secret(modal_worker, monkeypatch) -> None:
+    """Empty MODAL_WEBHOOK_SECRET must reject without calling compare_digest."""
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("MODAL_WEBHOOK_SECRET", "")
+    fake, compare_mock = _fake_hmac(return_value=True)
+    monkeypatch.setattr(modal_worker, "hmac", fake)
+
+    with pytest.raises(HTTPException) as exc:
+        modal_worker.run_review(_make_request("Bearer anything"), _make_req())
+    assert exc.value.status_code == 401
+    compare_mock.assert_not_called()
+
+
+def test_run_review_rejects_empty_token(modal_worker, monkeypatch) -> None:
+    """Empty/missing Authorization header must reject without calling compare_digest."""
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("MODAL_WEBHOOK_SECRET", "realsecret")
+    fake, compare_mock = _fake_hmac(return_value=True)
+    monkeypatch.setattr(modal_worker, "hmac", fake)
+
+    with pytest.raises(HTTPException) as exc:
+        modal_worker.run_review(_make_request(None), _make_req())
+    assert exc.value.status_code == 401
+    compare_mock.assert_not_called()
+
+
+def test_run_review_rejects_wrong_token(modal_worker, monkeypatch) -> None:
+    """Non-matching token must reject via hmac.compare_digest returning False."""
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("MODAL_WEBHOOK_SECRET", "realsecret")
+    fake, compare_mock = _fake_hmac(return_value=False)
+    monkeypatch.setattr(modal_worker, "hmac", fake)
+
+    with pytest.raises(HTTPException) as exc:
+        modal_worker.run_review(_make_request("Bearer wrongtoken"), _make_req())
+    assert exc.value.status_code == 401
+    compare_mock.assert_called_once_with("wrongtoken", "realsecret")
+
+
+def test_run_review_accepts_valid_token(modal_worker, monkeypatch) -> None:
+    """Matching token routes through hmac.compare_digest and spawns the worker."""
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("MODAL_WEBHOOK_SECRET", "realsecret")
+    fake, compare_mock = _fake_hmac(return_value=True)
+    monkeypatch.setattr(modal_worker, "hmac", fake)
+
+    spawn_mock = MagicMock()
+    monkeypatch.setattr(modal_worker, "do_review", types.SimpleNamespace(spawn=spawn_mock))
+
+    result = modal_worker.run_review(_make_request("Bearer realsecret"), _make_req("j42"))
+    assert result == {"status": "accepted", "job_id": "j42"}
+    compare_mock.assert_called_once_with("realsecret", "realsecret")
+    spawn_mock.assert_called_once_with({"job_id": "j42"})

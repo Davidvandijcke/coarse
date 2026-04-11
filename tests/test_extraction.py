@@ -996,8 +996,12 @@ def test_scrub_secrets_strips_bearer_and_keys() -> None:
     assert "[key]" in scrubbed
 
 
-def test_extraction_error_message_is_scrubbed(tmp_path: Path) -> None:
-    """All-backends-failed path scrubs secrets from exception strings."""
+def test_extraction_error_message_is_scrubbed(tmp_path: Path, caplog) -> None:
+    """All-backends-failed path scrubs secrets from both the raised exception
+    AND the logger.warning side-effect. Without the caplog assertion, a
+    refactor that scrubs only at raise time could regress the log path."""
+    import logging
+
     pdf = tmp_path / "paper.pdf"
     # Minimal valid PDF magic so extract_text() proceeds past header check.
     pdf.write_bytes(b"%PDF-1.4\n%fake content\n")
@@ -1011,6 +1015,7 @@ def test_extraction_error_message_is_scrubbed(tmp_path: Path) -> None:
     # _classify_api_error to return None keeps the error path in the
     # fall-through branch (not the immediate user-actionable raise).
     with (
+        caplog.at_level(logging.WARNING, logger="coarse.extraction"),
         patch("coarse.extraction._extract_mistral_openrouter", side_effect=_boom),
         patch("coarse.extraction._extract_pdftext_openrouter", side_effect=_boom),
         patch("coarse.extraction._extract_docling", side_effect=_boom),
@@ -1023,3 +1028,11 @@ def test_extraction_error_message_is_scrubbed(tmp_path: Path) -> None:
     assert "sk-or-v1-abcdef" not in raised
     assert secret_bearer not in raised
     assert "[key]" in raised
+
+    # Logger.warning path must also be scrubbed — the raised ExtractionError
+    # is one channel, the WARNING log is another, and a regression that only
+    # hardens one of them must fail.
+    log_text = caplog.text
+    assert "sk-or-v1-abcdef" not in log_text
+    assert secret_bearer not in log_text
+    assert "[key]" in log_text
