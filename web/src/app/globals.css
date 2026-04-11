@@ -114,6 +114,34 @@ body::after {
 .field-line-mono::placeholder { color: var(--tray); }
 .field-line-mono:focus { border-bottom-color: var(--yellow-chalk); }
 
+/* Multi-line variant for the author-notes textarea. The single-line
+   .field-line inputs hide placeholders in var(--tray) against a
+   transparent background, which works for short labels but makes a
+   long multi-line placeholder illegible. The textarea sits on
+   var(--board-surface) with a visible box border, and the placeholder
+   picks up var(--dust) for readable contrast. */
+.field-line-textarea {
+  width: 100%;
+  resize: vertical;
+  outline: none;
+  color: var(--chalk);
+  background: var(--board-surface);
+  border: 1px solid var(--tray);
+  border-radius: 2px;
+  font-family: Georgia, serif;
+  font-size: 1rem;
+  line-height: 1.5;
+  padding: 0.6rem 0.75rem;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.field-line-textarea::placeholder {
+  color: var(--dust);
+  opacity: 1;  /* Firefox defaults to 0.54 — set to 1 so --dust isn't halved */
+  font-style: italic;
+}
+.field-line-textarea:focus { border-color: var(--yellow-chalk); }
+
 /* ── Chalk tab selectors ─────────────────────────────────── */
 .chalk-tab {
   font-family: var(--font-chalk);
