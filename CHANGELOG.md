@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+
+- chore(deps): bump aiohttp→3.13.5, requests→2.33.1, pygments→2.20.0, litellm→1.83.4 to address 15 CVEs (#35)
+
 ### Changed
 
 - **Landing-page model picker refreshed** — `web/src/components/ModelPicker.tsx` now defaults to `anthropic/claude-opus-4.6` as the pre-selected model and adds `openai/gpt-5.4` and `google/gemini-3.1-pro-preview` as featured options. `qwen/qwen3.5-plus-02-15` was bumped to `qwen/qwen3.6-plus` to reflect the new release on OpenRouter. All four IDs were verified against OpenRouter's live catalog before landing.
