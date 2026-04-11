@@ -2,6 +2,7 @@
 
 Runs the full review pipeline: extract -> cost gate -> structure -> agents -> synthesis.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -68,7 +69,8 @@ def _check_extraction_quality(structure: "PaperStructure") -> bool:
 
 
 def _verify_with_fallback(
-    comments: list["DetailedComment"], paper_markdown: str,
+    comments: list["DetailedComment"],
+    paper_markdown: str,
 ) -> list["DetailedComment"]:
     """Run quote verification, falling back to originals if all are dropped."""
     verified = verify_quotes(comments, paper_markdown, drop_unverified=True)
@@ -119,34 +121,40 @@ def _review_section(
 ) -> list[DetailedComment]:
     """Review a section; chain with adversarial verification for proof sections."""
     comments = section_agent.run(
-        section, paper_title, overview, calibration,
-        focus, literature_context,
-        all_sections=all_sections, abstract=abstract,
+        section,
+        paper_title,
+        overview,
+        calibration,
+        focus,
+        literature_context,
+        all_sections=all_sections,
+        abstract=abstract,
     )
     if focus == "proof" and comments:
         comments = verify_agent.run(
-            section, paper_title, comments, abstract=abstract,
+            section,
+            paper_title,
+            comments,
+            abstract=abstract,
         )
     return comments
 
 
-def calibrate_domain(
-    structure: PaperStructure, client: LLMClient
-) -> DomainCalibration | None:
+def calibrate_domain(structure: PaperStructure, client: LLMClient) -> DomainCalibration | None:
     """Generate domain-specific review criteria from the paper's content.
 
     Single cheap LLM call (~$0.02). Returns None on failure (fallback to generic).
     """
-    section_titles = ", ".join(
-        f"{s.number}. {s.title}" for s in structure.sections
-    )
+    section_titles = ", ".join(f"{s.number}. {s.title}" for s in structure.sections)
     messages = [
         {"role": "system", "content": CALIBRATION_SYSTEM},
         {
             "role": "user",
             "content": calibration_user(
-                structure.title, structure.domain,
-                structure.abstract, section_titles,
+                structure.title,
+                structure.domain,
+                structure.abstract,
+                section_titles,
             ),
         },
     ]
@@ -158,7 +166,8 @@ def calibrate_domain(
 
 
 def extract_contribution(
-    structure: PaperStructure, client: LLMClient,
+    structure: PaperStructure,
+    client: LLMClient,
 ) -> ContributionContext | None:
     """Extract paper's stated contributions via cheap LLM call (~$0.02).
 
@@ -180,7 +189,10 @@ def extract_contribution(
         {
             "role": "user",
             "content": contribution_extraction_user(
-                structure.title, structure.abstract, intro_text, conclusion_text,
+                structure.title,
+                structure.abstract,
+                intro_text,
+                conclusion_text,
             ),
         },
     ]
@@ -259,7 +271,9 @@ def review_paper(
             paper_text = corrected
 
     if not skip_cost_gate:
-        run_cost_gate(paper_text, config)
+        # Pass resolved_model so a `--model` CLI override is reflected in
+        # the quote, not just in the downstream LLMClient.
+        run_cost_gate(paper_text, config, is_pdf=is_pdf, model=resolved_model)
 
     structure = analyze_structure(paper_text, client)
     if not _check_extraction_quality(structure):
@@ -271,9 +285,7 @@ def review_paper(
     # Domain calibration + literature search + contribution extraction (parallel, all cheap)
     with ThreadPoolExecutor(max_workers=3) as executor:
         cal_future = executor.submit(calibrate_domain, structure, client)
-        lit_future = executor.submit(
-            search_literature, structure.title, structure.abstract, client
-        )
+        lit_future = executor.submit(search_literature, structure.title, structure.abstract, client)
         contrib_future = executor.submit(extract_contribution, structure, client)
 
         calibration = cal_future.result(timeout=900)
@@ -289,10 +301,10 @@ def review_paper(
     editorial_agent = EditorialAgent(client)
 
     reviewable_sections = [
-        s for s in structure.sections
+        s
+        for s in structure.sections
         if s.section_type != SectionType.REFERENCES
-        and (s.section_type != SectionType.APPENDIX
-             or len(s.text) >= _MIN_APPENDIX_CHARS)
+        and (s.section_type != SectionType.APPENDIX or len(s.text) >= _MIN_APPENDIX_CHARS)
     ]
     non_ref_sections = reviewable_sections[:25]
 
@@ -303,7 +315,8 @@ def review_paper(
     completeness_agent = CompletenessAgent(client)
     try:
         completeness_issues = completeness_agent.run(
-            structure, overview,
+            structure,
+            overview,
             calibration=calibration,
             contribution_context=contribution_context,
         )
@@ -320,16 +333,25 @@ def review_paper(
         _LIT_RELEVANT = {SectionType.INTRODUCTION, SectionType.RELATED_WORK}
         for section in non_ref_sections:
             focus = _detect_section_focus(section)
-            sec_lit = literature_context if (
-                section.section_type in _LIT_RELEVANT or focus == "literature"
-            ) else ""
+            sec_lit = (
+                literature_context
+                if (section.section_type in _LIT_RELEVANT or focus == "literature")
+                else ""
+            )
             sec_abstract = structure.abstract
             section_futures.append(
                 executor.submit(
                     _review_section,
-                    section_agent, verify_agent, section, structure.title,
-                    overview, calibration, focus, sec_lit,
-                    structure.sections, sec_abstract,
+                    section_agent,
+                    verify_agent,
+                    section,
+                    structure.title,
+                    overview,
+                    calibration,
+                    focus,
+                    sec_lit,
+                    structure.sections,
+                    sec_abstract,
                 )
             )
 
@@ -352,9 +374,7 @@ def review_paper(
     results_sections = [
         s for s in structure.sections if s.section_type in _RESULTS_TYPES and s.math_content
     ]
-    discussion_sections = [
-        s for s in structure.sections if s.section_type in _DISCUSSION_TYPES
-    ]
+    discussion_sections = [s for s in structure.sections if s.section_type in _DISCUSSION_TYPES]
 
     if results_sections and discussion_sections:
         cross_section_agent = CrossSectionAgent(client)
@@ -365,7 +385,9 @@ def review_paper(
                 cross_section_futures.append(
                     executor.submit(
                         cross_section_agent.run,
-                        structure.title, main_results, disc_sec,
+                        structure.title,
+                        main_results,
+                        disc_sec,
                         abstract=structure.abstract,
                     )
                 )
@@ -374,16 +396,17 @@ def review_paper(
                     cross_comments = future.result(timeout=900)
                     section_comments.extend(cross_comments)
                 except Exception:
-                    logger.warning(
-                        "Cross-section synthesis failed, skipping", exc_info=True
-                    )
+                    logger.warning("Cross-section synthesis failed, skipping", exc_info=True)
 
     # --- Phase 3: Editorial filter (single pass — dedup + contradiction + quality) ---
     # The editorial agent receives full paper text for quote/absence verification.
     try:
         filtered_comments = editorial_agent.run(
-            paper_text.full_markdown, overview, section_comments,
-            title=structure.title, abstract=structure.abstract,
+            paper_text.full_markdown,
+            overview,
+            section_comments,
+            title=structure.title,
+            abstract=structure.abstract,
             contribution_context=contribution_context,
         )
     except Exception:
@@ -393,16 +416,20 @@ def review_paper(
         critique_agent = CritiqueAgent(client)
         try:
             filtered_comments = crossref_agent.run(
-                overview, section_comments,
-                title=structure.title, abstract=structure.abstract,
+                overview,
+                section_comments,
+                title=structure.title,
+                abstract=structure.abstract,
             )
         except Exception:
             logger.warning("Crossref fallback also failed", exc_info=True)
             filtered_comments = section_comments
         try:
             filtered_comments = critique_agent.run(
-                overview, filtered_comments,
-                title=structure.title, abstract=structure.abstract,
+                overview,
+                filtered_comments,
+                title=structure.title,
+                abstract=structure.abstract,
             )
         except Exception:
             logger.warning("Critique fallback also failed", exc_info=True)

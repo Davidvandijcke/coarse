@@ -362,12 +362,26 @@ def _select_instructor_mode(model: str) -> instructor.Mode:
 
 
 def _lookup_model_cost(model: str) -> dict | None:
-    """Look up model info in litellm's cost registry, trying prefix variants."""
+    """Look up model info in litellm's cost registry, trying prefix variants.
+
+    litellm's registry is inconsistent about how it keys provider models:
+    some entries live under a bare `provider/model` form, others only
+    under `openrouter/provider/model` (this is how the current Claude 4.6
+    entries are stored — `openrouter/anthropic/claude-sonnet-4.6` hits
+    but `anthropic/claude-sonnet-4.6` doesn't). Try both directions so
+    the cost gate returns accurate numbers regardless of which form the
+    caller passed.
+    """
     info = litellm.model_cost.get(model)
     if info is None and "/" in model:
         info = litellm.model_cost.get(model.split("/", 1)[1])
     if info is None and model.startswith("openrouter/"):
         info = litellm.model_cost.get(model.removeprefix("openrouter/"))
+    # Bare provider/model → try with the openrouter/ prefix added.
+    # (Some entries, notably anthropic/claude-{sonnet,opus}-4.6, only
+    # exist under the openrouter/ form in litellm's registry.)
+    if info is None and "/" in model and not model.startswith("openrouter/"):
+        info = litellm.model_cost.get(f"openrouter/{model}")
     return info
 
 
