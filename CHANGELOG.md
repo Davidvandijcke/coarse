@@ -9,6 +9,7 @@
 - fix(deploy): use hmac.compare_digest for webhook token check in modal_worker (#41)
 - fix(deploy): extend _sanitize_error to cover Groq, Perplexity, and Anthropic key prefixes (#41)
 - fix(extraction): scrub bearer tokens and API keys from error messages before raise/log on CLI path (#41)
+- fix(prompts): add `_CONTENT_BOUNDARY_NOTICE` to EDITORIAL, CROSSREF, CRITIQUE, ASSUMPTION_CHECK, METADATA system prompts and fence abstract + first-pass comments in proof_verify_user (#42)
 
 ### Added
 
