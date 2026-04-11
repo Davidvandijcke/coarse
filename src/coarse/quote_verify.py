@@ -5,6 +5,7 @@ Uses fuzzy matching to correct garbled quotes from PDF extraction artifacts.
 Applies stricter thresholds for math-heavy quotes where single-character changes
 (e.g., an exponent or subscript) can completely alter the meaning.
 """
+
 from __future__ import annotations
 
 import difflib
@@ -25,19 +26,28 @@ _GARBLE_THRESHOLD = 0.005
 
 # Pattern detecting math-heavy content: LaTeX commands, digits, operators
 _MATH_PATTERN = re.compile(
-    r"\\[a-zA-Z]+|"        # LaTeX commands (\frac, \phi, etc.)
-    r"\$[^$]+\$|"           # inline math $...$
-    r"\b\d+\.?\d*\b|"      # numbers
-    r"[=<>≤≥±∑∏∫]"         # math operators
+    r"\\[a-zA-Z]+|"  # LaTeX commands (\frac, \phi, etc.)
+    r"\$[^$]+\$|"  # inline math $...$
+    r"\b\d+\.?\d*\b|"  # numbers
+    r"[=<>≤≥±∑∏∫]"  # math operators
 )
 
 
 def _is_math_heavy(text: str) -> bool:
     """Return True if the quote contains significant mathematical content."""
+    if not text:
+        return False
     matches = _MATH_PATTERN.findall(text)
-    # Consider math-heavy if ≥3 math tokens or >10% of length is math
+    if not matches:
+        return False
+    # Consider math-heavy if density ≥5% AND (≥3 tokens or ≥10% density).
+    # The 5% density floor stops three bare numbers in a prose paragraph
+    # (e.g. "Table 3 shows 15.2 in 2020") from flipping to strict mode.
     math_len = sum(len(m) for m in matches)
-    return len(matches) >= 3 or (matches and math_len > 0.10 * len(text))
+    density = math_len / len(text)
+    if density < 0.05:
+        return False
+    return len(matches) >= 3 or density > 0.10
 
 
 def verify_quotes(
@@ -98,18 +108,19 @@ def verify_quotes(
             stats["dropped"] += 1
             logger.info(
                 "Dropping comment '%s' — quote not found in paper (ratio=%.2f)",
-                comment.title, ratio,
+                comment.title,
+                ratio,
             )
         else:
-            flagged = comment.model_copy(
-                update={"quote": f"[approximate] {comment.quote}"}
-            )
+            flagged = comment.model_copy(update={"quote": f"[approximate] {comment.quote}"})
             result.append(flagged)
 
     logger.info(
-        "Quote verification: %d exact, %d fuzzy-corrected, %d dropped, "
-        "%d garbled-source matches",
-        stats["exact"], stats["fuzzy"], stats["dropped"], stats["garbled_source"],
+        "Quote verification: %d exact, %d fuzzy-corrected, %d dropped, %d garbled-source matches",
+        stats["exact"],
+        stats["fuzzy"],
+        stats["dropped"],
+        stats["garbled_source"],
     )
 
     return result
@@ -151,9 +162,12 @@ def _find_nearest_passage(
 
     quote_tokens = _tokenize(quote)
 
-    # Phase 1: Jaccard pre-filter — score all chunks cheaply
+    # Phase 1: Jaccard pre-filter — score all chunks cheaply. Stop the range
+    # at len(paper_text) - window_size + 1 so every chunk is a full window;
+    # a truncated trailing chunk would distort Jaccard scores on the tail.
+    stop = max(1, len(paper_text) - window_size + 1)
     candidates: list[tuple[float, int]] = []
-    for i in range(0, len(paper_text) - min(quote_len, len(paper_text)) + 1, step):
+    for i in range(0, stop, step):
         chunk = paper_text[i : i + window_size]
         score = _jaccard(quote_tokens, _tokenize(chunk))
         candidates.append((score, i))
@@ -169,9 +183,7 @@ def _find_nearest_passage(
 
     for _, i in top_candidates:
         candidate = paper_text[i : i + window_size]
-        ratio = difflib.SequenceMatcher(
-            None, quote_lower, candidate.lower()
-        ).ratio()
+        ratio = difflib.SequenceMatcher(None, quote_lower, candidate.lower()).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
             best_passage = candidate
