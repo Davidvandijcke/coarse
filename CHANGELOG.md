@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- **Landing-page model picker refreshed** — `web/src/components/ModelPicker.tsx` now defaults to `anthropic/claude-opus-4.6` as the pre-selected model and adds `openai/gpt-5.4` and `google/gemini-3.1-pro-preview` as featured options. `qwen/qwen3.5-plus-02-15` was bumped to `qwen/qwen3.6-plus` to reflect the new release on OpenRouter. All four IDs were verified against OpenRouter's live catalog before landing.
+
 ### Fixed
 
 - **Null-byte crashes on Supabase write** — `_sanitized_completion` in `src/coarse/llm.py` stripped literal control characters (`\x00-\x1f`) from raw LLM response text but did not touch the JSON escape sequence `\u0000` (six printable ASCII bytes). When an LLM emitted `\u0000` inside a JSON string field, the escape survived the sanitizer, `json.loads` reconstituted it as a real `\x00` inside the parsed Pydantic field, and the resulting `result_markdown` then crashed the Supabase UPDATE with Postgres 22P05 (`\u0000 cannot be converted to text`), marking the review as failed despite the pipeline having succeeded. Observed in production during the post-launch tweet surge on two gpt-5.4 reviews (`6c41a05e`, `92947b4b`) — extraction produced clean markdown on both PDFs, so the null byte could only have entered through the LLM response path. Fix strips the `\\u0000` escape form before Instructor/Pydantic parses the content. Regression covered by three new tests in `tests/test_llm.py` exercising `_sanitized_completion` directly.
