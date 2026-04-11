@@ -307,25 +307,41 @@ class LLMClient:
 
     @property
     def supports_prompt_caching(self) -> bool:
-        """Whether the model supports Anthropic-style prompt caching.
+        """Whether the model's provider requires explicit cache_control blocks.
 
-        True for any Claude model regardless of whether the request is
-        routed direct to Anthropic or proxied through OpenRouter. The
-        older "OpenRouter doesn't forward cache_control" concern is
-        stale: OpenRouter has forwarded explicit per-block cache_control
-        breakpoints to the Anthropic provider since mid-2024. Verified
-        against their current docs at
-        https://openrouter.ai/docs/guides/best-practices/prompt-caching
-        on 2026-04-11.
+        Covers every provider that (per OpenRouter's prompt-caching docs,
+        verified 2026-04-11) requires the caller to emit Anthropic-style
+        ``cache_control: {type: "ephemeral"}`` blocks to enable caching:
 
-        Cost impact: cache reads are billed at 0.1× input price (90% off)
-        and cache writes at 1.25× (25% premium). A cache block pays off
-        the moment it's read at least once. In coarse's pipeline the
-        section-agent system prompt is shared across N parallel calls
-        (N=8-25 on typical papers), so turning caching ON for OpenRouter-
-        routed Claude gives 1 write + (N-1) reads immediately.
+        - **Anthropic Claude** (``anthropic/claude-*``,
+          ``openrouter/anthropic/claude-*``, direct/Bedrock/Vertex
+          routing — matched by either the ``anthropic`` or ``claude``
+          substring to catch ``vertex_ai/claude-*`` forms).
+        - **Google Gemini** (``gemini/*``, ``google/gemini-*``,
+          ``openrouter/google/gemini-*``). Per
+          https://openrouter.ai/docs/guides/best-practices/prompt-caching:
+          "Gemini caching in OpenRouter requires you to insert
+          cache_control breakpoints explicitly within message content."
+
+        NOT covered (deliberately):
+
+        - **OpenAI** — auto-caches prompt prefixes >=1024 tokens on its
+          side. Emitting ``cache_control`` blocks is harmless but
+          unnecessary, so we keep the signal False for OpenAI models
+          to avoid cluttering requests with no-op metadata.
+        - **DeepSeek** — auto-caches server-side, same story.
+        - Other providers (Qwen, Mistral, Moonshot, z-ai, x-ai, etc.)
+          are undocumented; we don't emit blocks to untested providers.
+
+        Cost impact when enabled: cache writes bill at 1.25× input,
+        reads at 0.1× (90% off). Break-even at 0.28 reads per write.
+        Section-agent system prompts are shared across N parallel
+        calls (N=8-25 typically), so one cache_control block per
+        section-agent system + paper-context prefix clears break-even
+        on the first cache read.
         """
-        return "anthropic" in self._model.lower()
+        lower = self._model.lower()
+        return any(p in lower for p in ("anthropic", "claude", "gemini"))
 
 
 def _normalize_model(model: str, config: CoarseConfig | None = None) -> str:

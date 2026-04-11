@@ -639,17 +639,65 @@ def test_supports_prompt_caching_openrouter_anthropic(mock_instructor_client):
     assert client.supports_prompt_caching is True
 
 
-def test_supports_prompt_caching_non_anthropic_models(mock_instructor_client):
-    """Non-Anthropic models (qwen, openai, etc.) do not support caching."""
+def test_supports_prompt_caching_gemini_direct_and_openrouter(mock_instructor_client):
+    """Gemini also needs explicit cache_control blocks per OpenRouter's
+    prompt-caching docs. Covers both the direct ``gemini/*`` litellm
+    form (Google AI Studio) and the OpenRouter-routed ``google/gemini-*``
+    form."""
     for model_id in (
-        "qwen/qwen3.5-plus-02-15",
-        "openrouter/qwen/qwen3.5-plus-02-15",
+        "gemini/gemini-3-flash-preview",
+        "google/gemini-3-flash-preview",
+        "openrouter/google/gemini-3-flash-preview",
+        "vertex_ai/gemini-1.5-pro",
+    ):
+        client = LLMClient(model=model_id, config=CoarseConfig())
+        assert client.supports_prompt_caching is True, (
+            f"{model_id} should support prompt caching (Gemini requires "
+            f"explicit cache_control blocks per OpenRouter docs)"
+        )
+
+
+def test_supports_prompt_caching_vertex_claude(mock_instructor_client):
+    """Claude via Vertex AI (vertex_ai/claude-*) matches on the 'claude'
+    substring even though the provider prefix is 'vertex_ai'. Same
+    provider, same caching mechanism."""
+    client = LLMClient(model="vertex_ai/claude-sonnet-4.6", config=CoarseConfig())
+    assert client.supports_prompt_caching is True
+
+
+def test_supports_prompt_caching_auto_cache_providers_return_false(mock_instructor_client):
+    """OpenAI and DeepSeek auto-cache prefixes server-side and do NOT
+    require cache_control blocks. Keep supports_prompt_caching False
+    for those to avoid emitting no-op metadata on every request —
+    their caching works transparently without coarse's help."""
+    for model_id in (
         "openai/gpt-5.4",
+        "openai/gpt-5.1-codex-mini",
         "openrouter/openai/gpt-5.4",
+        "deepseek/deepseek-chat",
+        "openrouter/deepseek/deepseek-v3.2",
     ):
         client = LLMClient(model=model_id, config=CoarseConfig())
         assert client.supports_prompt_caching is False, (
-            f"{model_id} should not support prompt caching"
+            f"{model_id} auto-caches server-side; no cache_control needed"
+        )
+
+
+def test_supports_prompt_caching_undocumented_providers_return_false(mock_instructor_client):
+    """Providers with no documented caching support (Qwen, Mistral,
+    Moonshot, z-ai, x-ai) should not get cache_control blocks — we
+    don't send untested metadata to untested providers."""
+    for model_id in (
+        "qwen/qwen3.5-plus-02-15",
+        "openrouter/qwen/qwen3.5-plus-02-15",
+        "mistralai/mistral-large",
+        "moonshotai/kimi-k2.5",
+        "z-ai/glm-5.1",
+        "x-ai/grok-4",
+    ):
+        client = LLMClient(model=model_id, config=CoarseConfig())
+        assert client.supports_prompt_caching is False, (
+            f"{model_id} has no documented cache_control support; skip"
         )
 
 
