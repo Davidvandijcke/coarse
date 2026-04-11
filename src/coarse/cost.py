@@ -5,13 +5,11 @@ No LLM calls here — purely heuristic token budgets + pricing lookup.
 
 from __future__ import annotations
 
-import os
-
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from coarse.config import CoarseConfig
+from coarse.config import CoarseConfig, _clean_env
 from coarse.llm import estimate_call_cost, estimate_reasoning_overhead_tokens
 from coarse.models import LITERATURE_SEARCH_MODEL, OCR_MODEL, is_reasoning_model
 from coarse.types import CostEstimate, CostStage, PaperText
@@ -72,7 +70,7 @@ def build_cost_estimate(
     # Overview: 3 judges each read full paper, then a synthesis call
     _NUM_OVERVIEW_JUDGES = 3
     # Literature search: Perplexity flat fee if OpenRouter key available, else token-based
-    if os.environ.get("OPENROUTER_API_KEY"):
+    if _clean_env("OPENROUTER_API_KEY"):
         stages.append(
             CostStage(
                 name="literature_search",

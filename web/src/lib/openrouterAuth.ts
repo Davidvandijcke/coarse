@@ -57,19 +57,25 @@ export async function completeLogin(code: string): Promise<string> {
     throw new Error(`OpenRouter key exchange failed (${res.status})`);
   }
   const data = (await res.json()) as { key?: string };
-  if (!data.key) throw new Error("OpenRouter response missing key");
+  const key = (data.key ?? "").trim();
+  if (!key) throw new Error("OpenRouter response missing key");
   window.sessionStorage.removeItem(VERIFIER_STORAGE_KEY);
-  return data.key;
+  return key;
 }
 
 export function loadStoredKey(): string | null {
   if (!isBrowser()) return null;
-  return window.localStorage.getItem(API_KEY_STORAGE_KEY);
+  const stored = window.localStorage.getItem(API_KEY_STORAGE_KEY);
+  if (stored === null) return null;
+  const trimmed = stored.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 export function saveStoredKey(key: string): void {
   if (!isBrowser()) return;
-  window.localStorage.setItem(API_KEY_STORAGE_KEY, key);
+  const trimmed = key.trim();
+  if (!trimmed) return;
+  window.localStorage.setItem(API_KEY_STORAGE_KEY, trimmed);
 }
 
 export function clearStoredKey(): void {

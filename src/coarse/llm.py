@@ -7,7 +7,6 @@ API keys are set in env vars by the caller; litellm picks them up automatically.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import threading
 
@@ -15,7 +14,7 @@ import instructor
 import litellm
 from pydantic import BaseModel
 
-from coarse.config import PROVIDER_ENV_VARS, CoarseConfig, load_config
+from coarse.config import PROVIDER_ENV_VARS, CoarseConfig, _clean_env, load_config
 from coarse.models import (
     DEFAULT_MODEL,
     JSON_MODE_PREFIXES,
@@ -115,8 +114,18 @@ def _inject_openrouter_privacy(model: str, kwargs: dict) -> dict:
     provider_cfg.setdefault("data_collection", "deny")
     extra_body["provider"] = provider_cfg
     result = {**kwargs, "extra_body": extra_body}
+    # Strip a caller-provided api_key too: a whitespace-only value from any
+    # upstream path (e.g. a future helper that plumbs the key explicitly
+    # instead of via env) would otherwise still produce a `Bearer ` header.
+    caller_key = result.get("api_key")
+    if caller_key is not None:
+        caller_key = str(caller_key).strip()
+        if caller_key:
+            result["api_key"] = caller_key
+        else:
+            result.pop("api_key", None)
     if "api_key" not in result:
-        or_key = os.environ.get("OPENROUTER_API_KEY")
+        or_key = _clean_env("OPENROUTER_API_KEY")
         if or_key:
             result["api_key"] = or_key
     return result
@@ -272,12 +281,15 @@ def _normalize_model(model: str) -> str:
         env_vars = [PROVIDER_ENV_VARS[prefix]]
         if prefix == "gemini":
             env_vars.append("GOOGLE_API_KEY")
-        if any(os.environ.get(v) for v in env_vars):
+        # Whitespace-only env values are treated as unset — otherwise routing
+        # would pick the "direct provider" branch, then auth would fail with
+        # an empty Bearer header at the HTTP layer.
+        if any(_clean_env(v) for v in env_vars):
             return model
         # No direct key — fall through to OpenRouter routing
     # If OPENROUTER_API_KEY is set and model has a slash (like qwen/qwen3.5-plus),
     # route through OpenRouter
-    if "/" in model and os.environ.get("OPENROUTER_API_KEY"):
+    if "/" in model and _clean_env("OPENROUTER_API_KEY"):
         # litellm uses gemini/ for Google AI Studio, but OpenRouter uses google/
         if model.startswith("gemini/"):
             model = "google/" + model.removeprefix("gemini/")
