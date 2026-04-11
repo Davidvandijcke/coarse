@@ -79,14 +79,57 @@ def _send_email(to: str, subject: str, html: str) -> None:
         server.send_message(msg)
 
 
+def _strip_nul_bytes(text: str | None) -> str | None:
+    """Remove NUL bytes and literal \\u0000 escapes before a Supabase write.
+
+    Belt-and-suspenders sibling of ``coarse.extraction._strip_nul_bytes``.
+    The extraction layer already scrubs at its seam, but the review markdown
+    and error messages flow through several LLM-roundtrip transforms after
+    that, any of which could theoretically reintroduce a NUL. Postgres text
+    columns reject \\x00 and PostgREST's JSON decoder rejects the 6-char
+    escape ``\\u0000`` with SQLSTATE 22P05, so re-strip at the boundary.
+    Idempotent and cheap; safe on ``None``.
+    """
+    if not text:
+        return text
+    return text.replace("\x00", "").replace("\\u0000", "")
+
+
 def _sanitize_error(msg: str) -> str:
     """Strip potentially sensitive info from error messages."""
     import re
 
-    # Strip traceback to final exception line only
-    lines = msg.strip().splitlines()
-    if len(lines) > 1:
-        msg = next((line for line in reversed(lines) if line.strip()), msg)
+    # Instructor's retry exceptions wrap the real failure in an XML-like
+    # envelope whose OUTER tag is </last_exception>, e.g.
+    #
+    #   <last_exception>
+    #   <failed_attempts>
+    #     <generation number="1">
+    #       <exception>The output is incomplete due to a max_tokens length limit.</exception>
+    #       <completion>...</completion>
+    #     </generation>
+    #   </failed_attempts>
+    #   </last_exception>
+    #
+    # The old "last non-empty line" heuristic picked up the bare closing tag
+    # and threw away everything useful — every instructor retry failure in
+    # Supabase showed up as the single string "</last_exception>". Prefer the
+    # first <exception>...</exception> payload when present.
+    inst_match = re.search(r"<exception>\s*(.*?)\s*</exception>", msg, re.DOTALL)
+    if inst_match and inst_match.group(1).strip():
+        msg = inst_match.group(1).strip()
+    else:
+        # Strip traceback to final exception line only
+        lines = msg.strip().splitlines()
+        if len(lines) > 1:
+            last = next((line for line in reversed(lines) if line.strip()), msg)
+            # If the "last line" is a bare closing XML tag (e.g. </last_exception>
+            # without a matching <exception> block, or any other wrapper), fall
+            # back to the whole trimmed message so we don't lose everything.
+            if re.fullmatch(r"</[A-Za-z_][\w-]*>", last.strip()):
+                msg = msg.strip()
+            else:
+                msg = last
 
     # OpenRouter keys: sk-or-v1-...
     msg = re.sub(r"sk-or-v1-[a-zA-Z0-9]{20,}", "[key]", msg)
@@ -340,8 +383,8 @@ def do_review(req_dict: dict):
                 "paper_title": review.title,
                 "model": model,
                 "domain": review.domain,
-                "result_markdown": markdown,
-                "paper_markdown": paper_text.full_markdown,
+                "result_markdown": _strip_nul_bytes(markdown),
+                "paper_markdown": _strip_nul_bytes(paper_text.full_markdown),
                 "duration_seconds": duration,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             }
@@ -382,7 +425,7 @@ def do_review(req_dict: dict):
         db.table("reviews").update(
             {
                 "status": "failed",
-                "error_message": error_msg,
+                "error_message": _strip_nul_bytes(error_msg),
                 "duration_seconds": duration,
             }
         ).eq("id", job_id).execute()

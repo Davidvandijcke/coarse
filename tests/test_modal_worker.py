@@ -139,6 +139,116 @@ def test_sanitize_error_scrubs_anthropic_key(modal_worker) -> None:
     assert "Anthropic 401" in cleaned
 
 
+# ---------------------------------------------------------------------------
+# _sanitize_error — instructor retry envelope (#55)
+# ---------------------------------------------------------------------------
+
+
+def test_sanitize_error_extracts_instructor_exception_block(modal_worker) -> None:
+    """Instructor wraps retry failures in <last_exception><failed_attempts>...
+    The old last-non-empty-line heuristic picked up the bare closing tag, so
+    every instructor retry failure was stored in Supabase as the single
+    string '</last_exception>'. The fix extracts the first <exception>
+    payload instead.
+    """
+    raw = (
+        "<last_exception>\n"
+        "<failed_attempts>\n"
+        '<generation number="1">\n'
+        "<exception>\n"
+        "    The output is incomplete due to a max_tokens length limit.\n"
+        "</exception>\n"
+        "<completion>\n"
+        "    ModelResponse(id='gen-xxx', finish_reason='length', ...)\n"
+        "</completion>\n"
+        "</generation>\n"
+        "</failed_attempts>\n"
+        "</last_exception>"
+    )
+    cleaned = modal_worker._sanitize_error(raw)
+    assert "max_tokens" in cleaned
+    assert "incomplete" in cleaned
+    # The outer closing tag must NOT be what we kept
+    assert cleaned.strip() != "</last_exception>"
+    assert not cleaned.startswith("</")
+
+
+def test_sanitize_error_closing_tag_only_fallback(modal_worker) -> None:
+    """If someone hands us a message whose last line is a bare closing XML tag
+    and there is no <exception> block to extract, fall back to the whole
+    message rather than keeping just '</last_exception>'.
+    """
+    raw = "something went wrong upstream\n</last_exception>"
+    cleaned = modal_worker._sanitize_error(raw)
+    assert cleaned.strip() != "</last_exception>"
+    assert "something went wrong upstream" in cleaned
+
+
+def test_sanitize_error_single_line_unchanged(modal_worker) -> None:
+    """A plain single-line error message must pass through unchanged (modulo
+    secret scrubbing)."""
+    raw = "RateLimitError: too many requests"
+    cleaned = modal_worker._sanitize_error(raw)
+    assert cleaned == "RateLimitError: too many requests"
+
+
+def test_sanitize_error_multiline_traceback_still_takes_last_line(
+    modal_worker,
+) -> None:
+    """Classic Python tracebacks (no instructor envelope) still collapse to
+    their final exception line, which is the most useful one."""
+    raw = (
+        "Traceback (most recent call last):\n"
+        '  File "foo.py", line 1, in <module>\n'
+        "    bar()\n"
+        "ValueError: something specific"
+    )
+    cleaned = modal_worker._sanitize_error(raw)
+    assert cleaned == "ValueError: something specific"
+
+
+def test_sanitize_error_instructor_envelope_keeps_secret_scrubbing(
+    modal_worker,
+) -> None:
+    """Extracting the <exception> block must still run the secret scrubbers on
+    the extracted text — a user's key pasted into a retry envelope must not
+    leak through."""
+    raw = (
+        "<last_exception><failed_attempts>"
+        "<exception>bad request for sk-or-v1-abcdefghijklmnopqrstuvwxyz0123</exception>"
+        "</failed_attempts></last_exception>"
+    )
+    cleaned = modal_worker._sanitize_error(raw)
+    assert "sk-or-v1-abcdef" not in cleaned
+    assert "[key]" in cleaned
+
+
+# ---------------------------------------------------------------------------
+# _strip_nul_bytes — Postgres 22P05 defense (#62)
+# ---------------------------------------------------------------------------
+
+
+def test_strip_nul_bytes_removes_real_nul(modal_worker) -> None:
+    assert modal_worker._strip_nul_bytes("before\x00after") == "beforeafter"
+
+
+def test_strip_nul_bytes_removes_json_escape(modal_worker) -> None:
+    assert modal_worker._strip_nul_bytes("before\\u0000after") == "beforeafter"
+
+
+def test_strip_nul_bytes_safe_on_none(modal_worker) -> None:
+    assert modal_worker._strip_nul_bytes(None) is None
+
+
+def test_strip_nul_bytes_safe_on_empty(modal_worker) -> None:
+    assert modal_worker._strip_nul_bytes("") == ""
+
+
+def test_strip_nul_bytes_leaves_normal_text_alone(modal_worker) -> None:
+    text = "Regular paper content with math $x^2 + y^2 = z^2$ and newlines\n."
+    assert modal_worker._strip_nul_bytes(text) == text
+
+
 def _make_req(job_id: str = "j1"):
     return types.SimpleNamespace(job_id=job_id, model_dump=lambda: {"job_id": job_id})
 
