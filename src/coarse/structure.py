@@ -11,7 +11,12 @@ import logging
 import re
 
 from coarse.llm import LLMClient
-from coarse.prompts import MATH_DETECTION_SYSTEM, METADATA_SYSTEM, math_detection_user
+from coarse.prompts import (
+    MATH_DETECTION_SYSTEM,
+    METADATA_SYSTEM,
+    math_detection_user,
+    metadata_user,
+)
 from coarse.types import (
     MathSectionDetection,
     PaperMetadata,
@@ -256,15 +261,7 @@ def _get_metadata(
     headings_str = ", ".join(headings[:20])
     messages = [
         {"role": "system", "content": METADATA_SYSTEM},
-        {
-            "role": "user",
-            "content": (
-                f"Extract the title and classify this paper.\n\n"
-                f"**First page**:\n{first_page}\n\n"
-                f"**Abstract**: {abstract[:1000]}\n"
-                f"**Headings**: {headings_str}\n"
-            ),
-        },
+        {"role": "user", "content": metadata_user(first_page, abstract[:1000], headings_str)},
     ]
     try:
         return client.complete(messages, PaperMetadata, max_tokens=256, temperature=0.1)
