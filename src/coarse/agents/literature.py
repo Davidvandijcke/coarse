@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from coarse.config import _clean_env
 from coarse.llm import LLMClient, _inject_openrouter_privacy
 from coarse.models import LITERATURE_SEARCH_MODEL
-from coarse.prompts import PERPLEXITY_PROMPT
+from coarse.prompts import PERPLEXITY_SYSTEM, perplexity_user
 
 logger = logging.getLogger(__name__)
 
@@ -81,14 +81,17 @@ def _search_perplexity(title: str, abstract: str, client: LLMClient) -> str:
 
     Returns formatted literature context string, or raises on failure.
     """
-    prompt = PERPLEXITY_PROMPT.format(title=title, abstract=abstract[:1500])
+    user_msg = perplexity_user(title, abstract[:1500])
 
     model = f"openrouter/{LITERATURE_SEARCH_MODEL}"
     completion_kwargs = _inject_openrouter_privacy(
         model,
         {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [
+                {"role": "system", "content": PERPLEXITY_SYSTEM},
+                {"role": "user", "content": user_msg},
+            ],
             "max_tokens": 4096,
             "temperature": _PERPLEXITY_TEMPERATURE,
             "timeout": 60,
