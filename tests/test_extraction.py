@@ -13,6 +13,7 @@ from coarse.extraction import (
     _estimate_tokens,
     _response_was_billed,
     _scrub_secrets,
+    _strip_nul_bytes,
     compute_garble_ratio,
     extract_file,
     extract_text,
@@ -103,6 +104,60 @@ def test_extract_text_joins_pages_with_page_break(minimal_pdf: Path) -> None:
 def test_extract_missing_file() -> None:
     with pytest.raises(FileNotFoundError):
         extract_text("/nonexistent/path/file.pdf")
+
+
+# ---------------------------------------------------------------------------
+# NUL byte scrubbing (#62) — Postgres text columns reject \x00, and
+# PostgREST's JSON path rejects the 6-char escape \u0000 with SQLSTATE 22P05.
+# ---------------------------------------------------------------------------
+
+
+def test_strip_nul_bytes_removes_real_nul() -> None:
+    assert _strip_nul_bytes("before\x00after") == "beforeafter"
+
+
+def test_strip_nul_bytes_removes_literal_u0000_escape() -> None:
+    assert _strip_nul_bytes("before\\u0000after") == "beforeafter"
+
+
+def test_strip_nul_bytes_safe_on_empty() -> None:
+    assert _strip_nul_bytes("") == ""
+
+
+def test_strip_nul_bytes_leaves_normal_text_alone() -> None:
+    text = "# Paper\n\nRegular content with math $x^2$ and newlines.\n"
+    assert _strip_nul_bytes(text) == text
+
+
+def test_extract_text_strips_nul_byte_from_ocr_output(minimal_pdf: Path) -> None:
+    """If an OCR backend emits a NUL byte, extract_text must scrub it before
+    handing the markdown to the caller. Without this guard, the downstream
+    Supabase write crashes with Postgres 22P05 after the user has already
+    paid for the whole review pipeline.
+    """
+    pages = ["Page 1 content with \x00 NUL byte in the middle."]
+    with patch("requests.post", return_value=_mock_ocr_response(pages)):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+            result = extract_text(minimal_pdf, use_cache=False)
+    assert "\x00" not in result.full_markdown
+    assert "Page 1 content with" in result.full_markdown
+    assert "NUL byte in the middle" in result.full_markdown
+
+
+def test_extract_text_strips_literal_u0000_escape_from_ocr_output(
+    minimal_pdf: Path,
+) -> None:
+    """Same defense for the 6-char literal \\u0000 sequence, which PostgREST
+    rejects at the JSON-decode layer even though it isn't a real NUL byte
+    until Postgres materializes it.
+    """
+    pages = ["Page with a literal \\u0000 escape in OCR output."]
+    with patch("requests.post", return_value=_mock_ocr_response(pages)):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+            result = extract_text(minimal_pdf, use_cache=False)
+    assert "\\u0000" not in result.full_markdown
+    assert "literal" in result.full_markdown
+    assert "escape in OCR output" in result.full_markdown
 
 
 def test_token_estimate_heuristic() -> None:

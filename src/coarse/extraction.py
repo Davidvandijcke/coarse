@@ -24,6 +24,22 @@ logger = logging.getLogger(__name__)
 PAGE_BREAK = "\n\n<!-- PAGE BREAK -->\n\n"
 
 
+def _strip_nul_bytes(text: str) -> str:
+    """Remove NUL bytes and literal \\u0000 escapes from an extracted string.
+
+    Postgres ``text`` columns reject the NUL byte (\\x00), and PostgREST's JSON
+    path also rejects the 6-char escape sequence ``\\u0000`` with SQLSTATE
+    22P05 when it tries to decode the insert body. Some OCR backends emit
+    NULs on edge-case scanned PDFs, and those failures surface at the very
+    end of the review pipeline — after the user has already paid for the
+    LLM work — which is the worst possible time to crash. Stripping here
+    is cheap, idempotent, and keeps the downstream Supabase write safe.
+    """
+    if not text:
+        return text
+    return text.replace("\x00", "").replace("\\u0000", "")
+
+
 # Secret-scrub patterns used on backend failure strings before they reach
 # logger.warning() or the raised ExtractionError. Kept as a small duplicate
 # of deploy/modal_worker.py::_sanitize_error — cross-importing between
@@ -691,6 +707,10 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
     # Normalize Mistral OCR artifacts unconditionally
     full_markdown = normalize_mistral_artifacts(full_markdown)
 
+    # Strip NUL bytes before anything downstream touches the text. See
+    # _strip_nul_bytes for the full rationale — short version: Postgres 22P05.
+    full_markdown = _strip_nul_bytes(full_markdown)
+
     # Detect and normalize OCR garble from older PDFs
     garble = compute_garble_ratio(full_markdown)
     if garble > 0.001:
@@ -784,6 +804,10 @@ def extract_file(file_path: str | Path, use_cache: bool = True) -> PaperText:
         full_markdown = _extract_epub(path)
     else:  # .txt, .md
         full_markdown = _extract_plaintext(path)
+
+    # Same NUL-strip as the PDF path — non-PDF extractors can also carry
+    # NULs (malformed TXT, Word docs with embedded binary).
+    full_markdown = _strip_nul_bytes(full_markdown)
 
     paper_text = PaperText(
         full_markdown=full_markdown,
