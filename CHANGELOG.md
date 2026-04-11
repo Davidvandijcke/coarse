@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **PyPI distribution renamed to `coarse-ink`** — the bare `coarse` name on PyPI was already taken by an unrelated, abandoned package (`coarse==0.0.1` by a different author), so `uvx coarse` / `pip install coarse` resolved to the wrong package and users hit `Package 'coarse' does not provide any executables` (#17). Installing is now `uvx coarse-ink review paper.pdf ...` or `pip install coarse-ink`. The Python import name (`import coarse`) and the `coarse` CLI command are unchanged — a `coarse-ink` console script is also registered so `uvx coarse-ink ...` resolves directly, and `uv tool install coarse-ink` still puts a `coarse` command on your PATH.
+
 ### Added
 
 - **Automated incident posting to X/Twitter** — new `deploy/incident_monitor.py` Modal app (`coarse-monitor`) that runs every 2 minutes, watches four independent signals (backend error spike, queue stall, Modal `/health` down, upstream provider 5xx pattern), and posts an "investigating" tweet when the backend is actually broken. Auto-resolves (threaded reply) once signals have been clear for 10 minutes. Explicitly ignores user-side errors (bad API keys, spending limits, 429s from the user's own provider) so it never tweets because someone pasted a dead key. Ships in `INCIDENT_MONITOR_MODE=dry_run` by default; flip to `live` via Modal secret once dry-run logs look right. Includes 30 min cooldown between incidents to suppress flapping and an `INCIDENT_MONITOR_ENABLED=false` kill switch.

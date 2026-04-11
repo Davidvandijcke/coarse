@@ -5,8 +5,8 @@
 Free, open-source AI academic paper reviewer. The rough alternative to refine.ink.
 Users provide their own API keys and pay only the LLM provider directly (~$2-5 per review vs refine.ink's ~$50).
 
-**Package:** `coarse` (Python 3.12+, Pydantic, litellm, instructor)
-**Install:** `pip install coarse` / `pipx install coarse` / `uvx coarse paper.pdf`
+**Package:** `coarse-ink` on PyPI; import name is still `coarse` (Python 3.12+, Pydantic, litellm, instructor). The bare `coarse` name on PyPI is held by an unrelated package — see CHANGELOG Unreleased / #17.
+**Install:** `pip install coarse-ink` / `pipx install coarse-ink` / `uvx coarse-ink paper.pdf`
 
 ## Python Environment
 

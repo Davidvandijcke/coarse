@@ -126,7 +126,7 @@ alter publication supabase_realtime add table reviews;
 -- Singleton row: manual kill switch + banner message for the web frontend.
 -- Flip from the Supabase SQL editor:
 --   UPDATE system_status SET accepting_reviews = false,
---     banner_message = 'High traffic — use the CLI: pip install coarse',
+--     banner_message = 'High traffic — use the CLI: pip install coarse-ink',
 --     updated_at = now() WHERE id = 1;
 create table system_status (
   id int primary key default 1 check (id = 1),

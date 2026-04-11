@@ -15,7 +15,7 @@ Don't want to run it locally? Use the [web interface](https://coarse.vercel.app/
 Get an API key from [OpenRouter](https://openrouter.ai/keys) (free to sign up), then:
 
 ```bash
-uvx coarse review paper.pdf --api-key sk-or-v1-YOUR_KEY
+uvx coarse-ink review paper.pdf --api-key sk-or-v1-YOUR_KEY
 ```
 
 That's it. The review is written to `paper_review.md` in the current directory.
@@ -35,8 +35,14 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 `uvx` runs coarse in a temporary environment with no permanent install. To install permanently:
 
 ```bash
-uv tool install coarse    # or: pip install coarse
+uv tool install coarse-ink    # or: pip install coarse-ink
 ```
+
+> **Why `coarse-ink` and not `coarse`?** The bare `coarse` name on PyPI is
+> held by an unrelated package, so we ship under `coarse-ink`. The Python
+> import name (`import coarse`) and the `coarse` CLI command are unchanged
+> — installing `coarse-ink` puts both `coarse` and `coarse-ink` on your
+> PATH.
 
 ### Save your API key
 
@@ -54,8 +60,8 @@ PDF, TXT, Markdown, LaTeX, DOCX, HTML, and EPUB. PDFs use Mistral OCR; other for
 Docling (if installed) with lightweight fallbacks. Install optional format support:
 
 ```bash
-pip install coarse[formats]   # DOCX, HTML, EPUB fallbacks
-pip install coarse[docling]   # Docling for PDF/DOCX/HTML/LaTeX
+pip install coarse-ink[formats]   # DOCX, HTML, EPUB fallbacks
+pip install coarse-ink[docling]   # Docling for PDF/DOCX/HTML/LaTeX
 ```
 
 ## How it works
@@ -145,7 +151,7 @@ Make sure your OpenRouter per-key spend limit has headroom above the estimate.
 
 The default spending cap is **$10 per review** (`max_cost_usd` in config). Use `--yes` to skip the
 confirmation prompt. Use `--no-qa` to skip the post-extraction quality check (vision LLM).
-Scanned PDFs are supported via Docling's built-in OCR (`pip install coarse[docling]`).
+Scanned PDFs are supported via Docling's built-in OCR (`pip install coarse-ink[docling]`).
 
 You can also load API keys from any `.env` file with `--env-file path/to/.env`.
 
