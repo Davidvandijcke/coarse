@@ -479,7 +479,7 @@ def _extract_html_markdownify(path: Path) -> str:
         import markdownify
     except ImportError:
         raise ExtractionError(
-            "HTML extraction requires markdownify: pip install coarse[formats]"
+            "HTML extraction requires markdownify: pip install coarse-ink[formats]"
         )
     html_str = path.read_text(encoding="utf-8")
     return markdownify.markdownify(html_str, heading_style="ATX")
@@ -491,7 +491,7 @@ def _extract_docx_mammoth(path: Path) -> str:
         import mammoth
     except ImportError:
         raise ExtractionError(
-            "DOCX extraction requires mammoth: pip install coarse[formats]"
+            "DOCX extraction requires mammoth: pip install coarse-ink[formats]"
         )
     with open(path, "rb") as f:
         result = mammoth.convert_to_markdown(f)
@@ -506,7 +506,7 @@ def _extract_epub(path: Path) -> str:
         from ebooklib import epub
     except ImportError:
         raise ExtractionError(
-            "EPUB extraction requires ebooklib and markdownify: pip install coarse[formats]"
+            "EPUB extraction requires ebooklib and markdownify: pip install coarse-ink[formats]"
         )
     book = epub.read_epub(str(path))
     chapters = []

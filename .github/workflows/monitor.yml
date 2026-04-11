@@ -70,7 +70,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
             -H "Content-Type: application/json" \
             -H "Prefer: return=minimal" \
-            -d '{"accepting_reviews": false, "banner_message": "Monthly capacity reached. Please use the CLI: pip install coarse", "updated_at": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}'
+            -d '{"accepting_reviews": false, "banner_message": "Monthly capacity reached. Please use the CLI: pip install coarse-ink", "updated_at": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}'
           echo "Submissions auto-paused."
 
       - name: Send alert email

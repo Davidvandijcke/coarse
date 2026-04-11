@@ -32,10 +32,10 @@ def test_readme_exists_and_nonempty():
 
 
 def test_readme_install_commands_present():
-    """README.md contains install commands."""
+    """README.md contains install commands under the `coarse-ink` PyPI name."""
     content = README.read_text(encoding="utf-8")
-    assert "pip install coarse" in content
-    assert "uvx coarse" in content
+    assert "pip install coarse-ink" in content
+    assert "uvx coarse-ink" in content
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +191,13 @@ def test_package_installs_in_fresh_venv(tmp_path):
 
 
 def test_uvx_entry_point():
-    """pyproject.toml [project.scripts] entry `coarse = coarse.cli:app` resolves correctly."""
+    """pyproject.toml [project.scripts] registers both `coarse` and `coarse-ink`.
+
+    Both point at `coarse.cli:app`. The `coarse-ink` entry is what makes
+    `uvx coarse-ink ...` resolve directly (matching the PyPI distribution
+    name); the `coarse` entry preserves the short command on PATH for
+    users who `uv tool install coarse-ink`.
+    """
     import tomllib
 
     with open(PYPROJECT, "rb") as f:
@@ -201,4 +207,8 @@ def test_uvx_entry_point():
     assert "coarse" in scripts, "No 'coarse' entry in [project.scripts]"
     assert scripts["coarse"] == "coarse.cli:app", (
         f"Expected 'coarse.cli:app', got '{scripts['coarse']}'"
+    )
+    assert "coarse-ink" in scripts, "No 'coarse-ink' entry in [project.scripts]"
+    assert scripts["coarse-ink"] == "coarse.cli:app", (
+        f"Expected 'coarse.cli:app', got '{scripts['coarse-ink']}'"
     )

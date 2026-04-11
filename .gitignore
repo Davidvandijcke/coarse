@@ -7,11 +7,14 @@ dist/
 .env
 .coarse/
 
-# Ignore everything inside .claude/ except the shared slash commands and
-# agent definitions, which are team-wide workflow tooling.
+# Ignore everything inside .claude/ except the shared slash commands,
+# agent definitions, hook scripts, and project-level settings, which are
+# team-wide workflow tooling. Keep .claude/settings.local.json ignored.
 .claude/*
 !.claude/commands
 !.claude/agents
+!.claude/hooks
+!.claude/settings.json
 CLAUDE.md
 *.pdf
 !data/**/*.pdf
