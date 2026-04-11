@@ -925,3 +925,91 @@ def test_structure_get_metadata_builds_fenced_user_message(monkeypatch):
     pc_open = user_content.index("<paper_content>")
     pc_close = user_content.index("</paper_content>")
     assert "IGNORE PRIOR INSTRUCTIONS" in user_content[pc_open:pc_close]
+
+
+# ---------------------------------------------------------------------------
+# document_form_notice + prompt branching
+# ---------------------------------------------------------------------------
+
+
+def test_document_form_notice_empty_for_manuscript():
+    """manuscript must return the empty string so the default peer-review
+    path is byte-identical to the pre-document-form behavior."""
+    from coarse.prompts import document_form_notice
+
+    assert document_form_notice("manuscript") == ""
+
+
+def test_document_form_notice_covers_every_literal_value():
+    """Drift protection: every value in the DocumentForm Literal must have
+    a matching entry in _DOCUMENT_FORM_NOTICES (directly or via the 'other'
+    fallback). This fires if someone adds a new form to types.py without
+    updating prompts.py — the alternative is a silent fallback-to-'other'
+    at runtime that users only discover when reviews start looking wrong.
+    """
+    import typing
+
+    from coarse.prompts import _DOCUMENT_FORM_NOTICES
+    from coarse.types import DocumentForm
+
+    all_forms = set(typing.get_args(DocumentForm))
+    # Every form must be a key OR the 'other' fallback must cover it
+    # (both are acceptable — the test asserts the handler can produce
+    # some notice for every literal value).
+    missing = all_forms - set(_DOCUMENT_FORM_NOTICES.keys())
+    assert missing == set() or missing <= {"other"}, (
+        f"DocumentForm values missing from _DOCUMENT_FORM_NOTICES: {missing}. "
+        f"Add a notice block to prompts.py or explicitly confirm the fallback."
+    )
+
+
+def test_document_form_notice_nonempty_for_all_other_forms():
+    """Every non-manuscript form must return a real instruction block, not
+    the empty string — that's the whole point of the helper."""
+    from coarse.prompts import document_form_notice
+
+    for form in ("outline", "draft", "proposal", "report", "notes", "other"):
+        notice = document_form_notice(form)
+        assert notice.strip(), f"notice for {form!r} should be non-empty"
+        assert "DOCUMENT FORM" in notice, f"notice for {form!r} missing header"
+
+
+def test_document_form_notice_outline_rules_out_defensive_framing():
+    """The outline notice must explicitly tell the reviewer NOT to complain
+    about missing prose/data/results and NOT to recommend reject — those are
+    the two defensive behaviors we observed on the Apr 11 outline submission.
+    """
+    from coarse.prompts import document_form_notice
+
+    notice = document_form_notice("outline").lower()
+    # The reviewer must be told not to flag missing content as a critique.
+    assert "do not complain" in notice or "do not critique" in notice or "do not" in notice
+    assert "reject" in notice  # references reject so it can tell reviewer not to use it
+    assert "missing" in notice or "lacking" in notice
+
+
+def test_document_form_notice_unknown_falls_back_to_other():
+    """An unknown form must degrade to the 'other' block rather than raise.
+    This prevents a future DocumentForm literal addition from crashing the
+    pipeline before the prompts.py update lands.
+    """
+    from coarse.prompts import document_form_notice
+
+    unknown = document_form_notice("thesis")  # not in _DOCUMENT_FORM_NOTICES
+    assert unknown == document_form_notice("other")
+    assert unknown != ""
+
+
+def test_metadata_system_describes_document_form_classification():
+    """METADATA_SYSTEM must ask the LLM to classify document_form and enumerate
+    every value in the DocumentForm literal, so the cheap metadata call is the
+    place the whole downstream branching originates from. Parametrizes over
+    the live Literal so a future form added to types.py without a rubric
+    entry here fails the test."""
+    import typing
+
+    from coarse.types import DocumentForm
+
+    for form in typing.get_args(DocumentForm):
+        assert f'"{form}"' in METADATA_SYSTEM, f"METADATA_SYSTEM omits {form!r}"
+    assert "document_form" in METADATA_SYSTEM

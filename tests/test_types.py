@@ -53,6 +53,7 @@ def make_review(n_comments: int = 2) -> Review:
 
 # --- PaperText ---
 
+
 def test_paper_text_basic():
     pt = PaperText(full_markdown="# Full\nPage one text.\nPage two text.", token_estimate=150)
     assert pt.full_markdown.startswith("# Full")
@@ -65,6 +66,7 @@ def test_paper_text_empty():
 
 
 # --- PaperStructure ---
+
 
 def test_paper_structure_sections_list():
     all_types = list(SectionType)
@@ -81,7 +83,53 @@ def test_paper_structure_sections_list():
         assert sec.section_type == st
 
 
+def test_paper_structure_defaults_to_manuscript_form():
+    """document_form must default to 'manuscript' so existing callers that
+    don't pass it get the strict peer-review path."""
+    ps = PaperStructure(
+        title="t",
+        domain="social_sciences/economics",
+        taxonomy="academic/research_paper",
+        abstract="a",
+        sections=[make_section(1, SectionType.INTRODUCTION)],
+    )
+    assert ps.document_form == "manuscript"
+
+
+@pytest.mark.parametrize(
+    "form",
+    ["manuscript", "outline", "draft", "proposal", "report", "notes", "other"],
+)
+def test_paper_structure_accepts_all_document_forms(form):
+    """Every value in the DocumentForm literal must round-trip through the
+    Pydantic model without raising."""
+    ps = PaperStructure(
+        title="t",
+        domain="x",
+        taxonomy="y",
+        abstract="a",
+        sections=[make_section(1, SectionType.INTRODUCTION)],
+        document_form=form,
+    )
+    assert ps.document_form == form
+
+
+def test_paper_structure_rejects_unknown_document_form():
+    """Arbitrary strings must fail validation — the Literal type is the
+    single source of truth for what the pipeline can branch on."""
+    with pytest.raises(ValidationError):
+        PaperStructure(
+            title="t",
+            domain="x",
+            taxonomy="y",
+            abstract="a",
+            sections=[make_section(1, SectionType.INTRODUCTION)],
+            document_form="thesis",  # not in DocumentForm
+        )
+
+
 # --- SectionType ---
+
 
 def test_section_type_enum_values():
     expected = {
@@ -102,6 +150,7 @@ def test_section_type_enum_values():
 
 # --- OverviewFeedback ---
 
+
 def test_overview_feedback_count_constraint():
     # Empty is too few (min_length=1)
     with pytest.raises(ValidationError):
@@ -120,16 +169,20 @@ _LONG_QUOTE = "This is a verbatim quote from the paper text."
 
 def test_detailed_comment_status_default():
     c = DetailedComment(
-        number=1, title="Issue",
-        quote=_LONG_QUOTE, feedback="Feedback text.",
+        number=1,
+        title="Issue",
+        quote=_LONG_QUOTE,
+        feedback="Feedback text.",
     )
     assert c.status == "Pending"
 
 
 def test_detailed_comment_confidence_default():
     c = DetailedComment(
-        number=1, title="Issue",
-        quote=_LONG_QUOTE, feedback="Feedback text.",
+        number=1,
+        title="Issue",
+        quote=_LONG_QUOTE,
+        feedback="Feedback text.",
     )
     assert c.confidence == "medium"
 
@@ -137,18 +190,25 @@ def test_detailed_comment_confidence_default():
 def test_detailed_comment_confidence_values():
     for conf in ("high", "medium", "low"):
         c = DetailedComment(
-            number=1, title="Issue", quote=_LONG_QUOTE,
-            feedback="Feedback text.", confidence=conf,
+            number=1,
+            title="Issue",
+            quote=_LONG_QUOTE,
+            feedback="Feedback text.",
+            confidence=conf,
         )
         assert c.confidence == conf
 
 
 def test_detailed_comment_confidence_invalid():
     from pydantic import ValidationError
+
     with pytest.raises(ValidationError):
         DetailedComment(
-            number=1, title="Issue", quote=_LONG_QUOTE,
-            feedback="Feedback text.", confidence="very_high",
+            number=1,
+            title="Issue",
+            quote=_LONG_QUOTE,
+            feedback="Feedback text.",
+            confidence="very_high",
         )
 
 
@@ -175,6 +235,7 @@ def test_detailed_comment_status_invalid():
 
 # --- Review ---
 
+
 def test_review_roundtrip_json():
     review = make_review(n_comments=3)
     serialized = review.model_dump_json()
@@ -184,11 +245,30 @@ def test_review_roundtrip_json():
 
 # --- CostEstimate ---
 
+
 def test_cost_estimate_total_matches_sum():
     stages = [
-        CostStage(name="structure", model="gpt-4o", estimated_tokens_in=1000, estimated_tokens_out=500, estimated_cost_usd=0.01),
-        CostStage(name="overview", model="gpt-4o", estimated_tokens_in=2000, estimated_tokens_out=800, estimated_cost_usd=0.02),
-        CostStage(name="section", model="gpt-4o", estimated_tokens_in=3000, estimated_tokens_out=1200, estimated_cost_usd=0.03),
+        CostStage(
+            name="structure",
+            model="gpt-4o",
+            estimated_tokens_in=1000,
+            estimated_tokens_out=500,
+            estimated_cost_usd=0.01,
+        ),
+        CostStage(
+            name="overview",
+            model="gpt-4o",
+            estimated_tokens_in=2000,
+            estimated_tokens_out=800,
+            estimated_cost_usd=0.02,
+        ),
+        CostStage(
+            name="section",
+            model="gpt-4o",
+            estimated_tokens_in=3000,
+            estimated_tokens_out=1200,
+            estimated_cost_usd=0.03,
+        ),
     ]
     total = sum(s.estimated_cost_usd for s in stages)
     est = CostEstimate(stages=stages, total_cost_usd=total)
@@ -196,6 +276,7 @@ def test_cost_estimate_total_matches_sum():
 
 
 # --- Quote min_length ---
+
 
 def test_detailed_comment_rejects_short_quote():
     """Quotes shorter than 20 characters should be rejected by Pydantic validation."""
@@ -220,6 +301,7 @@ def test_detailed_comment_accepts_long_quote():
 
 
 # --- OverviewFeedback new fields: recommendation & revision_targets ---
+
 
 def test_overview_feedback_recommendation_default():
     """recommendation defaults to empty string."""

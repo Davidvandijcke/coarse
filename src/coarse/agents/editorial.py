@@ -6,14 +6,25 @@ context, and all draft comments. Performs deduplication, contradiction checking,
 quality filtering, severity assignment, notation capping, humanization, and
 importance ordering in one pass.
 """
+
 from __future__ import annotations
 
 from pydantic import BaseModel
 
 from coarse.agents.base import ReviewAgent
 from coarse.llm import LLMClient
-from coarse.prompts import EDITORIAL_SYSTEM, editorial_system, editorial_user
-from coarse.types import ContributionContext, DetailedComment, OverviewFeedback
+from coarse.prompts import (
+    EDITORIAL_SYSTEM,
+    document_form_notice,
+    editorial_system,
+    editorial_user,
+)
+from coarse.types import (
+    ContributionContext,
+    DetailedComment,
+    DocumentForm,
+    OverviewFeedback,
+)
 
 _TEMPERATURE = 0.15
 
@@ -43,13 +54,20 @@ class EditorialAgent(ReviewAgent):
         title: str = "",
         abstract: str = "",
         contribution_context: ContributionContext | None = None,
+        document_form: DocumentForm = "manuscript",
     ) -> list[DetailedComment]:
         user_content = editorial_user(
-            paper_text, overview, comments,
-            title=title, abstract=abstract,
+            paper_text,
+            overview,
+            comments,
+            title=title,
+            abstract=abstract,
             contribution_context=contribution_context,
         )
-        sys_prompt = editorial_system(comment_target) if comment_target else EDITORIAL_SYSTEM
+        base_sys = editorial_system(comment_target) if comment_target else EDITORIAL_SYSTEM
+        # Append form-specific addendum (empty for manuscript/preprint) so the
+        # editorial pass also relaxes its framing on non-manuscript inputs.
+        sys_prompt = base_sys + document_form_notice(document_form)
 
         messages = self._build_messages(sys_prompt, user_content)
         result = self.client.complete(

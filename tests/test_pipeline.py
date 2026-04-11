@@ -181,6 +181,7 @@ def test_review_paper_skips_references_section():
         literature_context="",
         all_sections=None,
         abstract="",
+        document_form="manuscript",
     ):
         called_sections.append(section)
         return [_make_comment(section.number)]
@@ -481,6 +482,7 @@ def test_review_section_chains_verify_for_proof():
         "Paper",
         first_pass,
         abstract="abstract",
+        document_form="manuscript",
     )
     assert result == verified
 

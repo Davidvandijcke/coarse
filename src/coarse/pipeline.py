@@ -37,6 +37,7 @@ from coarse.synthesis import render_review
 from coarse.types import (
     ContributionContext,
     DetailedComment,
+    DocumentForm,
     DomainCalibration,
     ExtractionError,
     OverviewFeedback,
@@ -120,6 +121,7 @@ def _review_section(
     literature_context: str,
     all_sections: list[SectionInfo],
     abstract: str,
+    document_form: DocumentForm = "manuscript",
 ) -> list[DetailedComment]:
     """Review a section; chain with adversarial verification for proof sections."""
     comments = section_agent.run(
@@ -131,6 +133,7 @@ def _review_section(
         literature_context,
         all_sections=all_sections,
         abstract=abstract,
+        document_form=document_form,
     )
     if focus == "proof" and comments:
         comments = verify_agent.run(
@@ -138,6 +141,7 @@ def _review_section(
             paper_title,
             comments,
             abstract=abstract,
+            document_form=document_form,
         )
     return comments
 
@@ -398,6 +402,7 @@ def review_paper(
                     sec_lit,
                     structure.sections,
                     sec_abstract,
+                    structure.document_form,
                 )
             )
 
@@ -435,6 +440,7 @@ def review_paper(
                         main_results,
                         disc_sec,
                         abstract=structure.abstract,
+                        document_form=structure.document_form,
                     )
                 )
             for future in cross_section_futures:
@@ -454,6 +460,7 @@ def review_paper(
             title=structure.title,
             abstract=structure.abstract,
             contribution_context=contribution_context,
+            document_form=structure.document_form,
         )
     except Exception:
         # Fallback: use legacy crossref → critique pipeline if editorial agent fails.

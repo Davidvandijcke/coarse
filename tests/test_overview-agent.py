@@ -1,4 +1,5 @@
 """Tests for agents/overview.py — OverviewAgent."""
+
 from unittest.mock import MagicMock
 
 from coarse.agents.overview import OverviewAgent, _build_sections_text, merge_overview
@@ -56,10 +57,7 @@ def _make_structure() -> PaperStructure:
 
 def _make_feedback() -> OverviewFeedback:
     return OverviewFeedback(
-        issues=[
-            OverviewIssue(title=f"Issue {i}", body=f"Body of issue {i}.")
-            for i in range(1, 6)
-        ]
+        issues=[OverviewIssue(title=f"Issue {i}", body=f"Body of issue {i}.") for i in range(1, 6)]
     )
 
 
@@ -76,7 +74,7 @@ def test_overview_agent_returns_overview_feedback():
 
 
 def test_overview_agent_calls_complete_with_correct_model():
-    """Verify client.complete is called once with OverviewFeedback as response_model and OVERVIEW_SYSTEM as system."""
+    """client.complete is called with OverviewFeedback + OVERVIEW_SYSTEM."""
     client = _make_client()
     client.complete.return_value = _make_feedback()
 
@@ -144,8 +142,7 @@ def test_build_sections_text_no_truncation():
 def test_build_sections_text_empty_text():
     """Sections with empty text should show (empty)."""
     sections = [
-        SectionInfo(number=1, title="Empty", text="",
-                    section_type=SectionType.OTHER),
+        SectionInfo(number=1, title="Empty", text="", section_type=SectionType.OTHER),
     ]
     result = _build_sections_text(sections)
     assert "(empty)" in result
@@ -235,13 +232,11 @@ def test_overview_agent_prompt_caching_short_user_message():
 
 # --- merge_overview preserves fields ---
 
+
 def test_merge_overview_preserves_recommendation_and_revision_targets():
     """merge_overview with recommendation + revision_targets should preserve them in output."""
     overview = OverviewFeedback(
-        issues=[
-            OverviewIssue(title=f"Issue {i}", body=f"Body {i}.")
-            for i in range(1, 5)
-        ],
+        issues=[OverviewIssue(title=f"Issue {i}", body=f"Body {i}.") for i in range(1, 5)],
         recommendation="Major revision. The identification strategy is unconvincing.",
         revision_targets=[
             "Add formal sensitivity analysis.",
@@ -293,3 +288,71 @@ def test_merge_overview_no_extras_returns_original():
     result = merge_overview(overview, [])
 
     assert result is overview
+
+
+# ---------------------------------------------------------------------------
+# document_form branching
+# ---------------------------------------------------------------------------
+
+
+def _make_structure_with_form(form: str) -> PaperStructure:
+    return PaperStructure(
+        title="Outline-y thing",
+        domain="health_sciences/rehabilitation_medicine",
+        taxonomy="academic/research_paper",
+        abstract="We propose to study X.",
+        sections=[
+            SectionInfo(
+                number=1,
+                title="Introduction",
+                text="Intro",
+                section_type=SectionType.INTRODUCTION,
+            ),
+        ],
+        document_form=form,
+    )
+
+
+def test_overview_manuscript_system_prompt_unchanged():
+    """For document_form='manuscript', the system prompt sent to the LLM must
+    be exactly OVERVIEW_SYSTEM — byte-identical to the pre-document-form
+    behavior so we don't regress quality on full papers."""
+    client = _make_client()
+    client.complete.return_value = _make_feedback()
+    agent = OverviewAgent(client)
+
+    agent.run(_make_structure_with_form("manuscript"))
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert system_content == OVERVIEW_SYSTEM
+
+
+def test_overview_outline_system_prompt_gets_form_notice():
+    """For document_form='outline', the system prompt must include the
+    OUTLINE instruction block so the reviewer stops complaining about
+    missing prose / data / results."""
+    client = _make_client()
+    client.complete.return_value = _make_feedback()
+    agent = OverviewAgent(client)
+
+    agent.run(_make_structure_with_form("outline"))
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert system_content.startswith(OVERVIEW_SYSTEM)
+    assert "DOCUMENT FORM: OUTLINE" in system_content
+    assert len(system_content) > len(OVERVIEW_SYSTEM)
+
+
+def test_overview_proposal_system_prompt_gets_form_notice():
+    """Research proposals should get their own instruction block."""
+    client = _make_client()
+    client.complete.return_value = _make_feedback()
+    agent = OverviewAgent(client)
+
+    agent.run(_make_structure_with_form("proposal"))
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert "DOCUMENT FORM: RESEARCH PROPOSAL" in system_content

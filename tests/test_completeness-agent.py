@@ -1,4 +1,5 @@
 """Tests for agents/completeness.py — CompletenessAgent."""
+
 from unittest.mock import MagicMock
 
 from coarse.agents.completeness import CompletenessAgent, _CompletenessResult
@@ -45,18 +46,14 @@ def _make_structure() -> PaperStructure:
 
 def _make_overview() -> OverviewFeedback:
     return OverviewFeedback(
-        issues=[
-            OverviewIssue(title=f"Issue {i}", body=f"Body of issue {i}.")
-            for i in range(1, 5)
-        ]
+        issues=[OverviewIssue(title=f"Issue {i}", body=f"Body of issue {i}.") for i in range(1, 5)]
     )
 
 
 def _make_completeness_result(n: int) -> _CompletenessResult:
     return _CompletenessResult(
         issues=[
-            OverviewIssue(title=f"Gap {i}", body=f"Missing content {i}.")
-            for i in range(1, n + 1)
+            OverviewIssue(title=f"Gap {i}", body=f"Missing content {i}.") for i in range(1, n + 1)
         ]
     )
 
@@ -185,3 +182,130 @@ def test_completeness_agent_prompt_caching():
     assert block["type"] == "text"
     assert block["cache_control"] == {"type": "ephemeral"}
     assert COMPLETENESS_SYSTEM in block["text"]
+
+
+# ---------------------------------------------------------------------------
+# document_form branching
+# ---------------------------------------------------------------------------
+
+
+def _structure_with_form(form: str) -> PaperStructure:
+    return PaperStructure(
+        title="t",
+        domain="x",
+        taxonomy="y",
+        abstract="a",
+        sections=[
+            SectionInfo(
+                number=1,
+                title="Introduction",
+                text="intro",
+                section_type=SectionType.INTRODUCTION,
+            ),
+        ],
+        document_form=form,
+    )
+
+
+def _empty_overview() -> OverviewFeedback:
+    return OverviewFeedback(
+        issues=[OverviewIssue(title=f"Issue {i}", body=f"body {i}") for i in range(5)]
+    )
+
+
+def test_completeness_skips_outline_without_calling_llm():
+    """Completeness agent must short-circuit to [] for document_form='outline'
+    — flagging missing content on a pure outline generates the exact
+    defensive noise this whole feature is trying to eliminate. The LLM client
+    must not be touched."""
+    client = _make_client()
+    agent = CompletenessAgent(client)
+
+    result = agent.run(_structure_with_form("outline"), _empty_overview())
+
+    assert result == []
+    assert client.complete.call_count == 0
+
+
+def test_completeness_skips_notes_without_calling_llm():
+    """Working notes are not peer-review targets — same early-return."""
+    client = _make_client()
+    agent = CompletenessAgent(client)
+    result = agent.run(_structure_with_form("notes"), _empty_overview())
+    assert result == []
+    assert client.complete.call_count == 0
+
+
+def test_completeness_skips_other_without_calling_llm():
+    """'other' docs fall through the same escape hatch — no peer review."""
+    client = _make_client()
+    agent = CompletenessAgent(client)
+    result = agent.run(_structure_with_form("other"), _empty_overview())
+    assert result == []
+    assert client.complete.call_count == 0
+
+
+def test_completeness_runs_on_manuscript_with_unchanged_prompt():
+    """For manuscript, the system prompt sent is byte-identical to
+    COMPLETENESS_SYSTEM (no notice suffix)."""
+    client = _make_client()
+    client.complete.return_value = _CompletenessResult(issues=[])
+    agent = CompletenessAgent(client)
+
+    agent.run(_structure_with_form("manuscript"), _empty_overview())
+
+    assert client.complete.call_count == 1
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert system_content == COMPLETENESS_SYSTEM
+
+
+def test_completeness_runs_on_draft_with_form_notice():
+    """Partial drafts DO run completeness but with the draft-specific notice
+    appended. The agent can still flag 'you haven't addressed X yet' — it
+    just shouldn't list every stubbed section as its own issue."""
+    client = _make_client()
+    client.complete.return_value = _CompletenessResult(issues=[])
+    agent = CompletenessAgent(client)
+
+    agent.run(_structure_with_form("draft"), _empty_overview())
+
+    assert client.complete.call_count == 1
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert system_content.startswith(COMPLETENESS_SYSTEM)
+    assert "DOCUMENT FORM: PARTIAL DRAFT" in system_content
+
+
+def test_completeness_runs_on_proposal_with_form_notice():
+    """Research proposals run completeness too — feasibility / rationale
+    gaps are still worth flagging. The notice tells the reviewer not to
+    demand results."""
+    client = _make_client()
+    client.complete.return_value = _CompletenessResult(issues=[])
+    agent = CompletenessAgent(client)
+
+    agent.run(_structure_with_form("proposal"), _empty_overview())
+
+    assert client.complete.call_count == 1
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert "DOCUMENT FORM: RESEARCH PROPOSAL" in system_content
+
+
+def test_completeness_runs_on_report_with_form_notice():
+    """Technical reports (form='report') should NOT be in the skip set —
+    gaps in the reasoning or evidence of a report are still worth flagging.
+    The notice block tells the reviewer to judge by report-genre standards,
+    not peer-review standards.
+    """
+    client = _make_client()
+    client.complete.return_value = _CompletenessResult(issues=[])
+    agent = CompletenessAgent(client)
+
+    agent.run(_structure_with_form("report"), _empty_overview())
+
+    assert client.complete.call_count == 1
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert "DOCUMENT FORM: TECHNICAL REPORT" in system_content
