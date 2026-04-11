@@ -1,0 +1,174 @@
+"""Per-stage model routing for the review pipeline.
+
+coarse's pipeline has ~10 LLM-backed stages with very different complexity
+profiles. Some (metadata classification, math-section detection) are
+structured classification calls that an OSS model handles fine; others
+(overview, section, editorial) need SOTA reasoning. Historically every
+stage used the same `LLMClient`, so passing `--model claude-opus-4.6`
+forced opus rates for the trivial stages too.
+
+`StageRouter` resolves a per-stage `LLMClient` at construction time,
+caches one instance per unique resolved model, and returns the right
+client for each stage name. See gh issue #46 for the stage classification
+and src/coarse/models.py::STAGE_MODELS for the default cheap-tier
+assignments.
+
+Extraction QA and literature search are intentionally NOT routed through
+the router today — both have bespoke model defaults (vision model,
+Perplexity) that are plumbed inside their own modules. Adding them to
+the router would require refactoring extraction_qa.py and literature.py
+and is deferred.
+"""
+
+from __future__ import annotations
+
+from typing import Final
+
+from coarse.config import CoarseConfig, load_config
+from coarse.llm import LLMClient
+from coarse.models import (
+    CHEAP_STAGE_FALLBACK_MODEL,
+    CHEAP_STAGE_MODEL,
+    CHEAP_STAGE_PROVIDERS,
+)
+
+# LLM-consuming stages the router is responsible for. Mirrors the stages
+# in src/coarse/cost.py::build_cost_estimate that use the review model
+# (NOT literature_search or extraction_qa, which have bespoke defaults
+# handled in their own modules).
+#
+# Adding a stage here without also wiring it in pipeline.py via
+# router.client_for("<stage>") will result in the override being silently
+# ignored at runtime — a test in test_routing.py guards against that
+# by round-tripping every stage through both the router and the pipeline
+# test-harness.
+STAGE_NAMES: Final[tuple[str, ...]] = (
+    "metadata",
+    "math_detection",
+    "contribution_extraction",
+    "calibration",
+    "overview",
+    "completeness",
+    "section",
+    "cross_section",
+    "verify",
+    "editorial",
+)
+
+
+class StageRouter:
+    """Resolve per-stage ``LLMClient`` instances for the review pipeline.
+
+    Construction order:
+    1. Start from ``base_model`` (typically the user's ``--model`` choice
+       or ``config.default_model``).
+    2. Apply the ``STAGE_MODELS`` defaults from ``models.py`` — the
+       cheap-tier override for stages that don't need SOTA reasoning.
+    3. Apply the caller's ``overrides`` on top (CLI ``--stage-override``
+       takes precedence over the default map).
+    4. For each resolved model, lazily construct and cache one
+       ``LLMClient``. Stages that resolve to the same model share a
+       client — there are at most N distinct clients for N distinct
+       resolved models.
+
+    Construction is lazy: no ``LLMClient`` is built until
+    ``.client_for(stage)`` is called. ``.cost_usd`` sums across all
+    currently-cached clients.
+
+    When the resolved model for a stage is ``CHEAP_STAGE_MODEL``, the
+    client is constructed with ``provider_allowlist=CHEAP_STAGE_PROVIDERS``
+    so request data stays on US-HQ providers (see models.py for why),
+    AND a fallback client for ``CHEAP_STAGE_FALLBACK_MODEL`` (kimi-k2.5)
+    is pre-built and attached via the primary client's ``fallback_client``
+    kwarg. Both primary and fallback are cached so their cumulative costs
+    both flow into ``.cost_usd``. Other models get the default client
+    with no allowlist and no fallback.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_model: str,
+        overrides: dict[str, str] | None = None,
+        config: CoarseConfig | None = None,
+    ) -> None:
+        if config is None:
+            config = load_config()
+        self._base_model = base_model
+        self._overrides: dict[str, str] = dict(overrides or {})
+        self._config = config
+        self._clients: dict[str, LLMClient] = {}
+
+        # Validate stage names eagerly — catches typos in STAGE_MODELS or
+        # the CLI ``--stage-override`` flag at construction time rather
+        # than at first use.
+        unknown = [s for s in self._overrides if s not in STAGE_NAMES]
+        if unknown:
+            raise ValueError(
+                f"Unknown stage name(s) in overrides: {sorted(unknown)}. "
+                f"Valid stages: {sorted(STAGE_NAMES)}"
+            )
+
+    def _resolve_model(self, stage: str) -> str:
+        """Return the effective model ID for a stage (override → base)."""
+        return self._overrides.get(stage, self._base_model)
+
+    def client_for(self, stage: str) -> LLMClient:
+        """Return the ``LLMClient`` for a named pipeline stage.
+
+        Cached by resolved model ID so two stages routed to the same model
+        share a client (and its cumulative cost counter). Raises on
+        unknown stage names.
+        """
+        if stage not in STAGE_NAMES:
+            raise ValueError(f"Unknown stage '{stage}'. Valid stages: {sorted(STAGE_NAMES)}")
+        model = self._resolve_model(stage)
+        cached = self._clients.get(model)
+        if cached is not None:
+            return cached
+        client = self._build_client(model)
+        self._clients[model] = client
+        return client
+
+    def _build_client(self, model: str) -> LLMClient:
+        """Construct an ``LLMClient`` for ``model`` with the right wrapping.
+
+        The cheap-tier primary model (``CHEAP_STAGE_MODEL``) gets:
+        - ``provider_allowlist=CHEAP_STAGE_PROVIDERS`` (US-HQ only routing)
+        - ``fallback_client`` pointing at a pre-built kimi-k2.5 client
+          that has its own allowlist and uses MD_JSON instructor mode
+
+        Other models get a plain client with no allowlist and no fallback.
+
+        Side effect: when building the cheap-tier primary, we ALSO register
+        the fallback client under its own model key in ``self._clients``
+        so its cost shows up in ``.cost_usd`` even though it's only
+        discovered transitively.
+        """
+        if model == CHEAP_STAGE_MODEL:
+            fallback = LLMClient(
+                model=CHEAP_STAGE_FALLBACK_MODEL,
+                config=self._config,
+                provider_allowlist=CHEAP_STAGE_PROVIDERS,
+            )
+            # Cache the fallback so router.cost_usd sums its cost too.
+            # Keyed by the normalized model attribute, not the raw
+            # CHEAP_STAGE_FALLBACK_MODEL string, because LLMClient may
+            # rewrite the ID via _normalize_model (openrouter/ prefix).
+            self._clients[fallback.model] = fallback
+            return LLMClient(
+                model=model,
+                config=self._config,
+                provider_allowlist=CHEAP_STAGE_PROVIDERS,
+                fallback_client=fallback,
+            )
+        return LLMClient(model=model, config=self._config)
+
+    @property
+    def cost_usd(self) -> float:
+        """Sum ``cost_usd`` across every cached client."""
+        return sum(c.cost_usd for c in self._clients.values())
+
+    @property
+    def base_model(self) -> str:
+        return self._base_model
