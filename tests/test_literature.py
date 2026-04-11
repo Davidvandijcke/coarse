@@ -1,4 +1,5 @@
 """Tests for coarse.agents.literature — literature search agent."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -44,6 +45,7 @@ SAMPLE_ARXIV_XML = b"""\
 # Tests: XML parsing
 # ---------------------------------------------------------------------------
 
+
 def test_parse_arxiv_response_extracts_papers():
     papers = _parse_arxiv_response(SAMPLE_ARXIV_XML)
     assert len(papers) == 2
@@ -70,6 +72,7 @@ def test_parse_empty_response():
 # ---------------------------------------------------------------------------
 # Tests: context compilation
 # ---------------------------------------------------------------------------
+
 
 def test_compile_context_formats_papers():
     papers = {
@@ -98,6 +101,7 @@ def test_compile_context_empty():
 # Tests: search_literature integration (mocked HTTP + LLM) — arXiv fallback
 # ---------------------------------------------------------------------------
 
+
 def test_search_literature_arxiv_end_to_end():
     """Full arXiv pipeline with mocked arXiv API and LLM calls (no OPENROUTER_API_KEY)."""
     mock_client = MagicMock()
@@ -110,7 +114,8 @@ def test_search_literature_arxiv_end_to_end():
             ranked=[
                 _RankedResult(arxiv_id="2301.12345v1", relevance_score=0.9, reason="Core method"),
                 _RankedResult(
-                    arxiv_id="2302.67890v2", relevance_score=0.7,
+                    arxiv_id="2302.67890v2",
+                    relevance_score=0.7,
                     reason="Related review",
                 ),
             ],
@@ -127,12 +132,18 @@ def test_search_literature_arxiv_end_to_end():
         with patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}, clear=False):
             mock_search.return_value = [
                 ArxivPaper(
-                    arxiv_id="2301.12345v1", title="Causal Paper",
-                    authors=["Alice"], abstract="Abstract", published="2023-01-15",
+                    arxiv_id="2301.12345v1",
+                    title="Causal Paper",
+                    authors=["Alice"],
+                    abstract="Abstract",
+                    published="2023-01-15",
                 ),
                 ArxivPaper(
-                    arxiv_id="2302.67890v2", title="IV Review",
-                    authors=["Bob"], abstract="Abstract", published="2023-02-20",
+                    arxiv_id="2302.67890v2",
+                    title="IV Review",
+                    authors=["Bob"],
+                    abstract="Abstract",
+                    published="2023-02-20",
                 ),
             ]
             result = search_literature("My Paper", "My abstract", mock_client)
@@ -161,8 +172,11 @@ def test_search_literature_query_generation_fails():
     ):
         mock_search.return_value = [
             ArxivPaper(
-                arxiv_id="2301.12345v1", title="Fallback Paper",
-                authors=["Alice"], abstract="Abstract", published="2023-01-15",
+                arxiv_id="2301.12345v1",
+                title="Fallback Paper",
+                authors=["Alice"],
+                abstract="Abstract",
+                published="2023-01-15",
             ),
         ]
         result = search_literature("My Title", "My abstract", mock_client)
@@ -189,6 +203,7 @@ def test_search_literature_no_results():
 # Tests: Perplexity path
 # ---------------------------------------------------------------------------
 
+
 def test_search_perplexity_happy_path():
     """_search_perplexity returns content and tracks cost."""
     mock_client = MagicMock()
@@ -205,6 +220,35 @@ def test_search_perplexity_happy_path():
 
     assert "Paper A" in result
     mock_client.add_cost.assert_called_once_with(0.025)
+
+
+def test_search_perplexity_sends_system_and_user_messages():
+    """_search_perplexity splits the prompt into a system + user conversation,
+    and the user message wraps the abstract in a <paper_abstract> fence."""
+    mock_client = MagicMock()
+
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "Literature results"
+
+    with patch("coarse.agents.literature.litellm") as mock_litellm:
+        mock_litellm.completion.return_value = mock_response
+        mock_litellm.completion_cost.return_value = 0.01
+
+        _search_perplexity("Test Title", "Untrusted abstract.", mock_client)
+
+    # Inspect the kwargs handed to litellm.completion
+    call_kwargs = mock_litellm.completion.call_args.kwargs
+    messages = call_kwargs["messages"]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
+    # User message fences the abstract
+    assert "<paper_abstract>" in messages[1]["content"]
+    assert "</paper_abstract>" in messages[1]["content"]
+    assert "Untrusted abstract." in messages[1]["content"]
+    # System carries the boundary notice
+    assert "paper_content" in messages[0]["content"]
 
 
 def test_search_perplexity_empty_response_raises():
