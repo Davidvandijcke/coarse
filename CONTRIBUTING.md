@@ -177,7 +177,18 @@ When `dev` is ready to release:
 3. Commit: `git commit -m "release: vX.Y.Z"`.
 4. Open a PR from `dev` → `main` titled `release: vX.Y.Z`.
 5. After merge, tag the merge commit on `main`: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
-6. Fast-forward `dev` to `main` so both branches line up for the next cycle: `git checkout dev && git merge --ff-only main && git push`.
+6. Pushing the tag triggers `.github/workflows/release.yml`, which runs the test suite, verifies the tag matches `pyproject.toml` and `__init__.py`, builds the sdist + wheel with `uv build`, and publishes to PyPI via Trusted Publishing (OIDC). No API token is stored in the repo — the `publish` job runs in the `pypi` GitHub environment and mints a short-lived OIDC token that PyPI accepts.
+7. Fast-forward `dev` to `main` so both branches line up for the next cycle: `git checkout dev && git merge --ff-only main && git push`.
+
+**First-time PyPI setup (one-time per project):** on PyPI, go to `Manage → Publishing → Add a new pending publisher` and register:
+
+- PyPI Project Name: `coarse-ink`
+- Owner: `Davidvandijcke`
+- Repository name: `coarse`
+- Workflow name: `release.yml`
+- Environment name: `pypi`
+
+Until this is registered, the `publish` job will fail on the first run with `invalid-publisher`. After registering, re-run the failed workflow (or push a new tag) and the publish will succeed.
 
 ## Reporting issues
 
