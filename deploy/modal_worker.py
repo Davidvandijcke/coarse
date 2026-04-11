@@ -218,6 +218,11 @@ class ReviewRequest(BaseModel):
     user_api_key: str | None = None
     email: str | None = None
     model: str | None = None
+    # Optional author-supplied steering notes (#54). Forwarded to the review
+    # pipeline, which wraps them in an <author_notes> fence before passing to
+    # the overview/section/editorial agents. Default None = no-op, so older
+    # in-flight spawn() payloads without this field still deserialize cleanly.
+    author_notes: str | None = None
 
 
 def _fetch_and_consume_user_key(db, job_id: str) -> str | None:
@@ -326,6 +331,7 @@ def do_review(req_dict: dict):
     pdf_storage_path = req.pdf_storage_path
     email = req.email
     model = req.model
+    author_notes = req.author_notes
 
     print(f"[{job_id}] Starting review — pdf={pdf_storage_path} model={model}")
 
@@ -371,7 +377,11 @@ def do_review(req_dict: dict):
 
         config = CoarseConfig(extraction_qa=True)
         review, markdown, paper_text = review_paper(
-            pdf_path, model=model, skip_cost_gate=True, config=config
+            pdf_path,
+            model=model,
+            skip_cost_gate=True,
+            config=config,
+            author_notes=author_notes,
         )
         print(f"[{job_id}] Pipeline complete — {len(markdown)} chars")
 

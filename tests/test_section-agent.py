@@ -234,3 +234,54 @@ def test_section_agent_form_notice_applies_to_every_focus(focus):
         f"focus={focus}: system prompt should start with {base[:40]!r}"
     )
     assert "DOCUMENT FORM: OUTLINE" in system_content, f"focus={focus}: outline notice missing"
+
+
+# ---------------------------------------------------------------------------
+# Author steering notes (#54)
+# ---------------------------------------------------------------------------
+
+
+def test_section_no_author_notes_user_message_unchanged():
+    """None / omitted / whitespace-only author_notes must produce byte-identical
+    user content to the pre-feature behavior."""
+    client = _make_client()
+    client.complete.return_value = _make_section_comments(1)
+    agent = SectionAgent(client)
+
+    agent.run(_make_section(), "Paper")
+    user_plain = client.complete.call_args[0][0][1]["content"]
+
+    client.complete.reset_mock()
+    agent.run(_make_section(), "Paper", author_notes=None)
+    user_none = client.complete.call_args[0][0][1]["content"]
+
+    client.complete.reset_mock()
+    agent.run(_make_section(), "Paper", author_notes="   ")
+    user_empty = client.complete.call_args[0][0][1]["content"]
+
+    assert user_plain == user_none == user_empty
+
+
+def test_section_author_notes_prepend_to_user_message():
+    """Non-empty author_notes wrapped and prepended to the section user message."""
+    client = _make_client()
+    client.complete.return_value = _make_section_comments(1)
+    agent = SectionAgent(client)
+
+    agent.run(
+        _make_section(),
+        "Paper",
+        author_notes="please verify the regression specification carefully",
+    )
+
+    messages = client.complete.call_args[0][0]
+    system_content = messages[0]["content"]
+    user_content = messages[1]["content"]
+
+    # The notes TEXT must not leak into the cached system prompt. The
+    # string "author_notes" itself does appear there (content-boundary
+    # notice lists the fence tag by name) so we test for the content.
+    assert "please verify the regression specification carefully" not in system_content
+
+    assert "<author_notes>" in user_content
+    assert "please verify the regression specification carefully" in user_content

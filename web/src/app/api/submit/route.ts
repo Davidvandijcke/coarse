@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
   let apiKey = "";
   let model = "";
   let storagePath = "";
+  let authorNotes = "";
 
   try {
     const body = await request.json();
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
     apiKey = (body.api_key ?? "").trim();
     model = (body.model ?? "").trim();
     storagePath = (body.storage_path ?? "").trim();
+    authorNotes = (body.author_notes ?? "").trim();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -96,6 +98,12 @@ export async function POST(request: NextRequest) {
   }
   if (model.length > 128) {
     return NextResponse.json({ error: "Model name too long" }, { status: 400 });
+  }
+  // Author notes are optional. Cap at 2000 chars — long enough for a useful
+  // steering paragraph, short enough to not blow up the agent context or
+  // provide meaningful room for prompt-injection payloads.
+  if (authorNotes.length > 2000) {
+    return NextResponse.json({ error: "Author notes too long (max 2000 chars)" }, { status: 400 });
   }
   if (!storagePath) {
     return NextResponse.json({ error: "No storage path provided" }, { status: 400 });
@@ -191,6 +199,7 @@ export async function POST(request: NextRequest) {
         pdf_storage_path: storagePath,
         email,
         model: model || undefined,
+        author_notes: authorNotes || undefined,
       }),
     })
       .then(async (res) => {

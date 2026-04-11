@@ -251,6 +251,30 @@ def test_strip_nul_bytes_leaves_normal_text_alone(modal_worker) -> None:
     assert modal_worker._strip_nul_bytes(text) == text
 
 
+# ---------------------------------------------------------------------------
+# ReviewRequest.author_notes plumbing (#54)
+# ---------------------------------------------------------------------------
+
+
+def test_review_request_accepts_author_notes(modal_worker) -> None:
+    """ReviewRequest deserializes an optional author_notes string from the
+    webhook payload so the field can flow through to review_paper()."""
+    req = modal_worker.ReviewRequest(
+        job_id="j1",
+        pdf_storage_path="abcd.pdf",
+        author_notes="focus on method section",
+    )
+    assert req.author_notes == "focus on method section"
+
+
+def test_review_request_author_notes_defaults_to_none(modal_worker) -> None:
+    """Older in-flight spawn() payloads (and web submits without notes)
+    still deserialize cleanly — author_notes defaults to None so no
+    backward-compat break."""
+    req = modal_worker.ReviewRequest(job_id="j1", pdf_storage_path="abcd.pdf")
+    assert req.author_notes is None
+
+
 def _make_req(job_id: str = "j1"):
     return types.SimpleNamespace(job_id=job_id, model_dump=lambda: {"job_id": job_id})
 

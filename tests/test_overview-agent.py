@@ -356,3 +356,62 @@ def test_overview_proposal_system_prompt_gets_form_notice():
     messages = client.complete.call_args[0][0]
     system_content = [m for m in messages if m["role"] == "system"][0]["content"]
     assert "DOCUMENT FORM: RESEARCH PROPOSAL" in system_content
+
+
+# ---------------------------------------------------------------------------
+# Author steering notes (#54)
+# ---------------------------------------------------------------------------
+
+
+def test_overview_no_author_notes_user_message_unchanged():
+    """When author_notes is None or omitted, the user message sent to the LLM
+    must be byte-identical to what it would have been without the parameter.
+    This protects cache reuse and guarantees no silent behavior change for
+    the default path."""
+    client = _make_client()
+    client.complete.return_value = _make_feedback()
+
+    agent_plain = OverviewAgent(client)
+    agent_plain.run(_make_structure())
+    user_plain = [m for m in client.complete.call_args[0][0] if m["role"] == "user"][0]["content"]
+
+    client.complete.reset_mock()
+    agent_none = OverviewAgent(client)
+    agent_none.run(_make_structure(), author_notes=None)
+    user_none = [m for m in client.complete.call_args[0][0] if m["role"] == "user"][0]["content"]
+
+    client.complete.reset_mock()
+    agent_empty = OverviewAgent(client)
+    agent_empty.run(_make_structure(), author_notes="   \n  ")
+    user_empty = [m for m in client.complete.call_args[0][0] if m["role"] == "user"][0]["content"]
+
+    assert user_plain == user_none == user_empty
+
+
+def test_overview_author_notes_prepend_to_user_message():
+    """A non-empty author_notes string is wrapped in <author_notes> and
+    prepended to the user message (NOT the system message — prompt caching
+    stays intact)."""
+    client = _make_client()
+    client.complete.return_value = _make_feedback()
+
+    agent = OverviewAgent(client)
+    agent.run(_make_structure(), author_notes="please focus on the method section")
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    user_content = [m for m in messages if m["role"] == "user"][0]["content"]
+
+    # The notes TEXT must NOT appear in the system prompt — system is cached
+    # per-model, the notes are per-request data. (The string "author_notes"
+    # itself DOES appear in system — the boundary notice lists the fence tag
+    # by name — so we test for the notes content, not the tag.)
+    assert "please focus on the method section" not in system_content
+
+    # User message carries the fenced block, prepended (not appended).
+    assert "<author_notes>" in user_content
+    assert "</author_notes>" in user_content
+    assert "please focus on the method section" in user_content
+    notes_idx = user_content.find("<author_notes>")
+    paper_title_idx = user_content.find("Test Paper Title")
+    assert notes_idx < paper_title_idx, "author_notes must appear BEFORE the paper content"

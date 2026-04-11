@@ -8,6 +8,7 @@ from coarse.agents.base import ReviewAgent, truncate_section
 from coarse.prompts import (
     SECTION_SYSTEM,
     SECTION_SYSTEM_MAP,
+    author_notes_block,
     document_form_notice,
     section_user,
 )
@@ -46,6 +47,7 @@ class SectionAgent(ReviewAgent):
         all_sections: "list[SectionInfo] | None" = None,
         abstract: str = "",
         document_form: DocumentForm = "manuscript",
+        author_notes: str | None = None,
     ) -> list[DetailedComment]:
         truncated = truncate_section(section)
 
@@ -54,7 +56,7 @@ class SectionAgent(ReviewAgent):
         # unchanged.
         base_system = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
         system_prompt = base_system + document_form_notice(document_form)
-        user_text = section_user(
+        user_text = author_notes_block(author_notes) + section_user(
             paper_title,
             truncated,
             overview=overview,

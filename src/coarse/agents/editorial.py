@@ -15,6 +15,7 @@ from coarse.agents.base import ReviewAgent
 from coarse.llm import LLMClient
 from coarse.prompts import (
     EDITORIAL_SYSTEM,
+    author_notes_block,
     document_form_notice,
     editorial_system,
     editorial_user,
@@ -55,8 +56,9 @@ class EditorialAgent(ReviewAgent):
         abstract: str = "",
         contribution_context: ContributionContext | None = None,
         document_form: DocumentForm = "manuscript",
+        author_notes: str | None = None,
     ) -> list[DetailedComment]:
-        user_content = editorial_user(
+        user_content = author_notes_block(author_notes) + editorial_user(
             paper_text,
             overview,
             comments,
