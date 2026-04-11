@@ -149,6 +149,84 @@ def test_openrouter_api_key_skipped_for_direct_provider_calls(monkeypatch):
     assert "api_key" not in result
 
 
+@pytest.mark.parametrize("whitespace_key", [" ", "\n", "\t", "  \n\t  "])
+def test_openrouter_api_key_rejects_whitespace_only_env(monkeypatch, whitespace_key):
+    # A whitespace-only env var is truthy but produces `Authorization: Bearer <ws>`
+    # which OpenRouter rejects with 401 "Missing Authentication header". Drop it.
+    monkeypatch.setenv("OPENROUTER_API_KEY", whitespace_key)
+    result = _inject_openrouter_privacy("openrouter/anthropic/claude-sonnet-4.6", {})
+    assert "api_key" not in result
+
+
+def test_openrouter_api_key_stripped_before_injection(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "  sk-or-v1-padded  \n")
+    result = _inject_openrouter_privacy("openrouter/anthropic/claude-sonnet-4.6", {})
+    assert result["api_key"] == "sk-or-v1-padded"
+
+
+def test_openrouter_api_key_empty_string_env_treated_as_unset(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    result = _inject_openrouter_privacy("openrouter/anthropic/claude-sonnet-4.6", {})
+    assert "api_key" not in result
+
+
+@pytest.mark.parametrize("whitespace_key", ["", " ", "\n", "\t", "  \n\t  "])
+def test_openrouter_privacy_strips_caller_provided_api_key(monkeypatch, whitespace_key):
+    # Caller-provided whitespace api_key must be dropped too — otherwise the
+    # env-var fix can be bypassed by any future helper that plumbs api_key
+    # explicitly through kwargs.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-env-fallback")
+    result = _inject_openrouter_privacy(
+        "openrouter/anthropic/claude-sonnet-4.6", {"api_key": whitespace_key}
+    )
+    # Whitespace caller key is dropped and we fall back to the (valid) env var
+    assert result["api_key"] == "sk-or-v1-env-fallback"
+
+
+def test_openrouter_privacy_strips_caller_key_with_no_env_fallback(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    result = _inject_openrouter_privacy(
+        "openrouter/anthropic/claude-sonnet-4.6", {"api_key": " \n "}
+    )
+    assert "api_key" not in result
+
+
+def test_openrouter_privacy_trims_padded_caller_key(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    result = _inject_openrouter_privacy(
+        "openrouter/anthropic/claude-sonnet-4.6", {"api_key": "  sk-or-v1-caller  "}
+    )
+    assert result["api_key"] == "sk-or-v1-caller"
+
+
+def test_sanitized_completion_forwards_stripped_api_key_from_env(monkeypatch):
+    # End-to-end: the same path instructor takes — _sanitized_completion ->
+    # _inject_openrouter_privacy -> litellm.completion. Regression guard
+    # against a future refactor that moves the injection call site.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "  sk-or-v1-e2e  ")
+    captured = {}
+
+    msg = MagicMock()
+    msg.content = "{}"
+    msg.reasoning_content = None
+    choice = MagicMock()
+    choice.message = msg
+    mock_response = MagicMock()
+    mock_response.choices = [choice]
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return mock_response
+
+    with patch("coarse.llm.litellm.completion", side_effect=fake_completion):
+        _sanitized_completion(
+            model="openrouter/anthropic/claude-sonnet-4.6",
+            messages=[{"role": "user", "content": "x"}],
+        )
+
+    assert captured.get("api_key") == "sk-or-v1-e2e"
+
+
 # ---------------------------------------------------------------------------
 # Reasoning-model path
 # ---------------------------------------------------------------------------
