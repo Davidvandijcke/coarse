@@ -1,8 +1,9 @@
 /**
  * Client-side cost estimation for coarse reviews.
  *
- * Mirrors the heuristic from src/coarse/cost.py:
- *   OCR + metadata + 3 overview judges + synthesis + N sections + crossref + critique
+ * Mirrors the heuristic from src/coarse/cost.py 1:1. When the Python
+ * estimator changes, this file must change with it. Both list the same
+ * stages with the same per-stage token budgets and the same _COST_BUFFER.
  *
  * Token estimate: extract text via pdf.js (loaded from CDN to avoid webpack issues).
  * Pricing: fetched from OpenRouter /api/v1/models.
@@ -97,74 +98,176 @@ export async function estimateTokensFromPdf(file: File): Promise<number> {
   return Math.max(500, Math.round(totalChars / 4));
 }
 
-/** Estimate section count from token count (~1,200 tokens per section). */
+// Heuristic constants — mirror src/coarse/cost.py (verified 2026-04-11).
+// When a Python constant changes, update it here too.
+const TOKENS_PER_SECTION = 1200;
+const MAX_REVIEWABLE_SECTIONS = 25; // mirrors pipeline.py's reviewable_sections[:25]
+const MIN_SECTIONS = 4;
+const SECTION_PROMPT_OVERHEAD = 8000;
+
+const TOKENS_PER_PAGE = 250;
+const OCR_COST_PER_PAGE = 0.002;
+
+const MATH_SECTION_FRACTION = 0.2;
+const CROSS_SECTION_MIN_SECTIONS = 6;
+const EXPECTED_CROSS_SECTION_CALLS = 1;
+
+const AVG_COMMENTS_PER_SECTION = 3;
+const TOKENS_PER_COMMENT = 350;
+const EDITORIAL_OVERHEAD = 5000;
+const OVERVIEW_CONTEXT_OVERHEAD = 5000;
+
+const LITERATURE_FLAT_COST = 0.03;
+// Gemini Flash extraction QA on a typical paper (~45k in + 4096 out at
+// $0.50/$3.00 per 1M) runs about $0.035. Approximate as a flat fee rather
+// than fetching vision model pricing separately.
+const EXTRACTION_QA_FLAT_COST = 0.035;
+
+const COST_BUFFER = 1.3;
+
+// Reasoning model detection — mirrors `is_reasoning_model` in
+// src/coarse/models.py. Uses both prefix and substring rules so
+// thinking/reasoning variants across providers all get the 4x overhead
+// applied to tokens_out. Keep in sync with REASONING_MODEL_PREFIXES and
+// REASONING_MODEL_SUBSTRINGS in models.py.
+const REASONING_MODEL_PREFIXES: readonly string[] = [
+  "openai/o1",
+  "openai/o3",
+  "openai/o4",
+  "openai/gpt-5-pro",
+  "openai/gpt-5.1-pro",
+  "openai/gpt-5.2-pro",
+  "openai/gpt-5.3-pro",
+  "openai/gpt-5.4-pro",
+  "deepseek/deepseek-r",
+  "x-ai/grok-4",
+  "x-ai/grok-3-mini",
+  "perplexity/sonar-reasoning",
+  "arcee-ai/maestro-reasoning",
+];
+const REASONING_MODEL_SUBSTRINGS: readonly string[] = [
+  "thinking",
+  "reasoning",
+  "deep-research",
+];
+// Empirical: reasoning models bill ~4x the visible output budget in hidden
+// reasoning tokens, charged at the output-token rate. See
+// _REASONING_OVERHEAD_MULTIPLIER in src/coarse/llm.py.
+const REASONING_OVERHEAD_MULTIPLIER = 4;
+
+function isReasoningModel(modelId: string): boolean {
+  const lower = modelId.toLowerCase().replace(/^openrouter\//, "");
+  for (const prefix of REASONING_MODEL_PREFIXES) {
+    if (lower.startsWith(prefix)) return true;
+  }
+  for (const substr of REASONING_MODEL_SUBSTRINGS) {
+    if (lower.includes(substr)) return true;
+  }
+  return false;
+}
+
+/** Estimate section count from token count (capped at MAX_REVIEWABLE_SECTIONS). */
 function estimateSectionCount(tokenEstimate: number): number {
-  return Math.max(4, Math.min(40, Math.floor(tokenEstimate / 1200)));
+  return Math.max(
+    MIN_SECTIONS,
+    Math.min(MAX_REVIEWABLE_SECTIONS, Math.floor(tokenEstimate / TOKENS_PER_SECTION)),
+  );
 }
 
 /**
  * Estimate total review cost in USD.
- * Mirrors build_cost_estimate() from cost.py.
+ * Mirrors build_cost_estimate() from src/coarse/cost.py. Stage list and
+ * per-stage token budgets must match the Python version exactly.
  */
 export function estimateReviewCost(
   tokenEstimate: number,
   pricing: ModelPricing,
+  modelId: string = "",
+  isPdf: boolean = true,
   sectionCount?: number,
 ): number {
   const { promptCostPerToken: inp, completionCostPerToken: out } = pricing;
-  const sections = sectionCount ?? estimateSectionCount(tokenEstimate);
-  const sectionTextTokens = Math.max(1, Math.floor(tokenEstimate / sections));
-  // Each section prompt includes ~5,000 tokens of overhead:
-  // system prompt (~1200) + overview context (~2500) + calibration (~500) + notation (~800)
-  const sectionInput = sectionTextTokens + 5000;
+  const totalTokens = Math.max(0, tokenEstimate);
 
-  // OCR: ~$0.002/page, estimate pages from tokens
-  const estPages = Math.max(1, Math.floor(tokenEstimate / 250));
-  let total = estPages * 0.002;
+  let sections = sectionCount ?? estimateSectionCount(totalTokens);
+  // Guard against section_count=0 so the division below doesn't explode.
+  sections = Math.max(1, sections);
 
-  // Literature search: Perplexity Sonar Pro flat fee (web app always uses OpenRouter)
-  total += 0.03;
+  const mathSectionCount = Math.max(0, Math.round(sections * MATH_SECTION_FRACTION));
+  const crossSectionCount =
+    sections >= CROSS_SECTION_MIN_SECTIONS ? EXPECTED_CROSS_SECTION_CALLS : 0;
 
-  // Estimated raw comments from section agents (each produces 1-5, avg ~3)
-  const nRawComments = sections * 3;
+  const sectionTextTokens = Math.max(1, Math.floor(totalTokens / sections));
+  const sectionInput = sectionTextTokens + SECTION_PROMPT_OVERHEAD;
 
-  // Crossref reads all raw comments, emits deduplicated set as JSON
-  const crossrefIn = nRawComments * 350 + 3500;
-  const crossrefOut = Math.floor(nRawComments * 0.6) * 600;
+  // Editorial reads all downstream comments + full paper markdown. Comments
+  // come from section agents + completeness + proof_verify + cross_section,
+  // not just section agents.
+  const nEditorialComments =
+    sections * AVG_COMMENTS_PER_SECTION +
+    AVG_COMMENTS_PER_SECTION +
+    mathSectionCount * AVG_COMMENTS_PER_SECTION +
+    crossSectionCount * 2;
+  const editorialIn =
+    nEditorialComments * TOKENS_PER_COMMENT + EDITORIAL_OVERHEAD + totalTokens;
 
-  // Critique reads deduped comments, emits revised set as JSON
-  const nDeduped = Math.floor(nRawComments * 0.6);
-  const critiqueIn = nDeduped * 350 + 3500;
-  const critiqueOut = Math.floor(nDeduped * 0.9) * 600;
-
-  // Pipeline stages: [name, tokens_in, tokens_out]
-  const NUM_OVERVIEW_JUDGES = 3;
-  const stages: [string, number, number][] = [
-    ["metadata", 500, 100],
-    ["calibration", 1000, 2000],
-    // 3 overview judges each read full paper
-    ...Array.from(
-      { length: NUM_OVERVIEW_JUDGES },
-      (_, i) => [`overview_judge_${i + 1}`, tokenEstimate, 1500] as [string, number, number],
-    ),
-    ["overview_synthesis", 5000, 1500],
-    ...Array.from(
-      { length: sections },
-      (_, i) => [`section_${i + 1}`, sectionInput, 3500] as [string, number, number],
-    ),
-    ["crossref", crossrefIn, crossrefOut],
-    ["critique", critiqueIn, critiqueOut],
-  ];
-
-  for (const [, tokIn, tokOut] of stages) {
-    total += inp * tokIn + out * tokOut;
+  // Flat-fee stages (non-LLM / non-review-model).
+  const estPages = Math.max(1, Math.floor(totalTokens / TOKENS_PER_PAGE));
+  let total = estPages * OCR_COST_PER_PAGE; // pdf_extraction
+  total += LITERATURE_FLAT_COST; // literature_search (OpenRouter flat fee)
+  if (isPdf) {
+    // extraction_qa only runs on PDFs in the real pipeline (pipeline.py:226).
+    total += EXTRACTION_QA_FLAT_COST;
   }
 
-  // Fixed cost for extraction QA (Gemini Flash, always enabled by modal worker)
-  total += 0.02;
+  // Default-model stages mirror pipeline.py:review_paper() 1:1.
+  // Format: [name, tokens_in, tokens_out]
+  const stages: [string, number, number][] = [
+    ["metadata", 500, 256],
+    ["math_detection", 2000, 1024],
+    ["calibration", 1500, 2048],
+    ["contribution_extraction", 3000, 2048],
+    // Overview is a SINGLE agent call at max_tokens=8192 (no 3-judge panel;
+    // see agents/overview.py:80).
+    ["overview", totalTokens + 3000, 8192],
+    // Completeness reads the full paper via _build_sections_text
+    // (agents/completeness.py:44), not a small 3k prompt.
+    ["completeness", totalTokens + OVERVIEW_CONTEXT_OVERHEAD, 4096],
+    // Section agents (parallel, one per reviewable section).
+    ...Array.from(
+      { length: sections },
+      (_, i) => [`section_${i + 1}`, sectionInput, 10000] as [string, number, number],
+    ),
+    // Proof verify (chained after section agents for math sections).
+    ...Array.from(
+      { length: mathSectionCount },
+      (_, i) =>
+        [
+          `proof_verify_${i + 1}`,
+          sectionInput + OVERVIEW_CONTEXT_OVERHEAD,
+          16384,
+        ] as [string, number, number],
+    ),
+    // Cross-section synthesis (conditional, up to 3).
+    ...Array.from(
+      { length: crossSectionCount },
+      (_, i) =>
+        [
+          `cross_section_${i + 1}`,
+          sectionTextTokens * 2 + OVERVIEW_CONTEXT_OVERHEAD,
+          8192,
+        ] as [string, number, number],
+    ),
+    // Editorial pass (replaces legacy crossref+critique).
+    ["editorial", editorialIn, 24000],
+  ];
 
-  // Conservative buffer — better to overestimate
-  total *= 1.15;
+  const reasoning = isReasoningModel(modelId);
+  for (const [, tokIn, tokOut] of stages) {
+    const outWithOverhead = reasoning ? tokOut * (1 + REASONING_OVERHEAD_MULTIPLIER) : tokOut;
+    total += inp * tokIn + out * outWithOverhead;
+  }
 
+  total *= COST_BUFFER;
   return total;
 }

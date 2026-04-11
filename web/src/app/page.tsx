@@ -228,11 +228,11 @@ export default function Home() {
       try {
         // Cache token count so model switches don't re-parse the file
         let tokens: number;
+        const ext = file.name.toLowerCase().split(".").pop();
         const cached = tokenCacheRef.current;
         if (cached && cached.name === file.name && cached.size === file.size) {
           tokens = cached.tokens;
         } else {
-          const ext = file.name.toLowerCase().split(".").pop();
           if (ext === "pdf") {
             tokens = await estimateTokensFromPdf(file);
           } else if (ext === "docx") {
@@ -249,7 +249,10 @@ export default function Home() {
         if (cancelled) return;
 
         if (pricing) {
-          setCostEstimate(estimateReviewCost(tokens, pricing));
+          // Pass modelId for reasoning-model overhead detection and
+          // isPdf to gate the extraction_qa stage — matches the Python
+          // cost gate's behavior in build_cost_estimate().
+          setCostEstimate(estimateReviewCost(tokens, pricing, model, ext === "pdf"));
         } else {
           setCostEstimate(null);
         }
