@@ -214,3 +214,129 @@ def test_run_review_accepts_valid_token(modal_worker, monkeypatch) -> None:
     assert result == {"status": "accepted", "job_id": "j42"}
     compare_mock.assert_called_once_with("realsecret", "realsecret")
     spawn_mock.assert_called_once_with({"job_id": "j42"})
+
+
+# ---------------------------------------------------------------------------
+# _fetch_and_consume_user_key — issue #49 (review_secrets ferry)
+# ---------------------------------------------------------------------------
+
+
+class _FakeSupabaseQuery:
+    """Minimal chainable stub that mimics supabase-py's query builder."""
+
+    def __init__(self, table_stub: "_FakeSupabaseTable", op: str) -> None:
+        self._table = table_stub
+        self._op = op
+        self._filter: tuple[str, str] | None = None
+
+    def select(self, _columns: str) -> "_FakeSupabaseQuery":
+        return self
+
+    def eq(self, column: str, value: str) -> "_FakeSupabaseQuery":
+        self._filter = (column, value)
+        return self
+
+    def maybe_single(self) -> "_FakeSupabaseQuery":
+        return self
+
+    def execute(self) -> types.SimpleNamespace:
+        if self._table.raise_on == self._op:
+            raise RuntimeError(f"fake supabase {self._op} failure")
+        if self._op == "select":
+            return types.SimpleNamespace(data=self._table.row)
+        if self._op == "delete":
+            self._table.deleted.append(self._filter)
+            return types.SimpleNamespace(data=None)
+        raise AssertionError(f"unknown op {self._op}")
+
+
+class _FakeSupabaseTable:
+    def __init__(self, row: dict | None = None, raise_on: str | None = None) -> None:
+        self.row = row
+        self.raise_on = raise_on
+        self.deleted: list[tuple[str, str] | None] = []
+
+    def select(self, columns: str) -> _FakeSupabaseQuery:
+        return _FakeSupabaseQuery(self, "select").select(columns)
+
+    def delete(self) -> _FakeSupabaseQuery:
+        return _FakeSupabaseQuery(self, "delete")
+
+
+class _FakeSupabase:
+    def __init__(self, table_stub: _FakeSupabaseTable) -> None:
+        self._table_stub = table_stub
+        self.table_names: list[str] = []
+
+    def table(self, name: str) -> _FakeSupabaseTable:
+        self.table_names.append(name)
+        return self._table_stub
+
+
+def test_fetch_and_consume_user_key_returns_key_and_deletes_row(modal_worker) -> None:
+    """Happy path: SELECT returns a row, DELETE runs, key is returned."""
+    table = _FakeSupabaseTable(
+        row={"user_api_key": "sk-or-v1-fakefakefakefakefakefakefake"}  # security: ignore
+    )
+    db = _FakeSupabase(table)
+
+    key = modal_worker._fetch_and_consume_user_key(db, "job-1")
+    assert key == "sk-or-v1-fakefakefakefakefakefakefake"  # security: ignore
+    assert db.table_names == ["review_secrets", "review_secrets"]
+    # Delete was called with the matching filter
+    assert table.deleted == [("review_id", "job-1")]
+
+
+def test_fetch_and_consume_user_key_returns_none_when_row_missing(modal_worker) -> None:
+    """No row → return None → caller falls back to req.user_api_key."""
+    table = _FakeSupabaseTable(row=None)
+    db = _FakeSupabase(table)
+
+    key = modal_worker._fetch_and_consume_user_key(db, "job-missing")
+    assert key is None
+    # Delete should NOT run when there was nothing to read
+    assert table.deleted == []
+
+
+def test_fetch_and_consume_user_key_returns_none_on_select_error(modal_worker) -> None:
+    """SELECT failure is swallowed; caller still falls back to backward-compat."""
+    table = _FakeSupabaseTable(row=None, raise_on="select")
+    db = _FakeSupabase(table)
+
+    key = modal_worker._fetch_and_consume_user_key(db, "job-boom")
+    assert key is None
+    assert table.deleted == []
+
+
+def test_fetch_and_consume_user_key_tolerates_delete_failure(modal_worker) -> None:
+    """DELETE failure is non-fatal — the key is still returned for the pipeline.
+    The TTL cleanup cron sweeps the orphaned row."""
+    table = _FakeSupabaseTable(
+        row={"user_api_key": "sk-or-v1-abcdefghijklmnopqrstuvwx"},  # security: ignore
+        raise_on="delete",
+    )
+    db = _FakeSupabase(table)
+
+    key = modal_worker._fetch_and_consume_user_key(db, "job-retry-ok")
+    # Key is returned despite the delete failing
+    assert key == "sk-or-v1-abcdefghijklmnopqrstuvwx"  # security: ignore
+
+
+def test_fetch_and_consume_does_not_leak_key_into_log_on_delete_failure(
+    modal_worker, capsys
+) -> None:
+    """A delete failure is logged, but the logged string must never contain the key."""
+    secret = "sk-or-v1-supersecretkey1234567890abcdef"  # security: ignore
+    table = _FakeSupabaseTable(
+        row={"user_api_key": secret},
+        raise_on="delete",
+    )
+    db = _FakeSupabase(table)
+
+    modal_worker._fetch_and_consume_user_key(db, "job-log-test")
+    captured = capsys.readouterr()
+    # The fake exception message does not contain the key, so this is a
+    # regression guard: if a future refactor leaks req/response bodies into
+    # the exception, the sanitizer must still catch them.
+    assert secret not in captured.out
+    assert secret not in captured.err

@@ -168,9 +168,53 @@ def _classify_api_error(exc: BaseException) -> str | None:
 class ReviewRequest(BaseModel):
     job_id: str
     pdf_storage_path: str
+    # user_api_key is retained for backward compatibility with any in-flight
+    # spawn() payloads created before the review_secrets migration. New
+    # submissions write the key to review_secrets instead; _fetch_and_consume_user_key
+    # reads it from there so the key never rides through Modal's managed queue.
     user_api_key: str | None = None
     email: str | None = None
     model: str | None = None
+
+
+def _fetch_and_consume_user_key(db, job_id: str) -> str | None:
+    """Read the user's OpenRouter key from review_secrets and delete the row.
+
+    One-shot: after this returns, the row is gone. Returns None if no row exists
+    (which is the normal path when the caller is still using the backward-compat
+    spawn() payload — do_review then falls back to req.user_api_key).
+
+    Never raises. A SELECT or DELETE failure is logged and the function returns
+    None so the caller's backward-compat path still runs.
+    """
+    try:
+        result = (
+            db.table("review_secrets")
+            .select("user_api_key")
+            .eq("review_id", job_id)
+            .maybe_single()
+            .execute()
+        )
+    except Exception as exc:
+        print(f"[{job_id}] review_secrets SELECT failed: {_sanitize_error(str(exc))}")
+        return None
+
+    if not result or not getattr(result, "data", None):
+        return None
+
+    key = result.data.get("user_api_key")
+
+    # Delete the row immediately so the key doesn't linger in the DB. A failure
+    # here is non-fatal — the TTL cleanup cron will sweep stragglers.
+    try:
+        db.table("review_secrets").delete().eq("review_id", job_id).execute()
+    except Exception as exc:
+        print(
+            f"[{job_id}] review_secrets DELETE failed "
+            f"(non-fatal, TTL cron will sweep): {_sanitize_error(str(exc))}"
+        )
+
+    return key
 
 
 @app.function(
@@ -198,7 +242,6 @@ def do_review(req_dict: dict):
     req = ReviewRequest(**req_dict)
     job_id = req.job_id
     pdf_storage_path = req.pdf_storage_path
-    user_api_key = req.user_api_key
     email = req.email
     model = req.model
 
@@ -214,11 +257,19 @@ def do_review(req_dict: dict):
     db.table("reviews").update({"status": "running"}).eq("id", job_id).execute()
     print(f"[{job_id}] Status set to running")
 
+    # Resolve the user's OpenRouter key. Preferred path: review_secrets
+    # side-table (new, avoids persisting the key in Modal's spawn() payload).
+    # Backward-compat path: req.user_api_key — still honored for any in-flight
+    # jobs spawned before the frontend was updated to write review_secrets.
+    #
     # Whitespace-only key is truthy but yields an empty `Bearer ` header →
     # OpenRouter 401 "Missing Authentication header" cascading through every
-    # LLM call. Strip before installing.
+    # LLM call. Strip at both sources.
     original_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip() or None
-    cleaned_user_key = (user_api_key or "").strip()
+    cleaned_user_key = (req.user_api_key or "").strip() or None
+    if cleaned_user_key is None:
+        fetched = _fetch_and_consume_user_key(db, job_id)
+        cleaned_user_key = (fetched or "").strip() or None
     if cleaned_user_key:
         os.environ["OPENROUTER_API_KEY"] = cleaned_user_key
 

@@ -123,7 +123,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to save contact info" }, { status: 500 });
   }
 
-  // Trigger Modal worker (fire-and-forget — the worker updates Supabase directly)
+  // Store the user's API key in review_secrets (RLS deny-all; only the Modal
+  // worker, which uses the service role, can read it). Inserting here — rather
+  // than sending the key in the Modal webhook body — keeps the key out of
+  // Modal's managed queue payload, which would otherwise persist it until the
+  // worker consumed it. The worker reads + deletes the row in one shot via
+  // _fetch_and_consume_user_key(); a GitHub Actions cron sweeps any rows older
+  // than 3 hours as a safety net.
+  const { error: secretError } = await supabaseAdmin
+    .from("review_secrets")
+    .insert({ review_id: id, user_api_key: apiKey });
+  if (secretError) {
+    // ON DELETE CASCADE on both review_emails and review_secrets clears the row.
+    await supabaseAdmin.from("reviews").delete().eq("id", id);
+    return NextResponse.json({ error: "Failed to stage review credentials" }, { status: 500 });
+  }
+
+  // Trigger Modal worker (fire-and-forget — the worker updates Supabase directly).
+  // NOTE: user_api_key is intentionally NOT in the body. The worker resolves it
+  // from review_secrets. This keeps the key out of Modal's spawn() payload.
   const modalUrl = process.env.MODAL_FUNCTION_URL;
   if (modalUrl) {
     fetch(modalUrl, {
@@ -135,7 +153,6 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         job_id: id,
         pdf_storage_path: storagePath,
-        user_api_key: apiKey,
         email,
         model: model || undefined,
       }),
