@@ -214,3 +214,363 @@ def test_run_review_accepts_valid_token(modal_worker, monkeypatch) -> None:
     assert result == {"status": "accepted", "job_id": "j42"}
     compare_mock.assert_called_once_with("realsecret", "realsecret")
     spawn_mock.assert_called_once_with({"job_id": "j42"})
+
+
+# ---------------------------------------------------------------------------
+# _fetch_and_consume_user_key — issue #49 (review_secrets ferry)
+# ---------------------------------------------------------------------------
+
+
+class _FakeSupabaseQuery:
+    """Minimal chainable stub that mimics supabase-py's query builder.
+
+    Intentionally narrow: does NOT validate call order. If supabase-py's
+    signature drifts (e.g. `.select()` must come before `.eq()`), these tests
+    will still pass. The tradeoff is acceptable because the helper under
+    test is tiny and the real code path is exercised end-to-end by the
+    integration path in production.
+    """
+
+    def __init__(self, table_stub: "_FakeSupabaseTable", op: str) -> None:
+        self._table = table_stub
+        self._op = op
+        self._filter: tuple[str, str] | None = None
+
+    def select(self, _columns: str) -> "_FakeSupabaseQuery":
+        return self
+
+    def eq(self, column: str, value: str) -> "_FakeSupabaseQuery":
+        self._filter = (column, value)
+        return self
+
+    def maybe_single(self) -> "_FakeSupabaseQuery":
+        return self
+
+    def execute(self):
+        if self._table.raise_on == self._op:
+            # Raise with the configured exception (may contain a secret for
+            # the log-leak tests) so _sanitize_error is actually exercised.
+            raise RuntimeError(self._table.raise_message or f"fake {self._op} failure")
+        if self._op == "select":
+            # Real postgrest `maybe_single()` returns None (not a namespace)
+            # when the row doesn't exist. Match that when row is None so the
+            # `result is None` branch in _fetch_and_consume_user_key is
+            # actually covered.
+            if self._table.row is None:
+                return None
+            return types.SimpleNamespace(data=self._table.row)
+        if self._op == "delete":
+            self._table.deleted.append(self._filter)
+            return types.SimpleNamespace(data=None)
+        raise AssertionError(f"unknown op {self._op}")
+
+
+class _FakeSupabaseTable:
+    def __init__(
+        self,
+        row: dict | None = None,
+        raise_on: str | None = None,
+        raise_message: str | None = None,
+    ) -> None:
+        self.row = row
+        self.raise_on = raise_on
+        self.raise_message = raise_message
+        self.deleted: list[tuple[str, str] | None] = []
+
+    def select(self, columns: str) -> _FakeSupabaseQuery:
+        return _FakeSupabaseQuery(self, "select").select(columns)
+
+    def delete(self) -> _FakeSupabaseQuery:
+        return _FakeSupabaseQuery(self, "delete")
+
+
+class _FakeSupabase:
+    def __init__(self, table_stub: _FakeSupabaseTable) -> None:
+        self._table_stub = table_stub
+        self.table_names: list[str] = []
+
+    def table(self, name: str) -> _FakeSupabaseTable:
+        self.table_names.append(name)
+        return self._table_stub
+
+
+def test_fetch_and_consume_user_key_returns_key_and_deletes_row(modal_worker) -> None:
+    """Happy path: SELECT returns a row, DELETE runs, key is returned."""
+    table = _FakeSupabaseTable(
+        row={"user_api_key": "sk-or-v1-fakefakefakefakefakefakefake"}  # security: ignore
+    )
+    db = _FakeSupabase(table)
+
+    key = modal_worker._fetch_and_consume_user_key(db, "job-1")
+    assert key == "sk-or-v1-fakefakefakefakefakefakefake"  # security: ignore
+    assert db.table_names == ["review_secrets", "review_secrets"]
+    # Delete was called with the matching filter
+    assert table.deleted == [("review_id", "job-1")]
+
+
+def test_fetch_and_consume_user_key_returns_none_when_row_missing(modal_worker) -> None:
+    """No row → return None → caller falls back to req.user_api_key."""
+    table = _FakeSupabaseTable(row=None)
+    db = _FakeSupabase(table)
+
+    key = modal_worker._fetch_and_consume_user_key(db, "job-missing")
+    assert key is None
+    # Delete should NOT run when there was nothing to read
+    assert table.deleted == []
+
+
+def test_fetch_and_consume_user_key_returns_none_on_select_error(modal_worker) -> None:
+    """SELECT failure is swallowed; caller still falls back to backward-compat."""
+    table = _FakeSupabaseTable(row=None, raise_on="select")
+    db = _FakeSupabase(table)
+
+    key = modal_worker._fetch_and_consume_user_key(db, "job-boom")
+    assert key is None
+    assert table.deleted == []
+
+
+def test_fetch_and_consume_user_key_tolerates_delete_failure(modal_worker) -> None:
+    """DELETE failure is non-fatal — the key is still returned for the pipeline.
+    The TTL cleanup cron sweeps the orphaned row."""
+    table = _FakeSupabaseTable(
+        row={"user_api_key": "sk-or-v1-abcdefghijklmnopqrstuvwx"},  # security: ignore
+        raise_on="delete",
+    )
+    db = _FakeSupabase(table)
+
+    key = modal_worker._fetch_and_consume_user_key(db, "job-retry-ok")
+    # Key is returned despite the delete failing
+    assert key == "sk-or-v1-abcdefghijklmnopqrstuvwx"  # security: ignore
+
+
+def test_fetch_and_consume_does_not_leak_key_into_log_on_delete_failure(
+    modal_worker, capsys
+) -> None:
+    """A delete failure whose exception message literally contains the key is
+    still scrubbed before it reaches stdout/stderr. This verifies that
+    _sanitize_error is actually applied on the log path, not just trivially."""
+    secret = "sk-or-v1-supersecretkey1234567890abcdef"  # security: ignore
+    # Inject the secret into the fake exception message so the test actually
+    # exercises _sanitize_error (rather than trivially passing because the
+    # fake message doesn't contain the key).
+    leaky_message = f"upstream 500: Authorization: Bearer {secret}"
+    table = _FakeSupabaseTable(
+        row={"user_api_key": secret},
+        raise_on="delete",
+        raise_message=leaky_message,
+    )
+    db = _FakeSupabase(table)
+
+    modal_worker._fetch_and_consume_user_key(db, "job-log-test")
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    # The raw key must never reach stdout/stderr, even though it was in the
+    # exception message that the helper caught and logged.
+    assert secret not in combined
+    # And the helper must have actually logged something (regression guard
+    # against a future refactor that silently drops the log line).
+    assert "review_secrets DELETE failed" in combined
+    assert "[key]" in combined
+
+
+# ---------------------------------------------------------------------------
+# _resolve_user_api_key — precedence between review_secrets and req payload
+# ---------------------------------------------------------------------------
+
+
+def _make_review_request(modal_worker, user_api_key: str | None = None):
+    """Build a real ReviewRequest so the test exercises the actual Pydantic shape."""
+    return modal_worker.ReviewRequest(
+        job_id="j1",
+        pdf_storage_path="papers/j1.pdf",
+        user_api_key=user_api_key,
+    )
+
+
+def test_resolve_user_api_key_prefers_review_secrets(modal_worker) -> None:
+    """When BOTH sources have a key, review_secrets wins and the row is consumed."""
+    ferried = "sk-or-v1-ferried123456789012345678901234"  # security: ignore
+    backward = "sk-or-v1-backcompat12345678901234567890"  # security: ignore
+    table = _FakeSupabaseTable(row={"user_api_key": ferried})
+    db = _FakeSupabase(table)
+    req = _make_review_request(modal_worker, user_api_key=backward)
+
+    result = modal_worker._resolve_user_api_key(db, req, "j1")
+    assert result == ferried
+    # The review_secrets row was consumed (DELETE was called).
+    assert table.deleted == [("review_id", "j1")]
+
+
+def test_resolve_user_api_key_falls_back_to_req_user_api_key(modal_worker) -> None:
+    """When review_secrets has no row, fall back to req.user_api_key (backward compat)."""
+    backward = "sk-or-v1-backcompat987654321098765432109"  # security: ignore
+    table = _FakeSupabaseTable(row=None)
+    db = _FakeSupabase(table)
+    req = _make_review_request(modal_worker, user_api_key=backward)
+
+    result = modal_worker._resolve_user_api_key(db, req, "j1")
+    assert result == backward
+    # No row to delete, so DELETE was never called.
+    assert table.deleted == []
+
+
+def test_resolve_user_api_key_returns_none_when_both_sources_empty(modal_worker) -> None:
+    """Both sources empty → return None. Caller proceeds without setting the env
+    var, and the first LLM call surfaces a 401 handled by _classify_api_error."""
+    table = _FakeSupabaseTable(row=None)
+    db = _FakeSupabase(table)
+    req = _make_review_request(modal_worker, user_api_key=None)
+
+    assert modal_worker._resolve_user_api_key(db, req, "j1") is None
+
+
+def test_resolve_user_api_key_strips_whitespace_from_review_secrets(modal_worker) -> None:
+    """A whitespace-only review_secrets value should NOT be returned (it would
+    yield an empty Bearer header). Fall through to req.user_api_key instead.
+
+    The whitespace row IS still deleted by _fetch_and_consume_user_key before
+    the strip-check fires, so a stray row can't rot until the TTL cron."""
+    backward = "sk-or-v1-backcompat56565656565656565656"  # security: ignore
+    table = _FakeSupabaseTable(row={"user_api_key": "   \n"})
+    db = _FakeSupabase(table)
+    req = _make_review_request(modal_worker, user_api_key=backward)
+
+    result = modal_worker._resolve_user_api_key(db, req, "j1")
+    # Whitespace-only DB value is rejected; falls back to req payload.
+    assert result == backward
+    # But the row was still consumed (the TTL cron doesn't need to clean it up).
+    assert table.deleted == [("review_id", "j1")]
+
+
+# ---------------------------------------------------------------------------
+# do_review — integration test for key installation into os.environ
+# ---------------------------------------------------------------------------
+
+
+def test_do_review_installs_resolved_key_into_environ(modal_worker, monkeypatch) -> None:
+    """When _resolve_user_api_key returns a key, do_review must write it into
+    OPENROUTER_API_KEY BEFORE the pipeline runs. Regression guard against a
+    refactor that reorders the env-var install or drops it entirely.
+
+    Stubs supabase.create_client so do_review can build a `db` object, then
+    captures the env var inside a fake `storage.download` call that raises to
+    short-circuit the rest of the pipeline before review_paper() runs."""
+    import os as _os
+    import sys as _sys
+
+    resolved = "sk-or-v1-fromferryintegrationtest12345"  # security: ignore
+    captured: dict[str, str | None] = {}
+
+    class _FakeDownload:
+        def from_(self, _bucket):
+            return self
+
+        def download(self, _path):
+            # Capture env var state at the earliest point after key resolution,
+            # before the finally block restores the original key.
+            captured["env"] = _os.environ.get("OPENROUTER_API_KEY")
+            raise RuntimeError("short-circuit before review_paper")
+
+    class _FakeReviewsTable:
+        def update(self, _data):
+            return self
+
+        def eq(self, _col, _val):
+            return self
+
+        def execute(self):
+            return types.SimpleNamespace(data=[])
+
+    class _FakeDB:
+        def __init__(self):
+            self.storage = _FakeDownload()
+
+        def table(self, _name):
+            return _FakeReviewsTable()
+
+    def _fake_create_client(_url, _key):
+        return _FakeDB()
+
+    # Install a fake supabase module so the lazy `from supabase import
+    # create_client` inside do_review resolves to our fake.
+    supabase_stub = types.ModuleType("supabase")
+    supabase_stub.create_client = _fake_create_client
+    monkeypatch.setitem(_sys.modules, "supabase", supabase_stub)
+
+    # Stub _resolve_user_api_key so we don't depend on the fake supabase's
+    # review_secrets path — the unit tests above already cover that.
+    monkeypatch.setattr(modal_worker, "_resolve_user_api_key", lambda _db, _req, _job: resolved)
+
+    monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-service-key")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="short-circuit before review_paper"):
+        modal_worker.do_review(
+            {
+                "job_id": "integration-test-job",
+                "pdf_storage_path": "papers/test.pdf",
+            }
+        )
+
+    # The env var was installed BEFORE the download call that raised.
+    # (do_review's finally-block cleanup lives inside a later `try:` block
+    # that we short-circuit before reaching, so env-cleanup is out of scope
+    # for this test — monkeypatch restores it on teardown.)
+    assert captured["env"] == resolved
+
+
+def test_do_review_skips_environ_write_when_no_key_resolved(modal_worker, monkeypatch) -> None:
+    """When _resolve_user_api_key returns None, do_review must NOT write an
+    empty string to OPENROUTER_API_KEY (that would produce a `Bearer ` header
+    and cascade 401s through every LLM call). Regression guard."""
+    import os as _os
+    import sys as _sys
+
+    captured: dict[str, str | None] = {}
+
+    class _FakeDownload:
+        def from_(self, _bucket):
+            return self
+
+        def download(self, _path):
+            captured["env"] = _os.environ.get("OPENROUTER_API_KEY", "<unset>")
+            raise RuntimeError("short-circuit before review_paper")
+
+    class _FakeReviewsTable:
+        def update(self, _data):
+            return self
+
+        def eq(self, _col, _val):
+            return self
+
+        def execute(self):
+            return types.SimpleNamespace(data=[])
+
+    class _FakeDB:
+        def __init__(self):
+            self.storage = _FakeDownload()
+
+        def table(self, _name):
+            return _FakeReviewsTable()
+
+    supabase_stub = types.ModuleType("supabase")
+    supabase_stub.create_client = lambda _u, _k: _FakeDB()
+    monkeypatch.setitem(_sys.modules, "supabase", supabase_stub)
+
+    monkeypatch.setattr(modal_worker, "_resolve_user_api_key", lambda _db, _req, _job: None)
+
+    monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-service-key")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="short-circuit before review_paper"):
+        modal_worker.do_review(
+            {
+                "job_id": "no-key-test-job",
+                "pdf_storage_path": "papers/test.pdf",
+            }
+        )
+
+    # Env var was NOT set to "" — it stays unset.
+    assert captured["env"] == "<unset>"

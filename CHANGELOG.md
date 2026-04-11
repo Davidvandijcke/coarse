@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Security
+
+- fix(deploy): ferry user OpenRouter key via `review_secrets` side-table so it no longer rides through Modal's `spawn()` payload / managed queue. Frontend inserts the key under RLS deny-all, worker reads + deletes in one shot via `_fetch_and_consume_user_key`, hourly GitHub Actions cron sweeps stragglers older than 3h. Worker keeps the `req.user_api_key` fallback for backward-compat with in-flight jobs during rollout. Requires running `deploy/migrate_review_secrets.sql` in Supabase SQL editor before deploying the worker. (#49)
+- fix(web): make the `/api/submit` route double-click-safe. Previously, a double-click fired two POSTs with the same presigned `id`; the second one's `review_emails` insert hit a Postgres unique_violation and the rollback handler `delete from reviews` nuked the first submit's row, leaving submit 1's Modal worker running against a deleted review. Now the route detects SQLSTATE 23505 on the `review_emails` insert, treats it as an idempotent success, and returns 200 without firing a second Modal worker. Mid-submit rollbacks switched from `.delete()` to `.update({ status: "failed" })` so a concurrent double-click never sees a disappearing row. (#49)
+
 ## v1.1.5 — 2026-04-11
 
 Release-automation and web parity follow-up to v1.1.4. Ships the PyPI auto-publish workflow so future releases land on PyPI on tag push without a manual `uv publish` step, and brings the client-side TypeScript cost estimator up to parity with the Python one (same stage list, same budgets, same 1.30x buffer, same reasoning-model overhead). v1.1.4 was never published to PyPI — v1.1.5 is strictly a superset of its code, so `pip install coarse-ink==1.1.5` gets you everything in v1.1.4 plus the additions below.
