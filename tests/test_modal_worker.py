@@ -222,7 +222,14 @@ def test_run_review_accepts_valid_token(modal_worker, monkeypatch) -> None:
 
 
 class _FakeSupabaseQuery:
-    """Minimal chainable stub that mimics supabase-py's query builder."""
+    """Minimal chainable stub that mimics supabase-py's query builder.
+
+    Intentionally narrow: does NOT validate call order. If supabase-py's
+    signature drifts (e.g. `.select()` must come before `.eq()`), these tests
+    will still pass. The tradeoff is acceptable because the helper under
+    test is tiny and the real code path is exercised end-to-end by the
+    integration path in production.
+    """
 
     def __init__(self, table_stub: "_FakeSupabaseTable", op: str) -> None:
         self._table = table_stub
@@ -239,10 +246,18 @@ class _FakeSupabaseQuery:
     def maybe_single(self) -> "_FakeSupabaseQuery":
         return self
 
-    def execute(self) -> types.SimpleNamespace:
+    def execute(self):
         if self._table.raise_on == self._op:
-            raise RuntimeError(f"fake supabase {self._op} failure")
+            # Raise with the configured exception (may contain a secret for
+            # the log-leak tests) so _sanitize_error is actually exercised.
+            raise RuntimeError(self._table.raise_message or f"fake {self._op} failure")
         if self._op == "select":
+            # Real postgrest `maybe_single()` returns None (not a namespace)
+            # when the row doesn't exist. Match that when row is None so the
+            # `result is None` branch in _fetch_and_consume_user_key is
+            # actually covered.
+            if self._table.row is None:
+                return None
             return types.SimpleNamespace(data=self._table.row)
         if self._op == "delete":
             self._table.deleted.append(self._filter)
@@ -251,9 +266,15 @@ class _FakeSupabaseQuery:
 
 
 class _FakeSupabaseTable:
-    def __init__(self, row: dict | None = None, raise_on: str | None = None) -> None:
+    def __init__(
+        self,
+        row: dict | None = None,
+        raise_on: str | None = None,
+        raise_message: str | None = None,
+    ) -> None:
         self.row = row
         self.raise_on = raise_on
+        self.raise_message = raise_message
         self.deleted: list[tuple[str, str] | None] = []
 
     def select(self, columns: str) -> _FakeSupabaseQuery:
@@ -325,18 +346,92 @@ def test_fetch_and_consume_user_key_tolerates_delete_failure(modal_worker) -> No
 def test_fetch_and_consume_does_not_leak_key_into_log_on_delete_failure(
     modal_worker, capsys
 ) -> None:
-    """A delete failure is logged, but the logged string must never contain the key."""
+    """A delete failure whose exception message literally contains the key is
+    still scrubbed before it reaches stdout/stderr. This verifies that
+    _sanitize_error is actually applied on the log path, not just trivially."""
     secret = "sk-or-v1-supersecretkey1234567890abcdef"  # security: ignore
+    # Inject the secret into the fake exception message so the test actually
+    # exercises _sanitize_error (rather than trivially passing because the
+    # fake message doesn't contain the key).
+    leaky_message = f"upstream 500: Authorization: Bearer {secret}"
     table = _FakeSupabaseTable(
         row={"user_api_key": secret},
         raise_on="delete",
+        raise_message=leaky_message,
     )
     db = _FakeSupabase(table)
 
     modal_worker._fetch_and_consume_user_key(db, "job-log-test")
     captured = capsys.readouterr()
-    # The fake exception message does not contain the key, so this is a
-    # regression guard: if a future refactor leaks req/response bodies into
-    # the exception, the sanitizer must still catch them.
-    assert secret not in captured.out
-    assert secret not in captured.err
+    combined = captured.out + captured.err
+    # The raw key must never reach stdout/stderr, even though it was in the
+    # exception message that the helper caught and logged.
+    assert secret not in combined
+    # And the helper must have actually logged something (regression guard
+    # against a future refactor that silently drops the log line).
+    assert "review_secrets DELETE failed" in combined
+    assert "[key]" in combined
+
+
+# ---------------------------------------------------------------------------
+# _resolve_user_api_key — precedence between review_secrets and req payload
+# ---------------------------------------------------------------------------
+
+
+def _make_review_request(modal_worker, user_api_key: str | None = None):
+    """Build a real ReviewRequest so the test exercises the actual Pydantic shape."""
+    return modal_worker.ReviewRequest(
+        job_id="j1",
+        pdf_storage_path="papers/j1.pdf",
+        user_api_key=user_api_key,
+    )
+
+
+def test_resolve_user_api_key_prefers_review_secrets(modal_worker) -> None:
+    """When BOTH sources have a key, review_secrets wins and the row is consumed."""
+    ferried = "sk-or-v1-ferried123456789012345678901234"  # security: ignore
+    backward = "sk-or-v1-backcompat12345678901234567890"  # security: ignore
+    table = _FakeSupabaseTable(row={"user_api_key": ferried})
+    db = _FakeSupabase(table)
+    req = _make_review_request(modal_worker, user_api_key=backward)
+
+    result = modal_worker._resolve_user_api_key(db, req, "j1")
+    assert result == ferried
+    # The review_secrets row was consumed (DELETE was called).
+    assert table.deleted == [("review_id", "j1")]
+
+
+def test_resolve_user_api_key_falls_back_to_req_user_api_key(modal_worker) -> None:
+    """When review_secrets has no row, fall back to req.user_api_key (backward compat)."""
+    backward = "sk-or-v1-backcompat987654321098765432109"  # security: ignore
+    table = _FakeSupabaseTable(row=None)
+    db = _FakeSupabase(table)
+    req = _make_review_request(modal_worker, user_api_key=backward)
+
+    result = modal_worker._resolve_user_api_key(db, req, "j1")
+    assert result == backward
+    # No row to delete, so DELETE was never called.
+    assert table.deleted == []
+
+
+def test_resolve_user_api_key_returns_none_when_both_sources_empty(modal_worker) -> None:
+    """Both sources empty → return None. Caller proceeds without setting the env
+    var, and the first LLM call surfaces a 401 handled by _classify_api_error."""
+    table = _FakeSupabaseTable(row=None)
+    db = _FakeSupabase(table)
+    req = _make_review_request(modal_worker, user_api_key=None)
+
+    assert modal_worker._resolve_user_api_key(db, req, "j1") is None
+
+
+def test_resolve_user_api_key_strips_whitespace_from_review_secrets(modal_worker) -> None:
+    """A whitespace-only review_secrets value should NOT be returned (it would
+    yield an empty Bearer header). Fall through to req.user_api_key instead."""
+    backward = "sk-or-v1-backcompat56565656565656565656"  # security: ignore
+    table = _FakeSupabaseTable(row={"user_api_key": "   \n"})
+    db = _FakeSupabase(table)
+    req = _make_review_request(modal_worker, user_api_key=backward)
+
+    result = modal_worker._resolve_user_api_key(db, req, "j1")
+    # Whitespace-only DB value is rejected; falls back to req payload.
+    assert result == backward

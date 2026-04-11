@@ -51,7 +51,7 @@ alter table review_emails enable row level security;
 -- sweeps any rows older than 3 hours as a safety net.
 create table review_secrets (
   review_id uuid primary key references reviews(id) on delete cascade,
-  user_api_key text not null,
+  user_api_key text not null check (length(user_api_key) > 0),
   created_at timestamptz default now()
 );
 

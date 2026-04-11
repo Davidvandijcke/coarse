@@ -159,6 +159,9 @@ export async function POST(request: NextRequest) {
     })
       .then(async (res) => {
         if (!res.ok) {
+          // Modal never consumed the key — drop it from review_secrets so the
+          // orphaned row doesn't sit for up to 3h waiting for the TTL cron.
+          await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
           await supabaseAdmin
             .from("reviews")
             .update({
@@ -170,6 +173,8 @@ export async function POST(request: NextRequest) {
         }
       })
       .catch(async () => {
+        // Modal fetch itself rejected — same cleanup as the !res.ok branch.
+        await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
         await supabaseAdmin
           .from("reviews")
           .update({ status: "failed", error_message: "Failed to start review worker" })

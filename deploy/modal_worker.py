@@ -182,10 +182,11 @@ def _fetch_and_consume_user_key(db, job_id: str) -> str | None:
 
     One-shot: after this returns, the row is gone. Returns None if no row exists
     (which is the normal path when the caller is still using the backward-compat
-    spawn() payload — do_review then falls back to req.user_api_key).
+    spawn() payload — _resolve_user_api_key then falls back to req.user_api_key).
 
-    Never raises. A SELECT or DELETE failure is logged and the function returns
-    None so the caller's backward-compat path still runs.
+    Never raises. A SELECT or DELETE failure is logged through _sanitize_error
+    and the function returns None so the caller's backward-compat path still
+    runs.
     """
     try:
         result = (
@@ -199,10 +200,14 @@ def _fetch_and_consume_user_key(db, job_id: str) -> str | None:
         print(f"[{job_id}] review_secrets SELECT failed: {_sanitize_error(str(exc))}")
         return None
 
-    if not result or not getattr(result, "data", None):
+    # Real postgrest `maybe_single()` returns None directly when the row does
+    # not exist; some wrappers return a namespace with .data=None. Handle both.
+    if result is None or not getattr(result, "data", None):
         return None
 
-    key = result.data.get("user_api_key")
+    key = result.data.get("user_api_key") if isinstance(result.data, dict) else None
+    if not key:
+        return None
 
     # Delete the row immediately so the key doesn't linger in the DB. A failure
     # here is non-fatal — the TTL cleanup cron will sweep stragglers.
@@ -217,6 +222,33 @@ def _fetch_and_consume_user_key(db, job_id: str) -> str | None:
     return key
 
 
+def _resolve_user_api_key(db, req: "ReviewRequest", job_id: str) -> str | None:
+    """Resolve the user's OpenRouter key from either source, preferring review_secrets.
+
+    Preferred path: `review_secrets` side-table (one-shot read-and-delete via
+    `_fetch_and_consume_user_key`). The key never rode through Modal's managed
+    queue, which is the point of task 3(a).
+
+    Backward-compat fallback: `req.user_api_key` from the spawn() payload. Still
+    honored so any in-flight job spawned before the frontend was updated keeps
+    working across the rollout window. After the frontend rollout completes, the
+    backward-compat branch is effectively dead and can be removed in a follow-up.
+
+    Returns None if both sources are empty. Caller is responsible for the
+    no-key failure path (it surfaces as a 401 from OpenRouter on the first
+    LLM call and is handled by the existing _classify_api_error logic).
+    """
+    # Preferred path first. Any key found here has already been deleted from
+    # review_secrets by _fetch_and_consume_user_key.
+    fetched = _fetch_and_consume_user_key(db, job_id)
+    cleaned = (fetched or "").strip() or None
+    if cleaned is not None:
+        return cleaned
+
+    # Backward-compat fallback.
+    return (req.user_api_key or "").strip() or None
+
+
 @app.function(
     image=image,
     timeout=7200,
@@ -224,6 +256,13 @@ def _fetch_and_consume_user_key(db, job_id: str) -> str | None:
     # the OpenRouter OCR path fails and we fall through to offline extraction.
     memory=4096,
     max_containers=20,
+    # Explicit retries=0: _resolve_user_api_key consumes the review_secrets row
+    # on first read, so a retry would find an empty row, fall back to an empty
+    # req.user_api_key, and 401 on the first LLM call. If retries are ever
+    # needed here, rework the key-resolution path first (e.g., persist the
+    # resolved key in OPENROUTER_API_KEY and short-circuit re-reads, or move
+    # the DELETE to after-review-success with a longer TTL).
+    retries=0,
     secrets=[
         modal.Secret.from_name("coarse-supabase"),
         modal.Secret.from_name("coarse-webhook"),
@@ -257,19 +296,10 @@ def do_review(req_dict: dict):
     db.table("reviews").update({"status": "running"}).eq("id", job_id).execute()
     print(f"[{job_id}] Status set to running")
 
-    # Resolve the user's OpenRouter key. Preferred path: review_secrets
-    # side-table (new, avoids persisting the key in Modal's spawn() payload).
-    # Backward-compat path: req.user_api_key — still honored for any in-flight
-    # jobs spawned before the frontend was updated to write review_secrets.
-    #
-    # Whitespace-only key is truthy but yields an empty `Bearer ` header →
-    # OpenRouter 401 "Missing Authentication header" cascading through every
-    # LLM call. Strip at both sources.
+    # Resolve the user's OpenRouter key. Both strip/normalization and the
+    # review_secrets-vs-backward-compat precedence live in _resolve_user_api_key.
     original_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip() or None
-    cleaned_user_key = (req.user_api_key or "").strip() or None
-    if cleaned_user_key is None:
-        fetched = _fetch_and_consume_user_key(db, job_id)
-        cleaned_user_key = (fetched or "").strip() or None
+    cleaned_user_key = _resolve_user_api_key(db, req, job_id)
     if cleaned_user_key:
         os.environ["OPENROUTER_API_KEY"] = cleaned_user_key
 

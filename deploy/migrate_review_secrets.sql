@@ -20,7 +20,7 @@
 
 create table if not exists review_secrets (
   review_id uuid primary key references reviews(id) on delete cascade,
-  user_api_key text not null,
+  user_api_key text not null check (length(user_api_key) > 0),
   created_at timestamptz default now()
 );
 
