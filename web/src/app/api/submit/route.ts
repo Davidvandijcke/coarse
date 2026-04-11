@@ -4,6 +4,7 @@ import nodemailer from "nodemailer";
 import { checkRateLimit } from "@/lib/rateLimit";
 
 export const maxDuration = 30;
+const MAX_CONCURRENT_REVIEWS = 20;
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -47,6 +48,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: statusRow.banner_message || "Submissions are temporarily paused. Please try again later or use the CLI: pip install coarse",
+      },
+      { status: 503 },
+    );
+  }
+
+  const { count: activeReviews } = await supabaseAdmin
+    .from("reviews")
+    .select("id", { count: "exact", head: true })
+    .in("status", ["queued", "running"]);
+
+  if ((activeReviews ?? 0) >= MAX_CONCURRENT_REVIEWS) {
+    return NextResponse.json(
+      {
+        error: "We're seeing high traffic right now. Please try again in a few minutes.",
       },
       { status: 503 },
     );
