@@ -9,6 +9,7 @@ from coarse.config import CoarseConfig
 from coarse.pipeline import (
     _renumber_comments,
     _review_section,
+    _section_needs_proof_verify,
     review_paper,
 )
 from coarse.types import (
@@ -97,11 +98,11 @@ def test_review_paper_calls_stages_in_order():
         call_order.append("extract")
         return paper_text
 
-    def fake_analyze(pt, client, math_client=None):
+    def fake_analyze(pt, client):
         call_order.append("structure")
         return structure
 
-    def fake_overview_run(s, calibration=None, literature_context=""):
+    def fake_overview_run(s, calibration=None, literature_context="", author_notes=None):
         call_order.append("overview")
         return overview
 
@@ -114,6 +115,8 @@ def test_review_paper_calls_stages_in_order():
         literature_context="",
         all_sections=None,
         abstract="",
+        document_form="manuscript",
+        author_notes=None,
     ):
         call_order.append(f"section_{section.number}")
         return [_make_comment(section.number)]
@@ -181,6 +184,8 @@ def test_review_paper_skips_references_section():
         literature_context="",
         all_sections=None,
         abstract="",
+        document_form="manuscript",
+        author_notes=None,
     ):
         called_sections.append(section)
         return [_make_comment(section.number)]
@@ -209,6 +214,91 @@ def test_review_paper_skips_references_section():
     section_types = [s.section_type for s in called_sections]
     assert SectionType.REFERENCES not in section_types
     assert len(called_sections) == 2  # intro + conclusion
+
+
+def test_review_paper_forwards_author_notes_to_all_review_agents():
+    """review_paper(author_notes=...) must forward the notes to the overview,
+    section, and editorial agents. This is the glue test that guarantees the
+    author's steering input actually reaches every place that generates
+    user-visible review content."""
+    config = _make_config()
+    structure = _make_structure(
+        sections=[
+            _make_section(1, SectionType.INTRODUCTION),
+            _make_section(2, SectionType.METHODOLOGY),
+        ]
+    )
+    overview = _make_overview()
+
+    captured: dict[str, object] = {}
+
+    def capture_overview(s, calibration=None, literature_context="", author_notes=None):
+        captured["overview_notes"] = author_notes
+        return overview
+
+    def capture_section(
+        section,
+        title,
+        overview=None,
+        calibration=None,
+        focus="general",
+        literature_context="",
+        all_sections=None,
+        abstract="",
+        document_form="manuscript",
+        author_notes=None,
+    ):
+        captured.setdefault("section_notes", []).append(author_notes)  # type: ignore[union-attr]
+        return [_make_comment(section.number)]
+
+    def capture_editorial(
+        paper_text,
+        overview_arg,
+        comments,
+        comment_target=None,
+        title="",
+        abstract="",
+        contribution_context=None,
+        document_form="manuscript",
+        author_notes=None,
+    ):
+        captured["editorial_notes"] = author_notes
+        return comments
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.side_effect = capture_overview
+        MockSection.return_value.run.side_effect = capture_section
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockCompleteness.return_value.run.return_value = []
+        MockEditorial.return_value.run.side_effect = capture_editorial
+
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            author_notes="please focus on the identification strategy",
+        )
+
+    assert captured["overview_notes"] == "please focus on the identification strategy"
+    assert captured["editorial_notes"] == "please focus on the identification strategy"
+    # Both section calls see the same notes.
+    assert captured["section_notes"] == [
+        "please focus on the identification strategy",
+        "please focus on the identification strategy",
+    ]
 
 
 def test_review_paper_date_format():
@@ -363,24 +453,18 @@ def test_review_paper_section_comments_flattened():
 
 
 def test_review_paper_uses_provided_config():
-    """Provided CoarseConfig with custom model is used; load_config() is not called.
-
-    The StageRouter constructs LLMClient instances lazily via
-    ``coarse.routing.LLMClient``, so patch that symbol (not
-    ``coarse.pipeline.LLMClient``) to intercept the per-stage construction.
-    """
+    """Provided CoarseConfig with custom model is used; load_config() is not called."""
     config = CoarseConfig(default_model="anthropic/claude-3-5-haiku-20241022")
     overview = _make_overview()
     captured_models: list[str] = []
 
-    def fake_llm_client(model=None, config=None, **kwargs):
+    def fake_llm_client(model=None, config=None):
         captured_models.append(model)
         mock = MagicMock()
         return mock
 
     with (
         patch("coarse.pipeline.load_config") as mock_load_config,
-        patch("coarse.routing.LLMClient", side_effect=fake_llm_client),
         patch("coarse.pipeline.LLMClient", side_effect=fake_llm_client),
         patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=_make_structure()),
@@ -403,12 +487,10 @@ def test_review_paper_uses_provided_config():
         review_paper("paper.pdf", skip_cost_gate=True, config=config)
 
     mock_load_config.assert_not_called()
-    # With STAGE_MODELS empty in the Phase 0 scaffolding, every stage
-    # resolves to the base model. The router builds one client per
-    # unique resolved model — so the provided default_model should appear
-    # at least once in captured_models (vision QA may also construct its
-    # own client via coarse.pipeline.LLMClient, which we patch the same way).
-    assert "anthropic/claude-3-5-haiku-20241022" in captured_models
+    # LLMClient is called at least once for main model; vision QA may be skipped
+    # if no GEMINI_API_KEY is available (e.g. in CI)
+    assert captured_models[0] == "anthropic/claude-3-5-haiku-20241022"
+    assert len(captured_models) >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -452,10 +534,13 @@ def test_renumber_comments_empty():
 
 
 def test_review_section_chains_verify_for_proof():
-    """_review_section with focus='proof' calls both section agent and verify agent."""
+    """_review_section with focus='proof' + math_content + long text calls both agents."""
     section_agent = MagicMock()
     verify_agent = MagicMock()
-    section = _make_section(1)
+    # _make_section produces text="Content of section 1. " * 40 ≈ 800 chars,
+    # so it passes the proof_verify length threshold. Set math_content=True
+    # because the threshold now requires the LLM-detected flag too.
+    section = _make_section(1).model_copy(update={"math_content": True})
     first_pass = [_make_comment(1)]
     verified = [_make_comment(1), _make_comment(2)]
 
@@ -481,6 +566,7 @@ def test_review_section_chains_verify_for_proof():
         "Paper",
         first_pass,
         abstract="abstract",
+        document_form="manuscript",
     )
     assert result == verified
 
@@ -509,6 +595,102 @@ def test_review_section_skips_verify_for_non_proof():
     section_agent.run.assert_called_once()
     verify_agent.run.assert_not_called()
     assert result == comments
+
+
+# ---------------------------------------------------------------------------
+# _section_needs_proof_verify — threshold gates trivial math sections
+# ---------------------------------------------------------------------------
+
+
+def _math_section(text: str, claims: list[str] | None = None) -> SectionInfo:
+    return SectionInfo(
+        number=1,
+        title="Section 1",
+        text=text,
+        section_type=SectionType.METHODOLOGY,
+        math_content=True,
+        claims=claims or [],
+    )
+
+
+def test_section_needs_proof_verify_requires_math_content_flag():
+    """Without the LLM-set math_content flag, proof_verify never runs even
+    if the section has formal-looking structure — the flag IS the signal."""
+    section = SectionInfo(
+        number=1,
+        title="Section 1",
+        text="x" * 2000,
+        section_type=SectionType.METHODOLOGY,
+        math_content=False,
+    )
+    assert _section_needs_proof_verify(section) is False
+
+
+def test_section_needs_proof_verify_short_section_with_formal_claim():
+    """A short section that contains an extracted formal claim is verified
+    regardless of length. This covers the short-lemma-with-proof case —
+    a 250-char "Lemma 1: X. Proof: Y." paragraph still deserves adversarial
+    verification because the paper explicitly marked it as a formal result.
+    """
+    section = _math_section(
+        text="Lemma 1: Every P is Q. Proof: By induction on n.",
+        claims=["Lemma 1: Every P is Q"],
+    )
+    assert len(section.text) < 500
+    assert _section_needs_proof_verify(section) is True
+
+
+def test_section_needs_proof_verify_long_section_without_claims():
+    """A section with math_content=True but no extracted claims still
+    passes the gate as long as it's long enough to contain meaningful
+    math content (>=500 chars)."""
+    section = _math_section(text="x" * 600)
+    assert _section_needs_proof_verify(section) is True
+
+
+def test_section_needs_proof_verify_short_section_without_claims_skipped():
+    """A math-flagged section that's too short and has no extracted
+    formal claims is skipped. This is the case the threshold is meant to
+    filter: a discussion section with one inline equation in a footnote
+    isn't worth a full proof_verify call."""
+    section = _math_section(text="The value x = 42 is notable.", claims=[])
+    assert len(section.text) < 500
+    assert _section_needs_proof_verify(section) is False
+
+
+def test_review_section_skips_verify_when_threshold_fails():
+    """_review_section with focus='proof' but a short math-flagged section
+    that has no formal claims must NOT call verify_agent — the threshold
+    gate at _section_needs_proof_verify filters it out."""
+    section_agent = MagicMock()
+    verify_agent = MagicMock()
+    # Short section (~30 chars), math_content flagged, no claims → skip
+    section = SectionInfo(
+        number=1,
+        title="Section 1",
+        text="The value x = 42 is notable.",
+        section_type=SectionType.METHODOLOGY,
+        math_content=True,
+    )
+    first_pass = [_make_comment(1)]
+    section_agent.run.return_value = first_pass
+
+    result = _review_section(
+        section_agent,
+        verify_agent,
+        section,
+        "Paper",
+        overview=None,
+        calibration=None,
+        focus="proof",
+        literature_context="",
+        all_sections=[],
+        abstract="abstract",
+    )
+
+    section_agent.run.assert_called_once()
+    verify_agent.run.assert_not_called()
+    assert result == first_pass
 
 
 def test_appendix_filter_includes_long_appendix():

@@ -1,4 +1,5 @@
 """Overview agent — produces macro-level OverviewFeedback from a PaperStructure."""
+
 from __future__ import annotations
 
 import logging
@@ -9,6 +10,8 @@ from coarse.prompts import (
     ASSUMPTION_CHECK_SYSTEM,
     OVERVIEW_SYSTEM,
     assumption_check_user,
+    author_notes_block,
+    document_form_notice,
     overview_paper_context,
     overview_user,
 )
@@ -48,33 +51,65 @@ class OverviewAgent(ReviewAgent):
         structure: PaperStructure,
         calibration: DomainCalibration | None = None,
         literature_context: str = "",
+        author_notes: str | None = None,
     ) -> OverviewFeedback:
         sections_text = _build_sections_text(structure.sections)
 
+        # Append the document-form addendum to the system prompt. Empty string
+        # for manuscripts/preprints so that path is unchanged; a tailored block
+        # for outlines/drafts/proposals/etc. that relaxes the peer-review frame.
+        system_prompt = OVERVIEW_SYSTEM + document_form_notice(structure.document_form)
+
+        # Author steering notes — returns "" when notes is None/empty so the
+        # no-notes path is byte-identical. Prepended to the user message only,
+        # so the cached system block is unchanged.
+        notes_prefix = author_notes_block(author_notes)
+
         if self.client.supports_prompt_caching:
             paper_context = overview_paper_context(
-                structure.title, structure.abstract, sections_text,
-                calibration=calibration, literature_context=literature_context,
+                structure.title,
+                structure.abstract,
+                sections_text,
+                calibration=calibration,
+                literature_context=literature_context,
             )
             messages = [
-                {"role": "system", "content": [
-                    {"type": "text", "text": paper_context,
-                     "cache_control": {"type": "ephemeral"}},
-                    {"type": "text", "text": OVERVIEW_SYSTEM},
-                ]},
-                {"role": "user", "content": overview_user(
-                    structure.title, structure.abstract, sections_text,
-                    cache_mode=True,
-                )},
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": paper_context,
+                            "cache_control": {"type": "ephemeral"},
+                        },
+                        {"type": "text", "text": system_prompt},
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": notes_prefix
+                    + overview_user(
+                        structure.title,
+                        structure.abstract,
+                        sections_text,
+                        cache_mode=True,
+                    ),
+                },
             ]
         else:
             messages = [
-                {"role": "system", "content": OVERVIEW_SYSTEM},
-                {"role": "user", "content": overview_user(
-                    structure.title, structure.abstract,
-                    sections_text, calibration=calibration,
-                    literature_context=literature_context,
-                )},
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": notes_prefix
+                    + overview_user(
+                        structure.title,
+                        structure.abstract,
+                        sections_text,
+                        calibration=calibration,
+                        literature_context=literature_context,
+                    ),
+                },
             ]
 
         return self.client.complete(  # type: ignore[return-value]
@@ -104,16 +139,15 @@ def check_assumptions(
     Returns 0-3 OverviewIssue objects.
     """
     relevant_sections = [
-        s for s in structure.sections
+        s
+        for s in structure.sections
         if s.section_type in _ASSUMPTION_RELEVANT_TYPES and len(s.text) > 50
     ]
     if not relevant_sections:
         return []
 
     # Build condensed text from relevant sections (cap at 500K chars)
-    sections_text = "\n\n".join(
-        f"## {s.number}. {s.title}\n{s.text}" for s in relevant_sections
-    )
+    sections_text = "\n\n".join(f"## {s.number}. {s.title}\n{s.text}" for s in relevant_sections)
     if len(sections_text) > MAX_CONTEXT_CHARS:
         sections_text = sections_text[:MAX_CONTEXT_CHARS] + "\n\n[...truncated]"
 
@@ -129,7 +163,9 @@ def check_assumptions(
 
     try:
         result = client.complete(
-            messages, OverviewFeedback, max_tokens=2048,
+            messages,
+            OverviewFeedback,
+            max_tokens=2048,
             temperature=_OVERVIEW_TEMPERATURE,
         )
         return list(result.issues)

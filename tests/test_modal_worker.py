@@ -139,6 +139,156 @@ def test_sanitize_error_scrubs_anthropic_key(modal_worker) -> None:
     assert "Anthropic 401" in cleaned
 
 
+# ---------------------------------------------------------------------------
+# _sanitize_error — instructor retry envelope (#55)
+# ---------------------------------------------------------------------------
+
+
+def test_sanitize_error_extracts_instructor_exception_block(modal_worker) -> None:
+    """Instructor wraps retry failures in <last_exception><failed_attempts>...
+    The old last-non-empty-line heuristic picked up the bare closing tag, so
+    every instructor retry failure was stored in Supabase as the single
+    string '</last_exception>'. The fix extracts the first <exception>
+    payload instead.
+    """
+    raw = (
+        "<last_exception>\n"
+        "<failed_attempts>\n"
+        '<generation number="1">\n'
+        "<exception>\n"
+        "    The output is incomplete due to a max_tokens length limit.\n"
+        "</exception>\n"
+        "<completion>\n"
+        "    ModelResponse(id='gen-xxx', finish_reason='length', ...)\n"
+        "</completion>\n"
+        "</generation>\n"
+        "</failed_attempts>\n"
+        "</last_exception>"
+    )
+    cleaned = modal_worker._sanitize_error(raw)
+    assert "max_tokens" in cleaned
+    assert "incomplete" in cleaned
+    # The outer closing tag must NOT be what we kept
+    assert cleaned.strip() != "</last_exception>"
+    assert not cleaned.startswith("</")
+
+
+def test_sanitize_error_closing_tag_only_fallback(modal_worker) -> None:
+    """If someone hands us a message whose last line is a bare closing XML tag
+    and there is no <exception> block to extract, fall back to the whole
+    message rather than keeping just '</last_exception>'.
+    """
+    raw = "something went wrong upstream\n</last_exception>"
+    cleaned = modal_worker._sanitize_error(raw)
+    assert cleaned.strip() != "</last_exception>"
+    assert "something went wrong upstream" in cleaned
+
+
+def test_sanitize_error_single_line_unchanged(modal_worker) -> None:
+    """A plain single-line error message must pass through unchanged (modulo
+    secret scrubbing)."""
+    raw = "RateLimitError: too many requests"
+    cleaned = modal_worker._sanitize_error(raw)
+    assert cleaned == "RateLimitError: too many requests"
+
+
+def test_sanitize_error_multiline_traceback_still_takes_last_line(
+    modal_worker,
+) -> None:
+    """Classic Python tracebacks (no instructor envelope) still collapse to
+    their final exception line, which is the most useful one."""
+    raw = (
+        "Traceback (most recent call last):\n"
+        '  File "foo.py", line 1, in <module>\n'
+        "    bar()\n"
+        "ValueError: something specific"
+    )
+    cleaned = modal_worker._sanitize_error(raw)
+    assert cleaned == "ValueError: something specific"
+
+
+def test_sanitize_error_instructor_envelope_keeps_secret_scrubbing(
+    modal_worker,
+) -> None:
+    """Extracting the <exception> block must still run the secret scrubbers on
+    the extracted text — a user's key pasted into a retry envelope must not
+    leak through."""
+    # security: ignore — synthetic fake key for the scanner regression test
+    fake_key = "sk-or-v1-abcdefghijklmnopqrstuvwxyz0123"
+    raw = (
+        "<last_exception><failed_attempts>"
+        f"<exception>bad request for {fake_key}</exception>"
+        "</failed_attempts></last_exception>"
+    )
+    cleaned = modal_worker._sanitize_error(raw)
+    assert "sk-or-v1-abcdef" not in cleaned
+    assert "[key]" in cleaned
+
+
+# ---------------------------------------------------------------------------
+# _strip_nul_bytes — Postgres 22P05 defense (#62)
+# ---------------------------------------------------------------------------
+
+
+def test_strip_nul_bytes_removes_real_nul(modal_worker) -> None:
+    assert modal_worker._strip_nul_bytes("before\x00after") == "beforeafter"
+
+
+def test_strip_nul_bytes_removes_json_escape(modal_worker) -> None:
+    assert modal_worker._strip_nul_bytes("before\\u0000after") == "beforeafter"
+
+
+def test_strip_nul_bytes_safe_on_none(modal_worker) -> None:
+    assert modal_worker._strip_nul_bytes(None) is None
+
+
+def test_strip_nul_bytes_safe_on_empty(modal_worker) -> None:
+    assert modal_worker._strip_nul_bytes("") == ""
+
+
+def test_strip_nul_bytes_leaves_normal_text_alone(modal_worker) -> None:
+    text = "Regular paper content with math $x^2 + y^2 = z^2$ and newlines\n."
+    assert modal_worker._strip_nul_bytes(text) == text
+
+
+# ---------------------------------------------------------------------------
+# ReviewRequest.author_notes plumbing (#54)
+# ---------------------------------------------------------------------------
+
+
+def test_review_request_accepts_author_notes(modal_worker) -> None:
+    """ReviewRequest deserializes an optional author_notes string from the
+    webhook payload so the field can flow through to review_paper()."""
+    req = modal_worker.ReviewRequest(
+        job_id="j1",
+        pdf_storage_path="abcd.pdf",
+        author_notes="focus on method section",
+    )
+    assert req.author_notes == "focus on method section"
+
+
+def test_review_request_author_notes_defaults_to_none(modal_worker) -> None:
+    """Older in-flight spawn() payloads (and web submits without notes)
+    still deserialize cleanly — author_notes defaults to None so no
+    backward-compat break."""
+    req = modal_worker.ReviewRequest(job_id="j1", pdf_storage_path="abcd.pdf")
+    assert req.author_notes is None
+
+
+def test_strip_nul_bytes_applies_to_author_notes(modal_worker) -> None:
+    """author_notes with NUL bytes must be scrubbed before reaching the LLM.
+    Defense against the same failure mode that Supabase 22P05 triggers — some
+    LLM providers reject NUL in content strings, and do so in a way that
+    surfaces as an opaque 'review failed' at the end of the pipeline.
+    author_notes is never persisted, but it IS passed to the prompt builder,
+    so the strip must run here."""
+    raw = "focus on section 3\x00 and also section 4"
+    scrubbed = modal_worker._strip_nul_bytes(raw)
+    assert "\x00" not in scrubbed
+    assert "focus on section 3" in scrubbed
+    assert "section 4" in scrubbed
+
+
 def _make_req(job_id: str = "j1"):
     return types.SimpleNamespace(job_id=job_id, model_dump=lambda: {"job_id": job_id})
 

@@ -164,6 +164,7 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("anthropic/claude-opus-4.6");
+  const [authorNotes, setAuthorNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lookupKey, setLookupKey] = useState("");
@@ -173,6 +174,7 @@ export default function Home() {
   const oauthConsumedRef = useRef(false);
   const [systemStatus, setSystemStatus] = useState<{
     accepting: boolean; banner: string | null; activeReviews: number; capacity: number;
+    emailCapacityReached?: boolean;
   } | null>(null);
 
   // Fetch system capacity status on mount
@@ -284,7 +286,8 @@ export default function Home() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file || !email || !apiKey) return;
+    if (!file || !apiKey) return;
+    if (!email && !(systemStatus?.emailCapacityReached === true)) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -323,6 +326,7 @@ export default function Home() {
           api_key: apiKey,
           model,
           storage_path: storagePath,
+          author_notes: authorNotes || undefined,
         }),
       });
       if (!submitResp.ok) {
@@ -337,7 +341,9 @@ export default function Home() {
   }
 
   const accepting = systemStatus?.accepting !== false;
-  const canSubmit = !!file && !!email && !!apiKey && !submitting && accepting;
+  const emailDisabled = systemStatus?.emailCapacityReached === true;
+  const canSubmit =
+    !!file && !!apiKey && !submitting && accepting && (emailDisabled || !!email);
 
   return (
     <div style={{ background: "var(--board)", minHeight: "100vh" }}>
@@ -660,22 +666,26 @@ export default function Home() {
                 <FieldLabel>Email</FieldLabel>
                 <input
                   type="email"
-                  required
-                  value={email}
+                  required={!emailDisabled}
+                  disabled={emailDisabled}
+                  value={emailDisabled ? "" : email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@university.edu"
+                  placeholder={emailDisabled ? "— unavailable —" : "you@university.edu"}
                   aria-label="Email address"
                   className="field-line"
+                  style={emailDisabled ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
                 />
                 <p
                   style={{
                     fontFamily: "var(--font-chalk)",
                     fontSize: "1.1rem",
-                    color: "var(--dust)",
+                    color: emailDisabled ? "var(--red-chalk)" : "var(--dust)",
                     marginTop: "0.4rem",
                   }}
                 >
-                  We&apos;ll email you when it&apos;s done.
+                  {emailDisabled
+                    ? "Daily email cap hit — save your review key to retrieve it."
+                    : <>We&apos;ll email you when it&apos;s done.</>}
                 </p>
               </div>
 
@@ -744,6 +754,49 @@ export default function Home() {
 
             {/* Model picker */}
             <ModelPicker value={model} onChange={setModel} />
+
+            {/* Optional author notes — steer the review */}
+            <div>
+              <FieldLabel>
+                Notes for the reviewer{" "}
+                <span style={{ color: "var(--dust)", fontSize: "0.85em" }}>(optional)</span>
+              </FieldLabel>
+              <textarea
+                value={authorNotes}
+                onChange={(e) => setAuthorNotes(e.target.value.slice(0, 2000))}
+                placeholder="e.g. please focus on the identification strategy in §3 — the data section is still a placeholder."
+                rows={3}
+                maxLength={2000}
+                aria-label="Optional notes to steer the reviewer"
+                className="field-line"
+                style={{
+                  width: "100%",
+                  resize: "vertical",
+                  fontFamily: "Georgia, serif",
+                  fontSize: "1rem",
+                  lineHeight: 1.5,
+                  padding: "0.6rem 0.75rem",
+                  background: "var(--board-surface)",
+                  color: "var(--chalk)",
+                  border: "1px solid var(--tray)",
+                  borderRadius: "2px",
+                  boxSizing: "border-box",
+                }}
+              />
+              <p
+                style={{
+                  fontFamily: "var(--font-chalk)",
+                  fontSize: "1rem",
+                  color: "var(--dust)",
+                  marginTop: "0.35rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>Steer what the reviewer focuses on. Does not override the rubric.</span>
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>{authorNotes.length}/2000</span>
+              </p>
+            </div>
 
             {/* Cost estimate */}
             {file && (

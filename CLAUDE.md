@@ -56,7 +56,6 @@ src/coarse/
 ├── prompts.py               # All prompt templates
 ├── types.py                 # Pydantic models
 ├── pipeline.py              # review_paper() orchestrator
-├── routing.py               # StageRouter — per-stage LLM client resolver (cheap-tier glm-5.1 fallback)
 ├── synthesis.py             # Review → markdown string
 ├── quality.py               # Quality eval against reference (dev only)
 ├── recall.py                # Recall eval vs. ground-truth expert reviews (dev only)
@@ -230,21 +229,6 @@ Current models (verified 2026-04-10):
 - **Quality Eval**: `gemini/gemini-3-flash-preview` — dev-only quality evaluation (single-judge or panel)
 - **Cheap (OpenAI)**: `openai/gpt-5.1-codex-mini` ($0.25/2.00)
 - **Cheap (Anthropic)**: `anthropic/claude-haiku-4.5` ($1.00/5.00)
-- **Cheap Stage Tier**: `z-ai/glm-5.1` ($1.40/4.40) — pinned to 4 classification stages (`metadata`, `math_detection`, `contribution_extraction`, `calibration`) via `STAGE_MODELS` in `models.py`. US-HQ providers only (`CHEAP_STAGE_PROVIDERS = ("DeepInfra", "Parasail", "Fireworks")`). Falls back to `moonshotai/kimi-k2.5` on failure via `LLMClient.fallback_client`.
-
-### Per-stage routing (`STAGE_MODELS` / `--stage-override`)
-
-When a user passes `--model anthropic/claude-opus-4.6` (or any expensive SOTA model), the trivial classification stages don't need opus rates. `src/coarse/routing.py::StageRouter` resolves one LLMClient per stage with this precedence:
-
-1. CLI `--stage-override name=model` (repeatable)
-2. `models.py::STAGE_MODELS` default map (cheap-tier defaults)
-3. The user's `--model` or `config.default_model` (base)
-
-Rules:
-- **Values in `STAGE_MODELS` must be imported constants**, not string literals. `test_routing.py::test_stage_models_values_are_module_constants` catches typos by `id()` identity.
-- **Stage names must come from `routing.py::STAGE_NAMES`.** `StageRouter` raises on unknown names at construction. Adding a stage to pipeline.py also requires adding it to `STAGE_NAMES`.
-- **Extraction QA and literature search are NOT routed through the router today** — both have bespoke model defaults (`config.vision_model` / `LITERATURE_SEARCH_MODEL`) handled in their own modules. `--stage-override extraction_qa=...` is currently a no-op.
-
 **Hard rules:**
 - NEVER write a model ID string literal outside `models.py`. Import the constant.
 - Tests that reference models must `from coarse.models import ...`, not hardcode strings.

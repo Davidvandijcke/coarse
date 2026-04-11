@@ -107,29 +107,15 @@ def _extract_claims_and_definitions(text: str) -> tuple[list[str], list[str]]:
     return claims, definitions
 
 
-def analyze_structure(
-    paper_text: PaperText,
-    client: LLMClient,
-    math_client: LLMClient | None = None,
-) -> PaperStructure:
+def analyze_structure(paper_text: PaperText, client: LLMClient) -> PaperStructure:
     """Extract paper structure by parsing markdown headings + cheap LLM metadata call.
 
     1. Parse headings from Docling markdown to build sections
     2. Extract title from first heading
     3. Extract abstract from first ABSTRACT section or first paragraph
-    4. Get domain/taxonomy via cheap text-LLM call on ``client``
-    5. Detect math sections via cheap LLM call on ``math_client``
-       (defaults to ``client`` when not provided)
-
-    ``client`` and ``math_client`` may be the same instance (pre-stage-
-    routing behavior) or distinct (when the pipeline routes the
-    ``metadata`` and ``math_detection`` stages through different models
-    via ``StageRouter``). They're kept as separate parameters so each
-    stage can be overridden independently via ``--stage-override``.
+    4. Get domain/taxonomy via cheap text-LLM call
+    5. Detect math sections via cheap LLM call
     """
-    if math_client is None:
-        math_client = client
-
     sections = _parse_sections_from_markdown(paper_text.full_markdown)
     heuristic_title = _extract_title(paper_text.full_markdown)
     abstract = _extract_abstract(sections, paper_text.full_markdown)
@@ -140,8 +126,23 @@ def analyze_structure(
 
     title = metadata.title or heuristic_title
 
+    # Heuristic override for the worst mis-classification direction.
+    # If the LLM labelled this as outline/notes/other but the document
+    # actually has substantial prose, the LLM was almost certainly wrong —
+    # overriding to "draft" gives the reviewer a softer frame without
+    # skipping the content. The reverse direction (manuscript labelled
+    # as outline) is the one that silently degrades real peer reviews
+    # into 2-3 soft comments, so we defend against it explicitly.
+    if metadata.document_form in _FORMS_WORTH_RECHECKING and _looks_prose_heavy(sections):
+        logger.info(
+            "Overriding LLM document_form=%s -> draft: document has "
+            "substantial prose (heuristic prose/heading check)",
+            metadata.document_form,
+        )
+        metadata = metadata.model_copy(update={"document_form": "draft"})
+
     # LLM-based math section detection
-    sections = _detect_math_sections(sections, math_client)
+    sections = _detect_math_sections(sections, client)
 
     return PaperStructure(
         title=title,
@@ -149,7 +150,51 @@ def analyze_structure(
         taxonomy=metadata.taxonomy,
         abstract=abstract,
         sections=sections,
+        document_form=metadata.document_form,
     )
+
+
+# Document forms where a misclassification would silently downgrade a real
+# peer review (completeness gets skipped, overview/section/editorial all get
+# a "do not critique missing content" notice). If the heuristic in
+# `_looks_prose_heavy` contradicts the LLM's label here, override to "draft"
+# so the content still gets reviewed with a softened frame rather than
+# skipped outright.
+_FORMS_WORTH_RECHECKING = frozenset({"outline", "notes", "other"})
+
+# Average non-bullet prose characters per section above which a document is
+# considered "prose-heavy" (~40-50 words/section). Outlines typically run
+# well below this — bullets and heading lines contribute zero. Tuned from
+# real outlines vs real manuscripts; raise if false positives appear.
+_PROSE_HEAVY_THRESHOLD_CHARS = 300
+
+
+def _looks_prose_heavy(sections: list[SectionInfo]) -> bool:
+    """Return True if the parsed sections contain substantial non-bullet prose.
+
+    Counts the characters on each non-empty line that is NOT a markdown
+    bullet (``- ``, ``* ``, ``•``) or a markdown heading (``#``). Averages
+    across sections. Returns True when that average exceeds
+    ``_PROSE_HEAVY_THRESHOLD_CHARS``.
+
+    Purpose: defend against LLM mis-classification of a completed manuscript
+    as ``outline``/``notes``/``other``. The manuscript→outline direction is
+    much worse than outline→manuscript: the former silently degrades a real
+    peer review (5/8 critiques get softened, completeness skips entirely);
+    the latter just runs strict review on a document that can absorb it.
+    """
+    if not sections:
+        return False
+    total_prose = 0
+    for s in sections:
+        for line in s.text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped[0] in ("-", "*", "•", "#"):
+                continue
+            total_prose += len(stripped)
+    return total_prose / len(sections) > _PROSE_HEAVY_THRESHOLD_CHARS
 
 
 def _parse_sections_from_markdown(markdown: str) -> list[SectionInfo]:
@@ -278,13 +323,29 @@ def _get_metadata(
         {"role": "user", "content": metadata_user(first_page, abstract[:1000], headings_str)},
     ]
     try:
-        return client.complete(messages, PaperMetadata, max_tokens=256, temperature=0.1)
+        # 512 leaves headroom for a long title + subtitle plus the other
+        # four fields under instructor's JSON envelope. 384 was tight when
+        # ML/bio titles run 200+ chars before domain/taxonomy/document_form
+        # land; hitting finish_reason=length here drops us into the fallback
+        # and silently loses the classification.
+        return client.complete(messages, PaperMetadata, max_tokens=512, temperature=0.1)
     except Exception:
-        logger.warning("Metadata extraction failed, using defaults")
+        # Fall back to "draft", NOT "manuscript". The whole point of this
+        # feature is that strict peer-review on non-manuscripts produces
+        # "reject - not a manuscript" noise (the April 11 incident). A
+        # metadata-extraction failure is exactly the case where we don't
+        # know what we have, and the punitive default recreates the harm
+        # the feature is supposed to prevent. "draft" still reviews the
+        # written prose but suppresses the "write the manuscript" genre.
+        logger.warning(
+            "Metadata extraction failed, using defaults (document_form=draft)",
+            exc_info=True,
+        )
         return PaperMetadata(
             title="",
             domain="unknown",
             taxonomy="academic/research_paper",
+            document_form="draft",
         )
 
 

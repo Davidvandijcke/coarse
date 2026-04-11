@@ -30,12 +30,12 @@ from coarse.prompts import (
     contribution_extraction_user,
 )
 from coarse.quote_verify import verify_quotes
-from coarse.routing import StageRouter
 from coarse.structure import analyze_structure
 from coarse.synthesis import render_review
 from coarse.types import (
     ContributionContext,
     DetailedComment,
+    DocumentForm,
     DomainCalibration,
     ExtractionError,
     OverviewFeedback,
@@ -83,6 +83,39 @@ def _verify_with_fallback(
 
 _MIN_APPENDIX_CHARS = 500  # skip appendix sections shorter than this
 
+# Minimum text length for proof_verify to run on a math-flagged section.
+# proof_verify chains an adversarial re-derivation pass after the section
+# agent and costs one full-budget LLM call (~$0.30 on sonnet-4.6,
+# proportionally more on reasoning models). Running it on a section that's
+# just one inline equation in a footnote isn't worth that cost — there's
+# nothing to adversarially verify in 150 chars of text. This threshold is
+# set deliberately LOW so short lemmas with their proofs aren't missed
+# (typical lemma-with-short-proof paragraphs run 300-800 chars), and
+# sections that have ANY extracted formal claim (`section.claims` non-
+# empty) bypass the length check entirely — we always verify real formal
+# statements regardless of how short the section is.
+_MIN_PROOF_VERIFY_SECTION_CHARS = 500
+
+
+def _section_needs_proof_verify(section: SectionInfo) -> bool:
+    """Return True iff proof_verify should chain after the section agent.
+
+    Requires the LLM-set ``math_content`` flag AND one of:
+    - at least one extracted formal claim (Theorem/Lemma/etc), OR
+    - section text length >= ``_MIN_PROOF_VERIFY_SECTION_CHARS``.
+
+    The claims-non-empty bypass is important: a short formal lemma with
+    a one-line proof might have only 250 characters of text but still
+    deserves verification because the paper explicitly called it out
+    as a formal result. The length threshold filters the opposite case:
+    a discussion section that happened to have one inline equation.
+    """
+    if not section.math_content:
+        return False
+    if section.claims:
+        return True
+    return len(section.text) >= _MIN_PROOF_VERIFY_SECTION_CHARS
+
 
 def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]:
     """Renumber comments sequentially 1..N."""
@@ -119,6 +152,9 @@ def _review_section(
     literature_context: str,
     all_sections: list[SectionInfo],
     abstract: str,
+    *,
+    document_form: DocumentForm = "manuscript",
+    author_notes: str | None = None,
 ) -> list[DetailedComment]:
     """Review a section; chain with adversarial verification for proof sections."""
     comments = section_agent.run(
@@ -130,13 +166,16 @@ def _review_section(
         literature_context,
         all_sections=all_sections,
         abstract=abstract,
+        document_form=document_form,
+        author_notes=author_notes,
     )
-    if focus == "proof" and comments:
+    if focus == "proof" and comments and _section_needs_proof_verify(section):
         comments = verify_agent.run(
             section,
             paper_title,
             comments,
             abstract=abstract,
+            document_form=document_form,
         )
     return comments
 
@@ -209,12 +248,28 @@ def review_paper(
     model: str | None = None,
     skip_cost_gate: bool = False,
     config: CoarseConfig | None = None,
-    stage_overrides: dict[str, str] | None = None,
+    author_notes: str | None = None,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
     Accepts any supported file format (PDF, TXT, MD, DOCX, TEX, HTML, EPUB).
     The ``pdf_path`` parameter name is kept for backwards compatibility.
+
+    Args:
+        pdf_path: Path to the paper file.
+        model: Optional model ID override (defaults to config.default_model).
+        skip_cost_gate: If True, skip the interactive cost approval prompt
+            (used by the Modal worker).
+        config: Optional CoarseConfig; loaded from disk when None.
+        author_notes: Optional short note from the author attached to the
+            submission to steer the review (e.g. "please focus on the
+            identification strategy, the data section is stable"). When
+            provided, it is wrapped in an ``<author_notes>`` fence and
+            forwarded to the overview, section, and editorial agents. The
+            notes are treated as steering input, not as instructions that
+            override the review rubric. Trimmed/truncated to 2000 chars by
+            ``author_notes_block`` in prompts.py. ``None`` or an empty/
+            whitespace-only string is a byte-identical no-op.
 
     Pipeline order:
     1. Extract file → PaperText (format-specific extraction)
@@ -225,16 +280,6 @@ def review_paper(
     6. Cross-reference + quote verification + critique + quote re-verification
     7. Synthesis → markdown
 
-    Args:
-        pdf_path: Input file path.
-        model: Optional explicit base model override (``--model`` CLI flag).
-        skip_cost_gate: Skip the interactive cost-confirmation prompt.
-        config: Pre-loaded config, else loaded from ``~/.coarse/config.toml``.
-        stage_overrides: Optional per-stage model overrides, merged on top
-            of the default ``STAGE_MODELS`` map. Keys must be valid stage
-            names from ``coarse.routing.STAGE_NAMES``. Used by the CLI's
-            ``--stage-override`` flag and by tests.
-
     Returns:
         (Review, markdown_string, paper_text)
     """
@@ -242,16 +287,7 @@ def review_paper(
         config = load_config()
 
     resolved_model = model or config.default_model
-
-    # The router resolves per-stage LLM clients. StageRouter.__init__ merges
-    # its own STAGE_MODELS defaults (see models.py) with the caller-supplied
-    # stage_overrides, so we forward stage_overrides as-is. Stages not listed
-    # in either fall back to resolved_model (the user's --model or config).
-    router = StageRouter(
-        base_model=resolved_model,
-        overrides=stage_overrides,
-        config=config,
-    )
+    client = LLMClient(model=resolved_model, config=config)
 
     paper_text = extract_file(pdf_path)
 
@@ -292,22 +328,11 @@ def review_paper(
             paper_text = corrected
 
     if not skip_cost_gate:
-        # Pass resolved_model + stage_overrides so the cost quote reflects
-        # both the user's --model flag and any per-stage --stage-override
-        # overrides, matching what the router will actually execute.
-        run_cost_gate(
-            paper_text,
-            config,
-            is_pdf=is_pdf,
-            model=resolved_model,
-            stage_overrides=stage_overrides,
-        )
+        # Pass resolved_model so a `--model` CLI override is reflected in
+        # the quote, not just in the downstream LLMClient.
+        run_cost_gate(paper_text, config, is_pdf=is_pdf, model=resolved_model)
 
-    structure = analyze_structure(
-        paper_text,
-        router.client_for("metadata"),
-        math_client=router.client_for("math_detection"),
-    )
+    structure = analyze_structure(paper_text, client)
     if not _check_extraction_quality(structure):
         raise ExtractionError(
             "Extraction failed: no sections found in markdown. "
@@ -316,29 +341,9 @@ def review_paper(
 
     # Domain calibration + literature search + contribution extraction (parallel, all cheap)
     with ThreadPoolExecutor(max_workers=3) as executor:
-        cal_future = executor.submit(
-            calibrate_domain,
-            structure,
-            router.client_for("calibration"),
-        )
-        lit_future = executor.submit(
-            search_literature,
-            structure.title,
-            structure.abstract,
-            # Literature search is intentionally NOT stage-routed. It uses
-            # the base model (user's --model or config default), matching
-            # what cost.py quotes for the literature stage. Passing any
-            # stage-routed client (e.g. router.client_for("overview"))
-            # would silently run the arXiv fallback on the SOTA model
-            # regardless of --stage-override choices and de-sync from the
-            # cost quote. See routing.py:16 for the documented contract.
-            router.base_client,
-        )
-        contrib_future = executor.submit(
-            extract_contribution,
-            structure,
-            router.client_for("contribution_extraction"),
-        )
+        cal_future = executor.submit(calibrate_domain, structure, client)
+        lit_future = executor.submit(search_literature, structure.title, structure.abstract, client)
+        contrib_future = executor.submit(extract_contribution, structure, client)
 
         calibration = cal_future.result(timeout=900)
         try:
@@ -348,9 +353,9 @@ def review_paper(
             literature_context = ""
         contribution_context = contrib_future.result(timeout=900)
 
-    overview_agent = OverviewAgent(router.client_for("overview"))
-    section_agent = SectionAgent(router.client_for("section"))
-    editorial_agent = EditorialAgent(router.client_for("editorial"))
+    overview_agent = OverviewAgent(client)
+    section_agent = SectionAgent(client)
+    editorial_agent = EditorialAgent(client)
 
     reviewable_sections = [
         s
@@ -361,10 +366,12 @@ def review_paper(
     non_ref_sections = reviewable_sections[:25]
 
     # --- Phase 1: Overview (single-pass, full paper text) ---
-    overview = overview_agent.run(structure, calibration, literature_context)
+    overview = overview_agent.run(
+        structure, calibration, literature_context, author_notes=author_notes
+    )
 
     # --- Phase 1b: Completeness assessment (runs after overview, before sections) ---
-    completeness_agent = CompletenessAgent(router.client_for("completeness"))
+    completeness_agent = CompletenessAgent(client)
     try:
         completeness_issues = completeness_agent.run(
             structure,
@@ -377,7 +384,7 @@ def review_paper(
         logger.warning("Completeness agent failed, skipping", exc_info=True)
 
     # --- Phase 2: Section agents (parallel, with verification for proof sections) ---
-    verify_agent = ProofVerifyAgent(router.client_for("verify"))
+    verify_agent = ProofVerifyAgent(client)
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         section_futures = []
@@ -404,6 +411,8 @@ def review_paper(
                     sec_lit,
                     structure.sections,
                     sec_abstract,
+                    document_form=structure.document_form,
+                    author_notes=author_notes,
                 )
             )
 
@@ -429,7 +438,7 @@ def review_paper(
     discussion_sections = [s for s in structure.sections if s.section_type in _DISCUSSION_TYPES]
 
     if results_sections and discussion_sections:
-        cross_section_agent = CrossSectionAgent(router.client_for("cross_section"))
+        cross_section_agent = CrossSectionAgent(client)
         main_results = results_sections[0]
         cross_section_futures = []
         with ThreadPoolExecutor(max_workers=3) as executor:
@@ -441,6 +450,7 @@ def review_paper(
                         main_results,
                         disc_sec,
                         abstract=structure.abstract,
+                        document_form=structure.document_form,
                     )
                 )
             for future in cross_section_futures:
@@ -460,14 +470,14 @@ def review_paper(
             title=structure.title,
             abstract=structure.abstract,
             contribution_context=contribution_context,
+            document_form=structure.document_form,
+            author_notes=author_notes,
         )
     except Exception:
-        # Fallback: use legacy crossref → critique pipeline if editorial agent fails.
-        # Route both legacy agents through the "editorial" stage slot since
-        # they occupy the same functional position in the pipeline.
+        # Fallback: use legacy crossref → critique pipeline if editorial agent fails
         logger.warning("Editorial agent failed, falling back to crossref+critique", exc_info=True)
-        crossref_agent = CrossrefAgent(router.client_for("editorial"))
-        critique_agent = CritiqueAgent(router.client_for("editorial"))
+        crossref_agent = CrossrefAgent(client)
+        critique_agent = CritiqueAgent(client)
         try:
             filtered_comments = crossref_agent.run(
                 overview,

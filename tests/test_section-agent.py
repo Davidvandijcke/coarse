@@ -1,5 +1,8 @@
 """Tests for agents/section.py — SectionAgent."""
+
 from unittest.mock import MagicMock
+
+import pytest
 
 from coarse.agents.section import SectionAgent, _SectionComments
 from coarse.llm import LLMClient
@@ -151,3 +154,134 @@ def test_section_agent_prompt_caching():
     # User message is still a plain string
     user_msg = [m for m in messages if m["role"] == "user"][0]
     assert isinstance(user_msg["content"], str)
+
+
+# ---------------------------------------------------------------------------
+# document_form branching
+# ---------------------------------------------------------------------------
+
+
+def test_section_agent_manuscript_system_prompt_unchanged():
+    """For document_form='manuscript' (the default), the system prompt must
+    be the raw SECTION_SYSTEM for 'general' focus — byte-identical to the
+    pre-document-form path so we don't regress quality on full papers."""
+    from coarse.prompts import SECTION_SYSTEM
+
+    client = _make_client()
+    client.complete.return_value = _SectionComments(comments=[_make_comment(1)])
+    agent = SectionAgent(client)
+
+    agent.run(_make_section(), "Title")
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert system_content == SECTION_SYSTEM
+
+
+def test_section_agent_outline_gets_form_notice_appended():
+    """Outline form must produce a system prompt that starts with the base
+    SECTION_SYSTEM and then appends the OUTLINE notice."""
+    from coarse.prompts import SECTION_SYSTEM
+
+    client = _make_client()
+    client.complete.return_value = _SectionComments(comments=[_make_comment(1)])
+    agent = SectionAgent(client)
+
+    agent.run(_make_section(), "Title", document_form="outline")
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert system_content.startswith(SECTION_SYSTEM)
+    assert "DOCUMENT FORM: OUTLINE" in system_content
+
+
+def test_section_agent_outline_notice_also_applied_to_proof_focus():
+    """Focus-specific system prompts (proof, methodology, discussion, literature)
+    must also get the form notice appended — not just the 'general' fallback."""
+    from coarse.prompts import SECTION_PROOF_SYSTEM
+
+    client = _make_client()
+    client.complete.return_value = _SectionComments(comments=[_make_comment(1)])
+    agent = SectionAgent(client)
+
+    agent.run(_make_section(), "Title", focus="proof", document_form="outline")
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert system_content.startswith(SECTION_PROOF_SYSTEM)
+    assert "DOCUMENT FORM: OUTLINE" in system_content
+
+
+@pytest.mark.parametrize("focus", ["general", "proof", "methodology", "discussion", "literature"])
+def test_section_agent_form_notice_applies_to_every_focus(focus):
+    """The form notice must be appended regardless of which focus-specific
+    system prompt the agent picks up from SECTION_SYSTEM_MAP. A regression
+    where the notice is appended before the .get() lookup would break for
+    non-default focuses — this test pins the order.
+    """
+    from coarse.prompts import SECTION_SYSTEM, SECTION_SYSTEM_MAP
+
+    client = _make_client()
+    client.complete.return_value = _SectionComments(comments=[_make_comment(1)])
+    agent = SectionAgent(client)
+
+    agent.run(_make_section(), "Title", focus=focus, document_form="outline")
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    base = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
+    assert system_content.startswith(base), (
+        f"focus={focus}: system prompt should start with {base[:40]!r}"
+    )
+    assert "DOCUMENT FORM: OUTLINE" in system_content, f"focus={focus}: outline notice missing"
+
+
+# ---------------------------------------------------------------------------
+# Author steering notes (#54)
+# ---------------------------------------------------------------------------
+
+
+def test_section_no_author_notes_user_message_unchanged():
+    """None / omitted / whitespace-only author_notes must produce byte-identical
+    user content to the pre-feature behavior."""
+    client = _make_client()
+    client.complete.return_value = _make_section_comments(1)
+    agent = SectionAgent(client)
+
+    agent.run(_make_section(), "Paper")
+    user_plain = client.complete.call_args[0][0][1]["content"]
+
+    client.complete.reset_mock()
+    agent.run(_make_section(), "Paper", author_notes=None)
+    user_none = client.complete.call_args[0][0][1]["content"]
+
+    client.complete.reset_mock()
+    agent.run(_make_section(), "Paper", author_notes="   ")
+    user_empty = client.complete.call_args[0][0][1]["content"]
+
+    assert user_plain == user_none == user_empty
+
+
+def test_section_author_notes_prepend_to_user_message():
+    """Non-empty author_notes wrapped and prepended to the section user message."""
+    client = _make_client()
+    client.complete.return_value = _make_section_comments(1)
+    agent = SectionAgent(client)
+
+    agent.run(
+        _make_section(),
+        "Paper",
+        author_notes="please verify the regression specification carefully",
+    )
+
+    messages = client.complete.call_args[0][0]
+    system_content = messages[0]["content"]
+    user_content = messages[1]["content"]
+
+    # The notes TEXT must not leak into the cached system prompt. The
+    # string "author_notes" itself does appear there (content-boundary
+    # notice lists the fence tag by name) so we test for the content.
+    assert "please verify the regression specification carefully" not in system_content
+
+    assert "<author_notes>" in user_content
+    assert "please verify the regression specification carefully" in user_content

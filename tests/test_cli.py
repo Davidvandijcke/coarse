@@ -38,13 +38,7 @@ def _make_review() -> Review:
     )
 
 
-def _fake_review_paper(
-    pdf_path,
-    model=None,
-    skip_cost_gate=False,
-    config=None,
-    stage_overrides=None,
-):
+def _fake_review_paper(pdf_path, model=None, skip_cost_gate=False, config=None):
     from coarse.types import PaperText
 
     return _make_review(), "# Test Paper\n", PaperText(full_markdown="", token_estimate=0)
@@ -68,70 +62,6 @@ def test_review_command_invokes_pipeline(tmp_path):
         result = runner.invoke(app, ["review", str(pdf), "--yes"])
 
     assert result.exit_code == 0, result.output
-
-
-# ---------------------------------------------------------------------------
-# test_review_command_stage_override_parses_and_threads
-# ---------------------------------------------------------------------------
-
-
-def test_review_command_stage_override_parses_and_threads(tmp_path):
-    """--stage-override <name>=<model> is parsed into a dict and passed
-    through to review_paper as stage_overrides kwarg. Multiple overrides
-    are accepted (the flag is repeatable)."""
-    pdf = tmp_path / "paper.pdf"
-    pdf.write_bytes(b"%PDF-1.4 fake")
-
-    captured: dict = {}
-
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, stage_overrides=None):
-        captured["stage_overrides"] = stage_overrides
-        from coarse.types import PaperText
-
-        return _make_review(), "# md\n", PaperText(full_markdown="", token_estimate=0)
-
-    with (
-        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
-        patch("coarse.cli.load_config", return_value=CoarseConfig()),
-        patch("coarse.cli.review_paper", fake),
-    ):
-        result = runner.invoke(
-            app,
-            [
-                "review",
-                str(pdf),
-                "--yes",
-                "--stage-override",
-                "metadata=openrouter/test/a",
-                "--stage-override",
-                "section=openrouter/test/b",
-            ],
-        )
-
-    assert result.exit_code == 0, result.output
-    assert captured["stage_overrides"] == {
-        "metadata": "openrouter/test/a",
-        "section": "openrouter/test/b",
-    }
-
-
-def test_review_command_stage_override_rejects_malformed_entry(tmp_path):
-    """An entry missing the '=' separator exits the CLI with a clear error."""
-    pdf = tmp_path / "paper.pdf"
-    pdf.write_bytes(b"%PDF-1.4 fake")
-
-    with (
-        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
-        patch("coarse.cli.load_config", return_value=CoarseConfig()),
-        patch("coarse.cli.review_paper", _fake_review_paper),
-    ):
-        result = runner.invoke(
-            app,
-            ["review", str(pdf), "--yes", "--stage-override", "metadata_only_no_equals"],
-        )
-
-    assert result.exit_code == 1
-    assert "expected '<stage>=<model>'" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +98,7 @@ def test_review_command_custom_output_path(tmp_path):
     pdf.write_bytes(b"%PDF-1.4 fake")
     out = tmp_path / "out.md"
 
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, stage_overrides=None):
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None):
         from coarse.types import PaperText
 
         return _make_review(), "# Custom Output\n", PaperText(full_markdown="", token_estimate=0)
@@ -197,7 +127,7 @@ def test_review_yes_flag_skips_cost_gate(tmp_path):
 
     captured: dict = {}
 
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, stage_overrides=None):
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None):
         captured["skip_cost_gate"] = skip_cost_gate
         from coarse.types import PaperText
 

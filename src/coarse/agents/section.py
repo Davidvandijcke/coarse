@@ -1,4 +1,5 @@
 """Section agent — produces DetailedComments for a single paper section."""
+
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
@@ -7,9 +8,17 @@ from coarse.agents.base import ReviewAgent, truncate_section
 from coarse.prompts import (
     SECTION_SYSTEM,
     SECTION_SYSTEM_MAP,
+    author_notes_block,
+    document_form_notice,
     section_user,
 )
-from coarse.types import DetailedComment, DomainCalibration, OverviewFeedback, SectionInfo
+from coarse.types import (
+    DetailedComment,
+    DocumentForm,
+    DomainCalibration,
+    OverviewFeedback,
+    SectionInfo,
+)
 
 _TEMPERATURE = 0.3
 
@@ -37,12 +46,21 @@ class SectionAgent(ReviewAgent):
         literature_context: str = "",
         all_sections: "list[SectionInfo] | None" = None,
         abstract: str = "",
+        document_form: DocumentForm = "manuscript",
+        author_notes: str | None = None,
     ) -> list[DetailedComment]:
         truncated = truncate_section(section)
 
-        system_prompt = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
-        user_text = section_user(
-            paper_title, truncated, overview=overview, calibration=calibration,
+        # Append form-specific addendum to the focus-selected system prompt.
+        # Empty for manuscript/preprint so the default peer-review path is
+        # unchanged.
+        base_system = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
+        system_prompt = base_system + document_form_notice(document_form)
+        user_text = author_notes_block(author_notes) + section_user(
+            paper_title,
+            truncated,
+            overview=overview,
+            calibration=calibration,
             literature_context=literature_context,
             all_sections=all_sections,
             abstract=abstract,
