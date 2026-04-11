@@ -30,6 +30,7 @@ from coarse.models import (
     CHEAP_STAGE_FALLBACK_MODEL,
     CHEAP_STAGE_MODEL,
     CHEAP_STAGE_PROVIDERS,
+    STAGE_MODELS,
 )
 
 # LLM-consuming stages the router is responsible for. Mirrors the stages
@@ -95,19 +96,25 @@ class StageRouter:
         if config is None:
             config = load_config()
         self._base_model = base_model
-        self._overrides: dict[str, str] = dict(overrides or {})
         self._config = config
         self._clients: dict[str, LLMClient] = {}
 
-        # Validate stage names eagerly — catches typos in STAGE_MODELS or
-        # the CLI ``--stage-override`` flag at construction time rather
-        # than at first use.
-        unknown = [s for s in self._overrides if s not in STAGE_NAMES]
+        # Validate stage names eagerly — catches typos in the CLI
+        # ``--stage-override`` flag at construction time rather than at
+        # first use.
+        caller_overrides = dict(overrides or {})
+        unknown = [s for s in caller_overrides if s not in STAGE_NAMES]
         if unknown:
             raise ValueError(
                 f"Unknown stage name(s) in overrides: {sorted(unknown)}. "
                 f"Valid stages: {sorted(STAGE_NAMES)}"
             )
+
+        # Merge STAGE_MODELS defaults with caller-supplied overrides. Caller
+        # wins. This is the single source of merge truth — callers should
+        # NOT pre-merge STAGE_MODELS themselves (it would be a no-op now
+        # but would drift the documented contract).
+        self._overrides: dict[str, str] = {**STAGE_MODELS, **caller_overrides}
 
     def _resolve_model(self, stage: str) -> str:
         """Return the effective model ID for a stage (override → base)."""
@@ -191,3 +198,19 @@ class StageRouter:
     @property
     def base_model(self) -> str:
         return self._base_model
+
+    @property
+    def base_client(self) -> LLMClient:
+        """Return the ``LLMClient`` for the base model, NOT any stage.
+
+        Used by non-stage-routed consumers like ``search_literature`` that
+        want a plain client on the user's chosen model without going through
+        the stage map. The client is cached under the base model's key, so
+        its cost flows into ``.cost_usd`` just like any stage client.
+        """
+        cached = self._clients.get(self._base_model)
+        if cached is not None:
+            return cached
+        client = self._build_client(self._base_model)
+        self._clients[self._base_model] = client
+        return client

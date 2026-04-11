@@ -23,7 +23,6 @@ from coarse.config import CoarseConfig, load_config
 from coarse.cost import run_cost_gate
 from coarse.extraction import extract_file
 from coarse.llm import LLMClient
-from coarse.models import STAGE_MODELS
 from coarse.prompts import (
     CALIBRATION_SYSTEM,
     CONTRIBUTION_EXTRACTION_SYSTEM,
@@ -244,13 +243,13 @@ def review_paper(
 
     resolved_model = model or config.default_model
 
-    # The router resolves per-stage LLM clients. STAGE_MODELS holds the
-    # default cheap-tier routing (see models.py); stage_overrides from
-    # the caller take precedence. Stages not listed in either fall back
-    # to resolved_model (the user's --model choice or config default).
+    # The router resolves per-stage LLM clients. StageRouter.__init__ merges
+    # its own STAGE_MODELS defaults (see models.py) with the caller-supplied
+    # stage_overrides, so we forward stage_overrides as-is. Stages not listed
+    # in either fall back to resolved_model (the user's --model or config).
     router = StageRouter(
         base_model=resolved_model,
-        overrides={**STAGE_MODELS, **(stage_overrides or {})},
+        overrides=stage_overrides,
         config=config,
     )
 
@@ -326,7 +325,14 @@ def review_paper(
             search_literature,
             structure.title,
             structure.abstract,
-            router.client_for("overview"),
+            # Literature search is intentionally NOT stage-routed. It uses
+            # the base model (user's --model or config default), matching
+            # what cost.py quotes for the literature stage. Passing any
+            # stage-routed client (e.g. router.client_for("overview"))
+            # would silently run the arXiv fallback on the SOTA model
+            # regardless of --stage-override choices and de-sync from the
+            # cost quote. See routing.py:16 for the documented contract.
+            router.base_client,
         )
         contrib_future = executor.submit(
             extract_contribution,

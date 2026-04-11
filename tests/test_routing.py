@@ -39,9 +39,10 @@ def test_stage_names_covers_all_review_model_stages():
 
 def test_router_returns_same_client_for_stages_without_overrides():
     """Two stages that resolve to the same model share a single LLMClient
-    (and its cumulative cost counter)."""
+    (and its cumulative cost counter). Uses 'overview' and 'section' which
+    are both NOT in STAGE_MODELS, so they default to the base model."""
     router = _router()
-    c1 = router.client_for("metadata")
+    c1 = router.client_for("overview")
     c2 = router.client_for("section")
     assert c1 is c2
     assert c1.model.endswith("fake-base-model")

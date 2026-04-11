@@ -273,7 +273,7 @@ class LLMClient:
                 timeout=timeout,
                 **kwargs,
             )
-        except Exception:
+        except Exception as primary_exc:
             if self._fallback_client is None:
                 raise
             logger.warning(
@@ -282,14 +282,22 @@ class LLMClient:
                 self._fallback_client.model,
                 exc_info=True,
             )
-            return self._fallback_client.complete(
-                messages,
-                response_model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                timeout=timeout,
-                **kwargs,
-            )
+            try:
+                return self._fallback_client.complete(
+                    messages,
+                    response_model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    timeout=timeout,
+                    **kwargs,
+                )
+            except Exception as fallback_exc:
+                # Surface BOTH primary and fallback in the traceback chain.
+                # Without `raise ... from primary_exc`, Python still attaches
+                # the primary via __context__ but the "During handling of
+                # the above exception" framing is easy to miss and the warn
+                # log above may be dropped in production (modal_worker).
+                raise fallback_exc from primary_exc
 
     def _complete_primary(
         self,
@@ -382,7 +390,7 @@ class LLMClient:
                 timeout=timeout,
                 **kwargs,
             )
-        except Exception:
+        except Exception as primary_exc:
             if self._fallback_client is None:
                 raise
             logger.warning(
@@ -391,13 +399,17 @@ class LLMClient:
                 self._fallback_client.model,
                 exc_info=True,
             )
-            return self._fallback_client.complete_text(
-                messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                timeout=timeout,
-                **kwargs,
-            )
+            try:
+                return self._fallback_client.complete_text(
+                    messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    timeout=timeout,
+                    **kwargs,
+                )
+            except Exception as fallback_exc:
+                # Chain both into the final traceback — see complete() above.
+                raise fallback_exc from primary_exc
 
     def _complete_text_primary(
         self,
