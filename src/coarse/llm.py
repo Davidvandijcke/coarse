@@ -62,6 +62,13 @@ for _model_id, _info in _CUSTOM_MODEL_INFO.items():
 
 
 _CTRL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+# JSON \uXXXX escape form of NUL. Needed in addition to _CTRL_CHAR_RE because
+# the regex only sees the raw LLM response text — any \u0000 emitted as a JSON
+# escape is six printable ASCII bytes at that point and survives untouched,
+# then json.loads() decodes it back into a real \x00 inside the parsed field.
+# Postgres text columns reject \x00 (SQLSTATE 22P05), so a single quoted char
+# kills the entire review write. Strip the escape form before parsing.
+_JSON_NUL_ESCAPE_RE = re.compile(r"\\u0000", re.IGNORECASE)
 _DEGENERATE_RE = re.compile(r"(.)\1{50,}")  # 50+ consecutive identical chars
 
 
@@ -125,8 +132,13 @@ def _inject_openrouter_privacy(model: str, kwargs: dict) -> dict:
 def _sanitized_completion(*args, **kwargs):
     """Wrap litellm.completion to strip control characters and detect degenerate output.
 
-    Some models (e.g. MiMo) emit control characters in JSON output that break
-    Pydantic parsing.  Stripping \x00-\x1f (except \t and \n) is safe for JSON.
+    Some models (e.g. MiMo) emit literal control characters in JSON output that
+    break Pydantic parsing; _CTRL_CHAR_RE handles those. Other models (observed
+    on gpt-5.4 quoting source text) emit NUL as the JSON escape sequence
+    ``\\u0000`` instead — six printable bytes that bypass _CTRL_CHAR_RE and then
+    get reconstituted as a real ``\\x00`` by json.loads, which later crashes the
+    Supabase write with Postgres 22P05. _JSON_NUL_ESCAPE_RE closes that gap.
+    Stripping \\x00-\\x1f (except \\t and \\n) is safe for JSON.
     """
     kwargs = _inject_openrouter_privacy(kwargs.get("model", ""), kwargs)
     response = litellm.completion(*args, **kwargs)
@@ -135,6 +147,7 @@ def _sanitized_completion(*args, **kwargs):
         msg = getattr(choice, "message", None)
         if msg and hasattr(msg, "content") and isinstance(msg.content, str):
             msg.content = _CTRL_CHAR_RE.sub("", msg.content)
+            msg.content = _JSON_NUL_ESCAPE_RE.sub("", msg.content)
     return response
 
 

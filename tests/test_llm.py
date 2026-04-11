@@ -7,6 +7,7 @@ from coarse.config import CoarseConfig
 from coarse.llm import (
     LLMClient,
     _inject_openrouter_privacy,
+    _sanitized_completion,
     estimate_call_cost,
     estimate_reasoning_overhead_tokens,
     model_cost_per_token,
@@ -415,6 +416,87 @@ def test_estimate_call_cost_reasoning_is_more_expensive_than_regular():
     )
     # Sanity: the overhead should be meaningful (>20% uplift), not a rounding bump
     assert reasoning_cost >= naive_cost * 1.2
+
+
+def _sanitizer_response_with(content: str):
+    """Build a minimal litellm-style response object for _sanitized_completion."""
+    msg = MagicMock()
+    msg.content = content
+    msg.reasoning_content = None
+    choice = MagicMock()
+    choice.message = msg
+    response = MagicMock()
+    response.choices = [choice]
+    return response
+
+
+def test_sanitized_completion_strips_literal_control_chars():
+    """Literal \\x00-\\x1f (except tab/newline) in msg.content must be removed."""
+    raw = "before\x00middle\x01tab\there\nnewlineOK\x1fend"
+    response = _sanitizer_response_with(raw)
+
+    with patch("coarse.llm.litellm.completion", return_value=response):
+        result = _sanitized_completion(model="test/mock")
+
+    cleaned = result.choices[0].message.content
+    assert "\x00" not in cleaned
+    assert "\x01" not in cleaned
+    assert "\x1f" not in cleaned
+    assert "\t" in cleaned  # tab preserved
+    assert "\n" in cleaned  # newline preserved
+    assert cleaned == "beforemiddletab\there\nnewlineOKend"
+
+
+def test_sanitized_completion_strips_json_u0000_escape_before_parse():
+    """Regression for production bug: gpt-5.4 emitted JSON with \\u0000 escape
+    sequences inside string fields. _CTRL_CHAR_RE only matches literal control
+    chars, so the 6-byte \\u0000 escape passed through untouched, and json.loads
+    then reconstituted it as a real \\x00 inside the parsed Pydantic field.
+    That NUL byte then crashed the Supabase write with Postgres 22P05.
+
+    The fix strips the escape form before Instructor/Pydantic sees the content.
+    """
+    import json
+
+    # Six printable ASCII bytes, NOT a literal NUL. Must use a raw-ish build
+    # so Python's string literal parser doesn't fold \u0000 into \x00.
+    raw_json = '{"quote": "text ' + "\\u0000" + ' more", "keep": "tab\\tend"}'
+    # Sanity-check the test fixture itself:
+    assert "\x00" not in raw_json  # no literal NUL yet
+    assert "\\u0000" in raw_json  # escape sequence is present as 6 chars
+
+    response = _sanitizer_response_with(raw_json)
+    with patch("coarse.llm.litellm.completion", return_value=response):
+        result = _sanitized_completion(model="test/mock")
+
+    cleaned = result.choices[0].message.content
+    parsed = json.loads(cleaned)
+
+    # The fix: no \x00 should survive the json.loads round-trip.
+    assert "\x00" not in parsed["quote"], f"NUL byte leaked into parsed field: {parsed['quote']!r}"
+    assert parsed["quote"] == "text  more"  # space preserved either side
+    # Legit escape sequences (\t) must still round-trip correctly.
+    assert parsed["keep"] == "tab\tend"
+
+
+def test_sanitized_completion_is_case_insensitive_for_u_escape():
+    """JSON allows either case for the hex digits in \\uXXXX escapes."""
+    import json
+
+    variants = [
+        '{"x": "a' + "\\u0000" + 'b"}',
+        '{"x": "a' + "\\U0000" + 'b"}',  # uppercase U (not strictly valid JSON, but defensive)
+        '{"x": "a' + "\\u0000".upper() + 'b"}',
+    ]
+    for raw in variants:
+        response = _sanitizer_response_with(raw)
+        with patch("coarse.llm.litellm.completion", return_value=response):
+            result = _sanitized_completion(model="test/mock")
+        cleaned = result.choices[0].message.content
+        # At minimum the standard lowercase form must be stripped and parseable.
+        if "\\u0000" in raw:
+            parsed = json.loads(cleaned)
+            assert "\x00" not in parsed["x"]
 
 
 def test_complete_instructor_validation_error(mock_instructor_client):
