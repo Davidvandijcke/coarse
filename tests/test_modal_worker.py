@@ -213,9 +213,11 @@ def test_sanitize_error_instructor_envelope_keeps_secret_scrubbing(
     """Extracting the <exception> block must still run the secret scrubbers on
     the extracted text — a user's key pasted into a retry envelope must not
     leak through."""
+    # security: ignore — synthetic fake key for the scanner regression test
+    fake_key = "sk-or-v1-abcdefghijklmnopqrstuvwxyz0123"
     raw = (
         "<last_exception><failed_attempts>"
-        "<exception>bad request for sk-or-v1-abcdefghijklmnopqrstuvwxyz0123</exception>"
+        f"<exception>bad request for {fake_key}</exception>"
         "</failed_attempts></last_exception>"
     )
     cleaned = modal_worker._sanitize_error(raw)
