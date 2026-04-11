@@ -4,10 +4,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 /* ── Default model options ─────────────────────────────────── */
 const DEFAULT_MODELS = [
+  { id: "anthropic/claude-opus-4.6", label: "Opus 4.6", provider: "Anthropic" },
   { id: "anthropic/claude-sonnet-4.6", label: "Sonnet 4.6", provider: "Anthropic" },
+  { id: "openai/gpt-5.4", label: "GPT-5.4", provider: "OpenAI" },
   { id: "openai/gpt-5-mini", label: "GPT-5 Mini", provider: "OpenAI" },
+  { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", provider: "Google" },
   { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash", provider: "Google" },
-  { id: "qwen/qwen3.5-plus-02-15", label: "Qwen 3.5 Plus", provider: "Qwen" },
+  { id: "qwen/qwen3.6-plus", label: "Qwen 3.6 Plus", provider: "Qwen" },
   { id: "moonshotai/kimi-k2.5", label: "Kimi K2.5", provider: "Moonshot" },
   { id: "deepseek/deepseek-v3.2", label: "DeepSeek V3.2", provider: "DeepSeek" },
   { id: "x-ai/grok-4.1-fast", label: "Grok 4.1 Fast", provider: "xAI" },
