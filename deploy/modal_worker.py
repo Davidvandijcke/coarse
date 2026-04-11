@@ -126,7 +126,15 @@ def _classify_api_error(exc: BaseException) -> str | None:
         return ("API key spend limit reached. Add credits or raise your "
                 "limit on your provider dashboard, then try again.")
     if status == 403:
-        return "API key does not have access to this model or endpoint."
+        return (
+            "OpenRouter denied this request (HTTP 403). This usually means "
+            "your OpenRouter account has no credits, your privacy settings "
+            "block the provider for the model you picked, or you haven't "
+            "accepted that model's terms. Add credits at "
+            "https://openrouter.ai/credits and review your privacy settings "
+            "at https://openrouter.ai/settings/privacy, then start a new "
+            "review."
+        )
     if status == 429:
         return ("Rate limited by the API provider. Wait a minute and try again, "
                 "or check your rate limits on your provider dashboard.")

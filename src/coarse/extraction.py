@@ -52,7 +52,15 @@ def _classify_api_error(exc: Exception) -> str | None:
         return ("API key spend limit reached. Add credits or raise your "
                 "limit in your provider dashboard.")
     if status == 403:
-        return "API key does not have access to this model or endpoint."
+        return (
+            "OpenRouter denied the PDF extraction request (HTTP 403). This "
+            "usually means your OpenRouter account has no credits, your "
+            "privacy settings block the provider we use for extraction, or "
+            "you haven't accepted that provider's terms. Add credits at "
+            "https://openrouter.ai/credits and review your privacy settings "
+            "at https://openrouter.ai/settings/privacy, then start a new "
+            "review."
+        )
     # Don't classify 429 (rate limit) or 5xx here — those are transient.
     return None
 
