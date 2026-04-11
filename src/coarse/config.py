@@ -116,6 +116,27 @@ def _clean_env(name: str) -> str | None:
     return value or None
 
 
+def has_provider_key(provider: str, config: CoarseConfig | None = None) -> bool:
+    """Return True if the DIRECT provider has an API key (env or config file).
+
+    Unlike resolve_api_key(), this does NOT fall back to OPENROUTER_API_KEY —
+    it only returns True when the named provider itself has a key.  Used by
+    routing logic that decides whether to call a provider directly or proxy
+    through OpenRouter. Whitespace-only keys are treated as absent (see
+    _clean_env).
+    """
+    name = _normalize_provider(provider)
+    env_var = PROVIDER_ENV_VARS.get(name)
+    if env_var and _clean_env(env_var):
+        return True
+    if name == "gemini" and _clean_env("GOOGLE_API_KEY"):
+        return True
+    if config is None:
+        config = load_config()
+    cfg_key = (config.api_keys.get(name) or "").strip()
+    return bool(cfg_key)
+
+
 def resolve_api_key(provider: str, config: CoarseConfig | None = None) -> str | None:
     """Return API key for provider; env vars take priority over config file.
 

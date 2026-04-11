@@ -14,7 +14,13 @@ import instructor
 import litellm
 from pydantic import BaseModel
 
-from coarse.config import PROVIDER_ENV_VARS, CoarseConfig, _clean_env, load_config
+from coarse.config import (
+    PROVIDER_ENV_VARS,
+    CoarseConfig,
+    has_provider_key,
+    load_config,
+    resolve_api_key,
+)
 from coarse.models import (
     DEFAULT_MODEL,
     JSON_MODE_PREFIXES,
@@ -125,20 +131,26 @@ def _inject_openrouter_privacy(model: str, kwargs: dict) -> dict:
         else:
             result.pop("api_key", None)
     if "api_key" not in result:
-        or_key = _clean_env("OPENROUTER_API_KEY")
+        # resolve_api_key() goes through _clean_env internally, so a
+        # whitespace-only env value is treated as unset. It also respects
+        # ~/.coarse/config.toml keys, which bare env reads would miss.
+        or_key = resolve_api_key("openrouter")
         if or_key:
             result["api_key"] = or_key
     return result
 
 
 def _sanitized_completion(*args, **kwargs):
-    """Wrap litellm.completion to strip control characters and detect degenerate output.
+    """Wrap non-streaming litellm.completion: strip control chars, detect degenerate output.
 
     Some models (e.g. MiMo) emit literal control characters in JSON output that
     break Pydantic parsing. Stripping \\x00-\\x1f (except \\t and \\n) is safe
     for JSON. We also strip the 6-char ``\\u0000`` escape form because it
     survives _CTRL_CHAR_RE and is reconstituted as a real NUL by json.loads,
     which later crashes the Supabase write with Postgres 22P05.
+
+    Streaming responses (CustomStreamWrapper) are not supported — the choices
+    iteration silently no-ops on them.
     """
     kwargs = _inject_openrouter_privacy(kwargs.get("model", ""), kwargs)
     response = litellm.completion(*args, **kwargs)
@@ -158,7 +170,7 @@ class LLMClient:
         if config is None:
             config = load_config()
         self._model = model or config.default_model
-        self._model = _normalize_model(self._model)
+        self._model = _normalize_model(self._model, config)
         mode = _select_instructor_mode(self._model)
         self._client = instructor.from_litellm(_sanitized_completion, mode=mode)
         self._cost_usd: float = 0.0
@@ -188,10 +200,12 @@ class LLMClient:
 
         clamped = _clamp_max_tokens(self._model, requested)
 
-        # MD_JSON models (Kimi) need lower temperature and higher max_tokens
+        # MD_JSON models (Kimi) need lower temperature and higher max_tokens.
+        # Re-clamp after raising the floor so we don't exceed the model ceiling
+        # on Kimi variants with smaller output windows.
         if any(p in self._model.lower() for p in MARKDOWN_JSON_PREFIXES):
             temperature = min(temperature, 0.1)
-            clamped = max(clamped, 16384)
+            clamped = _clamp_max_tokens(self._model, max(clamped, 16384))
 
         # For reasoning models, also cap the thinking budget server-side
         # via litellm's unified `reasoning_effort` param. litellm routes
@@ -224,8 +238,45 @@ class LLMClient:
                 with self._lock:
                     self._cost_usd += cost
         except Exception:
-            logger.debug("Cost tracking failed for model %s", self._model)
+            logger.debug("Cost tracking failed for model %s", self._model, exc_info=True)
         return response
+
+    def complete_text(
+        self,
+        messages: list[dict],
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+        timeout: int = 600,
+        **kwargs,
+    ) -> str:
+        """Unstructured text completion — returns the raw response string.
+
+        Used for models where instructor's structured output makes no sense
+        (e.g. Perplexity Sonar Pro, which returns prose with citations).
+        Cost is tracked like complete(); control characters are still
+        stripped via _sanitized_completion.
+        """
+        clamped = _clamp_max_tokens(self._model, max_tokens)
+        response = _sanitized_completion(
+            model=self._model,
+            messages=messages,
+            max_tokens=clamped,
+            temperature=temperature,
+            timeout=timeout,
+            **kwargs,
+        )
+        try:
+            cost = litellm.completion_cost(completion_response=response)
+            if cost is not None:
+                with self._lock:
+                    self._cost_usd += cost
+        except Exception:
+            logger.debug("Cost tracking failed for model %s", self._model, exc_info=True)
+
+        content = response.choices[0].message.content
+        if not content or not content.strip():
+            raise ValueError(f"Model {self._model} returned empty response")
+        return content.strip()
 
     def add_cost(self, cost_usd: float) -> None:
         """Register an external cost (e.g. from a direct litellm.completion call)."""
@@ -265,31 +316,23 @@ class LLMClient:
         return "anthropic" in lower and not lower.startswith("openrouter/")
 
 
-def _normalize_model(model: str) -> str:
+def _normalize_model(model: str, config: CoarseConfig | None = None) -> str:
     """Ensure model string has the right provider prefix for litellm routing.
 
-    If OPENROUTER_API_KEY is set and model looks like 'qwen/qwen3.5-plus'
-    (third-party model without 'openrouter/' prefix), prepend 'openrouter/'.
+    If the named direct provider has no key (env or config) and an OpenRouter
+    key is available, rewrite to 'openrouter/<model>' so the call goes through
+    OpenRouter. Config-file keys count — not just env vars.
     """
     if model.startswith("openrouter/"):
         return model
-    # Direct provider models — keep as-is only if the provider's API key is set.
-    # Otherwise, fall through to OpenRouter routing below.
-    # Derive from PROVIDER_ENV_VARS; gemini also accepts GOOGLE_API_KEY.
     prefix = model.split("/")[0].lower() if "/" in model else ""
-    if prefix in PROVIDER_ENV_VARS:
-        env_vars = [PROVIDER_ENV_VARS[prefix]]
-        if prefix == "gemini":
-            env_vars.append("GOOGLE_API_KEY")
-        # Whitespace-only env values are treated as unset — otherwise routing
-        # would pick the "direct provider" branch, then auth would fail with
-        # an empty Bearer header at the HTTP layer.
-        if any(_clean_env(v) for v in env_vars):
-            return model
-        # No direct key — fall through to OpenRouter routing
-    # If OPENROUTER_API_KEY is set and model has a slash (like qwen/qwen3.5-plus),
-    # route through OpenRouter
-    if "/" in model and _clean_env("OPENROUTER_API_KEY"):
+    # has_provider_key() goes through _clean_env and also checks
+    # ~/.coarse/config.toml keys, so whitespace-only env values don't flip
+    # routing to the direct-provider branch and config-file-only users
+    # still get routed correctly.
+    if prefix in PROVIDER_ENV_VARS and has_provider_key(prefix, config):
+        return model
+    if "/" in model and resolve_api_key("openrouter", config):
         # litellm uses gemini/ for Google AI Studio, but OpenRouter uses google/
         if model.startswith("gemini/"):
             model = "google/" + model.removeprefix("gemini/")

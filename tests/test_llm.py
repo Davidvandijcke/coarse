@@ -584,6 +584,40 @@ def test_sanitized_completion_handles_none_content():
     assert result.choices[0].message.content is None
 
 
+def test_complete_text_returns_raw_content(mock_instructor_client):
+    """complete_text bypasses instructor and returns the raw response string."""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "  some perplexity citations  "
+
+    with (
+        patch("coarse.llm._sanitized_completion", return_value=mock_response),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.042),
+    ):
+        client = LLMClient(model=TEST_MODEL, config=CoarseConfig())
+        result = client.complete_text(
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+    assert result == "some perplexity citations"
+    assert abs(client.cost_usd - 0.042) < 1e-9
+
+
+def test_complete_text_raises_on_empty_response(mock_instructor_client):
+    """complete_text raises ValueError rather than silently returning empty string."""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "   "
+
+    with (
+        patch("coarse.llm._sanitized_completion", return_value=mock_response),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(model=TEST_MODEL, config=CoarseConfig())
+        with pytest.raises(ValueError):
+            client.complete_text(messages=[{"role": "user", "content": "hi"}])
+
+
 def test_complete_instructor_validation_error(mock_instructor_client):
     try:
         _SimpleModel()  # missing required 'value' field -> ValidationError

@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import pytest
@@ -7,6 +6,7 @@ import tomli_w
 from coarse.config import (
     CoarseConfig,
     get_config_path,
+    has_provider_key,
     load_config,
     resolve_api_key,
     save_config,
@@ -31,6 +31,7 @@ def tmp_config_path(tmp_path, monkeypatch):
 
 # --- load_config ---
 
+
 def test_load_config_missing_file(tmp_config_path):
     cfg = load_config()
     assert isinstance(cfg, CoarseConfig)
@@ -53,6 +54,7 @@ def test_load_config_partial_toml(tmp_config_path):
 
 
 # --- save_config + load_config ---
+
 
 def test_save_and_reload(tmp_config_path):
     original = CoarseConfig(
@@ -89,6 +91,7 @@ def test_save_config_creates_directory(tmp_path, monkeypatch):
 
 
 # --- resolve_api_key ---
+
 
 def test_resolve_api_key_env_var(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env-openai")
@@ -133,7 +136,41 @@ def test_resolve_api_key_model_prefix_stripped(monkeypatch):
     assert result == "sk-env-openai"
 
 
+# --- has_provider_key ---
+
+
+def test_has_provider_key_env_var(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    assert has_provider_key("openai", CoarseConfig()) is True
+
+
+def test_has_provider_key_config_file(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    cfg = CoarseConfig(api_keys={"anthropic": "sk-cfg"})
+    assert has_provider_key("anthropic", cfg) is True
+
+
+def test_has_provider_key_missing(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert has_provider_key("openai", CoarseConfig()) is False
+
+
+def test_has_provider_key_no_openrouter_fallback(monkeypatch):
+    """has_provider_key must NOT fall back to OPENROUTER_API_KEY — that's the
+    whole point of having a separate function. resolve_api_key does; this doesn't."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or")
+    assert has_provider_key("openai", CoarseConfig()) is False
+
+
+def test_has_provider_key_gemini_accepts_google_api_key(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_API_KEY", "sk-goog")
+    assert has_provider_key("gemini", CoarseConfig()) is True
+
+
 # --- get_config_path ---
+
 
 def test_get_config_path():
     path = get_config_path()
