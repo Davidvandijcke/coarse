@@ -1,9 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { MAX_CONCURRENT_REVIEWS } from "@/lib/reviewCapacity";
 
 export const revalidate = 10; // ISR: revalidate every 10 seconds
-
-const MAX_CONCURRENT_REVIEWS = 20;
 
 export async function GET() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -20,7 +19,10 @@ export async function GET() {
 
   const [statusResult, countResult] = await Promise.all([
     supabase.from("system_status").select("accepting_reviews, banner_message").eq("id", 1).single(),
-    supabase.from("reviews").select("id", { count: "exact", head: true }).in("status", ["queued", "running"]),
+    supabase
+      .from("reviews")
+      .select("id, review_emails!inner(review_id)", { count: "exact", head: true })
+      .in("status", ["queued", "running"]),
   ]);
 
   const accepting = statusResult.data?.accepting_reviews ?? true;
