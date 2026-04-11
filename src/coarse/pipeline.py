@@ -152,6 +152,7 @@ def _review_section(
     literature_context: str,
     all_sections: list[SectionInfo],
     abstract: str,
+    *,
     document_form: DocumentForm = "manuscript",
     author_notes: str | None = None,
 ) -> list[DetailedComment]:
@@ -410,8 +411,8 @@ def review_paper(
                     sec_lit,
                     structure.sections,
                     sec_abstract,
-                    structure.document_form,
-                    author_notes,
+                    document_form=structure.document_form,
+                    author_notes=author_notes,
                 )
             )
 

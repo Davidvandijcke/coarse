@@ -331,7 +331,12 @@ def do_review(req_dict: dict):
     pdf_storage_path = req.pdf_storage_path
     email = req.email
     model = req.model
-    author_notes = req.author_notes
+    # Scrub NUL bytes from author_notes before it enters the prompt pipeline.
+    # Not for Postgres (author_notes is never persisted) but because some LLM
+    # providers reject NUL in content strings and surface it as an opaque
+    # pipeline failure. Same defense as the paper_markdown / result_markdown
+    # scrub at the Supabase seam.
+    author_notes = _strip_nul_bytes(req.author_notes)
 
     print(f"[{job_id}] Starting review — pdf={pdf_storage_path} model={model}")
 
