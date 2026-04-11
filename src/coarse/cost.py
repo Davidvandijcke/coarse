@@ -2,6 +2,7 @@
 
 No LLM calls here — purely heuristic token budgets + pricing lookup.
 """
+
 from __future__ import annotations
 
 import os
@@ -11,24 +12,23 @@ from rich.console import Console
 from rich.table import Table
 
 from coarse.config import CoarseConfig
-from coarse.llm import estimate_call_cost
-from coarse.models import LITERATURE_SEARCH_MODEL, OCR_MODEL
+from coarse.llm import estimate_call_cost, estimate_reasoning_overhead_tokens
+from coarse.models import LITERATURE_SEARCH_MODEL, OCR_MODEL, is_reasoning_model
 from coarse.types import CostEstimate, CostStage, PaperText
 
-
 # Heuristic pricing constants (verified 2026-03-04, aligned with models.py)
-_TOKENS_PER_SECTION = 1200       # avg tokens per section after OCR extraction
+_TOKENS_PER_SECTION = 1200  # avg tokens per section after OCR extraction
 _SECTION_PROMPT_OVERHEAD = 5000  # system prompt + overview + calibration + notation
-_TOKENS_PER_PAGE = 250           # OCR token estimate per page
-_OCR_COST_PER_PAGE = 0.002       # Mistral OCR cost per page
-_AVG_COMMENTS_PER_SECTION = 3    # raw comments per section agent
-_TOKENS_PER_COMMENT = 350        # input tokens per comment in crossref/critique
-_CROSSREF_OVERHEAD = 3500        # system prompt + overview context for crossref/critique
-_DEDUP_SURVIVAL_RATE = 0.6       # fraction surviving dedup
-_CRITIQUE_SURVIVAL_RATE = 0.9    # fraction surviving critique
-_COMMENT_OUTPUT_TOKENS = 600     # output tokens per surviving comment
-_LITERATURE_FLAT_COST = 0.03     # Perplexity flat fee for literature search
-_COST_BUFFER = 1.15              # conservative overestimate multiplier
+_TOKENS_PER_PAGE = 250  # OCR token estimate per page
+_OCR_COST_PER_PAGE = 0.002  # Mistral OCR cost per page
+_AVG_COMMENTS_PER_SECTION = 3  # raw comments per section agent
+_TOKENS_PER_COMMENT = 350  # input tokens per comment in crossref/critique
+_CROSSREF_OVERHEAD = 3500  # system prompt + overview context for crossref/critique
+_DEDUP_SURVIVAL_RATE = 0.6  # fraction surviving dedup
+_CRITIQUE_SURVIVAL_RATE = 0.9  # fraction surviving critique
+_COMMENT_OUTPUT_TOKENS = 600  # output tokens per surviving comment
+_LITERATURE_FLAT_COST = 0.03  # Perplexity flat fee for literature search
+_COST_BUFFER = 1.15  # conservative overestimate multiplier
 
 
 def _estimate_section_count(total_tokens: int) -> int:
@@ -91,24 +91,28 @@ def build_cost_estimate(
         ("math_detection", 2000, 256),
         ("calibration", 1000, 2000),
         *lit_stage,
-        *[
-            (f"overview_judge_{i + 1}", total_tokens, 1500)
-            for i in range(_NUM_OVERVIEW_JUDGES)
-        ],
+        *[(f"overview_judge_{i + 1}", total_tokens, 1500) for i in range(_NUM_OVERVIEW_JUDGES)],
         ("overview_synthesis", 5000, 1500),
         *[(f"section_{i + 1}", section_input, 3500) for i in range(section_count)],
         ("crossref", crossref_in, crossref_out),
         ("critique", critique_in, critique_out),
     ]
 
+    # For reasoning models, include the hidden reasoning overhead in the
+    # displayed tokens_out so the table's numbers match the dollar column
+    # and users can see where the bill is actually coming from.
+    is_reasoning = is_reasoning_model(model)
+
     for name, tokens_in, tokens_out in stage_defs:
         cost = estimate_call_cost(model, tokens_in, tokens_out)
+        displayed_out = tokens_out + estimate_reasoning_overhead_tokens(model, tokens_out)
+        stage_name = f"{name} (+reasoning)" if is_reasoning else name
         stages.append(
             CostStage(
-                name=name,
+                name=stage_name,
                 model=model,
                 estimated_tokens_in=tokens_in,
-                estimated_tokens_out=tokens_out,
+                estimated_tokens_out=displayed_out,
                 estimated_cost_usd=cost,
             )
         )

@@ -21,12 +21,23 @@ from coarse.models import (
     JSON_MODE_PREFIXES,
     KIMI_K2_5_MODEL,
     MARKDOWN_JSON_PREFIXES,
+    REASONING_EFFORT_DEFAULT,
+    REASONING_MAX_TOKENS_MULTIPLIER,
+    is_reasoning_model,
 )
 
 logger = logging.getLogger(__name__)
 
 # Suppress litellm noise
 litellm.suppress_debug_info = True
+
+# Silently drop provider-specific params (like reasoning_effort) when the
+# target provider doesn't support them, instead of raising. This lets us
+# pass reasoning_effort for every reasoning model without having to
+# maintain a per-provider allow-list — litellm drops it for providers
+# that don't accept it (Qwen thinking, DeepSeek R1, etc.) and forwards
+# it where it matters (OpenAI o-series, GPT-5 Pro).
+litellm.drop_params = True
 
 # Register models missing from litellm's registry.
 # litellm.model_cost is the lookup used by _clamp_max_tokens.
@@ -139,6 +150,7 @@ class LLMClient:
         self._client = instructor.from_litellm(_sanitized_completion, mode=mode)
         self._cost_usd: float = 0.0
         self._lock = threading.Lock()
+        self._is_reasoning = is_reasoning_model(self._model)
 
     def complete(
         self,
@@ -150,13 +162,32 @@ class LLMClient:
         **kwargs,
     ) -> BaseModel:
         """Single structured LLM call. Returns parsed Pydantic model."""
-        # Clamp max_tokens to model's known limit
-        clamped = _clamp_max_tokens(self._model, max_tokens)
+        # Reasoning models (o-series, GPT-5 Pro, DeepSeek R1, thinking
+        # variants, etc.) spend most of max_tokens on hidden reasoning
+        # before emitting visible output. Bump the ceiling so both fit;
+        # _clamp_max_tokens will then cap to the model's true limit.
+        # Diagnosed from review 3ee351e6 where GPT-5.4 Pro burned 15k+
+        # reasoning tokens before hitting finish_reason='length' with no
+        # visible content.
+        requested = max_tokens
+        if self._is_reasoning:
+            requested = max_tokens * REASONING_MAX_TOKENS_MULTIPLIER
+
+        clamped = _clamp_max_tokens(self._model, requested)
 
         # MD_JSON models (Kimi) need lower temperature and higher max_tokens
         if any(p in self._model.lower() for p in MARKDOWN_JSON_PREFIXES):
             temperature = min(temperature, 0.1)
             clamped = max(clamped, 16384)
+
+        # For reasoning models, also cap the thinking budget server-side
+        # via litellm's unified `reasoning_effort` param. litellm routes
+        # this to the right provider field (e.g. OpenAI's reasoning_effort)
+        # and — because we set litellm.drop_params=True — silently drops
+        # it for providers that don't accept it.
+        call_kwargs = dict(kwargs)
+        if self._is_reasoning:
+            call_kwargs.setdefault("reasoning_effort", REASONING_EFFORT_DEFAULT)
 
         response, completion = self._client.chat.completions.create_with_completion(
             model=self._model,
@@ -166,7 +197,7 @@ class LLMClient:
             temperature=temperature,
             timeout=timeout,
             max_retries=3,
-            **kwargs,
+            **call_kwargs,
         )
         try:
             cost = litellm.completion_cost(completion_response=completion)
@@ -191,6 +222,11 @@ class LLMClient:
     def cost_usd(self) -> float:
         """Total USD spent across all complete() calls this session."""
         return self._cost_usd
+
+    @property
+    def is_reasoning_model(self) -> bool:
+        """Whether the resolved model uses hidden reasoning tokens."""
+        return self._is_reasoning
 
     @property
     def supports_prompt_caching(self) -> bool:
@@ -295,7 +331,43 @@ def model_cost_per_token(model: str) -> tuple[float, float]:
     )
 
 
+# Reasoning-token overhead multiplier for cost estimation.
+#
+# Reasoning models bill hidden reasoning tokens at the *output* rate, and
+# those tokens do not show up in the `tokens_out` budget the caller asked
+# for. Empirically, on academic-review tasks a reasoning model spends
+# roughly 4x the visible output budget on internal thinking (measured from
+# review 3ee351e6: ~2k visible overview output, ~15k reasoning — the
+# overview hit max_tokens before emitting any content, but that ratio
+# generalizes to the sections/crossref/critique stages once the ceiling
+# is raised). reasoning_effort="medium" caps this, so 4x is a reasonable
+# billable estimate.
+#
+# Without this adjustment, the pre-flight cost gate under-quotes reasoning
+# models by 3-5x and the user sees a surprise bill post-run.
+_REASONING_OVERHEAD_MULTIPLIER: float = 4.0
+
+
+def estimate_reasoning_overhead_tokens(model: str, tokens_out: int) -> int:
+    """Extra billable output tokens contributed by hidden reasoning.
+
+    Returns 0 for non-reasoning models. For reasoning models, returns an
+    empirical multiple of the requested visible output so cost estimates
+    include the reasoning phase (which bills at the output-token rate).
+    """
+    if not is_reasoning_model(model):
+        return 0
+    return int(tokens_out * _REASONING_OVERHEAD_MULTIPLIER)
+
+
 def estimate_call_cost(model: str, tokens_in: int, tokens_out: int) -> float:
-    """Deterministic cost estimate in USD given model and token counts."""
+    """Deterministic cost estimate in USD given model and token counts.
+
+    For reasoning models (o-series, GPT-5 Pro, DeepSeek R1, thinking
+    variants, etc.), adds a reasoning-token overhead to tokens_out so the
+    pre-flight estimate reflects the real cost. See
+    estimate_reasoning_overhead_tokens for the multiplier's calibration.
+    """
     input_cost, output_cost = model_cost_per_token(model)
-    return input_cost * tokens_in + output_cost * tokens_out
+    reasoning_overhead = estimate_reasoning_overhead_tokens(model, tokens_out)
+    return input_cost * tokens_in + output_cost * (tokens_out + reasoning_overhead)
