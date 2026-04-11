@@ -140,3 +140,65 @@ def test_editorial_agent_form_notice_applies_even_with_comment_target():
     messages = client.complete.call_args[0][0]
     system_content = [m for m in messages if m["role"] == "system"][0]["content"]
     assert "DOCUMENT FORM: PARTIAL DRAFT" in system_content
+
+
+# ---------------------------------------------------------------------------
+# Author steering notes (#54)
+# ---------------------------------------------------------------------------
+
+
+def test_editorial_no_author_notes_user_message_unchanged():
+    """None / omitted / whitespace-only author_notes must produce byte-identical
+    user content to the pre-feature behavior."""
+    client = MagicMock()
+    client.supports_prompt_caching = False
+    client.complete.return_value = _EditorialComments(comments=[_comment(1)])
+
+    agent = EditorialAgent(client)
+    agent.run(paper_text="Paper body.", overview=_overview(), comments=[_comment(1)])
+    user_plain = client.complete.call_args[0][0][1]["content"]
+
+    client.complete.reset_mock()
+    agent.run(
+        paper_text="Paper body.",
+        overview=_overview(),
+        comments=[_comment(1)],
+        author_notes=None,
+    )
+    user_none = client.complete.call_args[0][0][1]["content"]
+
+    client.complete.reset_mock()
+    agent.run(
+        paper_text="Paper body.",
+        overview=_overview(),
+        comments=[_comment(1)],
+        author_notes="   ",
+    )
+    user_empty = client.complete.call_args[0][0][1]["content"]
+
+    assert user_plain == user_none == user_empty
+
+
+def test_editorial_author_notes_prepend_to_user_message():
+    client = MagicMock()
+    client.supports_prompt_caching = False
+    client.complete.return_value = _EditorialComments(comments=[_comment(1)])
+
+    agent = EditorialAgent(client)
+    agent.run(
+        paper_text="Paper body.",
+        overview=_overview(),
+        comments=[_comment(1), _comment(2)],
+        author_notes="keep comments that address the identification strategy",
+    )
+
+    messages = client.complete.call_args[0][0]
+    system_content = messages[0]["content"]
+    user_content = messages[1]["content"]
+
+    # Notes TEXT must not leak into system (cached prompt). The fence-tag
+    # name "author_notes" does appear there (boundary notice lists it) so
+    # we check for the content instead.
+    assert "keep comments that address the identification strategy" not in system_content
+    assert "<author_notes>" in user_content
+    assert "keep comments that address the identification strategy" in user_content

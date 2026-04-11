@@ -164,6 +164,7 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("anthropic/claude-opus-4.6");
+  const [authorNotes, setAuthorNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lookupKey, setLookupKey] = useState("");
@@ -325,6 +326,7 @@ export default function Home() {
           api_key: apiKey,
           model,
           storage_path: storagePath,
+          author_notes: authorNotes || undefined,
         }),
       });
       if (!submitResp.ok) {
@@ -752,6 +754,49 @@ export default function Home() {
 
             {/* Model picker */}
             <ModelPicker value={model} onChange={setModel} />
+
+            {/* Optional author notes — steer the review */}
+            <div>
+              <FieldLabel>
+                Notes for the reviewer{" "}
+                <span style={{ color: "var(--dust)", fontSize: "0.85em" }}>(optional)</span>
+              </FieldLabel>
+              <textarea
+                value={authorNotes}
+                onChange={(e) => setAuthorNotes(e.target.value.slice(0, 2000))}
+                placeholder="e.g. please focus on the identification strategy in §3 — the data section is still a placeholder."
+                rows={3}
+                maxLength={2000}
+                aria-label="Optional notes to steer the reviewer"
+                className="field-line"
+                style={{
+                  width: "100%",
+                  resize: "vertical",
+                  fontFamily: "Georgia, serif",
+                  fontSize: "1rem",
+                  lineHeight: 1.5,
+                  padding: "0.6rem 0.75rem",
+                  background: "var(--board-surface)",
+                  color: "var(--chalk)",
+                  border: "1px solid var(--tray)",
+                  borderRadius: "2px",
+                  boxSizing: "border-box",
+                }}
+              />
+              <p
+                style={{
+                  fontFamily: "var(--font-chalk)",
+                  fontSize: "1rem",
+                  color: "var(--dust)",
+                  marginTop: "0.35rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>Steer what the reviewer focuses on. Does not override the rubric.</span>
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>{authorNotes.length}/2000</span>
+              </p>
+            </div>
 
             {/* Cost estimate */}
             {file && (

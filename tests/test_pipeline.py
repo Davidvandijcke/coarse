@@ -102,7 +102,7 @@ def test_review_paper_calls_stages_in_order():
         call_order.append("structure")
         return structure
 
-    def fake_overview_run(s, calibration=None, literature_context=""):
+    def fake_overview_run(s, calibration=None, literature_context="", author_notes=None):
         call_order.append("overview")
         return overview
 
@@ -115,6 +115,8 @@ def test_review_paper_calls_stages_in_order():
         literature_context="",
         all_sections=None,
         abstract="",
+        document_form="manuscript",
+        author_notes=None,
     ):
         call_order.append(f"section_{section.number}")
         return [_make_comment(section.number)]
@@ -183,6 +185,7 @@ def test_review_paper_skips_references_section():
         all_sections=None,
         abstract="",
         document_form="manuscript",
+        author_notes=None,
     ):
         called_sections.append(section)
         return [_make_comment(section.number)]
@@ -211,6 +214,91 @@ def test_review_paper_skips_references_section():
     section_types = [s.section_type for s in called_sections]
     assert SectionType.REFERENCES not in section_types
     assert len(called_sections) == 2  # intro + conclusion
+
+
+def test_review_paper_forwards_author_notes_to_all_review_agents():
+    """review_paper(author_notes=...) must forward the notes to the overview,
+    section, and editorial agents. This is the glue test that guarantees the
+    author's steering input actually reaches every place that generates
+    user-visible review content."""
+    config = _make_config()
+    structure = _make_structure(
+        sections=[
+            _make_section(1, SectionType.INTRODUCTION),
+            _make_section(2, SectionType.METHODOLOGY),
+        ]
+    )
+    overview = _make_overview()
+
+    captured: dict[str, object] = {}
+
+    def capture_overview(s, calibration=None, literature_context="", author_notes=None):
+        captured["overview_notes"] = author_notes
+        return overview
+
+    def capture_section(
+        section,
+        title,
+        overview=None,
+        calibration=None,
+        focus="general",
+        literature_context="",
+        all_sections=None,
+        abstract="",
+        document_form="manuscript",
+        author_notes=None,
+    ):
+        captured.setdefault("section_notes", []).append(author_notes)  # type: ignore[union-attr]
+        return [_make_comment(section.number)]
+
+    def capture_editorial(
+        paper_text,
+        overview_arg,
+        comments,
+        comment_target=None,
+        title="",
+        abstract="",
+        contribution_context=None,
+        document_form="manuscript",
+        author_notes=None,
+    ):
+        captured["editorial_notes"] = author_notes
+        return comments
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.side_effect = capture_overview
+        MockSection.return_value.run.side_effect = capture_section
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockCompleteness.return_value.run.return_value = []
+        MockEditorial.return_value.run.side_effect = capture_editorial
+
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            author_notes="please focus on the identification strategy",
+        )
+
+    assert captured["overview_notes"] == "please focus on the identification strategy"
+    assert captured["editorial_notes"] == "please focus on the identification strategy"
+    # Both section calls see the same notes.
+    assert captured["section_notes"] == [
+        "please focus on the identification strategy",
+        "please focus on the identification strategy",
+    ]
 
 
 def test_review_paper_date_format():

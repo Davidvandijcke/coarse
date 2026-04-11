@@ -10,6 +10,7 @@ from coarse.prompts import (
     ASSUMPTION_CHECK_SYSTEM,
     OVERVIEW_SYSTEM,
     assumption_check_user,
+    author_notes_block,
     document_form_notice,
     overview_paper_context,
     overview_user,
@@ -50,6 +51,7 @@ class OverviewAgent(ReviewAgent):
         structure: PaperStructure,
         calibration: DomainCalibration | None = None,
         literature_context: str = "",
+        author_notes: str | None = None,
     ) -> OverviewFeedback:
         sections_text = _build_sections_text(structure.sections)
 
@@ -57,6 +59,11 @@ class OverviewAgent(ReviewAgent):
         # for manuscripts/preprints so that path is unchanged; a tailored block
         # for outlines/drafts/proposals/etc. that relaxes the peer-review frame.
         system_prompt = OVERVIEW_SYSTEM + document_form_notice(structure.document_form)
+
+        # Author steering notes — returns "" when notes is None/empty so the
+        # no-notes path is byte-identical. Prepended to the user message only,
+        # so the cached system block is unchanged.
+        notes_prefix = author_notes_block(author_notes)
 
         if self.client.supports_prompt_caching:
             paper_context = overview_paper_context(
@@ -80,7 +87,8 @@ class OverviewAgent(ReviewAgent):
                 },
                 {
                     "role": "user",
-                    "content": overview_user(
+                    "content": notes_prefix
+                    + overview_user(
                         structure.title,
                         structure.abstract,
                         sections_text,
@@ -93,7 +101,8 @@ class OverviewAgent(ReviewAgent):
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": overview_user(
+                    "content": notes_prefix
+                    + overview_user(
                         structure.title,
                         structure.abstract,
                         sections_text,

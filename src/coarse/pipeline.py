@@ -152,7 +152,9 @@ def _review_section(
     literature_context: str,
     all_sections: list[SectionInfo],
     abstract: str,
+    *,
     document_form: DocumentForm = "manuscript",
+    author_notes: str | None = None,
 ) -> list[DetailedComment]:
     """Review a section; chain with adversarial verification for proof sections."""
     comments = section_agent.run(
@@ -165,6 +167,7 @@ def _review_section(
         all_sections=all_sections,
         abstract=abstract,
         document_form=document_form,
+        author_notes=author_notes,
     )
     if focus == "proof" and comments and _section_needs_proof_verify(section):
         comments = verify_agent.run(
@@ -245,11 +248,28 @@ def review_paper(
     model: str | None = None,
     skip_cost_gate: bool = False,
     config: CoarseConfig | None = None,
+    author_notes: str | None = None,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
     Accepts any supported file format (PDF, TXT, MD, DOCX, TEX, HTML, EPUB).
     The ``pdf_path`` parameter name is kept for backwards compatibility.
+
+    Args:
+        pdf_path: Path to the paper file.
+        model: Optional model ID override (defaults to config.default_model).
+        skip_cost_gate: If True, skip the interactive cost approval prompt
+            (used by the Modal worker).
+        config: Optional CoarseConfig; loaded from disk when None.
+        author_notes: Optional short note from the author attached to the
+            submission to steer the review (e.g. "please focus on the
+            identification strategy, the data section is stable"). When
+            provided, it is wrapped in an ``<author_notes>`` fence and
+            forwarded to the overview, section, and editorial agents. The
+            notes are treated as steering input, not as instructions that
+            override the review rubric. Trimmed/truncated to 2000 chars by
+            ``author_notes_block`` in prompts.py. ``None`` or an empty/
+            whitespace-only string is a byte-identical no-op.
 
     Pipeline order:
     1. Extract file → PaperText (format-specific extraction)
@@ -346,7 +366,9 @@ def review_paper(
     non_ref_sections = reviewable_sections[:25]
 
     # --- Phase 1: Overview (single-pass, full paper text) ---
-    overview = overview_agent.run(structure, calibration, literature_context)
+    overview = overview_agent.run(
+        structure, calibration, literature_context, author_notes=author_notes
+    )
 
     # --- Phase 1b: Completeness assessment (runs after overview, before sections) ---
     completeness_agent = CompletenessAgent(client)
@@ -389,7 +411,8 @@ def review_paper(
                     sec_lit,
                     structure.sections,
                     sec_abstract,
-                    structure.document_form,
+                    document_form=structure.document_form,
+                    author_notes=author_notes,
                 )
             )
 
@@ -448,6 +471,7 @@ def review_paper(
             abstract=structure.abstract,
             contribution_context=contribution_context,
             document_form=structure.document_form,
+            author_notes=author_notes,
         )
     except Exception:
         # Fallback: use legacy crossref → critique pipeline if editorial agent fails

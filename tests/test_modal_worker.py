@@ -251,6 +251,44 @@ def test_strip_nul_bytes_leaves_normal_text_alone(modal_worker) -> None:
     assert modal_worker._strip_nul_bytes(text) == text
 
 
+# ---------------------------------------------------------------------------
+# ReviewRequest.author_notes plumbing (#54)
+# ---------------------------------------------------------------------------
+
+
+def test_review_request_accepts_author_notes(modal_worker) -> None:
+    """ReviewRequest deserializes an optional author_notes string from the
+    webhook payload so the field can flow through to review_paper()."""
+    req = modal_worker.ReviewRequest(
+        job_id="j1",
+        pdf_storage_path="abcd.pdf",
+        author_notes="focus on method section",
+    )
+    assert req.author_notes == "focus on method section"
+
+
+def test_review_request_author_notes_defaults_to_none(modal_worker) -> None:
+    """Older in-flight spawn() payloads (and web submits without notes)
+    still deserialize cleanly — author_notes defaults to None so no
+    backward-compat break."""
+    req = modal_worker.ReviewRequest(job_id="j1", pdf_storage_path="abcd.pdf")
+    assert req.author_notes is None
+
+
+def test_strip_nul_bytes_applies_to_author_notes(modal_worker) -> None:
+    """author_notes with NUL bytes must be scrubbed before reaching the LLM.
+    Defense against the same failure mode that Supabase 22P05 triggers — some
+    LLM providers reject NUL in content strings, and do so in a way that
+    surfaces as an opaque 'review failed' at the end of the pipeline.
+    author_notes is never persisted, but it IS passed to the prompt builder,
+    so the strip must run here."""
+    raw = "focus on section 3\x00 and also section 4"
+    scrubbed = modal_worker._strip_nul_bytes(raw)
+    assert "\x00" not in scrubbed
+    assert "focus on section 3" in scrubbed
+    assert "section 4" in scrubbed
+
+
 def _make_req(job_id: str = "j1"):
     return types.SimpleNamespace(job_id=job_id, model_dump=lambda: {"job_id": job_id})
 
