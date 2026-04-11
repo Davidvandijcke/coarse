@@ -426,7 +426,10 @@ def test_resolve_user_api_key_returns_none_when_both_sources_empty(modal_worker)
 
 def test_resolve_user_api_key_strips_whitespace_from_review_secrets(modal_worker) -> None:
     """A whitespace-only review_secrets value should NOT be returned (it would
-    yield an empty Bearer header). Fall through to req.user_api_key instead."""
+    yield an empty Bearer header). Fall through to req.user_api_key instead.
+
+    The whitespace row IS still deleted by _fetch_and_consume_user_key before
+    the strip-check fires, so a stray row can't rot until the TTL cron."""
     backward = "sk-or-v1-backcompat56565656565656565656"  # security: ignore
     table = _FakeSupabaseTable(row={"user_api_key": "   \n"})
     db = _FakeSupabase(table)
@@ -435,3 +438,139 @@ def test_resolve_user_api_key_strips_whitespace_from_review_secrets(modal_worker
     result = modal_worker._resolve_user_api_key(db, req, "j1")
     # Whitespace-only DB value is rejected; falls back to req payload.
     assert result == backward
+    # But the row was still consumed (the TTL cron doesn't need to clean it up).
+    assert table.deleted == [("review_id", "j1")]
+
+
+# ---------------------------------------------------------------------------
+# do_review — integration test for key installation into os.environ
+# ---------------------------------------------------------------------------
+
+
+def test_do_review_installs_resolved_key_into_environ(modal_worker, monkeypatch) -> None:
+    """When _resolve_user_api_key returns a key, do_review must write it into
+    OPENROUTER_API_KEY BEFORE the pipeline runs. Regression guard against a
+    refactor that reorders the env-var install or drops it entirely.
+
+    Stubs supabase.create_client so do_review can build a `db` object, then
+    captures the env var inside a fake `storage.download` call that raises to
+    short-circuit the rest of the pipeline before review_paper() runs."""
+    import os as _os
+    import sys as _sys
+
+    resolved = "sk-or-v1-fromferryintegrationtest12345"  # security: ignore
+    captured: dict[str, str | None] = {}
+
+    class _FakeDownload:
+        def from_(self, _bucket):
+            return self
+
+        def download(self, _path):
+            # Capture env var state at the earliest point after key resolution,
+            # before the finally block restores the original key.
+            captured["env"] = _os.environ.get("OPENROUTER_API_KEY")
+            raise RuntimeError("short-circuit before review_paper")
+
+    class _FakeReviewsTable:
+        def update(self, _data):
+            return self
+
+        def eq(self, _col, _val):
+            return self
+
+        def execute(self):
+            return types.SimpleNamespace(data=[])
+
+    class _FakeDB:
+        def __init__(self):
+            self.storage = _FakeDownload()
+
+        def table(self, _name):
+            return _FakeReviewsTable()
+
+    def _fake_create_client(_url, _key):
+        return _FakeDB()
+
+    # Install a fake supabase module so the lazy `from supabase import
+    # create_client` inside do_review resolves to our fake.
+    supabase_stub = types.ModuleType("supabase")
+    supabase_stub.create_client = _fake_create_client
+    monkeypatch.setitem(_sys.modules, "supabase", supabase_stub)
+
+    # Stub _resolve_user_api_key so we don't depend on the fake supabase's
+    # review_secrets path — the unit tests above already cover that.
+    monkeypatch.setattr(modal_worker, "_resolve_user_api_key", lambda _db, _req, _job: resolved)
+
+    monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-service-key")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="short-circuit before review_paper"):
+        modal_worker.do_review(
+            {
+                "job_id": "integration-test-job",
+                "pdf_storage_path": "papers/test.pdf",
+            }
+        )
+
+    # The env var was installed BEFORE the download call that raised.
+    # (do_review's finally-block cleanup lives inside a later `try:` block
+    # that we short-circuit before reaching, so env-cleanup is out of scope
+    # for this test — monkeypatch restores it on teardown.)
+    assert captured["env"] == resolved
+
+
+def test_do_review_skips_environ_write_when_no_key_resolved(modal_worker, monkeypatch) -> None:
+    """When _resolve_user_api_key returns None, do_review must NOT write an
+    empty string to OPENROUTER_API_KEY (that would produce a `Bearer ` header
+    and cascade 401s through every LLM call). Regression guard."""
+    import os as _os
+    import sys as _sys
+
+    captured: dict[str, str | None] = {}
+
+    class _FakeDownload:
+        def from_(self, _bucket):
+            return self
+
+        def download(self, _path):
+            captured["env"] = _os.environ.get("OPENROUTER_API_KEY", "<unset>")
+            raise RuntimeError("short-circuit before review_paper")
+
+    class _FakeReviewsTable:
+        def update(self, _data):
+            return self
+
+        def eq(self, _col, _val):
+            return self
+
+        def execute(self):
+            return types.SimpleNamespace(data=[])
+
+    class _FakeDB:
+        def __init__(self):
+            self.storage = _FakeDownload()
+
+        def table(self, _name):
+            return _FakeReviewsTable()
+
+    supabase_stub = types.ModuleType("supabase")
+    supabase_stub.create_client = lambda _u, _k: _FakeDB()
+    monkeypatch.setitem(_sys.modules, "supabase", supabase_stub)
+
+    monkeypatch.setattr(modal_worker, "_resolve_user_api_key", lambda _db, _req, _job: None)
+
+    monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-service-key")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="short-circuit before review_paper"):
+        modal_worker.do_review(
+            {
+                "job_id": "no-key-test-job",
+                "pdf_storage_path": "papers/test.pdf",
+            }
+        )
+
+    # Env var was NOT set to "" — it stays unset.
+    assert captured["env"] == "<unset>"

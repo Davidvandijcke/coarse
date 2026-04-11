@@ -298,10 +298,12 @@ def do_review(req_dict: dict):
 
     # Resolve the user's OpenRouter key. Both strip/normalization and the
     # review_secrets-vs-backward-compat precedence live in _resolve_user_api_key.
+    # `resolved_user_key` may come from either source, so the name is
+    # intentionally source-agnostic.
     original_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip() or None
-    cleaned_user_key = _resolve_user_api_key(db, req, job_id)
-    if cleaned_user_key:
-        os.environ["OPENROUTER_API_KEY"] = cleaned_user_key
+    resolved_user_key = _resolve_user_api_key(db, req, job_id)
+    if resolved_user_key:
+        os.environ["OPENROUTER_API_KEY"] = resolved_user_key
 
     # Download file from Supabase Storage
     pdf_bytes = db.storage.from_("papers").download(pdf_storage_path)
@@ -320,7 +322,7 @@ def do_review(req_dict: dict):
         from coarse import review_paper
         from coarse.config import CoarseConfig
 
-        has_or_key = bool(cleaned_user_key or original_key)
+        has_or_key = bool(resolved_user_key or original_key)
         print(f"[{job_id}] Import OK — OPENROUTER_API_KEY={'set' if has_or_key else 'MISSING'}")
         print(f"[{job_id}] Starting pipeline")
 

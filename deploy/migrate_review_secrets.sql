@@ -17,6 +17,15 @@
 -- read and write.
 --
 -- Idempotent: safe to re-run in the SQL editor.
+--
+-- Rollout order: migration (this file) → Modal worker → Vercel. The backward-
+-- compat `req.user_api_key` branch in the worker's _resolve_user_api_key lets
+-- the Vercel deploy safely lag the Modal deploy. However, ROLLING BACK the
+-- Modal worker AFTER Vercel has deployed is unsafe: the rolled-back worker
+-- reads req.user_api_key from the webhook body, which the new Vercel no
+-- longer sends, so every review 401s. If you need to roll back Modal, roll
+-- back Vercel first (or temporarily re-enable `user_api_key` in the submit
+-- route's Modal fetch body).
 
 create table if not exists review_secrets (
   review_id uuid primary key references reviews(id) on delete cascade,
