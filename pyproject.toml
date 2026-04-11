@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "litellm>=1.60",
+    "litellm>=1.83.0",
     "instructor>=1.7",
     "pydantic>=2.0",
     "typer>=0.12",
