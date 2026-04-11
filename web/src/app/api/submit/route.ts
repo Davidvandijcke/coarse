@@ -53,9 +53,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Count only truly submitted jobs (rows with a matching review_emails record),
+  // not presign placeholders that never completed submission.
   const { count: activeReviews, error: activeReviewsError } = await supabaseAdmin
     .from("reviews")
-    .select("id", { count: "exact", head: true })
+    .select("id, review_emails!inner(review_id)", { count: "exact", head: true })
     .in("status", ["queued", "running"]);
 
   if (activeReviewsError) {
