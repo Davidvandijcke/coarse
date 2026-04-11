@@ -630,3 +630,241 @@ def test_complete_instructor_validation_error(mock_instructor_client):
             messages=[{"role": "user", "content": "bad"}],
             response_model=_SimpleModel,
         )
+
+
+# ---------------------------------------------------------------------------
+# provider_allowlist — US-only routing for cheap stage tier (gh #46)
+# ---------------------------------------------------------------------------
+
+
+def test_llm_client_provider_allowlist_in_extra_body(mock_instructor_client):
+    """A client constructed with provider_allowlist injects
+    extra_body.provider.only on every complete_text call so OpenRouter
+    restricts routing to the allowlisted providers."""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "ok"
+
+    captured: dict = {}
+
+    def _capture(*args, **kwargs):
+        captured.update(kwargs)
+        return mock_response
+
+    with (
+        patch("coarse.llm._sanitized_completion", side_effect=_capture),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(
+            model=TEST_MODEL,
+            config=CoarseConfig(),
+            provider_allowlist=("DeepInfra", "Parasail"),
+        )
+        client.complete_text(messages=[{"role": "user", "content": "hi"}])
+
+    extra_body = captured.get("extra_body", {})
+    assert extra_body.get("provider", {}).get("only") == ["DeepInfra", "Parasail"]
+
+
+def test_llm_client_provider_allowlist_preserves_caller_extra_body(mock_instructor_client):
+    """If the caller passes their own extra_body with a provider.order
+    (or anything else), the allowlist adds `only` alongside it without
+    clobbering unrelated keys."""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "ok"
+
+    captured: dict = {}
+
+    def _capture(*args, **kwargs):
+        captured.update(kwargs)
+        return mock_response
+
+    with (
+        patch("coarse.llm._sanitized_completion", side_effect=_capture),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(
+            model=TEST_MODEL,
+            config=CoarseConfig(),
+            provider_allowlist=("DeepInfra",),
+        )
+        client.complete_text(
+            messages=[{"role": "user", "content": "hi"}],
+            extra_body={"provider": {"order": ["DeepInfra", "Parasail"]}},
+        )
+
+    extra_body = captured.get("extra_body", {})
+    provider = extra_body.get("provider", {})
+    assert provider.get("only") == ["DeepInfra"]
+    assert provider.get("order") == ["DeepInfra", "Parasail"]
+
+
+def test_llm_client_complete_falls_back_on_primary_exception(mock_instructor_client):
+    """When the primary client's complete() raises, the fallback client's
+    complete() is called with the same arguments and its result returned."""
+    primary_expected = _SimpleModel(value="primary")
+    fallback_expected = _SimpleModel(value="fallback")
+
+    # Primary raises; fallback is a real LLMClient with its own mocked path
+    mock_instructor_client.chat.completions.create_with_completion.side_effect = RuntimeError(
+        "primary broke"
+    )
+
+    fallback = LLMClient(model=TEST_MODEL, config=CoarseConfig())
+    # Replace the fallback's internal instructor client with a mock
+    # that returns a known value
+    fallback._client = MagicMock()
+    fallback._client.chat.completions.create_with_completion.return_value = (
+        fallback_expected,
+        _make_mock_completion(),
+    )
+
+    primary = LLMClient(
+        model=TEST_MODEL,
+        config=CoarseConfig(),
+        fallback_client=fallback,
+    )
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        result = primary.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+        )
+
+    assert result is fallback_expected
+    assert result.value == "fallback"
+    # Unused locally — silences linters complaining about the import of
+    # the primary expected value
+    del primary_expected
+
+
+def test_llm_client_complete_raises_without_fallback(mock_instructor_client):
+    """When the primary raises and there's no fallback_client, the
+    original exception propagates unchanged — no silent swallowing."""
+    mock_instructor_client.chat.completions.create_with_completion.side_effect = RuntimeError(
+        "broken"
+    )
+    client = LLMClient(model=TEST_MODEL, config=CoarseConfig())
+    with pytest.raises(RuntimeError, match="broken"):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+        )
+
+
+def test_llm_client_complete_text_falls_back_on_exception(mock_instructor_client):
+    """complete_text() has the same fallback behavior as complete()."""
+    fallback_response = MagicMock()
+    fallback_response.choices = [MagicMock()]
+    fallback_response.choices[0].message.content = "fallback content"
+
+    fallback = LLMClient(model=TEST_MODEL, config=CoarseConfig())
+    primary = LLMClient(
+        model=TEST_MODEL,
+        config=CoarseConfig(),
+        fallback_client=fallback,
+    )
+
+    # Primary raises from _sanitized_completion; fallback returns content
+    call_count = {"n": 0}
+
+    def _sanitized(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("primary broke")
+        return fallback_response
+
+    with (
+        patch("coarse.llm._sanitized_completion", side_effect=_sanitized),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        result = primary.complete_text(
+            messages=[{"role": "user", "content": "x"}],
+        )
+
+    assert result == "fallback content"
+    assert call_count["n"] == 2  # primary + fallback
+
+
+def test_llm_client_default_extra_body_merges_into_calls(mock_instructor_client):
+    """A client constructed with default_extra_body merges those fields
+    into extra_body on every complete_text call. Used to disable glm-5.1's
+    default thinking mode so max_tokens isn't eaten by reasoning preamble."""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "ok"
+
+    captured: dict = {}
+
+    def _capture(*args, **kwargs):
+        captured.update(kwargs)
+        return mock_response
+
+    with (
+        patch("coarse.llm._sanitized_completion", side_effect=_capture),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(
+            model=TEST_MODEL,
+            config=CoarseConfig(),
+            default_extra_body={"reasoning": {"effort": "none"}},
+        )
+        client.complete_text(messages=[{"role": "user", "content": "hi"}])
+
+    assert captured.get("extra_body", {}).get("reasoning") == {"effort": "none"}
+
+
+def test_llm_client_default_extra_body_caller_override_wins(mock_instructor_client):
+    """A caller passing their own extra_body key overrides the client's
+    default — setdefault semantics at the merge step."""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "ok"
+
+    captured: dict = {}
+
+    def _capture(*args, **kwargs):
+        captured.update(kwargs)
+        return mock_response
+
+    with (
+        patch("coarse.llm._sanitized_completion", side_effect=_capture),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(
+            model=TEST_MODEL,
+            config=CoarseConfig(),
+            default_extra_body={"reasoning": {"effort": "none"}},
+        )
+        client.complete_text(
+            messages=[{"role": "user", "content": "hi"}],
+            extra_body={"reasoning": {"effort": "high"}},
+        )
+
+    assert captured.get("extra_body", {}).get("reasoning") == {"effort": "high"}
+
+
+def test_llm_client_without_allowlist_omits_only(mock_instructor_client):
+    """A client without provider_allowlist (the default) does NOT set
+    extra_body.provider.only, so unrestricted clients behave exactly as
+    they did before the allowlist support was added."""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "ok"
+
+    captured: dict = {}
+
+    def _capture(*args, **kwargs):
+        captured.update(kwargs)
+        return mock_response
+
+    with (
+        patch("coarse.llm._sanitized_completion", side_effect=_capture),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(model=TEST_MODEL, config=CoarseConfig())
+        client.complete_text(messages=[{"role": "user", "content": "hi"}])
+
+    extra_body = captured.get("extra_body")
+    assert extra_body is None or "only" not in (extra_body.get("provider") or {})

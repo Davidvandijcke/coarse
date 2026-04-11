@@ -1,4 +1,5 @@
 """Tests for pipeline.py — review_paper orchestrator."""
+
 from __future__ import annotations
 
 import datetime
@@ -26,6 +27,7 @@ TEST_MODEL = "test/mock-model"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_paper_text() -> PaperText:
     return PaperText(
@@ -78,6 +80,7 @@ def _make_config() -> CoarseConfig:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_review_paper_calls_stages_in_order():
     """Verify each stage is called once in the correct order."""
     config = CoarseConfig(default_model=TEST_MODEL)
@@ -94,7 +97,7 @@ def test_review_paper_calls_stages_in_order():
         call_order.append("extract")
         return paper_text
 
-    def fake_analyze(pt, client):
+    def fake_analyze(pt, client, math_client=None):
         call_order.append("structure")
         return structure
 
@@ -103,9 +106,14 @@ def test_review_paper_calls_stages_in_order():
         return overview
 
     def fake_section_run(
-        section, title, overview=None, calibration=None,
-        focus="general", literature_context="",
-        all_sections=None, abstract="",
+        section,
+        title,
+        overview=None,
+        calibration=None,
+        focus="general",
+        literature_context="",
+        all_sections=None,
+        abstract="",
     ):
         call_order.append(f"section_{section.number}")
         return [_make_comment(section.number)]
@@ -154,18 +162,25 @@ def test_review_paper_calls_stages_in_order():
 def test_review_paper_skips_references_section():
     """SectionAgent.run() must not be called with the REFERENCES section."""
     config = _make_config()
-    structure = _make_structure(sections=[
-        _make_section(1, SectionType.INTRODUCTION),
-        _make_section(2, SectionType.REFERENCES),
-        _make_section(3, SectionType.CONCLUSION),
-    ])
+    structure = _make_structure(
+        sections=[
+            _make_section(1, SectionType.INTRODUCTION),
+            _make_section(2, SectionType.REFERENCES),
+            _make_section(3, SectionType.CONCLUSION),
+        ]
+    )
     overview = _make_overview()
     called_sections: list[SectionInfo] = []
 
     def fake_section_run(
-        section, title, overview=None, calibration=None,
-        focus="general", literature_context="",
-        all_sections=None, abstract="",
+        section,
+        title,
+        overview=None,
+        calibration=None,
+        focus="general",
+        literature_context="",
+        all_sections=None,
+        abstract="",
     ):
         called_sections.append(section)
         return [_make_comment(section.number)]
@@ -348,18 +363,24 @@ def test_review_paper_section_comments_flattened():
 
 
 def test_review_paper_uses_provided_config():
-    """Provided CoarseConfig with custom model is used; load_config() is not called."""
+    """Provided CoarseConfig with custom model is used; load_config() is not called.
+
+    The StageRouter constructs LLMClient instances lazily via
+    ``coarse.routing.LLMClient``, so patch that symbol (not
+    ``coarse.pipeline.LLMClient``) to intercept the per-stage construction.
+    """
     config = CoarseConfig(default_model="anthropic/claude-3-5-haiku-20241022")
     overview = _make_overview()
     captured_models: list[str] = []
 
-    def fake_llm_client(model=None, config=None):
+    def fake_llm_client(model=None, config=None, **kwargs):
         captured_models.append(model)
         mock = MagicMock()
         return mock
 
     with (
         patch("coarse.pipeline.load_config") as mock_load_config,
+        patch("coarse.routing.LLMClient", side_effect=fake_llm_client),
         patch("coarse.pipeline.LLMClient", side_effect=fake_llm_client),
         patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=_make_structure()),
@@ -382,15 +403,18 @@ def test_review_paper_uses_provided_config():
         review_paper("paper.pdf", skip_cost_gate=True, config=config)
 
     mock_load_config.assert_not_called()
-    # LLMClient is called at least once for main model; vision QA may be skipped
-    # if no GEMINI_API_KEY is available (e.g. in CI)
-    assert captured_models[0] == "anthropic/claude-3-5-haiku-20241022"
-    assert len(captured_models) >= 1
+    # With STAGE_MODELS empty in the Phase 0 scaffolding, every stage
+    # resolves to the base model. The router builds one client per
+    # unique resolved model — so the provided default_model should appear
+    # at least once in captured_models (vision QA may also construct its
+    # own client via coarse.pipeline.LLMClient, which we patch the same way).
+    assert "anthropic/claude-3-5-haiku-20241022" in captured_models
 
 
 # ---------------------------------------------------------------------------
 # Unit tests: _renumber_comments
 # ---------------------------------------------------------------------------
+
 
 def test_renumber_comments_sequential():
     """Comments get renumbered 1, 2, 3 regardless of input numbers."""
@@ -406,9 +430,11 @@ def test_renumber_comments_sequential():
 def test_renumber_comments_preserves_content():
     """Renumbering only changes .number, not other fields."""
     comment = DetailedComment(
-        number=99, title="Test",
+        number=99,
+        title="Test",
         quote="Verbatim quote from the paper.",
-        feedback="f", severity="critical",
+        feedback="f",
+        severity="critical",
     )
     result = _renumber_comments([comment])
     assert result[0].number == 1
@@ -420,10 +446,10 @@ def test_renumber_comments_empty():
     assert _renumber_comments([]) == []
 
 
-
 # ---------------------------------------------------------------------------
 # _review_section + appendix filter tests
 # ---------------------------------------------------------------------------
+
 
 def test_review_section_chains_verify_for_proof():
     """_review_section with focus='proof' calls both section agent and verify agent."""
@@ -437,14 +463,24 @@ def test_review_section_chains_verify_for_proof():
     verify_agent.run.return_value = verified
 
     result = _review_section(
-        section_agent, verify_agent, section, "Paper",
-        overview=None, calibration=None, focus="proof",
-        literature_context="", all_sections=[], abstract="abstract",
+        section_agent,
+        verify_agent,
+        section,
+        "Paper",
+        overview=None,
+        calibration=None,
+        focus="proof",
+        literature_context="",
+        all_sections=[],
+        abstract="abstract",
     )
 
     section_agent.run.assert_called_once()
     verify_agent.run.assert_called_once_with(
-        section, "Paper", first_pass, abstract="abstract",
+        section,
+        "Paper",
+        first_pass,
+        abstract="abstract",
     )
     assert result == verified
 
@@ -458,9 +494,16 @@ def test_review_section_skips_verify_for_non_proof():
     section_agent.run.return_value = comments
 
     result = _review_section(
-        section_agent, verify_agent, section, "Paper",
-        overview=None, calibration=None, focus="general",
-        literature_context="", all_sections=[], abstract="",
+        section_agent,
+        verify_agent,
+        section,
+        "Paper",
+        overview=None,
+        calibration=None,
+        focus="general",
+        literature_context="",
+        all_sections=[],
+        abstract="",
     )
 
     section_agent.run.assert_called_once()
@@ -482,10 +525,10 @@ def test_appendix_filter_includes_long_appendix():
     # Replicate the pipeline's filter logic
     _MIN_APPENDIX_CHARS = 500
     reviewable = [
-        s for s in structure.sections
+        s
+        for s in structure.sections
         if s.section_type != SectionType.REFERENCES
-        and (s.section_type != SectionType.APPENDIX
-             or len(s.text) >= _MIN_APPENDIX_CHARS)
+        and (s.section_type != SectionType.APPENDIX or len(s.text) >= _MIN_APPENDIX_CHARS)
     ]
     assert appendix in reviewable
 
@@ -503,9 +546,9 @@ def test_appendix_filter_skips_short_appendix():
 
     _MIN_APPENDIX_CHARS = 500
     reviewable = [
-        s for s in structure.sections
+        s
+        for s in structure.sections
         if s.section_type != SectionType.REFERENCES
-        and (s.section_type != SectionType.APPENDIX
-             or len(s.text) >= _MIN_APPENDIX_CHARS)
+        and (s.section_type != SectionType.APPENDIX or len(s.text) >= _MIN_APPENDIX_CHARS)
     ]
     assert appendix not in reviewable

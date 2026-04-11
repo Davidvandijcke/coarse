@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type PostgrestError } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -114,16 +114,63 @@ export async function POST(request: NextRequest) {
     await supabaseAdmin.from("reviews").update({ model }).eq("id", id);
   }
 
-  // Store email in separate table (not readable by anon key)
+  // Mark the reviews row as failed instead of deleting it on mid-submit
+  // errors. Previously, the error handlers ran `.delete()`, which created a
+  // race: if submit A fails on one of the inserts and rolls back by deleting
+  // the reviews row, and submit B (double-click) has already fired its 23505
+  // idempotency check and returned 200, the client is redirected to
+  // /status/${id} which then 404s because the row is gone. Updating status to
+  // 'failed' keeps the row visible so the status page shows the real outcome,
+  // and it matches the existing Modal-fetch-failure semantics below.
+  const markFailed = async (errorMessage: string) => {
+    await supabaseAdmin
+      .from("reviews")
+      .update({ status: "failed", error_message: errorMessage })
+      .eq("id", id);
+  };
+
+  // NOTE: ORDER MATTERS. review_emails MUST be inserted before review_secrets.
+  // Double-clicks short-circuit on the 23505 unique_violation here, so the
+  // review_secrets insert never runs on the duplicate request. If a future
+  // refactor reorders these, the double-click protection breaks silently.
+  //
+  // If this insert raises a Postgres unique_violation (SQLSTATE 23505), the
+  // review_id was already submitted — almost always a double-click on the
+  // submit button where the browser fires two POSTs with the same presigned
+  // id. Treat it as an idempotent success: submit 1 already did all the
+  // downstream work (review_secrets insert, Modal fetch, confirmation email),
+  // so submit 2 must NOT re-fire the Modal worker (which would race submit 1
+  // on the same job_id and leak a second worker). Return 200 with the same id
+  // so the client's success handler runs.
   const { error: emailError } = await supabaseAdmin
     .from("review_emails")
     .insert({ review_id: id, email });
   if (emailError) {
-    await supabaseAdmin.from("reviews").delete().eq("id", id);
+    if ((emailError as PostgrestError).code === "23505") {
+      return NextResponse.json({ id });
+    }
+    await markFailed("Failed to save contact info");
     return NextResponse.json({ error: "Failed to save contact info" }, { status: 500 });
   }
 
-  // Trigger Modal worker (fire-and-forget — the worker updates Supabase directly)
+  // Store the user's API key in review_secrets (RLS deny-all; only the Modal
+  // worker, which uses the service role, can read it). Inserting here — rather
+  // than sending the key in the Modal webhook body — keeps the key out of
+  // Modal's managed queue payload, which would otherwise persist it until the
+  // worker consumed it. The worker reads + deletes the row in one shot via
+  // _fetch_and_consume_user_key(); a GitHub Actions cron sweeps any rows older
+  // than 3 hours as a safety net.
+  const { error: secretError } = await supabaseAdmin
+    .from("review_secrets")
+    .insert({ review_id: id, user_api_key: apiKey });
+  if (secretError) {
+    await markFailed("Failed to stage review credentials");
+    return NextResponse.json({ error: "Failed to stage review credentials" }, { status: 500 });
+  }
+
+  // Trigger Modal worker (fire-and-forget — the worker updates Supabase directly).
+  // NOTE: user_api_key is intentionally NOT in the body. The worker resolves it
+  // from review_secrets. This keeps the key out of Modal's spawn() payload.
   const modalUrl = process.env.MODAL_FUNCTION_URL;
   if (modalUrl) {
     fetch(modalUrl, {
@@ -135,28 +182,44 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         job_id: id,
         pdf_storage_path: storagePath,
-        user_api_key: apiKey,
         email,
         model: model || undefined,
       }),
     })
       .then(async (res) => {
         if (!res.ok) {
-          await supabaseAdmin
-            .from("reviews")
-            .update({
-              status: "failed",
-              error_message:
-                "We are seeing high traffic right now. Please try again later or use the command line version.",
-            })
-            .eq("id", id);
+          // Modal never consumed the key — drop it from review_secrets so the
+          // orphaned row doesn't sit for up to 3h waiting for the TTL cron.
+          try {
+            await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
+            await supabaseAdmin
+              .from("reviews")
+              .update({
+                status: "failed",
+                error_message:
+                  "We are seeing high traffic right now. Please try again later or use the command line version.",
+              })
+              .eq("id", id);
+          } catch (cleanupErr) {
+            // Best-effort cleanup — log so stuck rows surface in vercel logs.
+            console.error(`[${id}] submit cleanup after !res.ok failed`, cleanupErr);
+          }
         }
       })
-      .catch(async () => {
-        await supabaseAdmin
-          .from("reviews")
-          .update({ status: "failed", error_message: "Failed to start review worker" })
-          .eq("id", id);
+      .catch(async (fetchErr) => {
+        // Modal fetch itself rejected — same cleanup as the !res.ok branch.
+        try {
+          await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
+          await supabaseAdmin
+            .from("reviews")
+            .update({ status: "failed", error_message: "Failed to start review worker" })
+            .eq("id", id);
+        } catch (cleanupErr) {
+          console.error(`[${id}] submit cleanup after fetch reject failed`, {
+            fetchErr,
+            cleanupErr,
+          });
+        }
       });
   }
 

@@ -1,4 +1,5 @@
 """Tests for cli.py — Typer CLI commands."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,7 +10,6 @@ from typer.testing import CliRunner
 from coarse.cli import app
 from coarse.config import CoarseConfig
 from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,7 +29,8 @@ def _make_review() -> Review:
         ),
         detailed_comments=[
             DetailedComment(
-                number=1, title="Comment 1",
+                number=1,
+                title="Comment 1",
                 quote="Some verbatim quote from the paper text.",
                 feedback="Feedback.",
             )
@@ -37,14 +38,22 @@ def _make_review() -> Review:
     )
 
 
-def _fake_review_paper(pdf_path, model=None, skip_cost_gate=False, config=None):
+def _fake_review_paper(
+    pdf_path,
+    model=None,
+    skip_cost_gate=False,
+    config=None,
+    stage_overrides=None,
+):
     from coarse.types import PaperText
+
     return _make_review(), "# Test Paper\n", PaperText(full_markdown="", token_estimate=0)
 
 
 # ---------------------------------------------------------------------------
 # test_review_command_invokes_pipeline
 # ---------------------------------------------------------------------------
+
 
 def test_review_command_invokes_pipeline(tmp_path):
     """review command calls pipeline.review_paper and writes output file."""
@@ -62,8 +71,73 @@ def test_review_command_invokes_pipeline(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# test_review_command_stage_override_parses_and_threads
+# ---------------------------------------------------------------------------
+
+
+def test_review_command_stage_override_parses_and_threads(tmp_path):
+    """--stage-override <name>=<model> is parsed into a dict and passed
+    through to review_paper as stage_overrides kwarg. Multiple overrides
+    are accepted (the flag is repeatable)."""
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+
+    captured: dict = {}
+
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, stage_overrides=None):
+        captured["stage_overrides"] = stage_overrides
+        from coarse.types import PaperText
+
+        return _make_review(), "# md\n", PaperText(full_markdown="", token_estimate=0)
+
+    with (
+        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.review_paper", fake),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "review",
+                str(pdf),
+                "--yes",
+                "--stage-override",
+                "metadata=openrouter/test/a",
+                "--stage-override",
+                "section=openrouter/test/b",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert captured["stage_overrides"] == {
+        "metadata": "openrouter/test/a",
+        "section": "openrouter/test/b",
+    }
+
+
+def test_review_command_stage_override_rejects_malformed_entry(tmp_path):
+    """An entry missing the '=' separator exits the CLI with a clear error."""
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+
+    with (
+        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.review_paper", _fake_review_paper),
+    ):
+        result = runner.invoke(
+            app,
+            ["review", str(pdf), "--yes", "--stage-override", "metadata_only_no_equals"],
+        )
+
+    assert result.exit_code == 1
+    assert "expected '<stage>=<model>'" in result.output
+
+
+# ---------------------------------------------------------------------------
 # test_review_command_default_output_path
 # ---------------------------------------------------------------------------
+
 
 def test_review_command_default_output_path(tmp_path, monkeypatch):
     """Output file defaults to <pdf_stem>_review.md in cwd."""
@@ -87,14 +161,16 @@ def test_review_command_default_output_path(tmp_path, monkeypatch):
 # test_review_command_custom_output_path
 # ---------------------------------------------------------------------------
 
+
 def test_review_command_custom_output_path(tmp_path):
     """--output writes to specified path."""
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
     out = tmp_path / "out.md"
 
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None):
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, stage_overrides=None):
         from coarse.types import PaperText
+
         return _make_review(), "# Custom Output\n", PaperText(full_markdown="", token_estimate=0)
 
     with (
@@ -113,6 +189,7 @@ def test_review_command_custom_output_path(tmp_path):
 # test_review_yes_flag_skips_cost_gate
 # ---------------------------------------------------------------------------
 
+
 def test_review_yes_flag_skips_cost_gate(tmp_path):
     """--yes passes skip_cost_gate=True to review_paper."""
     pdf = tmp_path / "paper.pdf"
@@ -120,9 +197,10 @@ def test_review_yes_flag_skips_cost_gate(tmp_path):
 
     captured: dict = {}
 
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None):
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, stage_overrides=None):
         captured["skip_cost_gate"] = skip_cost_gate
         from coarse.types import PaperText
+
         return _make_review(), "# Test\n", PaperText(full_markdown="", token_estimate=0)
 
     with (
@@ -139,6 +217,7 @@ def test_review_yes_flag_skips_cost_gate(tmp_path):
 # ---------------------------------------------------------------------------
 # test_review_missing_api_key_triggers_setup
 # ---------------------------------------------------------------------------
+
 
 def test_review_missing_api_key_triggers_setup(tmp_path, monkeypatch):
     """When no API key found and not a TTY, exit with code 1 and clear error."""
@@ -159,6 +238,7 @@ def test_review_missing_api_key_triggers_setup(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # test_setup_command_writes_config
 # ---------------------------------------------------------------------------
+
 
 def test_setup_command_writes_config(tmp_path, monkeypatch):
     """setup command saves config with user-provided values."""
@@ -185,6 +265,7 @@ def test_setup_command_writes_config(tmp_path, monkeypatch):
 # test_setup_skips_keys_already_in_env
 # ---------------------------------------------------------------------------
 
+
 def test_setup_skips_keys_already_in_env(tmp_path, monkeypatch):
     """setup skips prompting for keys already set in environment."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-already-set")
@@ -206,7 +287,7 @@ def test_setup_skips_keys_already_in_env(tmp_path, monkeypatch):
         patch("coarse.cli.save_config", fake_save_config),
         patch("typer.prompt", fake_prompt),
     ):
-        result = runner.invoke(app, ["setup"])
+        runner.invoke(app, ["setup"])
 
     assert not any("OPENAI_API_KEY" in p for p in prompts_asked)
 
@@ -214,6 +295,7 @@ def test_setup_skips_keys_already_in_env(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # test_main_module_entrypoint
 # ---------------------------------------------------------------------------
+
 
 def test_main_module_entrypoint():
     """--help via app() works (smoke test for __main__ entry point)."""
@@ -225,6 +307,7 @@ def test_main_module_entrypoint():
 # ---------------------------------------------------------------------------
 # test_init_exports
 # ---------------------------------------------------------------------------
+
 
 def test_init_exports():
     """coarse package exports review_paper callable and __version__."""
@@ -243,6 +326,7 @@ def test_init_exports():
 # test_review_nonexistent_pdf
 # ---------------------------------------------------------------------------
 
+
 def test_review_nonexistent_pdf():
     """Invoking review with a nonexistent PDF exits with non-zero code."""
     result = runner.invoke(app, ["review", "/nonexistent/path/paper.pdf"])
@@ -253,9 +337,9 @@ def test_review_nonexistent_pdf():
 # test_review_eval_flag_saves_quality_report
 # ---------------------------------------------------------------------------
 
+
 def test_review_eval_flag_saves_quality_report(tmp_path):
     """--eval runs quality evaluation and writes a quality report file."""
-    from unittest.mock import call
     from coarse.quality import DimensionScore, QualityReport
 
     pdf = tmp_path / "paper.pdf"

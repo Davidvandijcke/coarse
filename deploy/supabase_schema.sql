@@ -43,6 +43,23 @@ create table review_emails (
 alter table review_emails enable row level security;
 
 -- ============================================================================
+-- Review secrets (transient user API keys, consumed once by the Modal worker)
+-- ============================================================================
+
+-- Same deny-all RLS model as review_emails. The Modal worker reads + deletes
+-- the row in one shot via _fetch_and_consume_user_key(); a GitHub Actions cron
+-- sweeps any rows older than 3 hours as a safety net.
+create table review_secrets (
+  review_id uuid primary key references reviews(id) on delete cascade,
+  user_api_key text not null check (length(user_api_key) > 0),
+  created_at timestamptz default now()
+);
+
+alter table review_secrets enable row level security;
+
+create index idx_review_secrets_created_at on review_secrets (created_at);
+
+-- ============================================================================
 -- Storage buckets
 -- ============================================================================
 

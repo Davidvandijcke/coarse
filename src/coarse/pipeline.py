@@ -30,6 +30,7 @@ from coarse.prompts import (
     contribution_extraction_user,
 )
 from coarse.quote_verify import verify_quotes
+from coarse.routing import StageRouter
 from coarse.structure import analyze_structure
 from coarse.synthesis import render_review
 from coarse.types import (
@@ -208,6 +209,7 @@ def review_paper(
     model: str | None = None,
     skip_cost_gate: bool = False,
     config: CoarseConfig | None = None,
+    stage_overrides: dict[str, str] | None = None,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
@@ -223,6 +225,16 @@ def review_paper(
     6. Cross-reference + quote verification + critique + quote re-verification
     7. Synthesis → markdown
 
+    Args:
+        pdf_path: Input file path.
+        model: Optional explicit base model override (``--model`` CLI flag).
+        skip_cost_gate: Skip the interactive cost-confirmation prompt.
+        config: Pre-loaded config, else loaded from ``~/.coarse/config.toml``.
+        stage_overrides: Optional per-stage model overrides, merged on top
+            of the default ``STAGE_MODELS`` map. Keys must be valid stage
+            names from ``coarse.routing.STAGE_NAMES``. Used by the CLI's
+            ``--stage-override`` flag and by tests.
+
     Returns:
         (Review, markdown_string, paper_text)
     """
@@ -230,7 +242,16 @@ def review_paper(
         config = load_config()
 
     resolved_model = model or config.default_model
-    client = LLMClient(model=resolved_model, config=config)
+
+    # The router resolves per-stage LLM clients. StageRouter.__init__ merges
+    # its own STAGE_MODELS defaults (see models.py) with the caller-supplied
+    # stage_overrides, so we forward stage_overrides as-is. Stages not listed
+    # in either fall back to resolved_model (the user's --model or config).
+    router = StageRouter(
+        base_model=resolved_model,
+        overrides=stage_overrides,
+        config=config,
+    )
 
     paper_text = extract_file(pdf_path)
 
@@ -271,11 +292,22 @@ def review_paper(
             paper_text = corrected
 
     if not skip_cost_gate:
-        # Pass resolved_model so a `--model` CLI override is reflected in
-        # the quote, not just in the downstream LLMClient.
-        run_cost_gate(paper_text, config, is_pdf=is_pdf, model=resolved_model)
+        # Pass resolved_model + stage_overrides so the cost quote reflects
+        # both the user's --model flag and any per-stage --stage-override
+        # overrides, matching what the router will actually execute.
+        run_cost_gate(
+            paper_text,
+            config,
+            is_pdf=is_pdf,
+            model=resolved_model,
+            stage_overrides=stage_overrides,
+        )
 
-    structure = analyze_structure(paper_text, client)
+    structure = analyze_structure(
+        paper_text,
+        router.client_for("metadata"),
+        math_client=router.client_for("math_detection"),
+    )
     if not _check_extraction_quality(structure):
         raise ExtractionError(
             "Extraction failed: no sections found in markdown. "
@@ -284,9 +316,29 @@ def review_paper(
 
     # Domain calibration + literature search + contribution extraction (parallel, all cheap)
     with ThreadPoolExecutor(max_workers=3) as executor:
-        cal_future = executor.submit(calibrate_domain, structure, client)
-        lit_future = executor.submit(search_literature, structure.title, structure.abstract, client)
-        contrib_future = executor.submit(extract_contribution, structure, client)
+        cal_future = executor.submit(
+            calibrate_domain,
+            structure,
+            router.client_for("calibration"),
+        )
+        lit_future = executor.submit(
+            search_literature,
+            structure.title,
+            structure.abstract,
+            # Literature search is intentionally NOT stage-routed. It uses
+            # the base model (user's --model or config default), matching
+            # what cost.py quotes for the literature stage. Passing any
+            # stage-routed client (e.g. router.client_for("overview"))
+            # would silently run the arXiv fallback on the SOTA model
+            # regardless of --stage-override choices and de-sync from the
+            # cost quote. See routing.py:16 for the documented contract.
+            router.base_client,
+        )
+        contrib_future = executor.submit(
+            extract_contribution,
+            structure,
+            router.client_for("contribution_extraction"),
+        )
 
         calibration = cal_future.result(timeout=900)
         try:
@@ -296,9 +348,9 @@ def review_paper(
             literature_context = ""
         contribution_context = contrib_future.result(timeout=900)
 
-    overview_agent = OverviewAgent(client)
-    section_agent = SectionAgent(client)
-    editorial_agent = EditorialAgent(client)
+    overview_agent = OverviewAgent(router.client_for("overview"))
+    section_agent = SectionAgent(router.client_for("section"))
+    editorial_agent = EditorialAgent(router.client_for("editorial"))
 
     reviewable_sections = [
         s
@@ -312,7 +364,7 @@ def review_paper(
     overview = overview_agent.run(structure, calibration, literature_context)
 
     # --- Phase 1b: Completeness assessment (runs after overview, before sections) ---
-    completeness_agent = CompletenessAgent(client)
+    completeness_agent = CompletenessAgent(router.client_for("completeness"))
     try:
         completeness_issues = completeness_agent.run(
             structure,
@@ -325,7 +377,7 @@ def review_paper(
         logger.warning("Completeness agent failed, skipping", exc_info=True)
 
     # --- Phase 2: Section agents (parallel, with verification for proof sections) ---
-    verify_agent = ProofVerifyAgent(client)
+    verify_agent = ProofVerifyAgent(router.client_for("verify"))
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         section_futures = []
@@ -377,7 +429,7 @@ def review_paper(
     discussion_sections = [s for s in structure.sections if s.section_type in _DISCUSSION_TYPES]
 
     if results_sections and discussion_sections:
-        cross_section_agent = CrossSectionAgent(client)
+        cross_section_agent = CrossSectionAgent(router.client_for("cross_section"))
         main_results = results_sections[0]
         cross_section_futures = []
         with ThreadPoolExecutor(max_workers=3) as executor:
@@ -410,10 +462,12 @@ def review_paper(
             contribution_context=contribution_context,
         )
     except Exception:
-        # Fallback: use legacy crossref → critique pipeline if editorial agent fails
+        # Fallback: use legacy crossref → critique pipeline if editorial agent fails.
+        # Route both legacy agents through the "editorial" stage slot since
+        # they occupy the same functional position in the pipeline.
         logger.warning("Editorial agent failed, falling back to crossref+critique", exc_info=True)
-        crossref_agent = CrossrefAgent(client)
-        critique_agent = CritiqueAgent(client)
+        crossref_agent = CrossrefAgent(router.client_for("editorial"))
+        critique_agent = CritiqueAgent(router.client_for("editorial"))
         try:
             filtered_comments = crossref_agent.run(
                 overview,

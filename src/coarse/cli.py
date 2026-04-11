@@ -118,6 +118,18 @@ def review(
     eval_model: Optional[str] = typer.Option(
         None, "--eval-model", help=f"Model for quality evaluation (default: {QUALITY_MODEL})"
     ),
+    stage_override: Optional[list[str]] = typer.Option(
+        None,
+        "--stage-override",
+        help=(
+            "Override the model used for a specific pipeline stage. Repeatable. "
+            "Format: --stage-override <stage>=<model>. Valid stage names: "
+            "metadata, math_detection, contribution_extraction, calibration, "
+            "overview, completeness, section, cross_section, verify, editorial. "
+            "Defaults from src/coarse/models.py::STAGE_MODELS are applied first; "
+            "this flag takes precedence."
+        ),
+    ),
 ) -> None:
     """Review a paper and write a markdown report."""
 
@@ -176,6 +188,17 @@ def review(
     # Determine output path
     out_path = output or Path(f"{pdf.stem}_review.md")
 
+    # Parse --stage-override entries into a dict. Each entry is
+    # "<stage>=<model>". Malformed entries exit early with a clear error
+    # message. StageRouter will validate the stage names at construction.
+    stage_overrides: dict[str, str] = {}
+    for entry in stage_override or []:
+        if "=" not in entry:
+            console.print(f"[red]--stage-override: expected '<stage>=<model>', got '{entry}'[/red]")
+            raise typer.Exit(code=1)
+        stage, override_model = entry.split("=", 1)
+        stage_overrides[stage.strip()] = override_model.strip()
+
     console.print(f"[bold]Reviewing[/bold] {pdf.name} with {resolved_model}")
 
     with Status("Running review pipeline...", console=console):
@@ -184,6 +207,7 @@ def review(
             model=resolved_model,
             skip_cost_gate=yes,
             config=config,
+            stage_overrides=stage_overrides or None,
         )
 
     out_path.write_text(markdown, encoding="utf-8")
