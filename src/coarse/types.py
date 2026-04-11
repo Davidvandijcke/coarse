@@ -77,6 +77,28 @@ class SectionInfo(BaseModel):
             return SectionType.OTHER.value
 
 
+# Document completion form. Determines whether the review agents treat the
+# input as a finished manuscript (the default, strict peer-review behavior)
+# or as something earlier in the drafting process (outline, partial draft,
+# proposal, etc.) where "missing prose / data / results" is by design rather
+# than a flaw. Classified by the cheap metadata LLM call in structure.py.
+#
+# Note on preprints: preprints are classified as "manuscript" — they're
+# finished papers and should get the full peer-review frame. Earlier drafts
+# of this feature had a dedicated "preprint" value, but it had the same
+# (empty) notice as "manuscript" and existed only to satisfy the rubric, so
+# it was dropped per Karpathy-rule-2 (no speculative configurability).
+DocumentForm = Literal[
+    "manuscript",  # Completed draft with prose, methods, results (includes preprints)
+    "outline",  # Section headers + bullet points, no prose
+    "draft",  # Partial prose — some sections written, others stubbed
+    "proposal",  # Research proposal (planned work, no results yet)
+    "report",  # Non-academic technical/industry report
+    "notes",  # Working notes, lecture notes, problem sets
+    "other",  # Does not fit any category above
+]
+
+
 class PaperStructure(BaseModel):
     """Parsed paper structure with metadata and ordered sections."""
 
@@ -91,6 +113,13 @@ class PaperStructure(BaseModel):
     sections: list[SectionInfo] = Field(
         description="Ordered list of paper sections",
     )
+    document_form: DocumentForm = Field(
+        default="manuscript",
+        description=(
+            "Completion form of the document. 'manuscript' triggers strict "
+            "peer-review; other values relax the review to match the draft stage."
+        ),
+    )
 
 
 class PaperMetadata(BaseModel):
@@ -99,6 +128,16 @@ class PaperMetadata(BaseModel):
     title: str = Field(description="Exact paper title as it appears on the first page")
     domain: str
     taxonomy: str
+    document_form: DocumentForm = Field(
+        default="manuscript",
+        description=(
+            "Completion form: 'manuscript' for a finished draft (also covers "
+            "preprints); 'outline' for headers + bullets with no prose; 'draft' "
+            "for partial prose; 'proposal' for planned-but-unexecuted research; "
+            "'report' for non-academic technical reports; 'notes' for working "
+            "notes/lecture notes; 'other' when none fit."
+        ),
+    )
 
 
 class ContributionContext(BaseModel):

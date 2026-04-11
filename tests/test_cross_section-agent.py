@@ -1,4 +1,5 @@
 """Tests for agents/cross_section.py — CrossSectionAgent."""
+
 from unittest.mock import MagicMock
 
 from coarse.agents.cross_section import CrossSectionAgent, _CrossSectionComments
@@ -51,7 +52,8 @@ def test_cross_section_agent_returns_comments():
 
     results_sec = _make_section(number=3, title="Main Results")
     discussion_sec = _make_section(
-        number=5, title="Discussion",
+        number=5,
+        title="Discussion",
         text="Our results show that the estimator works in general.",
         section_type=SectionType.DISCUSSION,
     )
@@ -103,7 +105,9 @@ def test_cross_section_agent_truncates_long_sections():
     long_text = "A" * 600_000  # exceeds 500K limit
     results_sec = _make_section(text=long_text)
     discussion_sec = _make_section(
-        number=4, title="Discussion", text=long_text,
+        number=4,
+        title="Discussion",
+        text=long_text,
         section_type=SectionType.DISCUSSION,
     )
 
@@ -158,11 +162,13 @@ def test_cross_section_agent_user_message_includes_both_sections():
     client.complete.return_value = _make_cross_section_comments(1)
 
     results_sec = _make_section(
-        number=3, title="Main Results",
+        number=3,
+        title="Main Results",
         text="Theorem 1 proves consistency under regularity.",
     )
     discussion_sec = _make_section(
-        number=5, title="Implications",
+        number=5,
+        title="Implications",
         text="Our framework has broad policy implications.",
         section_type=SectionType.DISCUSSION,
     )
@@ -199,3 +205,42 @@ def test_cross_section_agent_prompt_caching():
     assert block["type"] == "text"
     assert block["cache_control"] == {"type": "ephemeral"}
     assert CROSS_SECTION_SYSTEM in block["text"]
+
+
+def test_cross_section_agent_manuscript_system_prompt_unchanged():
+    """Manuscript path is byte-identical to CROSS_SECTION_SYSTEM."""
+    client = _make_client()
+    client.complete.return_value = _CrossSectionComments(comments=[])
+    agent = CrossSectionAgent(client)
+
+    agent.run(
+        "Title",
+        _make_section(),
+        _make_section(2, "Discussion", "We interpret the result broadly.", SectionType.DISCUSSION),
+    )
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert system_content == CROSS_SECTION_SYSTEM
+
+
+def test_cross_section_agent_outline_gets_form_notice():
+    """If the pipeline ever fires cross_section on a non-manuscript (unlikely
+    due to the math_content gate, but possible on partial drafts with real
+    results prose and stubbed discussion), the form notice must be appended
+    so the 'is the discussion supported by formal results' frame relaxes."""
+    client = _make_client()
+    client.complete.return_value = _CrossSectionComments(comments=[])
+    agent = CrossSectionAgent(client)
+
+    agent.run(
+        "Title",
+        _make_section(),
+        _make_section(2, "Discussion", "We interpret the result.", SectionType.DISCUSSION),
+        document_form="draft",
+    )
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert system_content.startswith(CROSS_SECTION_SYSTEM)
+    assert "DOCUMENT FORM: PARTIAL DRAFT" in system_content

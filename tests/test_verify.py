@@ -1,4 +1,5 @@
 """Tests for ProofVerifyAgent."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -37,13 +38,17 @@ def _make_agent(return_comments: list[DetailedComment] | None = None) -> ProofVe
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_proof_verify_agent_returns_comments():
     """Agent returns list[DetailedComment] from LLM response."""
     expected = [_make_comment(1), _make_comment(2)]
     agent = _make_agent(return_comments=expected)
 
     result = agent.run(
-        _make_section(), "Test Paper", [_make_comment(1)], abstract="An abstract.",
+        _make_section(),
+        "Test Paper",
+        [_make_comment(1)],
+        abstract="An abstract.",
     )
 
     assert len(result) == 2
@@ -78,3 +83,39 @@ def test_proof_verify_agent_truncates_long_sections():
     assert "[...truncated]" in user_msg
     # Original section object not mutated
     assert len(section.text) == 600_000
+
+
+def _make_noncaching_agent() -> ProofVerifyAgent:
+    """Like _make_agent but with supports_prompt_caching=False so the
+    system prompt lands as a plain string, not an Anthropic cache-control
+    list wrapper."""
+    client = MagicMock()
+    client.supports_prompt_caching = False
+    client.complete.return_value = _VerifiedComments(comments=[_make_comment(1)])
+    return ProofVerifyAgent(client)
+
+
+def test_verify_agent_manuscript_system_prompt_unchanged():
+    """Manuscript path: system prompt is byte-identical to PROOF_VERIFY_SYSTEM."""
+    from coarse.prompts import PROOF_VERIFY_SYSTEM
+
+    agent = _make_noncaching_agent()
+    agent.run(_make_section(), "Title", [_make_comment(1)])
+
+    messages = agent.client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert system_content == PROOF_VERIFY_SYSTEM
+
+
+def test_verify_agent_outline_gets_form_notice():
+    """An outline with a Proof section stub should not trigger the full
+    adversarial verifier frame. The form notice relaxes the prompt."""
+    from coarse.prompts import PROOF_VERIFY_SYSTEM
+
+    agent = _make_noncaching_agent()
+    agent.run(_make_section(), "Title", [_make_comment(1)], document_form="outline")
+
+    messages = agent.client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    assert system_content.startswith(PROOF_VERIFY_SYSTEM)
+    assert "DOCUMENT FORM: OUTLINE" in system_content

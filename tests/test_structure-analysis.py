@@ -1,4 +1,5 @@
 """Tests for coarse.structure — markdown heading parsing + metadata LLM call."""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -91,6 +92,7 @@ def _make_mock_client():
 # _parse_sections_from_markdown tests
 # ---------------------------------------------------------------------------
 
+
 def test_parse_sections_correct_count():
     """Correct number of sections extracted from headings."""
     sections = _parse_sections_from_markdown(SAMPLE_MARKDOWN)
@@ -153,6 +155,7 @@ def test_parse_sections_preserves_numbering():
 # _classify_section_type tests
 # ---------------------------------------------------------------------------
 
+
 def test_classify_introduction():
     assert _classify_section_type("1 Introduction") == SectionType.INTRODUCTION
 
@@ -184,6 +187,7 @@ def test_classify_unknown():
 # ---------------------------------------------------------------------------
 # _extract_title tests
 # ---------------------------------------------------------------------------
+
 
 def test_extract_title_from_heading():
     assert _extract_title(SAMPLE_MARKDOWN) == "My Paper Title"
@@ -228,6 +232,7 @@ def test_is_section_heading():
 # _extract_abstract tests
 # ---------------------------------------------------------------------------
 
+
 def test_extract_abstract_from_section():
     sections = _parse_sections_from_markdown(SAMPLE_MARKDOWN)
     abstract = _extract_abstract(sections, SAMPLE_MARKDOWN)
@@ -246,6 +251,7 @@ def test_extract_abstract_fallback_no_abstract_section():
 # ---------------------------------------------------------------------------
 # analyze_structure (integration with mock LLM)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def mock_client():
@@ -303,13 +309,22 @@ def test_analyze_structure_low_max_tokens(mock_client):
 
 
 def test_analyze_structure_propagates_llm_error(mock_client):
-    """LLM error during metadata falls back to defaults."""
+    """LLM error during metadata falls back to defaults — and specifically
+    to document_form='draft', NOT 'manuscript'. Defaulting to manuscript on
+    failure recreates the April-11 punitive-default bug for any paper where
+    the cheap metadata call flakes. Draft is the safer fallback: still
+    reviews written prose but suppresses the "write the manuscript" genre.
+    """
     mock_client.complete.side_effect = RuntimeError("LLM unavailable")
     paper_text = make_paper_text()
     result = analyze_structure(paper_text, mock_client)
     # Should still return a structure with default metadata
     assert result.domain == "unknown"
     assert result.taxonomy == "academic/research_paper"
+    assert result.document_form == "draft", (
+        "Metadata-failure fallback must be 'draft', not 'manuscript' — "
+        "see structure.py:_get_metadata except branch"
+    )
 
 
 def test_analyze_structure_math_detection_sets_flags():
@@ -342,19 +357,26 @@ def test_analyze_structure_math_detection_sets_flags():
 # _detect_math_sections tests
 # ---------------------------------------------------------------------------
 
+
 def test_detect_math_sections_sets_flags():
     """LLM-based detection sets math_content on indicated indices."""
     sections = [
         SectionInfo(
-            number=1, title="Intro", text="intro text",
+            number=1,
+            title="Intro",
+            text="intro text",
             section_type=SectionType.INTRODUCTION,
         ),
         SectionInfo(
-            number=2, title="Theory", text="theorem proof lemma",
+            number=2,
+            title="Theory",
+            text="theorem proof lemma",
             section_type=SectionType.OTHER,
         ),
         SectionInfo(
-            number=3, title="Results", text="empirical results",
+            number=3,
+            title="Results",
+            text="empirical results",
             section_type=SectionType.RESULTS,
         ),
     ]
@@ -371,7 +393,9 @@ def test_detect_math_sections_ignores_out_of_range():
     """Out-of-range indices from LLM are silently ignored."""
     sections = [
         SectionInfo(
-            number=1, title="Intro", text="text",
+            number=1,
+            title="Intro",
+            text="text",
             section_type=SectionType.INTRODUCTION,
         ),
     ]
@@ -387,11 +411,14 @@ def test_detect_math_sections_falls_back_on_error():
     """On LLM failure, falls back to keyword detection."""
     sections = [
         SectionInfo(
-            number=1, title="Intro", text="intro text",
+            number=1,
+            title="Intro",
+            text="intro text",
             section_type=SectionType.INTRODUCTION,
         ),
         SectionInfo(
-            number=2, title="Proofs",
+            number=2,
+            title="Proofs",
             text="We prove the following theorem.",
             section_type=SectionType.APPENDIX,
         ),
@@ -414,7 +441,9 @@ def test_detect_math_sections_passes_large_max_tokens_budget():
     we pass."""
     sections = [
         SectionInfo(
-            number=1, title="Intro", text="intro",
+            number=1,
+            title="Intro",
+            text="intro",
             section_type=SectionType.INTRODUCTION,
         ),
     ]
@@ -442,13 +471,16 @@ def test_detect_math_sections_falls_back_on_instructor_length_limit():
     not crash the pipeline."""
     sections = [
         SectionInfo(
-            number=1, title="Intro", text="intro text",
+            number=1,
+            title="Intro",
+            text="intro text",
             section_type=SectionType.INTRODUCTION,
         ),
         SectionInfo(
-            number=2, title="Empirical Strategy",
+            number=2,
+            title="Empirical Strategy",
             text="We prove that the difference-in-differences estimator "
-                 "is consistent under the parallel trends assumption.",
+            "is consistent under the parallel trends assumption.",
             section_type=SectionType.METHODOLOGY,
         ),
     ]
@@ -473,10 +505,12 @@ def test_detect_math_sections_falls_back_on_instructor_length_limit():
 # _detect_math_sections_keyword tests
 # ---------------------------------------------------------------------------
 
+
 def test_keyword_fallback_detects_theorem():
     sections = [
         SectionInfo(
-            number=1, title="Theory",
+            number=1,
+            title="Theory",
             text="We state the main theorem.",
             section_type=SectionType.OTHER,
         ),
@@ -488,7 +522,8 @@ def test_keyword_fallback_detects_theorem():
 def test_keyword_fallback_detects_proof():
     sections = [
         SectionInfo(
-            number=1, title="Appendix",
+            number=1,
+            title="Appendix",
             text="Proof of Lemma 1.",
             section_type=SectionType.APPENDIX,
         ),
@@ -500,7 +535,8 @@ def test_keyword_fallback_detects_proof():
 def test_keyword_fallback_no_match():
     sections = [
         SectionInfo(
-            number=1, title="Intro",
+            number=1,
+            title="Intro",
             text="This paper studies wages.",
             section_type=SectionType.INTRODUCTION,
         ),
@@ -512,6 +548,7 @@ def test_keyword_fallback_no_match():
 # ---------------------------------------------------------------------------
 # _extract_claims_and_definitions tests
 # ---------------------------------------------------------------------------
+
 
 def test_extract_claims_theorem():
     """Extracts theorems as claims."""
@@ -566,7 +603,7 @@ def test_extract_claims_multiple():
 """
     claims, defs = _extract_claims_and_definitions(text)
     assert len(claims) == 3  # theorem, lemma, assumption
-    assert len(defs) == 1    # definition
+    assert len(defs) == 1  # definition
 
 
 def test_extract_claims_empty_text():
@@ -608,3 +645,114 @@ The main finding is significant.
     theory = next(s for s in result.sections if s.title == "Theory")
     assert len(theory.claims) >= 1
     assert len(theory.definitions) >= 1
+
+
+# ---------------------------------------------------------------------------
+# document_form propagation + heuristic override
+# ---------------------------------------------------------------------------
+
+
+def _client_returning_form(form: str):
+    """Mock client that returns the given document_form from metadata calls."""
+    client = MagicMock()
+
+    def _side_effect(messages, response_model, **kwargs):
+        if response_model is PaperMetadata:
+            return PaperMetadata(
+                title="T",
+                domain="d",
+                taxonomy="academic/research_paper",
+                document_form=form,
+            )
+        if response_model is MathSectionDetection:
+            return MathSectionDetection(math_section_indices=[])
+        raise ValueError(f"Unexpected response_model: {response_model}")
+
+    client.complete.side_effect = _side_effect
+    return client
+
+
+@pytest.mark.parametrize(
+    "form",
+    ["manuscript", "outline", "draft", "proposal", "report", "notes", "other"],
+)
+def test_analyze_structure_propagates_document_form(form):
+    """Glue test: whatever document_form the metadata LLM returns must land
+    on PaperStructure.document_form. A regression hardcoding 'manuscript' at
+    the PaperStructure(...) construction would fail this test.
+    """
+    # Use a short bullet-y markdown so the prose-heavy heuristic doesn't
+    # override non-manuscript forms back to draft.
+    md = (
+        "# Title\n\n"
+        "## 1 Introduction\n- bullet one\n- bullet two\n\n"
+        "## 2 Methods\n- plan step A\n- plan step B\n"
+    )
+    client = _client_returning_form(form)
+    paper_text = PaperText(full_markdown=md, token_estimate=50)
+
+    result = analyze_structure(paper_text, client)
+
+    # For outline/notes/other the heuristic override can fire ONLY if the
+    # document has substantial prose — our bullet-only fixture does not,
+    # so the LLM's label should propagate unchanged for every form.
+    assert result.document_form == form
+
+
+def test_analyze_structure_prose_heavy_override_outline_to_draft():
+    """If the LLM mis-classifies a prose-heavy document as 'outline', the
+    heuristic must override the label back to 'draft' so the content still
+    gets reviewed. This is the asymmetric-failure defense from the April-11
+    audit: manuscript→outline mis-classification silently degrades real
+    peer reviews, so we defend against it explicitly.
+    """
+    prose_chunk = "This section contains a substantial body of written prose. " * 20
+    md = (
+        "# Prose-Heavy Paper\n\n"
+        f"## 1 Introduction\n{prose_chunk}\n\n"
+        f"## 2 Methods\n{prose_chunk}\n\n"
+        f"## 3 Results\n{prose_chunk}\n"
+    )
+    client = _client_returning_form("outline")  # LLM mis-classifies
+    paper_text = PaperText(full_markdown=md, token_estimate=500)
+
+    result = analyze_structure(paper_text, client)
+
+    # Override fires because the document is prose-heavy. The override
+    # lands at "draft", not "manuscript" — we trust the LLM enough to
+    # soften our own frame, but not enough to flip all the way.
+    assert result.document_form == "draft"
+
+
+def test_analyze_structure_prose_heavy_override_does_not_fire_on_bullets():
+    """If the LLM says 'outline' and the document really is a bullet-heavy
+    outline, the heuristic must NOT fire. Otherwise we undo our own fix.
+    """
+    md = (
+        "# Outline\n\n"
+        "## 1 Introduction\n- point A\n- point B\n- point C\n\n"
+        "## 2 Methods\n- step A\n- step B\n\n"
+        "## 3 Results\n- finding 1\n- finding 2\n"
+    )
+    client = _client_returning_form("outline")
+    paper_text = PaperText(full_markdown=md, token_estimate=100)
+
+    result = analyze_structure(paper_text, client)
+
+    assert result.document_form == "outline"  # heuristic stays quiet
+
+
+def test_analyze_structure_prose_heavy_override_skips_draft_and_proposal():
+    """The override only fires for outline/notes/other. For draft/proposal
+    (which already get a lighter frame but still review content), the LLM's
+    label should win even if the document is prose-heavy.
+    """
+    prose_chunk = "This is a substantial paragraph of written prose. " * 20
+    md = f"# Title\n\n## 1 Introduction\n{prose_chunk}\n\n## 2 Methods\n{prose_chunk}\n"
+    for form in ("draft", "proposal"):
+        client = _client_returning_form(form)
+        paper_text = PaperText(full_markdown=md, token_estimate=500)
+        result = analyze_structure(paper_text, client)
+        assert result.document_form == form, (
+            f"Override fired for {form!r} — it should only fire for outline/notes/other."
+        )
