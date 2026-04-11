@@ -130,11 +130,27 @@ class StageRouter:
         self._clients[model] = client
         return client
 
+    # Disable glm-5.1's default reasoning / thinking. Empirically confirmed
+    # on 2026-04-11: glm-5.1 via OpenRouter defaults to thinking-on and
+    # emits invisible reasoning preamble that counts against max_tokens.
+    # Structured-output calls with max_tokens<=2048 (metadata 256,
+    # math_detection 1024, calibration 2048, contribution_extraction
+    # 2048) consistently hit IncompleteOutputException because the
+    # preamble exhausts the budget before any JSON is emitted. OpenRouter's
+    # `reasoning: {effort: "none"}` shape is the documented way to
+    # disable reasoning entirely — it stops the model from thinking at
+    # all, so those tokens don't eat into the visible-output budget.
+    # See https://openrouter.ai/docs/guides/best-practices/reasoning-tokens.
+    _CHEAP_STAGE_EXTRA_BODY: Final[dict] = {"reasoning": {"effort": "none"}}
+
     def _build_client(self, model: str) -> LLMClient:
         """Construct an ``LLMClient`` for ``model`` with the right wrapping.
 
         The cheap-tier primary model (``CHEAP_STAGE_MODEL``) gets:
         - ``provider_allowlist=CHEAP_STAGE_PROVIDERS`` (US-HQ only routing)
+        - ``default_extra_body={"reasoning": {"effort": "none"}}`` so
+          glm-5.1's default thinking mode doesn't consume max_tokens
+          before any JSON emits
         - ``fallback_client`` pointing at a pre-built kimi-k2.5 client
           that has its own allowlist and uses MD_JSON instructor mode
 
@@ -146,21 +162,24 @@ class StageRouter:
         discovered transitively.
         """
         if model == CHEAP_STAGE_MODEL:
+            # Also disable reasoning on the kimi fallback — it's cheaper,
+            # faster, and matches the primary's behavior. The fallback
+            # uses MD_JSON mode, not JSON mode, but reasoning disable is
+            # independent of instructor mode.
             fallback = LLMClient(
                 model=CHEAP_STAGE_FALLBACK_MODEL,
                 config=self._config,
                 provider_allowlist=CHEAP_STAGE_PROVIDERS,
+                default_extra_body=self._CHEAP_STAGE_EXTRA_BODY,
             )
             # Cache the fallback so router.cost_usd sums its cost too.
-            # Keyed by the normalized model attribute, not the raw
-            # CHEAP_STAGE_FALLBACK_MODEL string, because LLMClient may
-            # rewrite the ID via _normalize_model (openrouter/ prefix).
             self._clients[fallback.model] = fallback
             return LLMClient(
                 model=model,
                 config=self._config,
                 provider_allowlist=CHEAP_STAGE_PROVIDERS,
                 fallback_client=fallback,
+                default_extra_body=self._CHEAP_STAGE_EXTRA_BODY,
             )
         return LLMClient(model=model, config=self._config)
 

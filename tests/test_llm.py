@@ -787,6 +787,64 @@ def test_llm_client_complete_text_falls_back_on_exception(mock_instructor_client
     assert call_count["n"] == 2  # primary + fallback
 
 
+def test_llm_client_default_extra_body_merges_into_calls(mock_instructor_client):
+    """A client constructed with default_extra_body merges those fields
+    into extra_body on every complete_text call. Used to disable glm-5.1's
+    default thinking mode so max_tokens isn't eaten by reasoning preamble."""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "ok"
+
+    captured: dict = {}
+
+    def _capture(*args, **kwargs):
+        captured.update(kwargs)
+        return mock_response
+
+    with (
+        patch("coarse.llm._sanitized_completion", side_effect=_capture),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(
+            model=TEST_MODEL,
+            config=CoarseConfig(),
+            default_extra_body={"reasoning": {"effort": "none"}},
+        )
+        client.complete_text(messages=[{"role": "user", "content": "hi"}])
+
+    assert captured.get("extra_body", {}).get("reasoning") == {"effort": "none"}
+
+
+def test_llm_client_default_extra_body_caller_override_wins(mock_instructor_client):
+    """A caller passing their own extra_body key overrides the client's
+    default — setdefault semantics at the merge step."""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "ok"
+
+    captured: dict = {}
+
+    def _capture(*args, **kwargs):
+        captured.update(kwargs)
+        return mock_response
+
+    with (
+        patch("coarse.llm._sanitized_completion", side_effect=_capture),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(
+            model=TEST_MODEL,
+            config=CoarseConfig(),
+            default_extra_body={"reasoning": {"effort": "none"}},
+        )
+        client.complete_text(
+            messages=[{"role": "user", "content": "hi"}],
+            extra_body={"reasoning": {"effort": "high"}},
+        )
+
+    assert captured.get("extra_body", {}).get("reasoning") == {"effort": "high"}
+
+
 def test_llm_client_without_allowlist_omits_only(mock_instructor_client):
     """A client without provider_allowlist (the default) does NOT set
     extra_body.provider.only, so unrestricted clients behave exactly as

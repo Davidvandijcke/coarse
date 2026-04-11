@@ -94,6 +94,21 @@ def test_router_wires_allowlist_for_cheap_stage_model():
     assert client._provider_allowlist == CHEAP_STAGE_PROVIDERS
 
 
+def test_router_disables_reasoning_on_cheap_stage_primary_and_fallback():
+    """glm-5.1 via OpenRouter defaults to thinking-on; reasoning preamble
+    consumes max_tokens before any JSON emits → IncompleteOutputException
+    on structured-output calls with max_tokens<=2048. StageRouter must
+    pass `default_extra_body={"reasoning": {"effort": "none"}}` on BOTH
+    the glm-5.1 primary and the kimi-k2.5 fallback so neither burns
+    budget on invisible thinking."""
+    router = _router(overrides={"metadata": CHEAP_STAGE_MODEL})
+    primary = router.client_for("metadata")
+    assert primary._default_extra_body == {"reasoning": {"effort": "none"}}
+    fallback = primary._fallback_client
+    assert fallback is not None
+    assert fallback._default_extra_body == {"reasoning": {"effort": "none"}}
+
+
 def test_router_wires_kimi_fallback_for_cheap_stage_model():
     """The cheap-tier primary gets a fallback_client pointing at
     CHEAP_STAGE_FALLBACK_MODEL (kimi-k2.5), also restricted to the

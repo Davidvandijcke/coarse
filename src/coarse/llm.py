@@ -185,6 +185,7 @@ class LLMClient:
         *,
         provider_allowlist: tuple[str, ...] | None = None,
         fallback_client: "LLMClient | None" = None,
+        default_extra_body: dict | None = None,
     ) -> None:
         if config is None:
             config = load_config()
@@ -209,22 +210,41 @@ class LLMClient:
         # model needs its own instructor mode (JSON vs MD_JSON) — see
         # CHEAP_STAGE_FALLBACK_MODEL in models.py.
         self._fallback_client = fallback_client
+        # Optional per-client default values merged into every call's
+        # extra_body. Used for model-specific knobs that should be on
+        # for every request (e.g. `{"reasoning": {"effort": "none"}}`
+        # to disable glm-5.1's default thinking mode so max_tokens isn't
+        # consumed by invisible reasoning preamble). Caller-supplied
+        # extra_body fields take precedence over defaults.
+        self._default_extra_body: dict = dict(default_extra_body or {})
 
     def _apply_provider_prefs(self, kwargs: dict) -> dict:
-        """Merge ``self._provider_allowlist`` into ``extra_body.provider.only``.
+        """Merge per-client defaults + ``provider_allowlist`` into ``extra_body``.
 
-        No-op when the client was constructed without an allowlist, so
-        non-geo-restricted clients (the common case) are unchanged.
-        Preserves any caller-provided ``extra_body.provider`` entries —
-        uses ``setdefault`` on the ``only`` key so a caller passing their
-        own explicit ``provider.only`` is not clobbered.
+        Two things are merged, in order, with caller-provided values
+        always winning:
+
+        1. ``self._default_extra_body`` — model-specific knobs set at
+           client construction (e.g. glm-5.1's reasoning-disable).
+           Merged top-level via ``setdefault`` so a caller passing their
+           own ``extra_body={"reasoning": {...}}`` wins.
+        2. ``self._provider_allowlist`` — injected into
+           ``extra_body.provider.only`` via ``setdefault``.
+
+        No-op when the client was constructed with neither default_extra_body
+        nor provider_allowlist, so plain clients are unchanged.
         """
-        if not self._provider_allowlist:
+        if not self._provider_allowlist and not self._default_extra_body:
             return kwargs
         extra_body = dict(kwargs.get("extra_body") or {})
-        provider_cfg = dict(extra_body.get("provider") or {})
-        provider_cfg.setdefault("only", list(self._provider_allowlist))
-        extra_body["provider"] = provider_cfg
+        # Merge default_extra_body top-level. Caller's own extra_body keys
+        # take precedence.
+        for k, v in self._default_extra_body.items():
+            extra_body.setdefault(k, v)
+        if self._provider_allowlist:
+            provider_cfg = dict(extra_body.get("provider") or {})
+            provider_cfg.setdefault("only", list(self._provider_allowlist))
+            extra_body["provider"] = provider_cfg
         return {**kwargs, "extra_body": extra_body}
 
     def complete(
