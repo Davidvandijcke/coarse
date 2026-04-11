@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v1.2.1 — 2026-04-11
+
+Patch release. Single fix: the author-notes textarea added in v1.2.0 (#67) inherited a placeholder color (`var(--tray)` ≈ `#2A3138`) that is nearly identical to the textarea's own background color (`var(--board-surface)` ≈ `#242D33`), making the multi-line placeholder hint illegible on the submit page. Also adds an end-to-end validation of the v1.2.0 author-notes feature against a synthetic paper — see issue #54 for details.
+
+### Fixed
+
+- **Legible placeholder color for the author-notes textarea (#69)** — new `.field-line-textarea` class in `web/src/app/globals.css` with `::placeholder { color: var(--dust); opacity: 1; font-style: italic }`. `var(--dust)` (`#6B6862`) has readable contrast against `var(--board-surface)`, unlike `var(--tray)` which the `.field-line` class was using. Also collapses the 14 lines of duplicated inline styles on the `<textarea>` in `web/src/app/page.tsx` into the new class, matching the existing `field-line` / `field-line-mono` pattern. Only cosmetic — no behavior change, no test churn.
+
 ## v1.2.0 — 2026-04-11
 
 Minor release. Headline is the new **optional author-steering notes** field on the submit page (#54): authors can attach a short instruction ("please focus on the identification strategy in §3") and the reviewer adapts its focus. Also ships the **document-form detection** feature so the reviewer stops demanding full-manuscript rigor on outlines and proposals. Hardens the Modal worker in two places: the sanitizer no longer collapses `instructor.InstructorRetryException` messages to a bare `</last_exception>` tag (#55), and extraction + worker now scrub NUL bytes before Supabase writes (#62). Web-side adds the auto-disabling email-capacity gate (#59) and bumps the stale monitoring-cron threshold (#66). Prompt caching on OpenRouter-routed Claude/Gemini is re-enabled and the `proof_verify` stage is gated on a 500-char / non-empty-claims threshold for a modest cost win.
