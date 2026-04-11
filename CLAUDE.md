@@ -22,7 +22,7 @@ uv run python -m coarse paper.pdf
 
 ```
 paper (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)
-    → [extraction.py]    Mistral OCR via OpenRouter / Docling fallback → PaperText (markdown)
+    → [extraction.py]    Mistral OCR (OpenRouter) → pdf-text (OpenRouter) → Docling → PaperText (markdown)
     → [extraction_qa.py] Vision LLM spot-check (auto-triggers on garbled text)
     → [structure.py]     Parse headings + LLM → PaperStructure (sections, math detection, domain)
     → [calibrate_domain] Domain-specific review criteria (parallel with literature)
@@ -58,13 +58,18 @@ src/coarse/
 ├── pipeline.py              # review_paper() orchestrator
 ├── synthesis.py             # Review → markdown string
 ├── quality.py               # Quality eval against reference (dev only)
+├── recall.py                # Recall eval vs. ground-truth expert reviews (dev only)
 └── agents/
     ├── __init__.py
     ├── base.py              # ReviewAgent ABC + _build_messages helper + prompt caching
     ├── overview.py          # 3-judge panel overview (macro-level feedback, 4-6 issues)
     ├── section.py           # Per-section detailed review
-    ├── crossref.py          # Cross-reference consistency
-    ├── critique.py          # Self-critique quality gate
+    ├── completeness.py      # Flags structural gaps and missing content
+    ├── cross_section.py     # Cross-section synthesis: discussion claims vs formal results
+    ├── editorial.py         # Merged filtering pass (dedup, contradiction, quality, ordering)
+    ├── crossref.py          # Cross-reference consistency (legacy, superseded by editorial)
+    ├── contradiction.py     # Flags comments contradicting the paper's contribution (legacy)
+    ├── critique.py          # Self-critique quality gate (legacy, superseded by editorial)
     ├── verify.py            # Adversarial proof verification (math sections)
     └── literature.py        # Literature search (Perplexity Sonar Pro, arXiv fallback)
 ```
@@ -158,6 +163,58 @@ CI (`.github/workflows/ci.yml`) runs on every push to `main` or `dev` and on eve
 5. **Don't over-engineer.** No abstractions for single-use code. No speculative features.
 6. **Prompts in prompts.py.** All LLM prompt templates go in one file, not scattered.
 7. **Structured output.** Use instructor + Pydantic models for all LLM responses.
+
+## Slash Commands
+
+Workflow automation commands live in `.claude/commands/`. Invoke with a `/`
+in chat.
+
+| Command | Purpose |
+|---|---|
+| `/security-review` | Fingerprint + pattern scan, env perms, key lifecycle audit, HTTP surface audit, prompt-injection check. Runs `scripts/security_scanner.py` + 3 parallel in-session agents. Blocking in `/pre-pr` Step 0. |
+| `/architecture-review` | Static import-graph scan (cycles, layer violations, oversized files) + 3 parallel agents (coupling, data flow, simplification). Escalates structural changes to user. |
+| `/module-review` | Focused per-module audit against the 11-point bug checklist. Supports `--module <path>`, `--changed`, `--all`, `--review-only`. |
+| `/pre-pr` | Blocking checklist before every push: security gate → diff capture → doc-sync → 5 parallel review agents → lint → tests → version → changelog → PR. |
+| `/dev-loop` | Supervised autonomous development loop (existing). |
+| `/worktree-start` | Create a worktree off `dev` for a new feature/fix (existing). |
+
+`scripts/security_scanner.py` is standalone — it runs in CI
+(`.github/workflows/security.yml`) and from `make security` without needing
+a Claude Code session.
+
+## Worktree Discipline
+
+Parallel work happens in ephemeral git worktrees under `/private/tmp/coarse-<slug>/`.
+The main repo stays on `dev` (or `main` for release branches) and is used
+only for read-only exploration.
+
+**Hard rules:**
+
+1. **Never edit files directly in the main worktree** during a feature task.
+   Use `/worktree-start` first, then all edits go through the full worktree path.
+2. **Full paths on every Edit/Write.** `/private/tmp/coarse-<slug>/src/coarse/foo.py`,
+   not `src/coarse/foo.py`. The shell cwd resets between `Bash` calls — `cd` alone
+   doesn't persist, so relative paths break silently.
+3. **Prefix every file-modifying `Bash` command** with
+   `cd /private/tmp/coarse-<slug> &&`.
+4. **Always `uv sync --extra dev`** in the new worktree before running tests or
+   scripts — bare `uv sync` misses the dev extras.
+5. **Merging back**: create PR from the worktree (`gh pr create --base dev`), merge
+   via `gh pr merge --squash`, then `git -C <main-repo> pull origin dev`, then
+   `git worktree remove /private/tmp/coarse-<slug>`.
+
+## Parallel Development
+
+coarse supports multiple concurrent Claude Code sessions as long as each
+session operates in its own worktree.
+
+- **Cap: 4 concurrent worktrees.** Beyond that, merge conflicts start to bite.
+- **Every branch references a GitHub issue.** `/worktree-start <issue-number>`.
+- **Worktree slug format:** `/private/tmp/coarse-<issue-number>-<short-slug>`.
+- **No two worktrees touch the same file** without coordinating through the
+  user — the autopilot doesn't resolve three-way merges.
+- **Cross-worktree state lives only in the repo** (git branches, PRs, issues).
+  Don't rely on `~/.coarse/` or any local path for cross-session coordination.
 
 ## Model Manifest (models.py)
 

@@ -11,6 +11,7 @@ from coarse.extraction import (
     SUPPORTED_EXTENSIONS,
     _estimate_tokens,
     _extract_latex_regex,
+    _response_was_billed,
     compute_garble_ratio,
     extract_file,
     extract_text,
@@ -485,6 +486,137 @@ def test_ocr_retry_stops_when_response_is_billed(minimal_pdf: Path) -> None:
     # pdf-text fallback is still tried — but the same billing guard applies
     # there too, so it also bails after one call.
     assert pdftext_post_count["n"] == 1
+
+
+# --- _response_was_billed direct unit tests ---
+
+
+def _billed_resp(body: object):
+    """Tiny fake Response whose .json() returns body (or raises if callable)."""
+    r = MagicMock()
+    if callable(body):
+        r.json.side_effect = body
+    else:
+        r.json.return_value = body
+    return r
+
+
+def test_response_was_billed_total_cost_positive():
+    assert _response_was_billed(_billed_resp({"usage": {"total_cost": 0.0042}})) is True
+
+
+def test_response_was_billed_cost_positive():
+    assert _response_was_billed(_billed_resp({"usage": {"cost": 0.01}})) is True
+
+
+def test_response_was_billed_total_tokens_positive():
+    assert _response_was_billed(_billed_resp({"usage": {"total_tokens": 5}})) is True
+
+
+def test_response_was_billed_all_zero():
+    body = {"usage": {"total_cost": 0, "cost": 0.0, "total_tokens": 0}}
+    assert _response_was_billed(_billed_resp(body)) is False
+
+
+def test_response_was_billed_missing_usage_field():
+    assert _response_was_billed(_billed_resp({"choices": []})) is False
+
+
+def test_response_was_billed_usage_is_not_dict():
+    assert _response_was_billed(_billed_resp({"usage": "free"})) is False
+    assert _response_was_billed(_billed_resp({"usage": None})) is False
+    assert _response_was_billed(_billed_resp({"usage": [1, 2, 3]})) is False
+
+
+def test_response_was_billed_json_raises():
+    def raise_value_error():
+        raise ValueError("not json")
+    assert _response_was_billed(_billed_resp(raise_value_error)) is False
+
+
+def test_response_was_billed_response_is_not_dict():
+    assert _response_was_billed(_billed_resp("literal string")) is False
+    assert _response_was_billed(_billed_resp([1, 2, 3])) is False
+
+
+def test_response_was_billed_rejects_bool_total_cost():
+    """bool is a subclass of int in Python — the guard must not be fooled
+    by a malformed `usage: {"total_cost": true}` response, since True would
+    coerce to >0 and kill retries on a free error body."""
+    body = {"usage": {"total_cost": True, "total_tokens": 0}}
+    assert _response_was_billed(_billed_resp(body)) is False
+
+
+def test_response_was_billed_rejects_bool_tokens():
+    body = {"usage": {"total_tokens": True}}
+    assert _response_was_billed(_billed_resp(body)) is False
+
+
+def test_response_was_billed_accepts_float_total_cost():
+    """Real OpenRouter responses report costs as floats; verify we handle them."""
+    body = {"usage": {"total_cost": 0.000001, "total_tokens": 0}}
+    assert _response_was_billed(_billed_resp(body)) is True
+
+
+# --- Backoff cap and fallback-order tests ---
+
+
+def test_ocr_backoff_waits_are_capped_at_max_backoff(minimal_pdf: Path) -> None:
+    """Verify _OCR_MAX_BACKOFF actually caps per-retry waits. Without this
+    test, someone could delete the `min(..., _OCR_MAX_BACKOFF)` in
+    _post_openrouter_ocr and every other test would still pass because
+    they all patch time.sleep to a no-op."""
+    from coarse.extraction import _OCR_MAX_BACKOFF, _OCR_MAX_RETRIES
+
+    timeout_body = _mock_error_response(200, {
+        "error": {"message": "Timed out parsing", "code": 504},
+    })
+    sleep_args: list[float] = []
+
+    def fake_sleep(seconds):
+        sleep_args.append(seconds)
+
+    with patch("requests.post", return_value=timeout_body):
+        with patch("time.sleep", side_effect=fake_sleep):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                with patch.dict(
+                    "sys.modules",
+                    {"docling": None, "docling.document_converter": None},
+                ):
+                    with pytest.raises(ExtractionError):
+                        extract_text(minimal_pdf, use_cache=False)
+
+    # Each engine (mistral-ocr, pdf-text) runs _OCR_MAX_RETRIES sleeps.
+    # Per-engine sequence: 1, 2, 4, 8, 16, 32, 32, 32, 32 (exponential then capped).
+    per_engine = sleep_args[:_OCR_MAX_RETRIES]
+    assert per_engine[:5] == [1.0, 2.0, 4.0, 8.0, 16.0]
+    assert all(w == _OCR_MAX_BACKOFF for w in per_engine[5:]), (
+        f"backoff not capped: tail is {per_engine[5:]}"
+    )
+    # Same pattern repeats for the pdf-text tier.
+    assert sleep_args[_OCR_MAX_RETRIES:2 * _OCR_MAX_RETRIES] == per_engine
+
+
+def test_pdftext_is_not_called_when_mistral_ocr_succeeds(
+    minimal_pdf: Path, mock_ocr_pages,
+) -> None:
+    """pdf-text is strictly a fallback — when mistral-ocr succeeds on the
+    first try, pdf-text must not be hit at all."""
+    success = _mock_ocr_response(mock_ocr_pages)
+    posted_engines: list[str] = []
+
+    def spy_post(url, headers, json, timeout):  # noqa: A002
+        plugins = json.get("plugins") or []
+        engine = plugins[0].get("pdf", {}).get("engine") if plugins else None
+        posted_engines.append(engine)
+        return success
+
+    with patch("requests.post", side_effect=spy_post):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+            result = extract_text(minimal_pdf, use_cache=False)
+
+    assert "# Test Paper" in result.full_markdown
+    assert posted_engines == ["mistral-ocr"]
 
 
 def test_openrouter_ocr_does_not_retry_on_401(minimal_pdf: Path) -> None:

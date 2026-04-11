@@ -3,6 +3,7 @@
 Wraps litellm + instructor for structured output. Tracks cumulative cost across calls.
 API keys are set in env vars by the caller; litellm picks them up automatically.
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,7 +16,12 @@ import litellm
 from pydantic import BaseModel
 
 from coarse.config import PROVIDER_ENV_VARS, CoarseConfig, load_config
-from coarse.models import JSON_MODE_PREFIXES, MARKDOWN_JSON_PREFIXES
+from coarse.models import (
+    DEFAULT_MODEL,
+    JSON_MODE_PREFIXES,
+    KIMI_K2_5_MODEL,
+    MARKDOWN_JSON_PREFIXES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +32,13 @@ litellm.suppress_debug_info = True
 # litellm.model_cost is the lookup used by _clamp_max_tokens.
 # Values from OpenRouter /api/v1/models (verified 2026-03-04).
 _CUSTOM_MODEL_INFO: dict[str, dict] = {
-    "qwen/qwen3.5-plus-02-15": {
+    DEFAULT_MODEL: {
         "max_tokens": 1_000_000,
         "max_output_tokens": 65_536,
         "input_cost_per_token": 0.26e-6,
         "output_cost_per_token": 1.56e-6,
     },
-    "moonshotai/kimi-k2.5": {
+    KIMI_K2_5_MODEL: {
         "max_tokens": 131_072,
         "max_output_tokens": 32_768,
         "input_cost_per_token": 0.35e-6,

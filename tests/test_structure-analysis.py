@@ -452,11 +452,16 @@ def test_detect_math_sections_falls_back_on_instructor_length_limit():
             section_type=SectionType.METHODOLOGY,
         ),
     ]
+    from instructor.core import InstructorRetryException
+
     client = MagicMock()
-    # Mimic instructor's own exception message so the fallback path is
-    # exercised with a realistic error.
-    client.complete.side_effect = RuntimeError(
-        "The output is incomplete due to a max_tokens length limit."
+    # Use the real exception class so the test still passes if the
+    # _detect_math_sections catch clause is ever tightened from
+    # `except Exception` to `except InstructorRetryException`.
+    client.complete.side_effect = InstructorRetryException(
+        "The output is incomplete due to a max_tokens length limit.",
+        n_attempts=3,
+        total_usage=0,
     )
 
     result = _detect_math_sections(sections, client)

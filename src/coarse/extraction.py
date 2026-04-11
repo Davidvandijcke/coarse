@@ -143,12 +143,20 @@ def _response_was_billed(resp) -> bool:
     usage = data.get("usage")
     if not isinstance(usage, dict):
         return False
+    # bool is a subclass of int in Python — reject it explicitly so a
+    # malformed `usage: {"total_cost": true}` can't trip the billing guard
+    # on an otherwise-free error response.
+    def _positive_number(val: object) -> bool:
+        return (
+            isinstance(val, (int, float))
+            and not isinstance(val, bool)
+            and val > 0
+        )
+
     for key in ("total_cost", "cost"):
-        val = usage.get(key)
-        if isinstance(val, (int, float)) and val > 0:
+        if _positive_number(usage.get(key)):
             return True
-    total_tokens = usage.get("total_tokens")
-    if isinstance(total_tokens, (int, float)) and total_tokens > 0:
+    if _positive_number(usage.get("total_tokens")):
         return True
     return False
 
@@ -207,7 +215,10 @@ def _post_openrouter_ocr(
     for attempt in range(_OCR_MAX_RETRIES + 1):
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
-        except (requests.ConnectionError, requests.Timeout) as exc:
+        except requests.RequestException as exc:
+            # RequestException is the base class for ConnectionError, Timeout,
+            # ChunkedEncodingError, ContentDecodingError, SSLError, etc. — all
+            # network-layer failures where retry is the right move.
             last_network_exc = exc
             if attempt < _OCR_MAX_RETRIES:
                 wait = _wait_for(attempt)
