@@ -1,0 +1,112 @@
+name: Release
+
+# Publishes coarse-ink to PyPI when a v* tag is pushed. Uses PyPI Trusted
+# Publishing (OIDC) — no API token secret required. One-time PyPI setup:
+#
+#   1. Go to https://pypi.org/manage/project/coarse-ink/settings/publishing/
+#   2. Add a Trusted Publisher with:
+#        owner:            Davidvandijcke
+#        repository:       coarse
+#        workflow:         release.yml
+#        environment:      pypi
+#   3. Push any new v* tag. The `publish` job runs in the `pypi` GitHub
+#      environment and mints a short-lived OIDC token that PyPI accepts.
+#
+# Until the pending publisher is registered, the first `publish` job run
+# will fail with "invalid-publisher" — that's expected. Register on PyPI,
+# then re-run the failed workflow (or push a new tag).
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run tests
+        run: uv run pytest tests/ -v
+        env:
+          OPENROUTER_API_KEY: ""
+          GOOGLE_API_KEY: ""
+          OPENAI_API_KEY: ""
+          ANTHROPIC_API_KEY: ""
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Verify tag matches pyproject.toml version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          INIT_VERSION=$(grep '__version__' src/coarse/__init__.py | sed 's/.*"\(.*\)".*/\1/')
+          echo "tag:            $TAG"
+          echo "pyproject.toml: $VERSION"
+          echo "__init__.py:    $INIT_VERSION"
+          if [ "$TAG" != "$VERSION" ] || [ "$TAG" != "$INIT_VERSION" ]; then
+            echo "ERROR: tag / pyproject / __init__ version mismatch"
+            exit 1
+          fi
+
+      - name: Build distribution
+        run: uv build
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The `pypi` environment scopes the OIDC trust boundary to this job.
+    # Set this up on PyPI's Trusted Publishers page, not in the GitHub UI.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/coarse-ink
+    permissions:
+      # id-token: write is required for PyPI Trusted Publishing (OIDC).
+      # No API token secret is needed.
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

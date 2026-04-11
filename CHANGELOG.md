@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **PyPI release workflow** — `.github/workflows/release.yml` fires on every `v*` tag pushed to `main`. Runs the test suite, verifies the tag matches `pyproject.toml` and `src/coarse/__init__.py`, builds the sdist + wheel with `uv build`, and publishes to PyPI via Trusted Publishing (OIDC). No API token secret lives in the repo — the `publish` job runs in the `pypi` GitHub environment and mints a short-lived OIDC token that PyPI accepts. Release flow in `CONTRIBUTING.md` is updated with the one-time PyPI setup steps for `Manage → Publishing → Add a new pending publisher`. Until the pending publisher is registered on PyPI, the first `publish` job run fails with `invalid-publisher`; registering and re-running the workflow succeeds. Releases before v1.1.5 were published manually.
+
 ## v1.1.4 — 2026-04-11
 
 Correctness and security release. The headline is a deep audit of the cost estimator that found the CLI gate was silently under-quoting every Claude review to ~$0 (the bare `anthropic/*` prefix missed litellm's registry; `openrouter/` keyed entries were hidden behind a one-sided fallback) and modeling a pipeline from two refactors ago (phantom 3-judge overview panel, missing `contribution_extraction` / `completeness` / `proof_verify` / `cross_section` / `editorial` stages, legacy `crossref + critique` still in the primary path). Also lands prompt-injection hardening across every agent that consumes untrusted paper content, webhook and key-scrubbing fixes in the Modal worker, and a fleet of smaller bug fixes in extraction, quote verification, and the LLM wrapper.
