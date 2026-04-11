@@ -97,6 +97,10 @@ export async function POST(request: NextRequest) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|txt|md|tex|latex|html|htm|docx|epub)$/i.test(storagePath)) {
     return NextResponse.json({ error: "Invalid storage path" }, { status: 400 });
   }
+  const storagePathReviewId = storagePath.split(".", 1)[0];
+  if (storagePathReviewId.toLowerCase() !== id.toLowerCase()) {
+    return NextResponse.json({ error: "Storage path does not match review ID" }, { status: 400 });
+  }
 
   // Verify the review record exists
   const { data: reviewRow, error: fetchError } = await supabaseAdmin
