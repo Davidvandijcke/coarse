@@ -24,6 +24,35 @@ logger = logging.getLogger(__name__)
 PAGE_BREAK = "\n\n<!-- PAGE BREAK -->\n\n"
 
 
+# Secret-scrub patterns used on backend failure strings before they reach
+# logger.warning() or the raised ExtractionError. Kept as a small duplicate
+# of deploy/modal_worker.py::_sanitize_error — cross-importing between
+# src/ and deploy/ would be worse than 10 lines of duplication.
+_SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"Bearer\s+\S+", re.IGNORECASE), "Bearer [key]"),
+    (re.compile(r"sk-or-v1-[a-zA-Z0-9]{20,}"), "[key]"),
+    (re.compile(r"sk-ant-[a-zA-Z0-9_-]{20,}"), "[key]"),
+    (re.compile(r"sk-[a-zA-Z0-9-]{20,}"), "[key]"),
+    (re.compile(r"gsk_[a-zA-Z0-9_]{20,}"), "[key]"),
+    (re.compile(r"pplx-[a-zA-Z0-9]{20,}"), "[key]"),
+    (re.compile(r"AIza[a-zA-Z0-9_-]{30,}"), "[key]"),
+    (re.compile(r"eyJ[a-zA-Z0-9_-]{20,}"), "[key]"),
+)
+
+
+def _scrub_secrets(msg: str) -> str:
+    """Strip API keys and bearer tokens from an error string.
+
+    Applied to backend-failure strings before they are logged or embedded in
+    an ExtractionError. Without this, litellm-wrapped exceptions whose
+    stringification embeds request headers can surface Authorization
+    tokens to CLI users' terminals and logs.
+    """
+    for pattern, replacement in _SECRET_PATTERNS:
+        msg = pattern.sub(replacement, msg)
+    return msg
+
+
 def _get_api_error_status(exc: Exception) -> int | None:
     """Extract HTTP status code from an API error, if present."""
     status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
@@ -651,11 +680,12 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
             api_msg = _classify_api_error(exc)
             if api_msg:
                 raise ExtractionError(api_msg) from exc
-            errors.append(f"{name}: {exc}")
-            logger.warning("%s failed: %s", name, exc)
+            scrubbed = _scrub_secrets(str(exc))
+            errors.append(f"{name}: {scrubbed}")
+            logger.warning("%s failed: %s", name, scrubbed)
 
     if full_markdown is None:
-        detail = "; ".join(errors)
+        detail = _scrub_secrets("; ".join(errors))
         raise ExtractionError(f"Cannot convert PDF: all extraction backends failed. {detail}")
 
     # Normalize Mistral OCR artifacts unconditionally

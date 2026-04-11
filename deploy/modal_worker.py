@@ -14,6 +14,7 @@ Secrets: Create in Modal dashboard:
 
 from __future__ import annotations
 
+import hmac
 from pathlib import Path
 
 import modal
@@ -89,8 +90,15 @@ def _sanitize_error(msg: str) -> str:
 
     # OpenRouter keys: sk-or-v1-...
     msg = re.sub(r"sk-or-v1-[a-zA-Z0-9]{20,}", "[key]", msg)
+    # Anthropic keys: sk-ant-... (caught by generic sk- below but listed
+    # explicitly so the provider coverage is obvious at a glance).
+    msg = re.sub(r"sk-ant-[a-zA-Z0-9_-]{20,}", "[key]", msg)
     # Standard OpenAI-style keys: sk-...
     msg = re.sub(r"sk-[a-zA-Z0-9-]{20,}", "[key]", msg)
+    # Groq keys: gsk_...
+    msg = re.sub(r"gsk_[a-zA-Z0-9_]{20,}", "[key]", msg)
+    # Perplexity keys: pplx-...
+    msg = re.sub(r"pplx-[a-zA-Z0-9]{20,}", "[key]", msg)
     # Gemini/Google API keys: AIza...
     msg = re.sub(r"AIza[a-zA-Z0-9_-]{30,}", "[key]", msg)
     # JWTs / Supabase service keys: eyJ...
@@ -329,7 +337,9 @@ def run_review(request: Request, req: ReviewRequest):
 
     expected = os.environ.get("MODAL_WEBHOOK_SECRET", "")
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    if not expected or not token or token != expected:
+    # `hmac.compare_digest` requires same-type non-empty inputs, so keep the
+    # truthiness guard before the constant-time compare.
+    if not expected or not token or not hmac.compare_digest(token, expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     do_review.spawn(req.model_dump())
