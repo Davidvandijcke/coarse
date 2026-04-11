@@ -768,20 +768,7 @@ export default function Home() {
                 rows={3}
                 maxLength={2000}
                 aria-label="Optional notes to steer the reviewer"
-                className="field-line"
-                style={{
-                  width: "100%",
-                  resize: "vertical",
-                  fontFamily: "Georgia, serif",
-                  fontSize: "1rem",
-                  lineHeight: 1.5,
-                  padding: "0.6rem 0.75rem",
-                  background: "var(--board-surface)",
-                  color: "var(--chalk)",
-                  border: "1px solid var(--tray)",
-                  borderRadius: "2px",
-                  boxSizing: "border-box",
-                }}
+                className="field-line-textarea"
               />
               <p
                 style={{
