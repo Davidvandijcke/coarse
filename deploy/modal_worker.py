@@ -147,7 +147,7 @@ def _is_retryable_failure(exc: BaseException) -> bool:
         status = getattr(resp, "status_code", None)
 
     if isinstance(status, int):
-        return status == 429 or status >= 500
+        return status in (408, 429) or status >= 500
 
     msg = str(exc).lower()
     return any(kw in msg for kw in (
