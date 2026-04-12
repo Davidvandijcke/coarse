@@ -141,12 +141,19 @@ def _patch_llmclient(host: str, model: str | None, effort: str):
     from coarse import llm as _llm_mod
     from coarse import routing as _routing_mod
 
+    # Save original LLMClient before patching — needed for Perplexity lit
+    # search which must go through litellm/OpenRouter, not the headless CLI.
+    _OriginalLLMClient = _llm_mod.LLMClient
+
     factory = _make_client_factory(host, model, effort)
 
     # Replace the LLMClient class itself so any direct LLMClient(...) call
     # in the pipeline returns a headless client instead.
     _llm_mod.LLMClient = factory  # type: ignore[misc]
     _routing_mod.LLMClient = factory  # type: ignore[misc]
+
+    # Stash original for later use by _patch_literature.
+    _patch_llmclient._original = _OriginalLLMClient  # type: ignore[attr-defined]
 
     def _patched_client_for(self, stage: str):
         if stage not in self._clients:
@@ -241,7 +248,13 @@ def main(argv: list[str] | None = None) -> int:
         _patch_extraction(pre_extracted)
         logger.info("Using pre-extracted markdown from %s", pre_extracted)
 
+    # Now that all submodules are imported, patch literature.py to use the
+    # real litellm LLMClient for Perplexity Sonar Pro (routes via OpenRouter,
+    # not the headless CLI).
+    from coarse.agents import literature as _lit_mod
     from coarse.pipeline import review_paper
+
+    _lit_mod.LLMClient = _patch_llmclient._original  # type: ignore[attr-defined]
 
     logger.info(
         "Starting coarse review of %s (host=%s, model=%s, effort=%s)",
