@@ -105,6 +105,9 @@ export function buildLaunchUrl(args: {
     `Please review an academic paper for me using the coarse-review skill. ` +
     `If coarse-ink is not installed yet, first run:\n\n` +
     `${setupCmd}\n\n` +
+    `Before running the review, check if OPENROUTER_API_KEY is set in the ` +
+    `environment or in a .env file. If not, ask me to provide it — it's ` +
+    `needed for the Mistral OCR extraction step (~$0.10).\n\n` +
     `Then run the review:\n\n` +
     `${runCmd}\n\n` +
     `Run both commands in the terminal. The review takes 10-25 minutes. ` +

@@ -20,8 +20,11 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
 
 ## Prerequisites
 
-- `coarse-ink` installed: `uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' coarse --help` (or `pip install 'coarse-ink[mcp]'` once released)
-- OpenRouter key in `~/.coarse/config.toml` (run `coarse setup`), or `OPENROUTER_API_KEY` env var, or a `.env` file in CWD.
+- `coarse-ink` installed: `pip install 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'` (or `pip install 'coarse-ink[mcp]'` once released)
+- **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). Before running the review, check if the key is available. If not, **ask the user** to provide it. Then either:
+  - `export OPENROUTER_API_KEY=sk-or-v1-...` in the current shell, or
+  - Create a `.env` file in the working directory with `OPENROUTER_API_KEY=sk-or-v1-...`
+  - The key is NOT passed through the web handoff for security reasons.
 - `claude` CLI logged in.
 
 ## How to run
