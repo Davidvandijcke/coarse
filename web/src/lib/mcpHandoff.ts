@@ -131,11 +131,22 @@ export function buildAgentPrompt(args: {
     `If I paste a key (it should start with sk-or-), save it to ./.env ` +
     `by appending OPENROUTER_API_KEY=<key> to the file (create the file ` +
     `if it doesn't exist; never overwrite existing variables).\n\n` +
-    `STEP 3 — Run the review:\n\n` +
-    `${runCmd}\n\n` +
-    `Run this in the terminal. The review takes 10-25 minutes. Stream ` +
-    `the output so I can see progress. When it finishes, show me:\n` +
-    `  - The review URL (it'll be printed in the output)\n` +
+    `STEP 3 — Run the review IN THE BACKGROUND with logs redirected ` +
+    `to a file. The review takes 10-25 minutes, which exceeds most ` +
+    `agent tool timeouts (5 minutes default) — you MUST run it as a ` +
+    `background process, NOT a foreground command. Use this exact ` +
+    `pattern:\n\n` +
+    `  ${runCmd} > /tmp/coarse-review.log 2>&1 &\n` +
+    `  echo "Review PID: $!"\n\n` +
+    `Then poll the log file every 60-90 seconds with ` +
+    `\`tail -20 /tmp/coarse-review.log\` to check progress. Do NOT ` +
+    `run the command in the foreground — it will hit your tool ` +
+    `timeout and look like it crashed when it's actually still ` +
+    `running. Do NOT kill the process because you think it hung; ` +
+    `it takes a genuine 10-25 minutes.\n\n` +
+    `When the log shows "PUBLISHED TO COARSE WEB" or "REVIEW ` +
+    `COMPLETE", the review is done. Show me:\n` +
+    `  - The review URL (search for 'view:' in the log)\n` +
     `  - A summary of the recommendation (accept / revise / reject)\n` +
     `  - The top 3 macro issues from the overview section`
   );

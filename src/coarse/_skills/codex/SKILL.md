@@ -39,11 +39,22 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 
 ## How to run
 
-Launch in the background — takes 10-25 minutes:
+**CRITICAL: Run in the background, not foreground.** A full review takes 10-25 minutes, which exceeds Codex's default 5-minute tool timeout. Foreground runs will be killed mid-review and reported as crashed when they're actually still working.
+
+Use this pattern:
 
 ```bash
-coarse-review <paper_path> --host codex [--model gpt-5.4] [--effort high]
+coarse-review <paper_path> --host codex [--model gpt-5.4] [--effort high] > /tmp/coarse-review.log 2>&1 &
+echo "Review PID: $!"
 ```
+
+Then poll the log file every 60-90 seconds:
+
+```bash
+tail -20 /tmp/coarse-review.log
+```
+
+Do NOT kill the process because you think it hung — the review takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, it's done.
 
 Available models: `gpt-5.4` (default), `gpt-5.3-codex`, `gpt-5.4-mini`, `gpt-5.4-pro`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
@@ -54,10 +65,11 @@ These map to Codex's internal reasoning effort:
 - `high` → `medium`
 - `max` → `high`
 
-**Handoff mode** (when the user came from the coarse web form):
+**Handoff mode** (when the user came from the coarse web form), same background-process pattern:
 
 ```bash
-coarse-review --handoff coarse.vercel.app/h/<token> --host codex
+coarse-review --handoff coarse.vercel.app/h/<token> --host codex > /tmp/coarse-review.log 2>&1 &
+echo "Review PID: $!"
 ```
 
 **When complete**, show the user the output path, recommendation, top issues, and comment count.

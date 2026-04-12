@@ -46,13 +46,14 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
 
 **If they already have a pre-extracted markdown** (from a previous coarse run), pass it with `--pre-extracted` to skip OCR.
 
-**Launch in the background** — full review takes 10-25 minutes:
+**Launch in the background** — full review takes 10-25 minutes, which exceeds Claude Code's default 2-minute tool timeout. Always use `run_in_background: true` or redirect to a log file so it's not killed mid-run:
 
 ```bash
-coarse-review <paper_path> --host claude [--model claude-opus-4-6] [--effort high]
+coarse-review <paper_path> --host claude [--model claude-opus-4-6] [--effort high] > /tmp/coarse-review.log 2>&1 &
+echo "Review PID: $!"
 ```
 
-`run_in_background: true` in the Bash tool. Don't block the conversation on it.
+Then poll the log every 60-90 seconds with `tail -20 /tmp/coarse-review.log`. Do NOT kill the process because it looks stuck — it takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, it's done.
 
 Available models: `claude-opus-4-6` (default), `claude-sonnet-4-6`, `claude-haiku-4-5`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.

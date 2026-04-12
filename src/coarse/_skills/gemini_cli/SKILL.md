@@ -39,19 +39,31 @@ Runs the **full coarse review pipeline** on a paper using the local `gemini -p` 
 
 ## How to run
 
-Launch in the background — takes 10-25 minutes:
+**CRITICAL: Run the command as a background process, not in the foreground.** A full review takes 10-25 minutes, which exceeds Gemini CLI's default 5-minute tool timeout. If you run it in the foreground, the tool will kill it mid-review and report a false crash.
+
+Use this exact pattern:
 
 ```bash
-coarse-review <paper_path> --host gemini [--model gemini-3.1-pro-preview] [--effort high]
+coarse-review <paper_path> --host gemini [--model gemini-3.1-pro-preview] [--effort high] > /tmp/coarse-review.log 2>&1 &
+echo "Review PID: $!"
 ```
+
+Then poll the log file every 60-90 seconds:
+
+```bash
+tail -20 /tmp/coarse-review.log
+```
+
+Do NOT kill the process because you think it hung — it takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, the run is done.
 
 Available models: `gemini-3.1-pro-preview` (default), `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
 
-**Handoff mode** (when the user came from the coarse web form):
+**Handoff mode** (when the user came from the coarse web form), same background-process pattern:
 
 ```bash
-coarse-review --handoff coarse.vercel.app/h/<token> --host gemini
+coarse-review --handoff coarse.vercel.app/h/<token> --host gemini > /tmp/coarse-review.log 2>&1 &
+echo "Review PID: $!"
 ```
 
 **When complete**, show the user the output path, recommendation, top issues, and comment count.
