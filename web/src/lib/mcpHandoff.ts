@@ -205,7 +205,7 @@ export function buildCliCommands(args: {
 }): { setupCmd: string; runCmd: string } {
   const { handoffUrl, host, model, effort } = args;
   const cliName = HOST_CLI_NAME[host];
-  const setupCmd = "pip install --force-reinstall --no-deps 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' && coarse install-skills --all --force";
+  const setupCmd = "uv pip install --reinstall 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' && coarse install-skills --all --force";
   const runCmd =
     `coarse-review --handoff ${handoffUrl}` +
     ` --host ${cliName}` +

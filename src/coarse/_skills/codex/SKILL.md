@@ -17,7 +17,7 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 
 ## Prerequisites
 
-- `coarse-ink` installed: `pip install 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'` (or `pip install 'coarse-ink[mcp]'` once released)
+- `coarse-ink` installed: `uv pip install --reinstall 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'` (or `uv pip install 'coarse-ink[mcp]'` once released)
 - **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key is NOT passed through the web handoff for security reasons.
 
   Before running the review, check if `OPENROUTER_API_KEY` is set:
