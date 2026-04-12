@@ -111,12 +111,34 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Derive the handoff URL the user pastes into their terminal.
-  const siteUrl =
+  // Derive the handoff URL the CLI will fetch from. In production this
+  // is coarse.vercel.app (always reachable). In local dev it falls back
+  // to the request origin (localhost:3000) — which works when the CLI
+  // runs on the same machine but breaks if it runs in a remote sandbox
+  // (e.g. Codex cloud). For local dev with remote CLIs, set
+  // NEXT_PUBLIC_SITE_URL in .env.local to a tunnel URL.
+  let siteUrl =
     process.env.NEXT_PUBLIC_SITE_URL ??
     (process.env.NEXT_PUBLIC_VERCEL_URL
       ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
       : new URL(request.url).origin);
+
+  // If the origin is localhost, try to use the machine's LAN IP so
+  // local CLI tools (even those spawned by desktop apps that resolve
+  // localhost differently) can reach the dev server.
+  if (siteUrl.includes("localhost") || siteUrl.includes("127.0.0.1")) {
+    const port = new URL(siteUrl).port || "3000";
+    // Use the x-forwarded-host header if behind a proxy, otherwise
+    // try the LAN address from the request.
+    const forwardedHost = request.headers.get("x-forwarded-host");
+    if (forwardedHost && !forwardedHost.includes("localhost")) {
+      siteUrl = `https://${forwardedHost}`;
+    } else {
+      // Keep localhost but note it in the response so the UI can warn.
+      siteUrl = `http://localhost:${port}`;
+    }
+  }
+
   const handoffUrl = `${siteUrl.replace(/\/$/, "")}/h/${tokenRow.token}`;
 
   return NextResponse.json({
@@ -125,5 +147,8 @@ export async function POST(request: NextRequest) {
     handoff_url: handoffUrl,
     host: host || null,
     finalize_token_ttl_minutes: FINALIZE_TOKEN_TTL_MINUTES,
+    warning: siteUrl.includes("localhost")
+      ? "Handoff URL uses localhost — the CLI must run on this same machine. For remote CLIs, set NEXT_PUBLIC_SITE_URL to a public URL."
+      : undefined,
   });
 }

@@ -20,7 +20,7 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
 
 ## Prerequisites
 
-- `coarse-ink` installed: `pip install 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'`
+- `coarse-ink` installed: `uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' coarse --help` (or `pip install 'coarse-ink[mcp]'` once released)
 - OpenRouter key in `~/.coarse/config.toml` (run `coarse setup`), or `OPENROUTER_API_KEY` env var, or a `.env` file in CWD.
 - `claude` CLI logged in.
 

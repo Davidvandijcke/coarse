@@ -80,7 +80,7 @@ export const HOST_LAUNCH_HINT: Record<ChatHost, string> = {
   "codex":
     "Opens Codex with the review command pre-filled. Just hit send.",
   "gemini-cli":
-    "Opens Gemini CLI and copies the review command to your clipboard. Paste it (⌘V) and hit send.",
+    "Copy the commands below and run them in your terminal.",
 };
 
 /**
@@ -118,7 +118,9 @@ export function buildLaunchUrl(args: {
   // Claude Code and Gemini CLI don't support prompt params in their
   // URL schemes yet. Open the app and rely on clipboard.
   if (host === "claude-code") return "claude://";
-  return "gemini2://";
+  // Gemini CLI has no desktop app with a URL scheme — return null
+  // to signal the caller should show manual instructions only.
+  return "";
 }
 
 // Public URL of the coarse MCP server (legacy — only used by /mcp
@@ -173,7 +175,7 @@ export function buildCliCommands(args: {
 }): { setupCmd: string; runCmd: string } {
   const { handoffUrl, host, model, effort } = args;
   const cliName = HOST_CLI_NAME[host];
-  const setupCmd = "pip install 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' && coarse install-skills --all --force";
+  const setupCmd = "uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' coarse install-skills --all --force";
   const runCmd =
     `coarse-review --handoff ${handoffUrl}` +
     ` --host ${cliName}` +

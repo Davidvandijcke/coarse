@@ -17,7 +17,7 @@ Runs the **full coarse review pipeline** on a paper using the local `gemini -p` 
 
 ## Prerequisites
 
-- `coarse-ink` installed: `pip install 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'`
+- `coarse-ink` installed: `uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' coarse --help` (or `pip install 'coarse-ink[mcp]'` once released)
 - OpenRouter key in `~/.coarse/config.toml`, or `OPENROUTER_API_KEY` env var, or `.env` in CWD.
 - `gemini` CLI signed in (first run prompts for OAuth).
 

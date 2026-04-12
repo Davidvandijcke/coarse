@@ -514,6 +514,8 @@ export default function Home() {
       setHandoffState({ paperId: id, host });
       setHandoffPhase("ready");
       setHandoffMessage("");
+      // Auto-expand manual commands for Gemini CLI (no app to launch).
+      if (host === "gemini-cli") setShowManualCommands(true);
     } catch (err) {
       setHandoffPhase("failed");
       const msg = err instanceof Error ? err.message : "Handoff failed";
@@ -556,20 +558,26 @@ export default function Home() {
       console.error("clipboard write failed", err);
     }
 
-    // Open the host's app. Codex gets a codex://new?prompt=<text> deep
-    // link that pre-fills the prompt. Claude Code and Gemini just open
-    // the app (no prompt param support yet) and rely on clipboard paste.
+    // Open the host's app if it has a launchable URL scheme.
+    // Codex gets codex://new?prompt=<text> (pre-fills composer).
+    // Claude Code gets claude:// (opens app, clipboard fallback).
+    // Gemini CLI has no app to open — show manual commands instead.
     const launchUrl = buildLaunchUrl({ host, runCmd, setupCmd });
-    window.location.href = launchUrl;
-
-    if (host === "codex") {
-      setLaunchStatus(
-        `Codex opened with the review command pre-filled. Just hit send.`,
-      );
+    if (launchUrl) {
+      window.location.href = launchUrl;
+      if (host === "codex") {
+        setLaunchStatus(
+          `Codex opened with the review command pre-filled. Just hit send.`,
+        );
+      } else {
+        setLaunchStatus(
+          `${HOST_LABELS[host]} opened. Prompt copied — paste it (⌘V) into the chat.`,
+        );
+      }
     } else {
-      setLaunchStatus(
-        `${HOST_LABELS[host]} opened. Prompt copied — paste it (⌘V) into the chat.`,
-      );
+      // No app to launch (Gemini CLI) — expand manual commands.
+      setShowManualCommands(true);
+      setLaunchStatus(`Command copied to clipboard.`);
     }
   }
 
@@ -1252,38 +1260,42 @@ export default function Home() {
                       </label>
                     </div>
 
-                    {/* Primary launch button */}
-                    <button
-                      type="button"
-                      onClick={handleLaunch}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        padding: "0.875rem 1.5rem",
-                        background: "var(--yellow-chalk)",
-                        color: "var(--board)",
-                        border: "none",
-                        borderRadius: "2px",
-                        fontFamily: "var(--font-chalk)",
-                        fontSize: "1.1rem",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        transition: "opacity 0.15s",
-                      }}
-                    >
-                      {HOST_LAUNCH_LABEL[host]}
-                    </button>
-                    <p
-                      style={{
-                        fontFamily: "var(--font-chalk)",
-                        fontSize: "0.9rem",
-                        color: "var(--dust)",
-                        margin: "0.5rem 0 0",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {launchStatus || HOST_LAUNCH_HINT[host]}
-                    </p>
+                    {/* Primary launch button — hidden for Gemini CLI (no app) */}
+                    {host !== "gemini-cli" && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleLaunch}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            padding: "0.875rem 1.5rem",
+                            background: "var(--yellow-chalk)",
+                            color: "var(--board)",
+                            border: "none",
+                            borderRadius: "2px",
+                            fontFamily: "var(--font-chalk)",
+                            fontSize: "1.1rem",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            transition: "opacity 0.15s",
+                          }}
+                        >
+                          {HOST_LAUNCH_LABEL[host]}
+                        </button>
+                        <p
+                          style={{
+                            fontFamily: "var(--font-chalk)",
+                            fontSize: "0.9rem",
+                            color: "var(--dust)",
+                            margin: "0.5rem 0 0",
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {launchStatus || HOST_LAUNCH_HINT[host]}
+                        </p>
+                      </>
+                    )}
 
                     {/* Review URL */}
                     <p
