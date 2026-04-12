@@ -80,28 +80,13 @@ function SplitFlap() {
 }
 
 /* ── Copy-to-clipboard code block ────────────────────────── */
-function CodeBlock({ text }: { text: string }) {
+function CodeBlock({ text, maxHeight }: { text: string; maxHeight?: string }) {
   const [copied, setCopied] = useState(false);
+  // Wrap the scroll area in a relative container so the copy button
+  // can be absolutely positioned over the top-right and stay visible
+  // regardless of scroll position.
   return (
-    <div
-      style={{
-        position: "relative",
-        background: "var(--board)",
-        border: "1px solid var(--tray)",
-        borderLeft: "2px solid var(--yellow-chalk)",
-        borderRadius: "2px",
-        padding: "0.65rem 0.85rem",
-        paddingRight: "4.5rem",
-        fontFamily: "var(--font-space-mono), monospace",
-        fontSize: "0.82rem",
-        color: "var(--chalk-bright)",
-        lineHeight: 1.5,
-        overflowX: "auto",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-all",
-      }}
-    >
-      {text}
+    <div style={{ position: "relative" }}>
       <button
         type="button"
         onClick={() => {
@@ -114,6 +99,7 @@ function CodeBlock({ text }: { text: string }) {
           position: "absolute",
           top: "0.4rem",
           right: "0.4rem",
+          zIndex: 2,
           background: copied ? "var(--yellow-chalk)" : "var(--tray)",
           color: copied ? "var(--board)" : "var(--chalk-bright)",
           border: "none",
@@ -127,6 +113,27 @@ function CodeBlock({ text }: { text: string }) {
       >
         {copied ? "copied ✓" : "copy"}
       </button>
+      <div
+        style={{
+          background: "var(--board)",
+          border: "1px solid var(--tray)",
+          borderLeft: "2px solid var(--yellow-chalk)",
+          borderRadius: "2px",
+          padding: "0.65rem 0.85rem",
+          paddingRight: "4.5rem",
+          fontFamily: "var(--font-space-mono), monospace",
+          fontSize: "0.82rem",
+          color: "var(--chalk-bright)",
+          lineHeight: 1.5,
+          maxHeight: maxHeight ?? undefined,
+          overflowY: maxHeight ? "auto" : undefined,
+          overflowX: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}
+      >
+        {text}
+      </div>
     </div>
   );
 }
@@ -1344,6 +1351,7 @@ export default function Home() {
                         </div>
                         <CodeBlock
                           text={buildAgentPrompt({ setupCmd, runCmd })}
+                          maxHeight="160px"
                         />
                         <p
                           style={{
@@ -1383,7 +1391,7 @@ export default function Home() {
                             <div style={{ fontFamily: "var(--font-chalk)", fontSize: "0.9rem", color: "var(--dust)", marginBottom: "0.35rem" }}>
                               paste this into Codex if the launch button didn&apos;t work:
                             </div>
-                            <CodeBlock text={buildAgentPrompt({ setupCmd, runCmd })} />
+                            <CodeBlock text={buildAgentPrompt({ setupCmd, runCmd })} maxHeight="160px" />
                           </div>
                         )}
                       </div>

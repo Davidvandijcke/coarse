@@ -161,7 +161,7 @@ function renderLandingPage(args: {
   const safe = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-  const setupCmd = `uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' coarse install-skills --all --force`;
+  const setupCmd = `pip install --force-reinstall --no-deps 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' && coarse install-skills --all --force`;
   const runCmd = `coarse-review --handoff ${handoffUrl}`;
 
   return `<!doctype html>
