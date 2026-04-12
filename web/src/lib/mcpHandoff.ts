@@ -68,23 +68,6 @@ export const HOST_INSTALL_URL: Record<ChatHost, string> = {
   "gemini-cli": "https://github.com/google-gemini/gemini-cli",
 };
 
-// Desktop-app deep-link URL and web fallback for each host. The
-// launch flow tries the desktop-app scheme first (which opens the
-// native app on macOS/Windows if installed); on platforms that don't
-// support custom URL schemes the browser ignores the open() silently
-// and we just rely on the clipboard copy.
-export const HOST_APP_URL: Record<ChatHost, string> = {
-  "claude-code": "claude://",
-  "codex": "codex://",
-  "gemini-cli": "gemini2://",
-};
-
-export const HOST_WEB_FALLBACK: Record<ChatHost, string | null> = {
-  "claude-code": "https://claude.ai/new",
-  "codex": "https://chatgpt.com/codex",
-  "gemini-cli": null,
-};
-
 export const HOST_LAUNCH_LABEL: Record<ChatHost, string> = {
   "claude-code": "Open Claude Code",
   "codex": "Open Codex",
@@ -93,12 +76,50 @@ export const HOST_LAUNCH_LABEL: Record<ChatHost, string> = {
 
 export const HOST_LAUNCH_HINT: Record<ChatHost, string> = {
   "claude-code":
-    "Opens the Claude Code app (or web) with the review command copied to your clipboard. Paste it and Claude will run the full review.",
+    "Opens Claude Code and copies the review command to your clipboard. Paste it (⌘V) and hit send.",
   "codex":
-    "Opens the Codex app (or web) with the review command copied to your clipboard. Paste it and Codex will run the full review.",
+    "Opens Codex with the review command pre-filled. Just hit send.",
   "gemini-cli":
-    "Opens the Gemini app with the review command copied to your clipboard. Paste it and Gemini will run the full review.",
+    "Opens Gemini CLI and copies the review command to your clipboard. Paste it (⌘V) and hit send.",
 };
+
+/**
+ * Build the best available launch URL for each host.
+ *
+ * - **Codex**: ``codex://new?prompt=<text>`` deep link with pre-filled
+ *   prompt — the user just clicks "send" in the Codex app.
+ *   (See https://developers.openai.com/codex/app/commands)
+ * - **Claude Code**: ``claude://`` opens the app but has NO prompt
+ *   parameter (feature requested, not shipped). Clipboard fallback.
+ * - **Gemini CLI**: ``gemini2://`` opens the app but has NO prompt
+ *   parameter documented. Clipboard fallback.
+ */
+export function buildLaunchUrl(args: {
+  host: ChatHost;
+  runCmd: string;
+  setupCmd: string;
+}): string {
+  const { host, runCmd, setupCmd } = args;
+
+  const prompt =
+    `Please review an academic paper for me using the coarse-review skill. ` +
+    `If coarse-ink is not installed yet, first run:\n\n` +
+    `${setupCmd}\n\n` +
+    `Then run the review:\n\n` +
+    `${runCmd}\n\n` +
+    `Run both commands in the terminal. The review takes 10-25 minutes. ` +
+    `When it finishes, show me the review URL and a summary of the key findings.`;
+
+  if (host === "codex") {
+    // Codex supports codex://new?prompt=<text> deep links that pre-fill
+    // the composer in the desktop app.
+    return `codex://new?prompt=${encodeURIComponent(prompt)}`;
+  }
+  // Claude Code and Gemini CLI don't support prompt params in their
+  // URL schemes yet. Open the app and rely on clipboard.
+  if (host === "claude-code") return "claude://";
+  return "gemini2://";
+}
 
 // Public URL of the coarse MCP server (legacy — only used by /mcp
 // landing page for users who want the older Claude.ai connector path).
@@ -152,7 +173,7 @@ export function buildCliCommands(args: {
 }): { setupCmd: string; runCmd: string } {
   const { handoffUrl, host, model, effort } = args;
   const cliName = HOST_CLI_NAME[host];
-  const setupCmd = "pipx install 'coarse-ink[mcp]' && coarse setup && coarse install-skills";
+  const setupCmd = "pip install 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' && coarse install-skills --all --force";
   const runCmd =
     `coarse-review --handoff ${handoffUrl}` +
     ` --host ${cliName}` +

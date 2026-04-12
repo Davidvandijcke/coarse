@@ -156,7 +156,7 @@ function renderLandingPage(args: {
   const safe = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-  const setupCmd = `pipx install 'coarse-ink[mcp]' && coarse setup && coarse install-skills`;
+  const setupCmd = `pip install 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' && coarse install-skills --all --force`;
   const runCmd = `coarse-review --handoff ${handoffUrl}`;
 
   return `<!doctype html>

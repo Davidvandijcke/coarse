@@ -17,7 +17,7 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 
 ## Prerequisites
 
-- `coarse-ink` installed: `pipx install 'coarse-ink[mcp]'`
+- `coarse-ink` installed: `pip install 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'`
 - OpenRouter key in `~/.coarse/config.toml`, or `OPENROUTER_API_KEY` env var, or `.env` in CWD.
 - `codex` CLI logged in: `codex login`.
 

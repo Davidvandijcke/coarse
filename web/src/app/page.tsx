@@ -17,10 +17,9 @@ import {
   HOST_CLI_NAME,
   HOST_DEFAULT_MODELS,
   HOST_INSTALL_URL,
-  HOST_APP_URL,
-  HOST_WEB_FALLBACK,
   HOST_LAUNCH_LABEL,
   HOST_LAUNCH_HINT,
+  buildLaunchUrl,
   EFFORT_LEVELS,
   mintCliHandoff,
   buildCliCommands,
@@ -466,7 +465,9 @@ export default function Home() {
    */
   async function handleMcpHandoff(host: ChatHost) {
     if (!file) return;
-    if (handoffPhase !== "idle") return;
+    if (handoffPhase === "extracting") return;
+    // Reset any previous handoff so the user can switch hosts.
+    resetHandoff();
     setError(null);
     setMcpPickerOpen(false);
     setHandoffPhase("extracting");
@@ -533,42 +534,52 @@ export default function Home() {
    */
   async function handleLaunch() {
     if (!handoffBundle || !handoffState) return;
-    const { runCmd } = buildCliCommands({
+    const host = handoffState.host;
+    const { setupCmd, runCmd } = buildCliCommands({
       handoffUrl: handoffBundle.handoff_url,
-      host: handoffState.host,
+      host,
       model: selectedModel,
       effort: selectedEffort,
     });
 
+    // Copy the full prompt to clipboard (fallback for hosts that can't
+    // receive prompts via URL scheme — currently Claude Code and Gemini).
+    const fullPrompt =
+      `Please review an academic paper for me using the coarse-review skill. ` +
+      `If coarse-ink is not installed yet, first run:\n\n${setupCmd}\n\n` +
+      `Then run the review:\n\n${runCmd}\n\n` +
+      `Run both commands in the terminal. The review takes 10-25 minutes. ` +
+      `When it finishes, show me the review URL and a summary.`;
     try {
-      await navigator.clipboard.writeText(runCmd);
+      await navigator.clipboard.writeText(fullPrompt);
     } catch (err) {
       console.error("clipboard write failed", err);
     }
 
-    // Try opening the desktop app via its registered URL scheme.
-    // On macOS this launches the native app; on other platforms the
-    // browser silently ignores unrecognized schemes. We follow up
-    // with the web fallback after a short delay so both paths work.
-    const appUrl = HOST_APP_URL[handoffState.host];
-    const webUrl = HOST_WEB_FALLBACK[handoffState.host];
+    // Open the host's app. Codex gets a codex://new?prompt=<text> deep
+    // link that pre-fills the prompt. Claude Code and Gemini just open
+    // the app (no prompt param support yet) and rely on clipboard paste.
+    const launchUrl = buildLaunchUrl({ host, runCmd, setupCmd });
+    window.location.href = launchUrl;
 
-    if (appUrl) {
-      window.location.href = appUrl;
+    if (host === "codex") {
+      setLaunchStatus(
+        `Codex opened with the review command pre-filled. Just hit send.`,
+      );
+    } else {
+      setLaunchStatus(
+        `${HOST_LABELS[host]} opened. Prompt copied — paste it (⌘V) into the chat.`,
+      );
     }
-    if (webUrl) {
-      // Small delay so the app URL scheme has time to fire before
-      // we open a web tab. If the app launched, the user is already
-      // in it and this tab opens in the background. If the app isn't
-      // installed, the web fallback is the primary landing.
-      setTimeout(() => {
-        window.open(webUrl, "_blank", "noopener,noreferrer");
-      }, 500);
-    }
+  }
 
-    setLaunchStatus(
-      `Command copied — paste it (⌘V) into ${HOST_LABELS[handoffState.host]} and it will run the full review.`,
-    );
+  function resetHandoff() {
+    setHandoffPhase("idle");
+    setHandoffBundle(null);
+    setHandoffState(null);
+    setHandoffMessage("");
+    setLaunchStatus("");
+    setShowManualCommands(false);
   }
 
   const accepting = systemStatus?.accepting !== false;
@@ -1096,7 +1107,7 @@ export default function Home() {
                     </div>
                   )}
 
-                  {mcpPickerOpen && canHandoff && !handoffBundle && (
+                  {mcpPickerOpen && canHandoff && (
                     <div
                       role="listbox"
                       style={{
