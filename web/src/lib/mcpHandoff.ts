@@ -110,7 +110,11 @@ export function buildAgentPrompt(args: {
   const { setupCmd, runCmd } = args;
   return (
     `Please review an academic paper for me using the coarse-review skill.\n\n` +
-    `STEP 1 — Install coarse-ink if it's not already installed:\n\n` +
+    `STEP 1 — (Re)install coarse-ink to make sure it's up to date. ` +
+    `Run this command every time, even if coarse-ink seems to already ` +
+    `be installed — the --reinstall flag ensures you pull the latest ` +
+    `commit from the feat/mcp-server branch (which contains critical ` +
+    `fixes that may not be in your cached install):\n\n` +
     `${setupCmd}\n\n` +
     `STEP 2 — Check for an OpenRouter API key. ` +
     `Run \`echo $OPENROUTER_API_KEY\` and \`grep OPENROUTER_API_KEY .env 2>/dev/null\`. ` +

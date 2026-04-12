@@ -27,6 +27,9 @@ import logging
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
+
+from coarse.extraction import SUPPORTED_EXTENSIONS
 
 _DEFAULT_MODELS = {
     "claude": "claude-opus-4-6",
@@ -46,6 +49,49 @@ def _detect_host() -> str:
         "No headless CLI found on PATH. Install one of: claude (Claude Code), "
         "codex (OpenAI Codex CLI), or gemini (Google Gemini CLI)."
     )
+
+
+_CONTENT_TYPE_EXTENSIONS = {
+    "application/pdf": ".pdf",
+    "application/epub+zip": ".epub",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/msword": ".docx",
+    "text/markdown": ".md",
+    "text/plain": ".txt",
+    "text/html": ".html",
+    "application/xhtml+xml": ".html",
+    "text/x-tex": ".tex",
+    "application/x-tex": ".tex",
+}
+
+
+def _supported_suffix(name: str) -> str | None:
+    """Return a supported lowercase suffix extracted from ``name``, if any."""
+    suffix = Path(unquote(name)).suffix.lower()
+    return suffix if suffix in SUPPORTED_EXTENSIONS else None
+
+
+def _infer_handoff_extension(
+    *,
+    paper_title: str = "",
+    signed_url: str = "",
+    content_type: str = "",
+) -> str:
+    """Infer the source file extension for a handoff download.
+
+    Handoff mode should support the same formats as ``coarse review``:
+    PDF, Markdown, plain text, TeX, HTML, DOCX, and EPUB. Prefer the
+    extension from the stored ``paper_title`` (authoritative metadata),
+    then the signed download URL path, then the HTTP content type. Fall
+    back to ``.pdf`` for backward compatibility with older bundles.
+    """
+    for candidate in (paper_title, urlsplit(signed_url).path):
+        suffix = _supported_suffix(candidate)
+        if suffix is not None:
+            return suffix
+
+    normalized_type = content_type.split(";", 1)[0].strip().lower()
+    return _CONTENT_TYPE_EXTENSIONS.get(normalized_type, ".pdf")
 
 
 def _fetch_handoff(url: str) -> dict:
@@ -79,8 +125,14 @@ def _fetch_handoff(url: str) -> dict:
     except ValueError as exc:
         raise RuntimeError(f"Handoff URL did not return JSON: {resp.text[:200]}") from exc
 
-    required = ("paper_id", "signed_pdf_url", "finalize_token", "callback_url")
-    missing = [k for k in required if k not in bundle]
+    signed_download_url = bundle.get("signed_download_url") or bundle.get("signed_pdf_url")
+    if signed_download_url:
+        bundle["signed_download_url"] = signed_download_url
+        # Backward compatibility for any callers still reading the legacy key.
+        bundle.setdefault("signed_pdf_url", signed_download_url)
+
+    required = ("paper_id", "finalize_token", "callback_url", "signed_download_url")
+    missing = [k for k in required if not bundle.get(k)]
     if missing:
         raise RuntimeError(
             f"Handoff bundle missing required fields: {missing}. Got: {list(bundle.keys())}"
@@ -88,16 +140,29 @@ def _fetch_handoff(url: str) -> dict:
     return bundle
 
 
-def _download_pdf(signed_url: str, dest: Path) -> None:
-    """Stream the PDF at ``signed_url`` into ``dest``."""
+def _download_handoff_source(bundle: dict, dest_dir: Path) -> Path:
+    """Download the handoff source file into ``dest_dir``.
+
+    Despite the historical ``signed_pdf_url`` field name, CLI handoffs can
+    reference any reviewable source format. Preserve the original extension
+    so ``extract_file()`` takes the correct path and only uses OCR for PDFs.
+    """
     import requests
 
+    signed_url = bundle["signed_download_url"]
     with requests.get(signed_url, stream=True, timeout=120) as resp:
         resp.raise_for_status()
+        ext = _infer_handoff_extension(
+            paper_title=str(bundle.get("paper_title", "")),
+            signed_url=resp.url or signed_url,
+            content_type=resp.headers.get("content-type", ""),
+        )
+        dest = dest_dir / f"{bundle['paper_id']}{ext}"
         with open(dest, "wb") as f:
             for chunk in resp.iter_content(chunk_size=65536):
                 if chunk:
                     f.write(chunk)
+    return dest
 
 
 def _post_finalize(
@@ -208,18 +273,22 @@ def main(argv: list[str] | None = None) -> int:
     model = args.model or _DEFAULT_MODELS[host]
     effort = args.effort
 
-    # Handoff mode: fetch bundle, download PDF to temp, then run like local mode.
+    # Handoff mode: fetch bundle, download the source file to temp, then run like local mode.
     handoff_bundle: dict | None = None
-    temp_pdf: Path | None = None
+    temp_source: Path | None = None
 
     if args.handoff:
         logger.info("Fetching handoff bundle from %s", args.handoff)
         handoff_bundle = _fetch_handoff(args.handoff)
         tmpdir = Path(tempfile.mkdtemp(prefix="coarse-review-"))
-        temp_pdf = tmpdir / f"{handoff_bundle['paper_id']}.pdf"
-        logger.info("Downloading paper to %s", temp_pdf)
-        _download_pdf(handoff_bundle["signed_pdf_url"], temp_pdf)
-        paper_path = temp_pdf
+        temp_source = _download_handoff_source(handoff_bundle, tmpdir)
+        logger.info("Downloading paper to %s", temp_source)
+        if temp_source.suffix.lower() != ".pdf":
+            logger.info(
+                "Non-PDF handoff detected (%s); using direct extraction without OCR",
+                temp_source.suffix.lower() or "<no extension>",
+            )
+        paper_path = temp_source
     else:
         paper_path = args.paper_path.expanduser()
         if not paper_path.exists():
@@ -301,11 +370,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  Review is still available locally at: {review_md_path}")
             return 7
 
-    # Clean up temp PDF if we downloaded one.
-    if temp_pdf is not None and temp_pdf.exists():
+    # Clean up temp source file if we downloaded one.
+    if temp_source is not None and temp_source.exists():
         try:
-            temp_pdf.unlink()
-            temp_pdf.parent.rmdir()
+            temp_source.unlink()
+            temp_source.parent.rmdir()
         except OSError:
             pass
 
