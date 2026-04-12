@@ -144,6 +144,11 @@ class _HeadlessCLIClient:
     def cost_usd(self) -> float:
         return self._cost_usd
 
+    def add_cost(self, amount: float) -> None:
+        """Track external costs (e.g. Perplexity search via litellm)."""
+        with self._lock:
+            self._cost_usd += amount
+
     @property
     def supports_prompt_caching(self) -> bool:
         """Report False so agents skip cache_control markers that these
