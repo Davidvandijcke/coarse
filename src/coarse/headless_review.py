@@ -181,6 +181,46 @@ def _patch_extraction(pre_extracted: Path) -> None:
     _pipe.extract_file = lambda path, use_cache=True: paper_text  # type: ignore[assignment]
 
 
+def run_headless_review(
+    paper_path: Path,
+    *,
+    host: str,
+    model: str | None,
+    effort: str,
+    pre_extracted: Path | None = None,
+):
+    """Run the full coarse pipeline with a headless CLI backend.
+
+    Returns ``(review, markdown, paper_text)`` — the same shape as
+    ``coarse.pipeline.review_paper()``. Caller is responsible for
+    writing outputs to disk.
+
+    This is the shared entry point used by both ``main()`` (the CLI
+    wrapper) and ``coarse.cli_review.main()`` (the web handoff wrapper).
+    Keeping the core logic here means the sidecar-file dance between
+    cli_review and headless_review is no longer needed — the caller
+    gets the full PaperText object directly.
+    """
+    _patch_llmclient(host, model, effort)
+
+    if pre_extracted is not None:
+        _patch_extraction(pre_extracted)
+
+    # Import AFTER patching so the pipeline's lazy imports pick up
+    # the patched LLMClient. Patch the literature module with the
+    # real LLMClient (Perplexity needs litellm, not the headless CLI).
+    from coarse.agents import literature as _lit_mod
+    from coarse.pipeline import review_paper
+
+    _lit_mod.LLMClient = _patch_llmclient._original  # type: ignore[attr-defined]
+
+    return review_paper(
+        str(paper_path),
+        model=f"headless-{host}",
+        skip_cost_gate=True,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="coarse.headless_review")
     parser.add_argument(
@@ -234,28 +274,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     logger = logging.getLogger("coarse.headless_review")
 
-    try:
-        _patch_llmclient(args.host, args.model, args.effort)
-    except ImportError as exc:
-        print(
-            f"ERROR: coarse-ink not installed ({exc}).\n"
-            f"Install with: pip install 'coarse-ink[mcp]'",
-            file=sys.stderr,
-        )
-        return 4
-
-    if pre_extracted is not None:
-        _patch_extraction(pre_extracted)
-        logger.info("Using pre-extracted markdown from %s", pre_extracted)
-
-    # Now that all submodules are imported, patch literature.py to use the
-    # real litellm LLMClient for Perplexity Sonar Pro (routes via OpenRouter,
-    # not the headless CLI).
-    from coarse.agents import literature as _lit_mod
-    from coarse.pipeline import review_paper
-
-    _lit_mod.LLMClient = _patch_llmclient._original  # type: ignore[attr-defined]
-
     logger.info(
         "Starting coarse review of %s (host=%s, model=%s, effort=%s)",
         paper_path,
@@ -264,22 +282,25 @@ def main(argv: list[str] | None = None) -> int:
         args.effort,
     )
 
-    review, markdown, paper = review_paper(
-        str(paper_path),
-        model=f"headless-{args.host}",
-        skip_cost_gate=True,
-    )
+    try:
+        review, markdown, _paper = run_headless_review(
+            paper_path,
+            host=args.host,
+            model=args.model,
+            effort=args.effort,
+            pre_extracted=pre_extracted,
+        )
+    except ImportError as exc:
+        print(
+            f"ERROR: coarse-ink not installed ({exc}).\n"
+            f"Install with: pip install 'coarse-ink[mcp]'",
+            file=sys.stderr,
+        )
+        return 4
 
     out_path = out_dir / f"{paper_path.stem}_review.md"
     out_path.write_text(markdown)
     logger.info("Wrote %d-char review to %s", len(markdown), out_path)
-
-    # Also save the extracted paper markdown alongside the review so the
-    # cli_review.py wrapper can include it in the /api/mcp-finalize POST
-    # for the side-by-side view + "show in paper" comment links on the web.
-    paper_md_path = out_dir / f"{paper_path.stem}_paper.md"
-    paper_md_path.write_text(paper.full_markdown)
-    logger.info("Wrote %d-char paper markdown to %s", len(paper.full_markdown), paper_md_path)
 
     print()
     print("REVIEW COMPLETE")

@@ -229,20 +229,10 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = args.output_dir.expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Delegate to the shared headless_review driver for the actual pipeline.
-    # Pass host/model/effort via env vars since the underlying main() reads
-    # them. We also pass them as real argparse args when we invoke it.
-    from coarse.headless_review import main as run_headless
-
-    forwarded = ["--host", host, "--effort", effort]
-    if model:
-        forwarded += ["--model", model]
-    forwarded += [str(paper_path)]
-    if args.pre_extracted:
-        forwarded += [str(args.pre_extracted.expanduser())]
-    else:
-        forwarded += [""]  # positional placeholder
-    forwarded += [str(out_dir)]
+    # Call the pipeline directly so we get the PaperText back in-process
+    # (no sidecar file dance). run_headless_review handles all the
+    # monkey-patching for the chosen host.
+    from coarse.headless_review import run_headless_review
 
     logger.info(
         "Running coarse pipeline (host=%s, model=%s, effort=%s)",
@@ -251,18 +241,22 @@ def main(argv: list[str] | None = None) -> int:
         effort,
     )
 
-    rc = run_headless(forwarded)
-    if rc != 0:
-        return rc
-
-    # Locate the output markdown the pipeline just wrote.
-    review_md_path = out_dir / f"{paper_path.stem}_review.md"
-    if not review_md_path.exists():
-        print(
-            f"ERROR: pipeline completed but no review markdown found at {review_md_path}",
-            file=sys.stderr,
+    try:
+        review, md_text, paper_text = run_headless_review(
+            paper_path,
+            host=host,
+            model=model,
+            effort=effort,
+            pre_extracted=args.pre_extracted.expanduser() if args.pre_extracted else None,
         )
+    except Exception as exc:
+        print(f"ERROR: pipeline failed — {exc}", file=sys.stderr)
         return 6
+
+    # Save the review markdown locally regardless of mode.
+    review_md_path = out_dir / f"{paper_path.stem}_review.md"
+    review_md_path.write_text(md_text)
+    logger.info("Wrote %d-char review to %s", len(md_text), review_md_path)
 
     # Handoff mode: POST the review back to coarse web.
     if handoff_bundle is not None:
@@ -271,32 +265,17 @@ def main(argv: list[str] | None = None) -> int:
             handoff_bundle["callback_url"],
         )
         try:
-            # Recover paper metadata from the rendered markdown header.
-            md_text = review_md_path.read_text()
-            title = _parse_md_header(md_text, "# ") or handoff_bundle.get("paper_title", "Untitled")
-            domain = _parse_md_header(md_text, "**Domain**: ") or handoff_bundle.get(
-                "domain", "unknown"
-            )
-            taxonomy = _parse_md_header(md_text, "**Taxonomy**: ") or handoff_bundle.get(
-                "taxonomy", ""
-            )
+            # Use the paper metadata from the Review object (authoritative).
+            title = review.title or handoff_bundle.get("paper_title", "Untitled")
+            domain = review.domain or handoff_bundle.get("domain", "unknown")
+            taxonomy = review.taxonomy or handoff_bundle.get("taxonomy", "")
 
-            # Load the extracted paper markdown that headless_review.py
-            # saved alongside the review. This powers the side-by-side
-            # view and the "show in paper" comment links on coarse web.
-            paper_md_path = out_dir / f"{paper_path.stem}_paper.md"
-            paper_markdown = ""
-            if paper_md_path.exists():
-                paper_markdown = paper_md_path.read_text()
-                logger.info(
-                    "Including %d-char paper markdown in finalize POST",
-                    len(paper_markdown),
-                )
-            else:
-                logger.warning(
-                    "No paper markdown found at %s — side-by-side view won't render",
-                    paper_md_path,
-                )
+            # Use the extracted paper_text directly — no sidecar file.
+            paper_markdown = paper_text.full_markdown
+            logger.info(
+                "Including %d-char paper markdown in finalize POST",
+                len(paper_markdown),
+            )
 
             resp = _post_finalize(
                 callback_url=handoff_bundle["callback_url"],
@@ -331,15 +310,6 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     return 0
-
-
-def _parse_md_header(md: str, prefix: str) -> str:
-    """Pull a value from the markdown header (e.g. ``# Title`` or
-    ``**Domain**: X``). Returns empty string if not found."""
-    for line in md.splitlines()[:30]:
-        if line.startswith(prefix):
-            return line[len(prefix) :].strip()
-    return ""
 
 
 if __name__ == "__main__":
