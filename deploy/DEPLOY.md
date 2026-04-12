@@ -29,6 +29,9 @@ No LLM provider API keys are needed on the deployment side — users supply thei
 1. Create a new project at [supabase.com](https://supabase.com)
 2. Open the **SQL Editor** and paste the contents of `deploy/supabase_schema.sql`. Run it.
    - This creates the `reviews` table, enables RLS, creates the `papers` storage bucket, and enables Realtime.
+   - For existing deployments created before header-gated review reads, also run
+     `deploy/migrate_reviews_select_policy.sql` to replace the old permissive
+     reviews SELECT policy.
 3. Go to **Settings → API** and copy:
    - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
    - **anon public key** → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
