@@ -264,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
         args.effort,
     )
 
-    review, markdown, _paper = review_paper(
+    review, markdown, paper = review_paper(
         str(paper_path),
         model=f"headless-{args.host}",
         skip_cost_gate=True,
@@ -273,6 +273,13 @@ def main(argv: list[str] | None = None) -> int:
     out_path = out_dir / f"{paper_path.stem}_review.md"
     out_path.write_text(markdown)
     logger.info("Wrote %d-char review to %s", len(markdown), out_path)
+
+    # Also save the extracted paper markdown alongside the review so the
+    # cli_review.py wrapper can include it in the /api/mcp-finalize POST
+    # for the side-by-side view + "show in paper" comment links on the web.
+    paper_md_path = out_dir / f"{paper_path.stem}_paper.md"
+    paper_md_path.write_text(paper.full_markdown)
+    logger.info("Wrote %d-char paper markdown to %s", len(paper.full_markdown), paper_md_path)
 
     print()
     print("REVIEW COMPLETE")

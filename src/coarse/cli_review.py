@@ -281,11 +281,23 @@ def main(argv: list[str] | None = None) -> int:
                 "taxonomy", ""
             )
 
-            # We don't have the original paper_markdown here (coarse's
-            # extract_file result isn't persisted across main()). Pass empty
-            # — the web side can render the review without the side-by-side
-            # view. Populating it would require the pipeline to save a
-            # paper_markdown dump; that's a future enhancement.
+            # Load the extracted paper markdown that headless_review.py
+            # saved alongside the review. This powers the side-by-side
+            # view and the "show in paper" comment links on coarse web.
+            paper_md_path = out_dir / f"{paper_path.stem}_paper.md"
+            paper_markdown = ""
+            if paper_md_path.exists():
+                paper_markdown = paper_md_path.read_text()
+                logger.info(
+                    "Including %d-char paper markdown in finalize POST",
+                    len(paper_markdown),
+                )
+            else:
+                logger.warning(
+                    "No paper markdown found at %s — side-by-side view won't render",
+                    paper_md_path,
+                )
+
             resp = _post_finalize(
                 callback_url=handoff_bundle["callback_url"],
                 finalize_token=handoff_bundle["finalize_token"],
@@ -294,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
                 domain=domain,
                 taxonomy=taxonomy,
                 markdown=md_text,
-                paper_markdown="",
+                paper_markdown=paper_markdown,
                 host_label=host,
             )
             review_url = resp.get("review_url", "")
