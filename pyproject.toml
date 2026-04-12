@@ -27,6 +27,7 @@ dependencies = [
     "tomli-w>=1.0",
     "pymupdf>=1.24",
     "python-dotenv>=1.0",
+    "requests>=2.31",
 ]
 
 [project.urls]
@@ -38,12 +39,14 @@ Changelog = "https://github.com/Davidvandijcke/coarse/blob/main/CHANGELOG.md"
 [project.optional-dependencies]
 docling = ["docling>=2.0"]
 formats = ["mammoth>=1.6", "markdownify>=0.12", "ebooklib>=0.18"]
+mcp = ["fastmcp>=2.10", "requests>=2.31", "pymupdf4llm>=0.0.20"]
 all = ["coarse-ink[docling]", "coarse-ink[formats]"]
-dev = ["pytest>=8.0", "ruff>=0.4"]
+dev = ["pytest>=8.0", "ruff>=0.4", "fastmcp>=2.10", "requests>=2.31", "pymupdf4llm>=0.0.20"]
 
 [project.scripts]
 coarse = "coarse.cli:app"
 coarse-ink = "coarse.cli:app"
+coarse-review = "coarse.cli_review:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/coarse"]

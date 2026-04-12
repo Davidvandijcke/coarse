@@ -350,7 +350,14 @@ class LLMClient:
             **call_kwargs,
         )
         try:
-            cost = litellm.completion_cost(completion_response=completion)
+            # Pass model=self._model explicitly so completion_cost uses the
+            # ID we registered in _CUSTOM_MODEL_INFO instead of whatever
+            # concrete version the provider stamped onto the response.
+            # OpenRouter maps aliases like ``qwen/qwen3.5-plus-02-15`` to
+            # date-stamped versions (e.g. ``qwen/qwen3.5-plus-20260216``)
+            # which aren't in litellm's registry, so the default cost
+            # lookup raises ``This model isn't mapped yet``.
+            cost = litellm.completion_cost(completion_response=completion, model=self._model)
             if cost is not None:
                 with self._lock:
                     self._cost_usd += cost
@@ -419,7 +426,9 @@ class LLMClient:
             **call_kwargs,
         )
         try:
-            cost = litellm.completion_cost(completion_response=response)
+            # See the matching block in ``complete()`` for why we pass
+            # ``model=self._model`` explicitly — OpenRouter aliasing.
+            cost = litellm.completion_cost(completion_response=response, model=self._model)
             if cost is not None:
                 with self._lock:
                     self._cost_usd += cost

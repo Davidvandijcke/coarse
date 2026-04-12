@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         DetailedComment,
         DomainCalibration,
         OverviewFeedback,
+        PaperStructure,
         SectionInfo,
     )
 
@@ -2182,3 +2183,100 @@ Score 0.0-0.4: Tangentially related or irrelevant.
 
 Also suggest 0-3 refinement queries if important areas of related work are missing.
 """
+
+
+# ---------------------------------------------------------------------------
+# MCP-facing stage-prompt dispatcher
+# ---------------------------------------------------------------------------
+#
+# Used by ``deploy/mcp_server.py`` to hand the host LLM ready-to-use prompt
+# strings per review stage. This is a thin wrapper over the existing prompt
+# builders — it does not introduce any new prompt content. The MCP path runs
+# without ``DomainCalibration``, ``ContributionContext``, or literature
+# context; those are set to their default-None values and the builders
+# degrade gracefully.
+
+_MCP_STAGES = ("overview", "section", "crossref", "critique")
+
+
+def get_prompt(
+    stage: str,
+    *,
+    structure: "PaperStructure | None" = None,
+    section: "SectionInfo | None" = None,
+    all_sections: "list[SectionInfo] | None" = None,
+    focus: str = "general",
+    overview: "OverviewFeedback | None" = None,
+    comments: "list[DetailedComment] | None" = None,
+    title: str = "",
+    abstract: str = "",
+) -> tuple[str, str]:
+    """Return ``(system, user)`` prompt strings for an MCP-driven review stage.
+
+    ``stage`` must be one of ``overview``, ``section``, ``crossref``, or
+    ``critique``. Unrecognized stages raise ``ValueError`` — callers that
+    want to drive the legacy completeness / editorial / verify agents
+    should import those prompts directly.
+
+    Context requirements per stage:
+
+    - ``overview``: ``structure`` (required). Uses full paper structure to
+      render the cacheable overview context + short trigger user prompt.
+    - ``section``: ``section`` and ``title`` (required). ``all_sections``,
+      ``abstract``, and ``focus`` (``general`` / ``proof`` / ``methodology``
+      / ``literature`` / ``discussion``) refine the prompt to match the
+      section's role in the paper. The focus picks the specialized system
+      prompt from ``SECTION_SYSTEM_MAP``.
+    - ``crossref`` / ``critique``: ``overview`` and ``comments`` (required).
+      ``title`` and ``abstract`` are optional paper-context strings.
+    """
+    if stage == "overview":
+        if structure is None:
+            raise ValueError("stage='overview' requires structure")
+        # Build the same sections_text block the OverviewAgent uses. Inlined
+        # so the MCP path doesn't import the agent module (which pulls in
+        # OverviewAgent + ReviewAgent + litellm at import time).
+        parts: list[str] = []
+        for sec in structure.sections:
+            if not sec.text:
+                parts.append(f"## {sec.number}. {sec.title} ({sec.section_type.value})\n(empty)")
+                continue
+            parts.append(f"## {sec.number}. {sec.title} ({sec.section_type.value})\n{sec.text}")
+        sections_text = "\n\n".join(parts)
+        system_prompt = OVERVIEW_SYSTEM
+        user_prompt = overview_user(
+            structure.title,
+            structure.abstract,
+            sections_text,
+            calibration=None,
+            literature_context="",
+            cache_mode=False,
+        )
+        return system_prompt, user_prompt
+
+    if stage == "section":
+        if section is None:
+            raise ValueError("stage='section' requires section")
+        system_prompt = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
+        user_prompt = section_user(
+            paper_title=title,
+            section=section,
+            overview=overview,
+            calibration=None,
+            literature_context="",
+            all_sections=all_sections,
+            abstract=abstract,
+        )
+        return system_prompt, user_prompt
+
+    if stage == "crossref":
+        if overview is None or comments is None:
+            raise ValueError("stage='crossref' requires overview and comments")
+        return CROSSREF_SYSTEM, crossref_user(overview, comments, title=title, abstract=abstract)
+
+    if stage == "critique":
+        if overview is None or comments is None:
+            raise ValueError("stage='critique' requires overview and comments")
+        return CRITIQUE_SYSTEM, critique_user(overview, comments, title=title, abstract=abstract)
+
+    raise ValueError(f"unknown stage {stage!r}; expected one of {_MCP_STAGES}")

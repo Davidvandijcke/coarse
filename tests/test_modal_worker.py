@@ -24,67 +24,80 @@ _MODAL_WORKER = _REPO_ROOT / "deploy" / "modal_worker.py"
 
 
 def _install_stubs() -> None:
-    """Install minimal stand-ins for `modal` and `fastapi` in sys.modules."""
-    if "modal" not in sys.modules:
-        modal_stub = types.ModuleType("modal")
+    """Install minimal stand-ins for `modal` and `fastapi` in sys.modules.
 
-        class _App:
-            def __init__(self, *_a, **_kw):
-                pass
+    UNCONDITIONALLY replaces ``sys.modules['modal']`` and
+    ``sys.modules['fastapi']``. Earlier this was guarded by
+    ``if "modal" not in sys.modules``, which silently skipped the stub
+    when *another* test (e.g. ``test_mcp_server.py``) had already
+    imported real modal — because ``deploy/mcp_server.py`` does a
+    ``try: import modal`` at module load. That left ``run_review`` and
+    ``run_extract`` wrapped as real ``modal.Function`` objects instead
+    of plain callables, so the ``test_run_review_accepts_valid_token``
+    and friends would crash with ``'Function' object is not callable``
+    whenever they ran after the MCP suite. Stubbing unconditionally
+    means the order-dependency disappears — this test file always sees
+    a known, no-op Modal + FastAPI surface regardless of what's already
+    in sys.modules.
+    """
+    modal_stub = types.ModuleType("modal")
 
-            def function(self, *_a, **_kw):
-                def _decorator(fn):
-                    return fn
+    class _App:
+        def __init__(self, *_a, **_kw):
+            pass
 
-                return _decorator
-
-        class _Image:
-            @staticmethod
-            def debian_slim(*_a, **_kw):
-                return _Image()
-
-            def apt_install(self, *_a, **_kw):
-                return self
-
-            def pip_install(self, *_a, **_kw):
-                return self
-
-            def add_local_dir(self, *_a, **_kw):
-                return self
-
-        class _Secret:
-            @staticmethod
-            def from_name(_name):
-                return object()
-
-        modal_stub.App = _App
-        modal_stub.Image = _Image
-        modal_stub.Secret = _Secret
-
-        def _fastapi_endpoint(*_a, **_kw):
+        def function(self, *_a, **_kw):
             def _decorator(fn):
                 return fn
 
             return _decorator
 
-        modal_stub.fastapi_endpoint = _fastapi_endpoint
-        sys.modules["modal"] = modal_stub
+    class _Image:
+        @staticmethod
+        def debian_slim(*_a, **_kw):
+            return _Image()
 
-    if "fastapi" not in sys.modules:
-        fastapi_stub = types.ModuleType("fastapi")
+        def apt_install(self, *_a, **_kw):
+            return self
 
-        class _HTTPException(Exception):
-            def __init__(self, status_code: int, detail: str = "") -> None:
-                super().__init__(detail)
-                self.status_code = status_code
-                self.detail = detail
+        def pip_install(self, *_a, **_kw):
+            return self
 
-        class _Request:  # noqa: D401
-            pass
+        def add_local_dir(self, *_a, **_kw):
+            return self
 
-        fastapi_stub.HTTPException = _HTTPException
-        fastapi_stub.Request = _Request
-        sys.modules["fastapi"] = fastapi_stub
+    class _Secret:
+        @staticmethod
+        def from_name(_name):
+            return object()
+
+    modal_stub.App = _App
+    modal_stub.Image = _Image
+    modal_stub.Secret = _Secret
+
+    def _fastapi_endpoint(*_a, **_kw):
+        def _decorator(fn):
+            return fn
+
+        return _decorator
+
+    modal_stub.fastapi_endpoint = _fastapi_endpoint
+    sys.modules["modal"] = modal_stub
+
+    fastapi_stub = types.ModuleType("fastapi")
+
+    class _HTTPException(Exception):
+        def __init__(self, status_code: int, detail: str = "") -> None:
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
+
+    class _Request:  # noqa: D401
+        pass
+
+    fastapi_stub.HTTPException = _HTTPException
+    fastapi_stub.Request = _Request
+    sys.modules["fastapi"] = fastapi_stub
 
 
 def _load_modal_worker():

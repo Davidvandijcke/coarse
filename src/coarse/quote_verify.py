@@ -17,6 +17,34 @@ from coarse.types import DetailedComment
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_for_matching(text: str) -> str:
+    """Normalize text for fuzzy comparison.
+
+    Bridges the gap between raw OCR markdown (``_Q_ [ˆ]``) and cleaned-up
+    unicode (``Q̂``) that LLMs produce when they "helpfully" re-type quotes.
+    Applied to BOTH the quote and the paper text before SequenceMatcher runs.
+    """
+    import unicodedata
+
+    # NFKC normalization: ﬁ→fi, ² → 2, etc.
+    text = unicodedata.normalize("NFKC", text)
+    # Strip markdown emphasis: _text_ → text, **text** → text
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"\1", text)
+    # Strip OCR hat notation: [ˆ] or [^] → nothing (the combining char
+    # is on the preceding letter in the cleaned-up version)
+    text = re.sub(r"\s*\[[\^ˆ]\]\s*", "", text)
+    # Remove unicode combining characters (diacritics like ̂ on Q̂)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    # Soft hyphens + line-break hyphens
+    text = text.replace("\u00ad", "")
+    text = re.sub(r"-\s*\n\s*", "", text)
+    # Collapse whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
 # Minimum fuzzy match ratio to accept a corrected quote
 _MIN_MATCH_RATIO = 0.80
 # Stricter threshold for quotes containing math/numeric content
@@ -69,6 +97,7 @@ def verify_quotes(
     Returns a new list of DetailedComment with corrected quotes.
     """
     paper_lower = paper_text.lower()
+    paper_norm = _normalize_for_matching(paper_text).lower()
     result = []
     stats = {"exact": 0, "fuzzy": 0, "dropped": 0, "empty": 0, "garbled_source": 0}
 
@@ -78,8 +107,9 @@ def verify_quotes(
             result.append(comment)
             continue
 
-        # Exact substring match (case-insensitive)
-        if comment.quote.lower() in paper_lower:
+        # Exact substring match (case-insensitive), try both raw and normalized
+        quote_norm = _normalize_for_matching(comment.quote).lower()
+        if comment.quote.lower() in paper_lower or quote_norm in paper_norm:
             stats["exact"] += 1
             result.append(comment)
             continue
@@ -132,7 +162,7 @@ _JACCARD_TOP_K = 5  # number of candidate chunks to refine with SequenceMatcher
 
 def _tokenize(text: str) -> set[str]:
     """Split lowercased text into word-level tokens for Jaccard similarity."""
-    return set(text.lower().split())
+    return set(_normalize_for_matching(text).lower().split())
 
 
 def _jaccard(a: set[str], b: set[str]) -> float:
@@ -176,14 +206,16 @@ def _find_nearest_passage(
     candidates.sort(key=lambda x: x[0], reverse=True)
     top_candidates = candidates[:_JACCARD_TOP_K]
 
-    # Phase 2: SequenceMatcher on top candidates only
-    quote_lower = quote.lower()
+    # Phase 2: SequenceMatcher on top candidates only.
+    # Normalize both sides to bridge OCR markdown ↔ clean unicode gap.
+    quote_norm = _normalize_for_matching(quote).lower()
     best_ratio = 0.0
     best_passage = ""
 
     for _, i in top_candidates:
         candidate = paper_text[i : i + window_size]
-        ratio = difflib.SequenceMatcher(None, quote_lower, candidate.lower()).ratio()
+        candidate_norm = _normalize_for_matching(candidate).lower()
+        ratio = difflib.SequenceMatcher(None, quote_norm, candidate_norm).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
             best_passage = candidate

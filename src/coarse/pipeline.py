@@ -146,6 +146,66 @@ def _review_section(
     return comments
 
 
+def extract_and_structure(
+    file_path: str | Path,
+    client: LLMClient,
+    config: CoarseConfig | None = None,
+    *,
+    run_qa: bool | None = None,
+) -> tuple[PaperText, PaperStructure]:
+    """Extract a paper and parse its structure without running any review stages.
+
+    The non-reasoning half of ``review_paper()``: extraction, optional
+    extraction QA, and structure analysis. Callers that want to drive the
+    review reasoning themselves — e.g. the MCP server at
+    ``deploy/mcp_server.py`` — reuse this helper without pulling in the
+    agents or the cost gate.
+
+    Raises ExtractionError if extraction produces no usable sections.
+    """
+    if config is None:
+        config = load_config()
+
+    paper_text = extract_file(file_path)
+
+    is_pdf = Path(file_path).suffix.lower() == ".pdf"
+    if is_pdf:
+        should_qa = run_qa if run_qa is not None else config.extraction_qa
+        if not should_qa and paper_text.garble_ratio > 0.001:
+            logger.info(
+                "High garble ratio (%.4f) detected — auto-enabling extraction QA",
+                paper_text.garble_ratio,
+            )
+            should_qa = True
+
+        if should_qa:
+            from coarse.config import resolve_api_key
+            from coarse.extraction import _save_cache
+            from coarse.extraction_qa import run_extraction_qa
+
+            vision_key = resolve_api_key(config.vision_model, config)
+            if vision_key is None:
+                logger.warning(
+                    "No API key for vision model %s — skipping extraction QA",
+                    config.vision_model,
+                )
+            else:
+                vision_client = LLMClient(model=config.vision_model, config=config)
+                corrected = run_extraction_qa(Path(file_path), paper_text, vision_client)
+                if corrected is not paper_text:
+                    _save_cache(Path(file_path), corrected)
+                    logger.info("Extraction cache updated with QA corrections")
+                paper_text = corrected
+
+    structure = analyze_structure(paper_text, client)
+    if not _check_extraction_quality(structure):
+        raise ExtractionError(
+            "Extraction failed: no sections found. "
+            "The file may be scanned/image-only with no extractable text."
+        )
+    return paper_text, structure
+
+
 def calibrate_domain(structure: PaperStructure, client: LLMClient) -> DomainCalibration | None:
     """Generate domain-specific review criteria from the paper's content.
 
