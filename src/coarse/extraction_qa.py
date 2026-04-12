@@ -3,6 +3,7 @@
 Sends sampled PDF page images + their extracted markdown chunks to a vision model
 to spot-check extraction quality. Returns corrections as find-replace pairs.
 """
+
 from __future__ import annotations
 
 import base64
@@ -36,9 +37,7 @@ class PageCorrection(BaseModel):
     page_number: int
     original_snippet: str
     corrected_snippet: str
-    issue_type: Literal[
-        "garbled_math", "missing_content", "dropped_table", "layout_error", "other"
-    ]
+    issue_type: Literal["garbled_math", "missing_content", "dropped_table", "layout_error", "other"]
 
 
 class ExtractionQAResult(BaseModel):
@@ -53,9 +52,7 @@ class ExtractionQAResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def render_pdf_pages(
-    pdf_path: Path, pages: list[int], dpi: int = 150
-) -> list[tuple[int, str]]:
+def render_pdf_pages(pdf_path: Path, pages: list[int], dpi: int = 150) -> list[tuple[int, str]]:
     """Render specified pages to base64 PNG.
 
     Args:
@@ -76,7 +73,8 @@ def render_pdf_pages(
             if idx < 0 or idx >= len(doc):
                 logger.warning(
                     "Page %d out of range (PDF has %d pages), skipping",
-                    page_num, len(doc),
+                    page_num,
+                    len(doc),
                 )
                 continue
             try:
@@ -191,7 +189,8 @@ def _needs_vision_qa(markdown: str, num_pages: int) -> bool:
 
     # Check for non-printable / control characters (excluding normal whitespace)
     control_count = sum(
-        1 for ch in markdown[:5000]
+        1
+        for ch in markdown[:5000]
         if unicodedata.category(ch).startswith("C") and ch not in "\n\r\t"
     )
     if control_count > 10:
@@ -239,25 +238,32 @@ def _build_qa_messages(
     content_blocks: list[dict] = []
     for page_num, chunk in page_chunks:
         # Text block for this page
-        content_blocks.append({
-            "type": "text",
-            "text": f"## Page {page_num}\n\n**Extracted markdown:**\n```\n{chunk}\n```\n",
-        })
+        content_blocks.append(
+            {
+                "type": "text",
+                "text": f"## Page {page_num}\n\n**Extracted markdown:**\n```\n{chunk}\n```\n",
+            }
+        )
         # Image block if available
         if page_num in image_map:
-            content_blocks.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{image_map[page_num]}",
-                },
-            })
+            content_blocks.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{image_map[page_num]}",
+                    },
+                }
+            )
 
     # Prepend instruction text
-    content_blocks.insert(0, {
-        "type": "text",
-        "text": "Compare each page's extracted markdown against its image. "
-                "Report overall_quality and any corrections needed.\n\n",
-    })
+    content_blocks.insert(
+        0,
+        {
+            "type": "text",
+            "text": "Compare each page's extracted markdown against its image. "
+            "Report overall_quality and any corrections needed.\n\n",
+        },
+    )
 
     return [
         {"role": "system", "content": EXTRACTION_QA_SYSTEM},
@@ -313,9 +319,7 @@ def _apply_corrections(markdown: str, corrections: list[PageCorrection]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def run_extraction_qa(
-    pdf_path: Path, paper_text: "PaperText", client: "LLMClient"
-) -> "PaperText":
+def run_extraction_qa(pdf_path: Path, paper_text: "PaperText", client: "LLMClient") -> "PaperText":
     """Run post-extraction QA on the extracted markdown.
 
     Sends sampled page images + markdown chunks to a vision LLM. If the model
@@ -378,8 +382,13 @@ def run_extraction_qa(
     messages = _build_qa_messages(selected_chunks, page_images)
 
     try:
+        # 4096 is too tight on multi-page papers with many corrections —
+        # the vision model truncates and instructor raises
+        # IncompleteOutputException. 16384 fits even a worst-case
+        # response (every page has a multi-paragraph correction) and
+        # is well within Gemini Flash's 65k output ceiling.
         qa_result: ExtractionQAResult = client.complete(
-            messages, ExtractionQAResult, max_tokens=4096, temperature=0.1
+            messages, ExtractionQAResult, max_tokens=16384, temperature=0.1
         )
     except Exception:
         logger.warning("Extraction QA LLM call failed, returning original")
@@ -395,9 +404,7 @@ def run_extraction_qa(
         return paper_text
 
     # Apply corrections
-    corrected_markdown = _apply_corrections(
-        paper_text.full_markdown, qa_result.corrections
-    )
+    corrected_markdown = _apply_corrections(paper_text.full_markdown, qa_result.corrections)
 
     if corrected_markdown == paper_text.full_markdown:
         return paper_text
