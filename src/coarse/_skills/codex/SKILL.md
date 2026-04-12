@@ -18,10 +18,23 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 ## Prerequisites
 
 - `coarse-ink` installed: `pip install 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'` (or `pip install 'coarse-ink[mcp]'` once released)
-- **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). Before running the review, check if the key is available. If not, **ask the user** to provide it. Then either:
-  - `export OPENROUTER_API_KEY=sk-or-v1-...` in the current shell, or
-  - Create a `.env` file in the working directory with `OPENROUTER_API_KEY=sk-or-v1-...`
-  - The key is NOT passed through the web handoff for security reasons.
+- **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key is NOT passed through the web handoff for security reasons.
+
+  Before running the review, check if `OPENROUTER_API_KEY` is set:
+  - In the environment: `echo $OPENROUTER_API_KEY` or `printenv OPENROUTER_API_KEY`
+  - In a `.env` file in the current directory: `grep OPENROUTER_API_KEY .env`
+
+  If neither is set, tell the user:
+
+  > I need an OpenRouter API key for the OCR extraction step (~$0.10 per paper). You have three options:
+  >
+  > 1. **Get a key** at https://openrouter.ai/settings/keys (or via http://localhost:3000/setup) and **paste it to me** — I'll save it to a `.env` file in this directory for you.
+  > 2. **Set it yourself**: `export OPENROUTER_API_KEY=sk-or-v1-...` then re-ask me.
+  > 3. **Add it to `.env`** yourself: `echo 'OPENROUTER_API_KEY=sk-or-v1-...' >> .env`
+  >
+  > Which would you like?
+
+  If the user pastes a key, save it to `./.env` (create the file if missing, or **append** if it exists — never overwrite existing vars). Verify the key starts with `sk-or-` before saving.
 - `codex` CLI logged in: `codex login`.
 
 ## How to run

@@ -106,9 +106,16 @@ export function buildLaunchUrl(args: {
     `If coarse-ink is not installed yet, first run:\n\n` +
     `${setupCmd}\n\n` +
     `Before running the review, check if OPENROUTER_API_KEY is set in the ` +
-    `environment or in a .env file. If not, ask me to provide it — it's ` +
-    `needed for the Mistral OCR extraction step (~$0.10).\n\n` +
-    `Then run the review:\n\n` +
+    `environment or in a .env file in the current directory. If not, tell me:\n\n` +
+    `  "I need an OpenRouter API key for the Mistral OCR extraction step " +
+    "(~$0.10 per paper). You have three options:\n` +
+    `   1. Get a key at https://openrouter.ai/settings/keys (or via the coarse setup page) ` +
+    `and paste it here — I'll save it to a .env file for you.\n` +
+    `   2. Set it yourself: export OPENROUTER_API_KEY=sk-or-v1-... in your shell, then re-ask me.\n` +
+    `   3. Add it to a .env file in your current directory: OPENROUTER_API_KEY=sk-or-v1-...\n\n` +
+    `   Which would you like?"\n\n` +
+    `If I paste a key, save it to ./.env (create the file if it doesn't exist, ` +
+    `or append if it does — don't overwrite other vars). Then run the review:\n\n` +
     `${runCmd}\n\n` +
     `Run both commands in the terminal. The review takes 10-25 minutes. ` +
     `When it finishes, show me the review URL and a summary of the key findings.`;
