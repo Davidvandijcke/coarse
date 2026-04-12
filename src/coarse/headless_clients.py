@@ -32,6 +32,10 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+_CTRL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_JSON_ESCAPE_CHARS = frozenset('"\\/bfnrtu')
+_HEX_RE = re.compile(r"^[0-9a-fA-F]{4}$")
+
 
 # Env vars each host CLI sets when spawning subprocesses. Stripping them
 # before spawning a sibling/child CLI keeps nested sessions from seeing
@@ -109,6 +113,57 @@ def _extract_json(text: str) -> str:
             if depth == 0:
                 return text[start : i + 1]
     raise ValueError(f"unbalanced JSON in response: {text[:200]}")
+
+
+def _repair_json_string(text: str) -> str:
+    """Repair common JSON issues from CLI model output.
+
+    Headless CLIs occasionally emit otherwise-correct JSON with unescaped
+    backslashes inside string values, especially when copying LaTeX like
+    ``\\rho`` or ``\\frac`` verbatim from the paper. That is invalid JSON
+    (`json.loads` raises ``Invalid \\escape``) even though the intended field
+    value is unambiguous. Repair only string-local, non-standard escapes and
+    preserve valid JSON escapes unchanged.
+    """
+    text = _CTRL_CHAR_RE.sub("", text).replace("\\u0000", "")
+    repaired: list[str] = []
+    in_str = False
+    escaped = False
+
+    for i, ch in enumerate(text):
+        if not in_str:
+            repaired.append(ch)
+            if ch == '"':
+                in_str = True
+            continue
+
+        if escaped:
+            repaired.append(ch)
+            escaped = False
+            continue
+
+        if ch == "\\":
+            next_ch = text[i + 1] if i + 1 < len(text) else ""
+            if next_ch == "u":
+                hex_digits = text[i + 2 : i + 6]
+                if len(hex_digits) == 4 and _HEX_RE.fullmatch(hex_digits):
+                    repaired.append(ch)
+                    escaped = True
+                else:
+                    repaired.append("\\\\")
+                continue
+            if next_ch in _JSON_ESCAPE_CHARS:
+                repaired.append(ch)
+                escaped = True
+                continue
+            repaired.append("\\\\")
+            continue
+
+        repaired.append(ch)
+        if ch == '"':
+            in_str = False
+
+    return "".join(repaired)
 
 
 class _HeadlessCLIClient:
@@ -194,7 +249,9 @@ class _HeadlessCLIClient:
             f"{base_prompt}\n\n"
             f"---\n\n"
             f"Respond with ONLY a JSON object matching this schema. "
-            f"No prose outside the JSON, no markdown fences, no commentary.\n\n"
+            f"No prose outside the JSON, no markdown fences, no commentary. "
+            f"Inside JSON string values, escape backslashes exactly as JSON "
+            f"requires (for example, write \\\\left rather than \\left).\n\n"
             f"Schema:\n```json\n{json.dumps(schema, indent=2)}\n```"
         )
 
@@ -203,7 +260,10 @@ class _HeadlessCLIClient:
             try:
                 raw = self._run(prompt, timeout=timeout)
                 json_str = _extract_json(raw)
-                data = json.loads(json_str)
+                try:
+                    data = json.loads(json_str)
+                except json.JSONDecodeError:
+                    data = json.loads(_repair_json_string(json_str))
                 return response_model.model_validate(data)
             except (json.JSONDecodeError, ValueError) as exc:
                 last_exc = exc

@@ -42,10 +42,10 @@ Runs the **full coarse review pipeline** on a paper using the local `gemini -p` 
 Launch in the background — takes 10-25 minutes:
 
 ```bash
-coarse-review <paper_path> --host gemini [--model gemini-3-pro] [--effort high]
+coarse-review <paper_path> --host gemini [--model gemini-3.1-pro-preview] [--effort high]
 ```
 
-Available models: `gemini-3-pro` (default), `gemini-3-flash`, `gemini-2.5-pro`.
+Available models: `gemini-3.1-pro-preview` (default), `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
 
 **Handoff mode** (when the user came from the coarse web form):

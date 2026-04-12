@@ -55,7 +55,11 @@ export const HOST_CLI_NAME: Record<ChatHost, "claude" | "codex" | "gemini"> = {
 export const HOST_DEFAULT_MODELS: Record<ChatHost, string[]> = {
   "claude-code": ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
   "codex": ["gpt-5.4", "gpt-5.3-codex", "gpt-5.4-mini", "gpt-5.4-pro"],
-  "gemini-cli": ["gemini-3-pro", "gemini-3-flash", "gemini-2.5-pro"],
+  "gemini-cli": [
+    "gemini-3.1-pro-preview",
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite-preview",
+  ],
 };
 
 export const EFFORT_LEVELS = ["low", "medium", "high", "max"] as const;
