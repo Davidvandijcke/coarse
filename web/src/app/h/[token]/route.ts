@@ -80,10 +80,15 @@ export async function GET(
   // tells us the storage path (<uuid>.<ext>).
   const { data: reviewRow, error: reviewErr } = await supabase
     .from("reviews")
-    .select("id, paper_filename, domain, taxonomy")
+    .select("id, paper_filename, domain")
     .eq("id", tokenRow.paper_id)
     .single();
   if (reviewErr || !reviewRow) {
+    console.error("[/h/token] reviews lookup failed:", {
+      paper_id: tokenRow.paper_id,
+      reviewErr: reviewErr?.message,
+      reviewRow,
+    });
     return NextResponse.json(
       { error: "Paper row not found — the upload may have been deleted" },
       { status: 404 },
@@ -124,7 +129,7 @@ export async function GET(
     callback_url: callbackUrl,
     paper_title: reviewRow.paper_filename ?? "",
     domain: reviewRow.domain ?? "",
-    taxonomy: reviewRow.taxonomy ?? "",
+    taxonomy: "",
   };
 
   // Content negotiation.
