@@ -23,6 +23,7 @@ import {
   EFFORT_LEVELS,
   mintCliHandoff,
   buildCliCommands,
+  buildAgentPrompt,
 } from "@/lib/mcpHandoff";
 
 /* ── Split-flap AI name display ────────────────────────────── */
@@ -514,8 +515,6 @@ export default function Home() {
       setHandoffState({ paperId: id, host });
       setHandoffPhase("ready");
       setHandoffMessage("");
-      // Auto-expand manual commands for Gemini CLI (no app to launch).
-      if (host === "gemini-cli") setShowManualCommands(true);
     } catch (err) {
       setHandoffPhase("failed");
       const msg = err instanceof Error ? err.message : "Handoff failed";
@@ -1325,38 +1324,70 @@ export default function Home() {
                       /review/{handoffState.paperId}
                     </a>
 
-                    {/* Collapsible manual commands */}
-                    <div style={{ marginTop: "1.25rem" }}>
-                      <button
-                        type="button"
-                        onClick={() => setShowManualCommands(!showManualCommands)}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "var(--dust)",
-                          fontFamily: "var(--font-chalk)",
-                          fontSize: "0.9rem",
-                          cursor: "pointer",
-                          padding: 0,
-                          textDecoration: "underline",
-                          textUnderlineOffset: "2px",
-                        }}
-                      >
-                        {showManualCommands ? "Hide manual commands ▴" : "Show manual commands ▾"}
-                      </button>
-                      {showManualCommands && (
-                        <div style={{ marginTop: "0.75rem" }}>
-                          <div style={{ fontFamily: "var(--font-chalk)", fontSize: "0.9rem", color: "var(--dust)", marginBottom: "0.35rem" }}>
-                            one-time setup (skip if you&apos;ve run this before)
-                          </div>
-                          <CodeBlock text={setupCmd} />
-                          <div style={{ fontFamily: "var(--font-chalk)", fontSize: "0.9rem", color: "var(--dust)", marginTop: "0.75rem", marginBottom: "0.35rem" }}>
-                            run the review
-                          </div>
-                          <CodeBlock text={runCmd} />
+                    {/* Prompt to paste — primary UI for Claude Code +
+                        Gemini CLI; collapsible fallback for Codex */}
+                    {host === "claude-code" || host === "gemini-cli" ? (
+                      <div style={{ marginTop: "1.25rem" }}>
+                        <div
+                          style={{
+                            fontFamily: "var(--font-chalk)",
+                            fontSize: "0.95rem",
+                            color: "var(--yellow-chalk)",
+                            marginBottom: "0.5rem",
+                          }}
+                        >
+                          Paste this prompt into{" "}
+                          {host === "claude-code"
+                            ? "your Claude Code terminal"
+                            : "your Gemini CLI terminal"}
+                          :
                         </div>
-                      )}
-                    </div>
+                        <CodeBlock
+                          text={buildAgentPrompt({ setupCmd, runCmd })}
+                        />
+                        <p
+                          style={{
+                            fontFamily: "var(--font-chalk)",
+                            fontSize: "0.85rem",
+                            color: "var(--dust)",
+                            margin: "0.5rem 0 0",
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          The agent will install coarse-ink, ask for your
+                          OpenRouter key if needed, and run the full review
+                          locally. Takes 10–25 minutes.
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: "1.25rem" }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowManualCommands(!showManualCommands)}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "var(--dust)",
+                            fontFamily: "var(--font-chalk)",
+                            fontSize: "0.9rem",
+                            cursor: "pointer",
+                            padding: 0,
+                            textDecoration: "underline",
+                            textUnderlineOffset: "2px",
+                          }}
+                        >
+                          {showManualCommands ? "Hide prompt ▴" : "Or paste a prompt manually ▾"}
+                        </button>
+                        {showManualCommands && (
+                          <div style={{ marginTop: "0.75rem" }}>
+                            <div style={{ fontFamily: "var(--font-chalk)", fontSize: "0.9rem", color: "var(--dust)", marginBottom: "0.35rem" }}>
+                              paste this into Codex if the launch button didn&apos;t work:
+                            </div>
+                            <CodeBlock text={buildAgentPrompt({ setupCmd, runCmd })} />
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <p
                       style={{

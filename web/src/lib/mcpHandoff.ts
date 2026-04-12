@@ -94,31 +94,52 @@ export const HOST_LAUNCH_HINT: Record<ChatHost, string> = {
  * - **Gemini CLI**: ``gemini2://`` opens the app but has NO prompt
  *   parameter documented. Clipboard fallback.
  */
+/**
+ * Build the natural-language prompt the coding agent will execute.
+ * Same text used in the codex://new?prompt=... deep link AND in the
+ * code block users paste into Claude Code / Gemini CLI terminals.
+ */
+export function buildAgentPrompt(args: {
+  setupCmd: string;
+  runCmd: string;
+}): string {
+  const { setupCmd, runCmd } = args;
+  return (
+    `Please review an academic paper for me using the coarse-review skill.\n\n` +
+    `STEP 1 — Install coarse-ink if it's not already installed:\n\n` +
+    `${setupCmd}\n\n` +
+    `STEP 2 — Check for an OpenRouter API key. ` +
+    `Run \`echo $OPENROUTER_API_KEY\` and \`grep OPENROUTER_API_KEY .env 2>/dev/null\`. ` +
+    `If neither shows a key, tell me:\n\n` +
+    `  "I need an OpenRouter API key for the Mistral OCR extraction step ` +
+    `(~$0.10 per paper). You have three options:\n` +
+    `   1. Get a key at https://openrouter.ai/settings/keys and paste it ` +
+    `here — I'll save it to a .env file for you.\n` +
+    `   2. Set it yourself: export OPENROUTER_API_KEY=sk-or-v1-... in your ` +
+    `shell, then re-ask me.\n` +
+    `   3. Add it to a .env file in your current directory: ` +
+    `OPENROUTER_API_KEY=sk-or-v1-...\n` +
+    `   Which would you like?"\n\n` +
+    `If I paste a key (it should start with sk-or-), save it to ./.env ` +
+    `by appending OPENROUTER_API_KEY=<key> to the file (create the file ` +
+    `if it doesn't exist; never overwrite existing variables).\n\n` +
+    `STEP 3 — Run the review:\n\n` +
+    `${runCmd}\n\n` +
+    `Run this in the terminal. The review takes 10-25 minutes. Stream ` +
+    `the output so I can see progress. When it finishes, show me:\n` +
+    `  - The review URL (it'll be printed in the output)\n` +
+    `  - A summary of the recommendation (accept / revise / reject)\n` +
+    `  - The top 3 macro issues from the overview section`
+  );
+}
+
 export function buildLaunchUrl(args: {
   host: ChatHost;
   runCmd: string;
   setupCmd: string;
 }): string {
   const { host, runCmd, setupCmd } = args;
-
-  const prompt =
-    `Please review an academic paper for me using the coarse-review skill. ` +
-    `If coarse-ink is not installed yet, first run:\n\n` +
-    `${setupCmd}\n\n` +
-    `Before running the review, check if OPENROUTER_API_KEY is set in the ` +
-    `environment or in a .env file in the current directory. If not, tell me:\n\n` +
-    `  "I need an OpenRouter API key for the Mistral OCR extraction step " +
-    "(~$0.10 per paper). You have three options:\n` +
-    `   1. Get a key at https://openrouter.ai/settings/keys (or via the coarse setup page) ` +
-    `and paste it here — I'll save it to a .env file for you.\n` +
-    `   2. Set it yourself: export OPENROUTER_API_KEY=sk-or-v1-... in your shell, then re-ask me.\n` +
-    `   3. Add it to a .env file in your current directory: OPENROUTER_API_KEY=sk-or-v1-...\n\n` +
-    `   Which would you like?"\n\n` +
-    `If I paste a key, save it to ./.env (create the file if it doesn't exist, ` +
-    `or append if it does — don't overwrite other vars). Then run the review:\n\n` +
-    `${runCmd}\n\n` +
-    `Run both commands in the terminal. The review takes 10-25 minutes. ` +
-    `When it finishes, show me the review URL and a summary of the key findings.`;
+  const prompt = buildAgentPrompt({ setupCmd, runCmd });
 
   if (host === "codex") {
     // Codex supports codex://new?prompt=<text> deep links that pre-fill
@@ -126,10 +147,9 @@ export function buildLaunchUrl(args: {
     return `codex://new?prompt=${encodeURIComponent(prompt)}`;
   }
   // Claude Code and Gemini CLI don't support prompt params in their
-  // URL schemes yet. Open the app and rely on clipboard.
+  // URL schemes. Open the app (claude://) and rely on clipboard, or
+  // for Gemini show manual instructions only.
   if (host === "claude-code") return "claude://";
-  // Gemini CLI has no desktop app with a URL scheme — return null
-  // to signal the caller should show manual instructions only.
   return "";
 }
 
