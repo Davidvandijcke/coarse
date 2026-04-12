@@ -54,7 +54,7 @@ export const HOST_CLI_NAME: Record<ChatHost, "claude" | "codex" | "gemini"> = {
 // Default models per host (user can override in the modal).
 export const HOST_DEFAULT_MODELS: Record<ChatHost, string[]> = {
   "claude-code": ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
-  "codex": ["gpt-5-codex", "gpt-5", "gpt-5.1", "gpt-5-codex-mini"],
+  "codex": ["gpt-5.4", "gpt-5.3-codex", "gpt-5.4-mini", "gpt-5.4-pro"],
   "gemini-cli": ["gemini-3-pro", "gemini-3-flash", "gemini-2.5-pro"],
 };
 

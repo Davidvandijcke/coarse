@@ -30,7 +30,7 @@ from pathlib import Path
 
 _DEFAULT_MODELS = {
     "claude": "claude-opus-4-6",
-    "codex": "gpt-5-codex",
+    "codex": "gpt-5.4",
     "gemini": "gemini-3-pro",
 }
 

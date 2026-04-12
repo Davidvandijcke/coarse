@@ -26,10 +26,10 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 Launch in the background — takes 10-25 minutes:
 
 ```bash
-coarse-review <paper_path> --host codex [--model gpt-5-codex] [--effort high]
+coarse-review <paper_path> --host codex [--model gpt-5.4] [--effort high]
 ```
 
-Available models: `gpt-5-codex` (default), `gpt-5`, `gpt-5-codex-mini`, `gpt-5.1`, `gpt-5.1-codex`.
+Available models: `gpt-5.4` (default), `gpt-5.3-codex`, `gpt-5.4-mini`, `gpt-5.4-pro`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
 
 These map to Codex's internal reasoning effort:

@@ -95,7 +95,7 @@ def _require_openrouter_key() -> str:
 
 _DEFAULT_MODELS = {
     "claude": "claude-opus-4-6",
-    "codex": "gpt-5-codex",
+    "codex": "gpt-5.4",
     "gemini": "gemini-3-pro",
 }
 
@@ -193,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
         "--model",
         default=os.environ.get("COARSE_HEADLESS_MODEL"),
         help="Model ID (host-specific). Defaults to the host's "
-        "canonical model: claude-opus-4-6 / gpt-5-codex / gemini-3-pro",
+        "canonical model: claude-opus-4-6 / gpt-5.4 / gemini-3-pro",
     )
     parser.add_argument(
         "--effort",
