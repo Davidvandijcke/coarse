@@ -598,6 +598,57 @@ def test_review_paper_section_comments_flattened():
     assert len(editorial_received) == 6
 
 
+def test_review_paper_verifies_section_quotes_before_editorial_handoff():
+    """Editorial should receive the quote-verified section comments rather than
+    the raw LLM output from section agents."""
+    config = _make_config()
+    structure = _make_structure(sections=[_make_section(1), _make_section(2)])
+    overview = _make_overview()
+    editorial_received: list[DetailedComment] = []
+
+    def fake_verify(comments, _paper_text, drop_unverified=True):
+        return [c.model_copy(update={"quote": f"verified: {c.quote}"}) for c in comments]
+
+    def fake_editorial_run(
+        paper_text,
+        overview,
+        comments,
+        comment_target=None,
+        title="",
+        abstract="",
+        contribution_context=None,
+        document_form="manuscript",
+        author_notes=None,
+    ):
+        editorial_received.extend(comments)
+        return comments
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.verify_quotes", side_effect=fake_verify),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.return_value = overview
+        MockCompleteness.return_value.run.return_value = []
+        MockSection.return_value.run.return_value = [_make_comment(1)]
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockEditorial.return_value.run.side_effect = fake_editorial_run
+
+        review_paper("paper.pdf", skip_cost_gate=True, config=config)
+
+    assert editorial_received
+    assert all(comment.quote.startswith("verified: ") for comment in editorial_received)
+
+
 def test_review_paper_uses_provided_config():
     """Provided CoarseConfig with custom model is used; load_config() is not called."""
     config = CoarseConfig(default_model="anthropic/claude-3-5-haiku-20241022")
@@ -697,6 +748,7 @@ def test_review_section_chains_verify_for_proof():
         section_agent,
         verify_agent,
         section,
+        "Some verbatim quote from the paper text.",
         "Paper",
         overview=None,
         calibration=None,
@@ -730,6 +782,7 @@ def test_review_section_skips_verify_for_non_proof():
         section_agent,
         verify_agent,
         section,
+        "Some verbatim quote from the paper text.",
         "Paper",
         overview=None,
         calibration=None,
@@ -742,6 +795,84 @@ def test_review_section_skips_verify_for_non_proof():
     section_agent.run.assert_called_once()
     verify_agent.run.assert_not_called()
     assert result == comments
+
+
+def test_review_section_verifies_quotes_before_verify_and_on_return():
+    """Proof verification should receive verified first-pass comments, and
+    the returned comments should also be re-verified before leaving the helper."""
+    section_agent = MagicMock()
+    verify_agent = MagicMock()
+    section = _make_section(1).model_copy(update={"math_content": True})
+    first_pass = [_make_comment(1)]
+    verified_pass = [_make_comment(2)]
+
+    section_agent.run.return_value = first_pass
+    verify_agent.run.return_value = verified_pass
+
+    call_count = {"n": 0}
+
+    drop_flags: list[bool] = []
+
+    def fake_verify(comments, _paper_text, drop_unverified=True):
+        drop_flags.append(drop_unverified)
+        call_count["n"] += 1
+        prefix = f"verified-{call_count['n']}"
+        return [c.model_copy(update={"quote": f"{prefix}: {c.quote}"}) for c in comments]
+
+    with patch("coarse.pipeline.verify_quotes", side_effect=fake_verify):
+        result = _review_section(
+            section_agent,
+            verify_agent,
+            section,
+            "Full paper markdown.",
+            "Paper",
+            overview=None,
+            calibration=None,
+            focus="proof",
+            literature_context="",
+            all_sections=[],
+            abstract="abstract",
+        )
+
+    verify_agent.run.assert_called_once()
+    verify_input = verify_agent.run.call_args.args[2]
+    assert drop_flags == [False, False]
+    assert verify_input[0].quote.startswith("verified-1:")
+    assert result[0].quote.startswith("verified-2:")
+
+
+def test_review_section_marks_approximate_quotes_instead_of_dropping_them():
+    """Intermediate verification should preserve recall by keeping comments
+    and marking their quotes approximate instead of dropping them."""
+    section_agent = MagicMock()
+    verify_agent = MagicMock()
+    section = _make_section(1)
+    comments = [_make_comment(1)]
+    section_agent.run.return_value = comments
+
+    approximate = comments[0].model_copy(update={"quote": "[approximate] " + comments[0].quote})
+
+    def fake_verify(_comments, _paper_text, drop_unverified=True):
+        assert drop_unverified is False
+        return [approximate]
+
+    with patch("coarse.pipeline.verify_quotes", side_effect=fake_verify):
+        result = _review_section(
+            section_agent,
+            verify_agent,
+            section,
+            "Full paper markdown.",
+            "Paper",
+            overview=None,
+            calibration=None,
+            focus="general",
+            literature_context="",
+            all_sections=[],
+            abstract="",
+        )
+
+    verify_agent.run.assert_not_called()
+    assert result == [approximate]
 
 
 # ---------------------------------------------------------------------------
@@ -826,6 +957,7 @@ def test_review_section_skips_verify_when_threshold_fails():
         section_agent,
         verify_agent,
         section,
+        "Some verbatim quote from the paper text.",
         "Paper",
         overview=None,
         calibration=None,

@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import logging
-
-from coarse.agents.base import MAX_CONTEXT_CHARS, ReviewAgent
+from coarse.agents.base import ReviewAgent
 from coarse.llm import LLMClient
 from coarse.prompts import (
-    ASSUMPTION_CHECK_SYSTEM,
     OVERVIEW_SYSTEM,
-    assumption_check_user,
     author_notes_block,
     document_form_notice,
     overview_paper_context,
@@ -21,10 +17,7 @@ from coarse.types import (
     OverviewIssue,
     PaperStructure,
     SectionInfo,
-    SectionType,
 )
-
-logger = logging.getLogger(__name__)
 
 _OVERVIEW_TEMPERATURE = 0.5
 
@@ -115,63 +108,6 @@ class OverviewAgent(ReviewAgent):
         return self.client.complete(  # type: ignore[return-value]
             messages, OverviewFeedback, max_tokens=8192, temperature=_OVERVIEW_TEMPERATURE
         )
-
-
-# Section types relevant for assumption checking
-_ASSUMPTION_RELEVANT_TYPES = {
-    SectionType.INTRODUCTION,
-    SectionType.METHODOLOGY,
-    SectionType.RESULTS,
-    SectionType.DISCUSSION,
-    SectionType.OTHER,
-}
-
-
-def check_assumptions(
-    structure: PaperStructure,
-    client: LLMClient,
-    calibration: DomainCalibration | None = None,
-) -> list[OverviewIssue]:
-    """Focused check: are theoretical assumptions consistent with empirical methods?
-
-    Extracts assumption-relevant sections (intro, methodology, results,
-    discussion, other), sends to LLM for consistency check.
-    Returns 0-3 OverviewIssue objects.
-    """
-    relevant_sections = [
-        s
-        for s in structure.sections
-        if s.section_type in _ASSUMPTION_RELEVANT_TYPES and len(s.text) > 50
-    ]
-    if not relevant_sections:
-        return []
-
-    # Build condensed text from relevant sections (cap at 500K chars)
-    sections_text = "\n\n".join(f"## {s.number}. {s.title}\n{s.text}" for s in relevant_sections)
-    if len(sections_text) > MAX_CONTEXT_CHARS:
-        sections_text = sections_text[:MAX_CONTEXT_CHARS] + "\n\n[...truncated]"
-
-    messages = [
-        {"role": "system", "content": ASSUMPTION_CHECK_SYSTEM},
-        {
-            "role": "user",
-            "content": assumption_check_user(
-                structure.title, sections_text, calibration=calibration
-            ),
-        },
-    ]
-
-    try:
-        result = client.complete(
-            messages,
-            OverviewFeedback,
-            max_tokens=2048,
-            temperature=_OVERVIEW_TEMPERATURE,
-        )
-        return list(result.issues)
-    except Exception:
-        logger.warning("Assumption checker failed, skipping")
-        return []
 
 
 def merge_overview(
