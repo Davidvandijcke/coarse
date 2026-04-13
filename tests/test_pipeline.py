@@ -163,7 +163,7 @@ def test_review_paper_calls_stages_in_order():
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", side_effect=fake_render),
     ):
@@ -220,8 +220,8 @@ def test_review_paper_skips_references_section():
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.review_stages.CrossrefAgent") as MockCrossref,
+        patch("coarse.review_stages.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -338,7 +338,7 @@ def test_review_paper_forwards_author_notes_to_all_review_agents():
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
         patch("coarse.pipeline.CrossSectionAgent") as MockCrossSection,
-        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -411,9 +411,9 @@ def test_review_paper_forwards_author_notes_to_fallback_crossref_and_critique():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
-        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.review_stages.CrossrefAgent") as MockCrossref,
+        patch("coarse.review_stages.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -450,8 +450,8 @@ def test_review_paper_date_format():
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.review_stages.CrossrefAgent") as MockCrossref,
+        patch("coarse.review_stages.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
         patch("coarse.pipeline.datetime") as mock_dt,
@@ -480,8 +480,8 @@ def _patch_pipeline_deps(overview: OverviewFeedback):
     mock_ov = stack.enter_context(patch("coarse.pipeline.OverviewAgent"))
     mock_sec = stack.enter_context(patch("coarse.pipeline.SectionAgent"))
     mock_vf = stack.enter_context(patch("coarse.pipeline.ProofVerifyAgent"))
-    mock_cr = stack.enter_context(patch("coarse.pipeline.CrossrefAgent"))
-    mock_ct = stack.enter_context(patch("coarse.pipeline.CritiqueAgent"))
+    mock_cr = stack.enter_context(patch("coarse.review_stages.CrossrefAgent"))
+    mock_ct = stack.enter_context(patch("coarse.review_stages.CritiqueAgent"))
     stack.enter_context(patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c))
     stack.enter_context(patch("coarse.pipeline.render_review", return_value="md"))
 
@@ -526,8 +526,8 @@ def test_review_paper_returns_review_and_markdown():
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.review_stages.CrossrefAgent") as MockCrossref,
+        patch("coarse.review_stages.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value=expected_markdown),
     ):
@@ -582,7 +582,7 @@ def test_review_paper_section_comments_flattened():
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -670,8 +670,8 @@ def test_review_paper_uses_provided_config():
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.review_stages.CrossrefAgent") as MockCrossref,
+        patch("coarse.review_stages.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
