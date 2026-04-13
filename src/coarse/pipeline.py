@@ -23,6 +23,7 @@ from coarse.config import CoarseConfig, load_config
 from coarse.cost import run_cost_gate
 from coarse.extraction import extract_file
 from coarse.llm import LLMClient
+from coarse.pipeline_spec import MAX_REVIEWABLE_SECTIONS
 from coarse.prompts import (
     CALIBRATION_SYSTEM,
     CONTRIBUTION_EXTRACTION_SYSTEM,
@@ -366,7 +367,7 @@ def review_paper(
         if s.section_type != SectionType.REFERENCES
         and (s.section_type != SectionType.APPENDIX or len(s.text) >= _MIN_APPENDIX_CHARS)
     ]
-    non_ref_sections = reviewable_sections[:25]
+    non_ref_sections = reviewable_sections[:MAX_REVIEWABLE_SECTIONS]
 
     # --- Phase 1: Overview (single-pass, full paper text) ---
     overview = overview_agent.run(
