@@ -6,6 +6,9 @@ const LIMITS: Record<string, { windowSeconds: number; maxRequests: number }> = {
   submit: { windowSeconds: 60, maxRequests: 5 },
   cancel: { windowSeconds: 60, maxRequests: 10 },
   delete: { windowSeconds: 60, maxRequests: 10 },
+  "mcp-handoff": { windowSeconds: 60, maxRequests: 10 },
+  "mcp-finalize": { windowSeconds: 60, maxRequests: 5 },
+  "mcp-extract": { windowSeconds: 60, maxRequests: 5 },
 };
 
 export async function checkRateLimit(

@@ -12,6 +12,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -270,6 +271,35 @@ _OCR_BACKOFF_BASE = 2.0  # seconds; actual wait = min(base ** attempt, _OCR_MAX_
 _OCR_MAX_BACKOFF = 32.0  # cap per-retry wait so 10 attempts don't blow the timeout budget
 # Backoff sequence: 1 + 2 + 4 + 8 + 16 + 32 + 32 + 32 + 32 = 159s max across 9 retries.
 
+
+def _get_ocr_max_retries() -> int:
+    """Return the OCR retry ceiling, honoring the ``COARSE_OCR_MAX_RETRIES``
+    env-var override.
+
+    The module-level default (``_OCR_MAX_RETRIES = 9``, i.e. 10 total
+    attempts) is calibrated for the full-review path: generous because
+    a review is a committed run and a minute or two of Mistral OCR
+    backoff is cheap compared to abandoning a 5-minute pipeline. The
+    MCP handoff path (``deploy/mcp_server.py::do_extract``) needs the
+    opposite calibration: the user is staring at a live spinner, so
+    we'd rather fall through to ``pdf-text`` (then Docling) in seconds
+    than burn three minutes waiting for Mistral to recover.
+    ``do_extract`` sets ``COARSE_OCR_MAX_RETRIES=2`` before calling
+    into extraction; production ``do_review`` leaves the env untouched
+    and keeps the default.
+
+    Values are clamped at 0 so a malformed env var can't send us into
+    negative-range loops.
+    """
+    raw = os.environ.get("COARSE_OCR_MAX_RETRIES")
+    if not raw:
+        return _OCR_MAX_RETRIES
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return _OCR_MAX_RETRIES
+
+
 # Truncate diagnostic log output so a runaway response body doesn't flood logs.
 _OCR_LOG_TRUNCATE = 500
 
@@ -359,8 +389,14 @@ def _post_openrouter_ocr(
     def _wait_for(attempt: int) -> float:
         return min(_OCR_BACKOFF_BASE**attempt, _OCR_MAX_BACKOFF)
 
+    # Resolve the retry ceiling once per call so the env var takes effect
+    # per-request without restarting the process. Defaults to 9 (10 total
+    # attempts) for production do_review; the MCP extract worker sets
+    # COARSE_OCR_MAX_RETRIES=2 for fast spinner feedback.
+    max_retries = _get_ocr_max_retries()
+
     last_network_exc: Exception | None = None
-    for attempt in range(_OCR_MAX_RETRIES + 1):
+    for attempt in range(max_retries + 1):
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
         except requests.RequestException as exc:
@@ -368,28 +404,28 @@ def _post_openrouter_ocr(
             # ChunkedEncodingError, ContentDecodingError, SSLError, etc. — all
             # network-layer failures where retry is the right move.
             last_network_exc = exc
-            if attempt < _OCR_MAX_RETRIES:
+            if attempt < max_retries:
                 wait = _wait_for(attempt)
                 logger.warning(
                     "OpenRouter OCR network error (attempt %d/%d), retrying in %.1fs: %s",
                     attempt + 1,
-                    _OCR_MAX_RETRIES + 1,
+                    max_retries + 1,
                     wait,
                     exc,
                 )
                 time.sleep(wait)
                 continue
             raise ExtractionError(
-                f"OpenRouter OCR network error after {_OCR_MAX_RETRIES + 1} attempts: {exc}"
+                f"OpenRouter OCR network error after {max_retries + 1} attempts: {exc}"
             ) from exc
 
-        if resp.status_code in _OCR_RETRY_STATUSES and attempt < _OCR_MAX_RETRIES:
+        if resp.status_code in _OCR_RETRY_STATUSES and attempt < max_retries:
             wait = _wait_for(attempt)
             logger.warning(
                 "OpenRouter OCR returned %d (attempt %d/%d), retrying in %.1fs",
                 resp.status_code,
                 attempt + 1,
-                _OCR_MAX_RETRIES + 1,
+                max_retries + 1,
                 wait,
             )
             time.sleep(wait)
@@ -403,7 +439,7 @@ def _post_openrouter_ocr(
         # would double-charge the user; stop and let the caller fall through
         # to the next extractor.
         body_code = _body_retry_code(resp)
-        if body_code is not None and attempt < _OCR_MAX_RETRIES:
+        if body_code is not None and attempt < max_retries:
             if _response_was_billed(resp):
                 logger.warning(
                     "OpenRouter OCR returned 200 with body error code %d AND "
@@ -417,7 +453,7 @@ def _post_openrouter_ocr(
                 "(attempt %d/%d), retrying in %.1fs",
                 body_code,
                 attempt + 1,
-                _OCR_MAX_RETRIES + 1,
+                max_retries + 1,
                 wait,
             )
             time.sleep(wait)
@@ -565,9 +601,140 @@ def _extract_openrouter_file_parser(path: Path, engine: str) -> str:
     return _parse_openrouter_ocr_response(resp)
 
 
+_CHUNK_PAGES = 5
+_CHUNK_MAX_WORKERS = 6
+
+
+def _merge_ocr_chunks(chunks: list[str]) -> str:
+    """Merge OCR'd chunk outputs into a single clean markdown document.
+
+    Strips Mistral OCR's ``<file name="...">`` / ``</file>`` wrapper tags,
+    removes duplicate page breaks at chunk boundaries, and trims leading
+    whitespace/breaks so the document starts with real content (title).
+    """
+    cleaned = []
+    for chunk in chunks:
+        # Strip <file name="..."> and </file> tags
+        text = re.sub(r"<file\s+name=\"[^\"]*\">\s*", "", chunk)
+        text = re.sub(r"\s*</file>\s*", "", text)
+        # Strip leading/trailing page breaks and whitespace
+        text = text.strip()
+        while text.startswith(PAGE_BREAK.strip()):
+            text = text[len(PAGE_BREAK.strip()) :].strip()
+        while text.endswith(PAGE_BREAK.strip()):
+            text = text[: -len(PAGE_BREAK.strip())].strip()
+        if text:
+            cleaned.append(text)
+
+    merged = PAGE_BREAK.join(cleaned)
+    # Collapse any runs of multiple page breaks into one
+    pb = PAGE_BREAK.strip()
+    doubled = f"{pb}\n\n{pb}"
+    while doubled in merged:
+        merged = merged.replace(doubled, pb)
+    return merged
+
+
 def _extract_mistral_openrouter(path: Path) -> str:
-    """Extract via OpenRouter's Mistral OCR file-parser plugin."""
-    return _extract_openrouter_file_parser(path, engine="mistral-ocr")
+    """Extract via OpenRouter's Mistral OCR, chunked into 5-page PDFs in parallel.
+
+    Splitting the PDF avoids the upstream timeout that killed whole-file
+    requests on papers > ~15 pages. Each chunk is small enough (~200-400 KB)
+    to complete in 10-15s, and we send up to 6 in parallel. Wall-clock
+    time for a 30-page paper: ~15-20s instead of 150s+ (or timeout).
+    """
+    import base64
+    import tempfile
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    import pymupdf
+
+    from coarse.config import resolve_api_key
+    from coarse.models import OPENROUTER_EXTRACTION_MODEL
+    from coarse.prompts import OPENROUTER_EXTRACTION_PROMPT
+
+    api_key = resolve_api_key("openrouter/auto")
+    if not api_key:
+        raise ValueError("No OPENROUTER_API_KEY")
+
+    try:
+        doc = pymupdf.open(str(path))
+    except Exception as exc:
+        logger.info(
+            "PyMuPDF could not open %s for chunked OCR (%s); falling back to whole-file "
+            "mistral-ocr",
+            path,
+            exc,
+        )
+        return _extract_openrouter_file_parser(path, engine="mistral-ocr")
+    n_pages = len(doc)
+
+    if n_pages <= _CHUNK_PAGES:
+        doc.close()
+        return _extract_openrouter_file_parser(path, engine="mistral-ocr")
+
+    chunks: list[tuple[int, int, str]] = []
+    try:
+        for start in range(0, n_pages, _CHUNK_PAGES):
+            end = min(start + _CHUNK_PAGES, n_pages)
+            chunk_doc = pymupdf.open()
+            chunk_doc.insert_pdf(doc, from_page=start, to_page=end - 1)
+            tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+            chunk_doc.save(tmp.name)
+            chunk_doc.close()
+            tmp.close()
+            chunks.append((start, end, tmp.name))
+        doc.close()
+
+        def _ocr_chunk(chunk_info):
+            start, end, chunk_path = chunk_info
+            with open(chunk_path, "rb") as f:
+                pdf_b64 = base64.b64encode(f.read()).decode()
+            resp = _post_openrouter_ocr(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                payload={
+                    "model": OPENROUTER_EXTRACTION_MODEL,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": OPENROUTER_EXTRACTION_PROMPT},
+                                {
+                                    "type": "file",
+                                    "file": {
+                                        "filename": f"chunk_p{start + 1}-{end}.pdf",
+                                        "file_data": f"data:application/pdf;base64,{pdf_b64}",
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                    "plugins": [{"id": "file-parser", "pdf": {"engine": "mistral-ocr"}}],
+                },
+                timeout=120,
+            )
+            resp.raise_for_status()
+            return start, _parse_openrouter_ocr_response(resp)
+
+        results: dict[int, str] = {}
+        with ThreadPoolExecutor(max_workers=_CHUNK_MAX_WORKERS) as pool:
+            futures = {pool.submit(_ocr_chunk, c): c for c in chunks}
+            for future in as_completed(futures):
+                start, md = future.result()
+                results[start] = md
+
+        return _merge_ocr_chunks([results[s] for s, _, _ in chunks])
+
+    finally:
+        for _, _, chunk_path in chunks:
+            try:
+                os.unlink(chunk_path)
+            except OSError:
+                pass
 
 
 def _extract_pdftext_openrouter(path: Path) -> str:
@@ -582,6 +749,74 @@ def _extract_docling(path: Path) -> str:
     converter = DocumentConverter()
     result = converter.convert(str(path))
     return result.document.export_to_markdown(page_break_placeholder="<!-- PAGE BREAK -->")
+
+
+# Minimum markdown length (in chars) below which we consider pymupdf4llm's
+# output "empty enough to fall through to OCR". Scanned PDFs with no text
+# layer tend to return <50 chars (usually just document metadata); real
+# academic papers return 10 KB+. The threshold is generous — pymupdf4llm
+# is only meant to win on text-bearing PDFs, and anything with a genuinely
+# small amount of text (a 1-page abstract, a tiny note) is still much
+# longer than 200 chars after markdownization.
+_PYMUPDF4LLM_MIN_CHARS = 200
+
+
+def _extract_pymupdf4llm(path: Path) -> str:
+    """Fast pure-Python PDF extraction via pymupdf4llm.
+
+    For text-bearing PDFs — the overwhelming majority of academic papers,
+    which come out of LaTeX/Word/Markdown pipelines with real embedded
+    text — this returns clean markdown in 1-2 seconds regardless of
+    page count, with no network calls, no API key, no model downloads,
+    no cold-start cost. It's what OpenAIReview ships as their default
+    extraction engine for exactly this reason.
+
+    Raises ``ExtractionError`` when pymupdf4llm returns empty / too-short
+    output. That's the scanned / image-only PDF case, which has no text
+    layer for pymupdf to extract; the caller's cascade falls through to
+    the OCR path (Mistral → pdf-text → Docling) to handle it.
+
+    This extractor is opted in via ``COARSE_EXTRACTION_FAST=1`` in the
+    MCP handoff path (``deploy/mcp_server.py::do_extract``); production
+    ``do_review`` leaves the env var unset and uses the OCR cascade
+    directly, preserving the existing quality tier for the OpenRouter
+    web flow.
+    """
+    try:
+        import pymupdf4llm
+    except ImportError as exc:
+        raise ExtractionError(
+            "pymupdf4llm is not installed. Add 'pymupdf4llm' to your "
+            "environment (or install coarse-ink[mcp]) to enable the fast "
+            "extraction path."
+        ) from exc
+
+    # pymupdf4llm 1.27 ships with `pymupdf_layout`, a GNN-based layout
+    # analyzer that auto-activates at import time. The layout path runs
+    # per-page OCR by default (`use_ocr=True`), which adds ~5-10s per page
+    # — totally unusable for the live spinner UX (a 30-page paper takes
+    # 150+ seconds even when every page already has clean embedded text).
+    # We don't need layout-based table detection here: the downstream
+    # structure parser (structure.py) works off heading regex + LLM
+    # classification, not table cells. Disable layout mode to fall back
+    # to the legacy `pymupdf_rag` extraction path, which is the same
+    # text-extraction code that pymupdf4llm 0.x shipped — pure-Python,
+    # no OCR, ~10s for a typical paper.
+    pymupdf4llm.use_layout(False)
+
+    markdown = pymupdf4llm.to_markdown(str(path))
+    if not isinstance(markdown, str):
+        raise ExtractionError(
+            f"pymupdf4llm.to_markdown returned {type(markdown).__name__}, expected str"
+        )
+    stripped = markdown.strip()
+    if len(stripped) < _PYMUPDF4LLM_MIN_CHARS:
+        raise ExtractionError(
+            f"pymupdf4llm returned too little text ({len(stripped)} chars). "
+            f"This is usually a scanned / image-only PDF with no text layer. "
+            f"Falling through to the OCR cascade."
+        )
+    return markdown
 
 
 # ---------------------------------------------------------------------------
@@ -749,15 +984,23 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
         if cached is not None:
             return cached
 
-    # Priority: Mistral OCR (best LaTeX quality) → pdf-text (free, fast,
-    # reliable embedded-text extraction) → Docling (offline last resort).
-    # The pdf-text middle tier catches Mistral OCR upstream outages without
-    # paying Docling's torch/RapidOCR startup cost.
-    extractors = [
-        ("Mistral OCR (OpenRouter)", _extract_mistral_openrouter),
-        ("pdf-text (OpenRouter)", _extract_pdftext_openrouter),
-        ("Docling", _extract_docling),
-    ]
+    # Priority cascade — both modes now use Mistral OCR first since the
+    # chunked-parallel implementation keeps wall-clock time under 20-25s
+    # even for 50-page papers. pymupdf4llm is the offline fallback when
+    # no OpenRouter key is available (CLI usage without an API key).
+    # Docling is kept as a last resort for scanned PDFs.
+    if os.environ.get("COARSE_EXTRACTION_FAST") == "1":
+        extractors = [
+            ("Mistral OCR (OpenRouter, chunked)", _extract_mistral_openrouter),
+            ("pymupdf4llm", _extract_pymupdf4llm),
+            ("pdf-text (OpenRouter)", _extract_pdftext_openrouter),
+        ]
+    else:
+        extractors = [
+            ("Mistral OCR (OpenRouter, chunked)", _extract_mistral_openrouter),
+            ("pdf-text (OpenRouter)", _extract_pdftext_openrouter),
+            ("Docling", _extract_docling),
+        ]
     full_markdown = None
     errors: list[str] = []
     for idx, (name, fn) in enumerate(extractors):

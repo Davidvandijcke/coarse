@@ -107,15 +107,23 @@ def _extract_claims_and_definitions(text: str) -> tuple[list[str], list[str]]:
     return claims, definitions
 
 
-def analyze_structure(paper_text: PaperText, client: LLMClient) -> PaperStructure:
+def analyze_structure(
+    paper_text: PaperText,
+    client: LLMClient,
+    math_client: LLMClient | None = None,
+) -> PaperStructure:
     """Extract paper structure by parsing markdown headings + cheap LLM metadata call.
 
     1. Parse headings from Docling markdown to build sections
     2. Extract title from first heading
     3. Extract abstract from first ABSTRACT section or first paragraph
-    4. Get domain/taxonomy via cheap text-LLM call
-    5. Detect math sections via cheap LLM call
+    4. Get domain/taxonomy via cheap text-LLM call on ``client``
+    5. Detect math sections via cheap LLM call on ``math_client``
+       (defaults to ``client`` when not provided)
     """
+    if math_client is None:
+        math_client = client
+
     sections = _parse_sections_from_markdown(paper_text.full_markdown)
     heuristic_title = _extract_title(paper_text.full_markdown)
     abstract = _extract_abstract(sections, paper_text.full_markdown)
@@ -142,7 +150,7 @@ def analyze_structure(paper_text: PaperText, client: LLMClient) -> PaperStructur
         metadata = metadata.model_copy(update={"document_form": "draft"})
 
     # LLM-based math section detection
-    sections = _detect_math_sections(sections, client)
+    sections = _detect_math_sections(sections, math_client)
 
     return PaperStructure(
         title=title,

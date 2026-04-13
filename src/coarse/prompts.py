@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         DetailedComment,
         DomainCalibration,
         OverviewFeedback,
+        PaperStructure,
         SectionInfo,
     )
 
@@ -2109,6 +2110,154 @@ reordered, renumbered set of comments.
 """
 
 
+# Quote repair (batched salvage for near-miss dropped quotes)
+# ---------------------------------------------------------------------------
+
+QUOTE_REPAIR_SYSTEM = (
+    """\
+You repair dropped review quotes by selecting a better verbatim anchor from the \
+candidate passages already retrieved from the paper.
+"""
+    + _CONTENT_BOUNDARY_NOTICE
+    + """
+For each item:
+- Read the comment title, feedback, original dropped quote, and candidate passages.
+- If the underlying comment still appears to point at a real passage in the \
+document, return a SHORTER, CLEANER verbatim quote copied directly from one \
+candidate passage.
+- You may shorten the quote to the minimum contiguous span needed to anchor the \
+comment.
+- NEVER paraphrase, normalize, or rewrite the text.
+- NEVER combine text from multiple passages.
+- NEVER invent a quote that is not character-for-character present in one \
+candidate passage.
+- If no candidate passage contains a clean anchor for the comment, return an \
+empty string for that item.
+
+Prefer:
+- 1-3 full sentences for prose claims
+- a complete displayed equation or one contiguous equation sentence for math
+- contiguous full table rows for table comments
+
+Return one repair record per input item, preserving the original item number.
+"""
+)
+
+
+def quote_repair_user(items: list[dict[str, object]]) -> str:
+    """User prompt for batched quote-repair salvage."""
+    blocks: list[str] = []
+    for item in items:
+        number = item["number"]
+        title = _strip_fence_tags(str(item["title"]))
+        feedback = _strip_fence_tags(str(item["feedback"]))
+        original_quote = _strip_fence_tags(str(item["original_quote"]))
+        candidate_passages = item.get("candidate_passages", [])
+        ratio = item.get("ratio", 0.0)
+        threshold = item.get("threshold", 0.0)
+
+        candidate_block = "\n\n".join(
+            f"<candidate_{idx + 1}>\n{_strip_fence_tags(str(passage))}\n</candidate_{idx + 1}>"
+            for idx, passage in enumerate(candidate_passages)
+        )
+        if not candidate_block:
+            candidate_block = "<candidate_1>\n\n</candidate_1>"
+
+        blocks.append(
+            f"""### Item {number}: {title}
+**Original quote**:
+{original_quote}
+
+**Feedback**:
+{feedback}
+
+**Verifier score**: ratio={ratio:.2f}, threshold={threshold:.2f}
+
+**Candidate passages**:
+{candidate_block}
+"""
+        )
+
+    joined = "\n\n".join(blocks)
+    return f"""\
+Repair the dropped quotes below.
+
+<first_pass_review>
+{joined}
+</first_pass_review>
+
+Return one repaired quote per item number. Use an empty string when no clean \
+verbatim anchor exists in the candidates.
+"""
+
+
+# ---------------------------------------------------------------------------
+# Assumption checker (theory-vs-empirics consistency)
+# ---------------------------------------------------------------------------
+
+ASSUMPTION_CHECK_SYSTEM = (
+    """\
+You are an expert methodologist checking whether a research paper's formal \
+assumptions are consistent with its actual data and implementation.
+"""
+    + _CONTENT_BOUNDARY_NOTICE
+    + _TONE_BLOCK
+    + _CONFIDENCE_GATE
+    + """
+Follow these four steps IN ORDER:
+
+**STEP 1 — Extract formal assumptions.**
+List every named or numbered assumption (e.g. "Assumption 1", "Condition A"). \
+For each, state what it requires of the data-generating process.
+
+**STEP 2 — Characterize the actual data structure.**
+Identify: unit of observation, sampling design (cross-section / panel / \
+time-series / clustered), sample size, any restrictions or transformations \
+applied before estimation.
+
+**STEP 3 — Cross-check each assumption against the data.**
+For each assumption from Step 1, check whether the data from Step 2 satisfies it. \
+
+**STEP 4 — Evaluate defenses.**
+If the paper acknowledges a mismatch and offers a justification (e.g. clustering \
+standard errors, fixed effects, a robustness check), assess whether the defense \
+actually addresses the violation.
+
+Report 0 to 3 issues. Only report genuine mismatches — do not flag assumptions \
+that are clearly satisfied. Each issue body must: (a) name the specific assumption, \
+(b) describe how the data violates it, (c) explain the consequences for the results, \
+and (d) suggest a concrete fix or robustness check.
+"""
+)
+
+
+def assumption_check_user(
+    title: str,
+    sections_text: str,
+    calibration: "DomainCalibration | None" = None,
+) -> str:
+    """User prompt for assumption consistency check."""
+    cal_block = ""
+    if calibration:
+        red_flags = "\n".join(f"- {r}" for r in calibration.assumption_red_flags)
+        cal_block = f"\n**Domain-specific assumption red flags to watch for:**\n{red_flags}\n"
+
+    safe_title = _strip_fence_tags(title)
+    safe_sections = _strip_fence_tags(sections_text)
+
+    return f"""\
+Analyze "{safe_title}" using the 4-step procedure (extract assumptions → characterize \
+data → cross-check → evaluate defenses).
+{cal_block}
+<paper_sections>
+{safe_sections}
+</paper_sections>
+
+Report 0-3 issues where formal assumptions conflict with the actual data structure \
+or implementation. Each issue needs a title and body.
+"""
+
+
 # ---------------------------------------------------------------------------
 # Post-extraction QA (vision LLM)
 # ---------------------------------------------------------------------------
@@ -2218,3 +2367,87 @@ Score 0.0-0.4: Tangentially related or irrelevant.
 
 Also suggest 0-3 refinement queries if important areas of related work are missing.
 """
+
+
+# ---------------------------------------------------------------------------
+# MCP-facing stage-prompt dispatcher
+# ---------------------------------------------------------------------------
+
+_MCP_STAGES = ("overview", "section", "crossref", "critique")
+
+
+def get_prompt(
+    stage: str,
+    *,
+    structure: "PaperStructure | None" = None,
+    section: "SectionInfo | None" = None,
+    all_sections: "list[SectionInfo] | None" = None,
+    focus: str = "general",
+    overview: "OverviewFeedback | None" = None,
+    comments: "list[DetailedComment] | None" = None,
+    title: str = "",
+    abstract: str = "",
+    document_form: str = "manuscript",
+) -> tuple[str, str]:
+    """Return ``(system, user)`` prompt strings for an MCP-driven review stage."""
+
+    def _with_form_notice(system_prompt: str) -> str:
+        notice = document_form_notice(document_form)
+        return system_prompt if not notice else f"{system_prompt}{notice}"
+
+    if stage == "overview":
+        if structure is None:
+            raise ValueError("stage='overview' requires structure")
+        parts: list[str] = []
+        for sec in structure.sections:
+            if not sec.text:
+                parts.append(f"## {sec.number}. {sec.title} ({sec.section_type.value})\n(empty)")
+                continue
+            parts.append(f"## {sec.number}. {sec.title} ({sec.section_type.value})\n{sec.text}")
+        sections_text = "\n\n".join(parts)
+        return (
+            _with_form_notice(OVERVIEW_SYSTEM),
+            overview_user(
+                structure.title,
+                structure.abstract,
+                sections_text,
+                calibration=None,
+                literature_context="",
+                cache_mode=False,
+            ),
+        )
+
+    if stage == "section":
+        if section is None:
+            raise ValueError("stage='section' requires section")
+        base_system = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
+        return (
+            _with_form_notice(base_system),
+            section_user(
+                paper_title=title,
+                section=section,
+                overview=overview,
+                calibration=None,
+                literature_context="",
+                all_sections=all_sections,
+                abstract=abstract,
+            ),
+        )
+
+    if stage == "crossref":
+        if overview is None or comments is None:
+            raise ValueError("stage='crossref' requires overview and comments")
+        return (
+            _with_form_notice(crossref_system()),
+            crossref_user(overview, comments, title=title, abstract=abstract),
+        )
+
+    if stage == "critique":
+        if overview is None or comments is None:
+            raise ValueError("stage='critique' requires overview and comments")
+        return (
+            _with_form_notice(critique_system()),
+            critique_user(overview, comments, title=title, abstract=abstract),
+        )
+
+    raise ValueError(f"unknown stage {stage!r}; expected one of {_MCP_STAGES}")

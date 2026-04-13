@@ -22,6 +22,7 @@ from coarse.config import (
     resolve_api_key,
 )
 from coarse.models import (
+    CHEAP_STAGE_MODEL,
     DEFAULT_MODEL,
     JSON_MODE_PREFIXES,
     KIMI_K2_5_MODEL,
@@ -46,7 +47,8 @@ litellm.drop_params = True
 
 # Register models missing from litellm's registry.
 # litellm.model_cost is the lookup used by _clamp_max_tokens.
-# Values from OpenRouter /api/v1/models (verified 2026-03-04).
+# Values from OpenRouter /api/v1/models (verified 2026-03-04 and 2026-04-11
+# for the glm-5.1 cheap-tier entry).
 _CUSTOM_MODEL_INFO: dict[str, dict] = {
     DEFAULT_MODEL: {
         "max_tokens": 1_000_000,
@@ -59,6 +61,12 @@ _CUSTOM_MODEL_INFO: dict[str, dict] = {
         "max_output_tokens": 32_768,
         "input_cost_per_token": 0.35e-6,
         "output_cost_per_token": 0.7e-6,
+    },
+    CHEAP_STAGE_MODEL: {
+        "max_tokens": 202_752,
+        "max_output_tokens": 65_535,
+        "input_cost_per_token": 1.40e-6,
+        "output_cost_per_token": 4.40e-6,
     },
 }
 for _model_id, _info in _CUSTOM_MODEL_INFO.items():
@@ -166,7 +174,15 @@ def _sanitized_completion(*args, **kwargs):
 class LLMClient:
     """Wraps litellm + instructor for structured output. Tracks cumulative cost."""
 
-    def __init__(self, model: str | None = None, config: CoarseConfig | None = None) -> None:
+    def __init__(
+        self,
+        model: str | None = None,
+        config: CoarseConfig | None = None,
+        *,
+        provider_allowlist: tuple[str, ...] | None = None,
+        fallback_client: "LLMClient | None" = None,
+        default_extra_body: dict | None = None,
+    ) -> None:
         if config is None:
             config = load_config()
         self._model = model or config.default_model
@@ -176,6 +192,22 @@ class LLMClient:
         self._cost_usd: float = 0.0
         self._lock = threading.Lock()
         self._is_reasoning = is_reasoning_model(self._model)
+        self._provider_allowlist = provider_allowlist
+        self._fallback_client = fallback_client
+        self._default_extra_body: dict = dict(default_extra_body or {})
+
+    def _apply_provider_prefs(self, kwargs: dict) -> dict:
+        """Merge per-client defaults + provider routing into extra_body."""
+        if not self._provider_allowlist and not self._default_extra_body:
+            return kwargs
+        extra_body = dict(kwargs.get("extra_body") or {})
+        for key, value in self._default_extra_body.items():
+            extra_body.setdefault(key, value)
+        if self._provider_allowlist:
+            provider_cfg = dict(extra_body.get("provider") or {})
+            provider_cfg.setdefault("only", list(self._provider_allowlist))
+            extra_body["provider"] = provider_cfg
+        return {**kwargs, "extra_body": extra_body}
 
     def complete(
         self,
@@ -187,6 +219,43 @@ class LLMClient:
         **kwargs,
     ) -> BaseModel:
         """Single structured LLM call. Returns parsed Pydantic model."""
+        try:
+            return self._complete_primary(
+                messages,
+                response_model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=timeout,
+                **kwargs,
+            )
+        except Exception:
+            if self._fallback_client is None:
+                raise
+            logger.warning(
+                "Primary model %s failed, falling back to %s",
+                self._model,
+                self._fallback_client.model,
+                exc_info=True,
+            )
+            return self._fallback_client.complete(
+                messages,
+                response_model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=timeout,
+                **kwargs,
+            )
+
+    def _complete_primary(
+        self,
+        messages: list[dict],
+        response_model: type[BaseModel],
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+        timeout: int = 600,
+        **kwargs,
+    ) -> BaseModel:
+        """Inner complete() without fallback dispatch."""
         # Reasoning models (o-series, GPT-5 Pro, DeepSeek R1, thinking
         # variants, etc.) spend most of max_tokens on hidden reasoning
         # before emitting visible output. Bump the ceiling so both fit;
@@ -221,6 +290,7 @@ class LLMClient:
         call_kwargs = dict(kwargs)
         if self._is_reasoning and call_kwargs.get("reasoning_effort") is None:
             call_kwargs["reasoning_effort"] = REASONING_EFFORT_DEFAULT
+        call_kwargs = self._apply_provider_prefs(call_kwargs)
 
         response, completion = self._client.chat.completions.create_with_completion(
             model=self._model,
@@ -233,7 +303,14 @@ class LLMClient:
             **call_kwargs,
         )
         try:
-            cost = litellm.completion_cost(completion_response=completion)
+            # Pass model=self._model explicitly so completion_cost uses the
+            # ID we registered in _CUSTOM_MODEL_INFO instead of whatever
+            # concrete version the provider stamped onto the response.
+            # OpenRouter maps aliases like ``qwen/qwen3.5-plus-02-15`` to
+            # date-stamped versions (e.g. ``qwen/qwen3.5-plus-20260216``)
+            # which aren't in litellm's registry, so the default cost
+            # lookup raises ``This model isn't mapped yet``.
+            cost = litellm.completion_cost(completion_response=completion, model=self._model)
             if cost is not None:
                 with self._lock:
                     self._cost_usd += cost
@@ -256,17 +333,52 @@ class LLMClient:
         Cost is tracked like complete(); control characters are still
         stripped via _sanitized_completion.
         """
+        try:
+            return self._complete_text_primary(
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=timeout,
+                **kwargs,
+            )
+        except Exception:
+            if self._fallback_client is None:
+                raise
+            logger.warning(
+                "Primary text model %s failed, falling back to %s",
+                self._model,
+                self._fallback_client.model,
+                exc_info=True,
+            )
+            return self._fallback_client.complete_text(
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=timeout,
+                **kwargs,
+            )
+
+    def _complete_text_primary(
+        self,
+        messages: list[dict],
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+        timeout: int = 600,
+        **kwargs,
+    ) -> str:
+        """Inner complete_text() without fallback dispatch."""
         clamped = _clamp_max_tokens(self._model, max_tokens)
+        call_kwargs = self._apply_provider_prefs(dict(kwargs))
         response = _sanitized_completion(
             model=self._model,
             messages=messages,
             max_tokens=clamped,
             temperature=temperature,
             timeout=timeout,
-            **kwargs,
+            **call_kwargs,
         )
         try:
-            cost = litellm.completion_cost(completion_response=response)
+            cost = litellm.completion_cost(completion_response=response, model=self._model)
             if cost is not None:
                 with self._lock:
                     self._cost_usd += cost
