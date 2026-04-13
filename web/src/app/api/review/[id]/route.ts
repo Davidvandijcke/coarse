@@ -28,9 +28,20 @@ export async function GET(
       "id, paper_filename, status, paper_title, model, domain, result_markdown, paper_markdown, cost_usd, duration_seconds, error_message, created_at, completed_at, access_token_required",
     )
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) {
+  if (error) {
+    console.error(`[review:${id}] fetch failed`, error);
+    return NextResponse.json(
+      {
+        error:
+          "Review lookup failed because the deployment and database schema are out of sync. Run deploy/migrate_review_access_security.sql.",
+      },
+      { status: 503 },
+    );
+  }
+
+  if (!data) {
     return NextResponse.json({ error: "Review not found" }, { status: 404 });
   }
 

@@ -38,7 +38,12 @@ export default function ReviewPageClient({ id }: { id: string }) {
         return;
       }
       if (!res.ok) {
-        setAccessError("Failed to load the review. Please try again.");
+        let message = "Failed to load the review. Please try again.";
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body.error) message = body.error;
+        } catch {}
+        setAccessError(message);
         setLoading(false);
         return;
       }
