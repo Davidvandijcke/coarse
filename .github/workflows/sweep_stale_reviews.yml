@@ -1,0 +1,115 @@
+name: Sweep stale queued/running reviews
+
+# Every `reviews` row starts life as `status='queued'` in /api/presign — before
+# the user has even finished uploading the PDF, let alone called /api/submit.
+# If the user closes the tab, fails upload client-side, or bails at the API-key
+# prompt, nothing ever transitions that row out of `queued`. The Modal worker
+# also occasionally dies between `status=running` and the `except BaseException`
+# handler that would set `status=failed`.
+#
+# Without a sweeper, every abandoned presign leaks one phantom "active" slot
+# forever — visible as stuck rows on `/review/<id>` pages and (until the
+# /api/status fix) as a false "system busy" banner on the landing page.
+#
+# The Modal review timeout is 2 hours, so anything `queued` or `running` that
+# is older than 3 hours is unambiguously stale (1 hour margin for clock skew
+# and in-flight worker tails that haven't flushed their final status write).
+#
+# Runs every 15 minutes. The worker's own success/failure path still handles
+# the common case; this cron only catches the drop-outs.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # every 15 minutes
+  workflow_dispatch: {}
+
+permissions: read-all
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mark stale queued/running reviews as failed
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          python3 <<'PY'
+          import json, os, sys
+          from datetime import datetime, timedelta, timezone
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+
+          URL = os.environ["SUPABASE_URL"].rstrip("/")
+          KEY = os.environ["SUPABASE_SERVICE_KEY"]
+
+          def api(method, path, body=None, prefer=None):
+              headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}"}
+              if prefer:
+                  headers["Prefer"] = prefer
+              data = None
+              if body is not None:
+                  data = json.dumps(body).encode()
+                  headers["Content-Type"] = "application/json"
+              req = Request(URL + path, data=data, method=method, headers=headers)
+              with urlopen(req, timeout=30) as resp:
+                  raw = resp.read()
+                  return json.loads(raw) if raw else None
+
+          # PostgREST URL-decodes query params, which turns `+00:00` into a
+          # space and crashes the timestamp parser. Use the `Z` suffix instead.
+          cutoff = (
+              (datetime.now(timezone.utc) - timedelta(hours=3))
+              .isoformat()
+              .replace("+00:00", "Z")
+          )
+
+          # Filter: queued OR running, created more than 3h ago. PostgREST
+          # `in.(...)` encodes the tuple; `created_at=lt.<cutoff>` is the age
+          # bound. We use `return=representation` on the PATCH so we can log
+          # the ids we touched — useful for debugging when a user reports a
+          # "stuck" review that turns out to have been swept.
+          try:
+              stale = api(
+                  "GET",
+                  f"/rest/v1/reviews"
+                  f"?select=id,status,created_at"
+                  f"&status=in.(queued,running)"
+                  f"&created_at=lt.{cutoff}",
+              )
+              stale = stale or []
+              print(f"reviews: found {len(stale)} stale row(s) older than {cutoff}")
+
+              if not stale:
+                  print("reviews: nothing to sweep")
+                  sys.exit(0)
+
+              # Log each one so we have an audit trail in the workflow output.
+              for row in stale:
+                  print(f"  {row['status']:8} {row['id']} created={row['created_at']}")
+
+              api(
+                  "PATCH",
+                  f"/rest/v1/reviews"
+                  f"?status=in.(queued,running)"
+                  f"&created_at=lt.{cutoff}",
+                  body={
+                      "status": "failed",
+                      "error_message": (
+                          "Submission abandoned or worker crashed before "
+                          "completion. If you did submit this review and "
+                          "expected it to run, please try again."
+                      ),
+                  },
+                  prefer="return=minimal",
+              )
+              print(f"reviews: swept {len(stale)} row(s) to status=failed")
+          except HTTPError as e:
+              print(f"ERROR: HTTP {e.code} {e.reason}", file=sys.stderr)
+              print(e.read().decode(errors="replace"), file=sys.stderr)
+              sys.exit(1)
+          except URLError as e:
+              print(f"ERROR: {e.reason}", file=sys.stderr)
+              sys.exit(1)
+          PY
