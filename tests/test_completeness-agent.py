@@ -164,6 +164,26 @@ def test_completeness_agent_user_message_includes_overview_issues():
         assert issue.title in user_content
 
 
+def test_completeness_agent_author_notes_prepend_to_user_message():
+    client = _make_client()
+    client.complete.return_value = _make_completeness_result(1)
+
+    agent = CompletenessAgent(client)
+    agent.run(
+        _make_structure(),
+        _make_overview(),
+        author_notes="the discussion section is still a placeholder",
+    )
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    user_content = [m for m in messages if m["role"] == "user"][0]["content"]
+
+    assert "the discussion section is still a placeholder" not in system_content
+    assert "<author_notes>" in user_content
+    assert "the discussion section is still a placeholder" in user_content
+
+
 def test_completeness_agent_prompt_caching():
     """With supports_prompt_caching=True, system content is a list with cache_control."""
     client = _make_client()

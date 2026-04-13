@@ -183,6 +183,27 @@ def test_cross_section_agent_user_message_includes_both_sections():
     assert "Our framework has broad policy implications." in user_content
 
 
+def test_cross_section_agent_author_notes_prepend_to_user_message():
+    client = _make_client()
+    client.complete.return_value = _make_cross_section_comments(1)
+
+    agent = CrossSectionAgent(client)
+    agent.run(
+        "Test Paper",
+        _make_section(),
+        _make_section(number=4, title="Discussion", section_type=SectionType.DISCUSSION),
+        author_notes="focus on whether the policy claims overreach the theorem",
+    )
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    user_content = [m for m in messages if m["role"] == "user"][0]["content"]
+
+    assert "focus on whether the policy claims overreach the theorem" not in system_content
+    assert "<author_notes>" in user_content
+    assert "focus on whether the policy claims overreach the theorem" in user_content
+
+
 def test_cross_section_agent_prompt_caching():
     """With supports_prompt_caching=True, system content is a list with cache_control."""
     client = _make_client()

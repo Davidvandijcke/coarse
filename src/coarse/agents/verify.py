@@ -5,7 +5,12 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from coarse.agents.base import ReviewAgent, truncate_section
-from coarse.prompts import PROOF_VERIFY_SYSTEM, document_form_notice, proof_verify_user
+from coarse.prompts import (
+    PROOF_VERIFY_SYSTEM,
+    author_notes_block,
+    document_form_notice,
+    proof_verify_user,
+)
 from coarse.types import DetailedComment, DocumentForm, SectionInfo
 
 _TEMPERATURE = 0.2
@@ -32,10 +37,11 @@ class ProofVerifyAgent(ReviewAgent):
         first_pass_comments: list[DetailedComment],
         abstract: str = "",
         document_form: DocumentForm = "manuscript",
+        author_notes: str | None = None,
     ) -> list[DetailedComment]:
         section = truncate_section(section)
 
-        user_text = proof_verify_user(
+        user_text = author_notes_block(author_notes) + proof_verify_user(
             paper_title,
             section,
             first_pass_comments,

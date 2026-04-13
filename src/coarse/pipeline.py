@@ -176,6 +176,7 @@ def _review_section(
             comments,
             abstract=abstract,
             document_form=document_form,
+            author_notes=author_notes,
         )
     return comments
 
@@ -265,11 +266,13 @@ def review_paper(
             submission to steer the review (e.g. "please focus on the
             identification strategy, the data section is stable"). When
             provided, it is wrapped in an ``<author_notes>`` fence and
-            forwarded to the overview, section, and editorial agents. The
-            notes are treated as steering input, not as instructions that
-            override the review rubric. Trimmed/truncated to 2000 chars by
-            ``author_notes_block`` in prompts.py. ``None`` or an empty/
-            whitespace-only string is a byte-identical no-op.
+            forwarded to every downstream review pass that shapes user-visible
+            output: overview, completeness, section, proof-verify,
+            cross-section, editorial, and the legacy crossref/critique
+            fallback path. The notes are treated as steering input, not as
+            instructions that override the review rubric. Trimmed/truncated to
+            2000 chars by ``author_notes_block`` in prompts.py. ``None`` or an
+            empty/ whitespace-only string is a byte-identical no-op.
 
     Pipeline order:
     1. Extract file → PaperText (format-specific extraction)
@@ -378,6 +381,7 @@ def review_paper(
             overview,
             calibration=calibration,
             contribution_context=contribution_context,
+            author_notes=author_notes,
         )
         overview = merge_overview(overview, completeness_issues, max_total=12)
     except Exception:
@@ -451,6 +455,7 @@ def review_paper(
                         disc_sec,
                         abstract=structure.abstract,
                         document_form=structure.document_form,
+                        author_notes=author_notes,
                     )
                 )
             for future in cross_section_futures:
@@ -484,6 +489,7 @@ def review_paper(
                 section_comments,
                 title=structure.title,
                 abstract=structure.abstract,
+                author_notes=author_notes,
             )
         except Exception:
             logger.warning("Crossref fallback also failed", exc_info=True)
@@ -494,6 +500,7 @@ def review_paper(
                 filtered_comments,
                 title=structure.title,
                 abstract=structure.abstract,
+                author_notes=author_notes,
             )
         except Exception:
             logger.warning("Critique fallback also failed", exc_info=True)

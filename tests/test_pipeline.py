@@ -37,12 +37,18 @@ def _make_paper_text() -> PaperText:
     )
 
 
-def _make_section(number: int, section_type: SectionType = SectionType.INTRODUCTION) -> SectionInfo:
+def _make_section(
+    number: int,
+    section_type: SectionType = SectionType.INTRODUCTION,
+    text: str | None = None,
+    math_content: bool = False,
+) -> SectionInfo:
     return SectionInfo(
         number=number,
         title=f"Section {number}",
-        text=f"Content of section {number}. " * 40,
+        text=text if text is not None else f"Content of section {number}. " * 40,
         section_type=section_type,
+        math_content=math_content,
     )
 
 
@@ -88,8 +94,6 @@ def test_review_paper_calls_stages_in_order():
     paper_text = _make_paper_text()
     structure = _make_structure()
     overview = _make_overview()
-    deduped = [_make_comment(1)]
-    final = [_make_comment(1)]
     markdown = "# Test Paper\n"
 
     call_order: list[str] = []
@@ -121,13 +125,29 @@ def test_review_paper_calls_stages_in_order():
         call_order.append(f"section_{section.number}")
         return [_make_comment(section.number)]
 
-    def fake_crossref_run(ov, cmts, comment_target=None, title="", abstract=""):
-        call_order.append("crossref")
-        return deduped
+    def fake_completeness_run(
+        structure,
+        overview,
+        calibration=None,
+        contribution_context=None,
+        author_notes=None,
+    ):
+        call_order.append("completeness")
+        return []
 
-    def fake_critique_run(ov, cmts, comment_target=None, title="", abstract=""):
-        call_order.append("critique")
-        return final
+    def fake_editorial_run(
+        paper_text,
+        overview,
+        comments,
+        comment_target=None,
+        title="",
+        abstract="",
+        contribution_context=None,
+        document_form="manuscript",
+        author_notes=None,
+    ):
+        call_order.append("editorial")
+        return [_make_comment(1)]
 
     def fake_render(review):
         call_order.append("render")
@@ -138,28 +158,30 @@ def test_review_paper_calls_stages_in_order():
         patch("coarse.pipeline.analyze_structure", side_effect=fake_analyze),
         patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", side_effect=fake_render),
     ):
         MockOverview.return_value.run.side_effect = fake_overview_run
+        MockCompleteness.return_value.run.side_effect = fake_completeness_run
         MockSection.return_value.run.side_effect = fake_section_run
         MockVerify.return_value.run.return_value = [_make_comment(1)]
-        MockCrossref.return_value.run.side_effect = fake_crossref_run
-        MockCritique.return_value.run.side_effect = fake_critique_run
+        MockEditorial.return_value.run.side_effect = fake_editorial_run
 
         review_paper("paper.pdf", skip_cost_gate=True, config=config)
 
     assert call_order[0] == "extract"
     assert call_order[1] == "structure"
-    crossref_idx = call_order.index("crossref")
-    critique_idx = call_order.index("critique")
+    overview_idx = call_order.index("overview")
+    completeness_idx = call_order.index("completeness")
+    editorial_idx = call_order.index("editorial")
     render_idx = call_order.index("render")
-    assert crossref_idx < critique_idx < render_idx
+    assert overview_idx < completeness_idx < editorial_idx < render_idx
 
 
 def test_review_paper_skips_references_section():
@@ -217,15 +239,23 @@ def test_review_paper_skips_references_section():
 
 
 def test_review_paper_forwards_author_notes_to_all_review_agents():
-    """review_paper(author_notes=...) must forward the notes to the overview,
-    section, and editorial agents. This is the glue test that guarantees the
-    author's steering input actually reaches every place that generates
-    user-visible review content."""
+    """review_paper(author_notes=...) must forward the notes to every review
+    pass that can shape user-visible output."""
     config = _make_config()
     structure = _make_structure(
         sections=[
-            _make_section(1, SectionType.INTRODUCTION),
-            _make_section(2, SectionType.METHODOLOGY),
+            _make_section(1, SectionType.INTRODUCTION, text="Intro text."),
+            _make_section(
+                2,
+                SectionType.METHODOLOGY,
+                text="Theorem 1. " + ("formal proof text " * 80),
+                math_content=True,
+            ),
+            _make_section(
+                3,
+                SectionType.DISCUSSION,
+                text="Discussion text tying policy claims to the theorem.",
+            ),
         ]
     )
     overview = _make_overview()
@@ -251,6 +281,38 @@ def test_review_paper_forwards_author_notes_to_all_review_agents():
         captured.setdefault("section_notes", []).append(author_notes)  # type: ignore[union-attr]
         return [_make_comment(section.number)]
 
+    def capture_verify(
+        section,
+        title,
+        comments,
+        abstract="",
+        document_form="manuscript",
+        author_notes=None,
+    ):
+        captured.setdefault("verify_notes", []).append(author_notes)  # type: ignore[union-attr]
+        return comments
+
+    def capture_completeness(
+        structure_arg,
+        overview_arg,
+        calibration=None,
+        contribution_context=None,
+        author_notes=None,
+    ):
+        captured["completeness_notes"] = author_notes
+        return []
+
+    def capture_cross_section(
+        title,
+        results_section,
+        discussion_section,
+        abstract="",
+        document_form="manuscript",
+        author_notes=None,
+    ):
+        captured.setdefault("cross_section_notes", []).append(author_notes)  # type: ignore[union-attr]
+        return []
+
     def capture_editorial(
         paper_text,
         overview_arg,
@@ -275,14 +337,16 @@ def test_review_paper_forwards_author_notes_to_all_review_agents():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.CrossSectionAgent") as MockCrossSection,
         patch("coarse.pipeline.EditorialAgent") as MockEditorial,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
         MockOverview.return_value.run.side_effect = capture_overview
         MockSection.return_value.run.side_effect = capture_section
-        MockVerify.return_value.run.return_value = [_make_comment(1)]
-        MockCompleteness.return_value.run.return_value = []
+        MockVerify.return_value.run.side_effect = capture_verify
+        MockCompleteness.return_value.run.side_effect = capture_completeness
+        MockCrossSection.return_value.run.side_effect = capture_cross_section
         MockEditorial.return_value.run.side_effect = capture_editorial
 
         review_paper(
@@ -293,12 +357,83 @@ def test_review_paper_forwards_author_notes_to_all_review_agents():
         )
 
     assert captured["overview_notes"] == "please focus on the identification strategy"
+    assert captured["completeness_notes"] == "please focus on the identification strategy"
     assert captured["editorial_notes"] == "please focus on the identification strategy"
-    # Both section calls see the same notes.
+    assert captured["verify_notes"] == ["please focus on the identification strategy"]
+    assert captured["cross_section_notes"] == ["please focus on the identification strategy"]
     assert captured["section_notes"] == [
         "please focus on the identification strategy",
         "please focus on the identification strategy",
+        "please focus on the identification strategy",
     ]
+
+
+def test_review_paper_forwards_author_notes_to_fallback_crossref_and_critique():
+    config = _make_config()
+    structure = _make_structure(
+        sections=[
+            _make_section(1, SectionType.INTRODUCTION),
+            _make_section(2, SectionType.METHODOLOGY),
+        ]
+    )
+    overview = _make_overview()
+    captured: dict[str, object] = {}
+
+    def capture_crossref(
+        overview_arg,
+        comments,
+        comment_target=None,
+        title="",
+        abstract="",
+        author_notes=None,
+    ):
+        captured["crossref_notes"] = author_notes
+        return comments
+
+    def capture_critique(
+        overview_arg,
+        comments,
+        comment_target=None,
+        title="",
+        abstract="",
+        author_notes=None,
+    ):
+        captured["critique_notes"] = author_notes
+        return comments
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
+        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.return_value = overview
+        MockSection.return_value.run.return_value = [_make_comment(1)]
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockCompleteness.return_value.run.return_value = []
+        MockEditorial.return_value.run.side_effect = RuntimeError("editorial boom")
+        MockCrossref.return_value.run.side_effect = capture_crossref
+        MockCritique.return_value.run.side_effect = capture_critique
+
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            author_notes="please focus on the identification strategy",
+        )
+
+    assert captured["crossref_notes"] == "please focus on the identification strategy"
+    assert captured["critique_notes"] == "please focus on the identification strategy"
 
 
 def test_review_paper_date_format():
@@ -421,10 +556,20 @@ def test_review_paper_section_comments_flattened():
     structure = _make_structure(sections=sections)
     overview = _make_overview()
 
-    crossref_received: list[DetailedComment] = []
+    editorial_received: list[DetailedComment] = []
 
-    def fake_crossref_run(ov, cmts, comment_target=None, title="", abstract=""):
-        crossref_received.extend(cmts)
+    def fake_editorial_run(
+        paper_text,
+        overview,
+        comments,
+        comment_target=None,
+        title="",
+        abstract="",
+        contribution_context=None,
+        document_form="manuscript",
+        author_notes=None,
+    ):
+        editorial_received.extend(comments)
         return [_make_comment(1)]
 
     with (
@@ -432,24 +577,25 @@ def test_review_paper_section_comments_flattened():
         patch("coarse.pipeline.analyze_structure", return_value=structure),
         patch("coarse.pipeline.calibrate_domain", return_value=None),
         patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
         MockOverview.return_value.run.return_value = overview
+        MockCompleteness.return_value.run.return_value = []
         # Each section returns 2 comments
         MockSection.return_value.run.return_value = [_make_comment(1), _make_comment(2)]
         MockVerify.return_value.run.return_value = [_make_comment(1)]
-        MockCrossref.return_value.run.side_effect = fake_crossref_run
-        MockCritique.return_value.run.return_value = [_make_comment(1)]
+        MockEditorial.return_value.run.side_effect = fake_editorial_run
 
         review_paper("paper.pdf", skip_cost_gate=True, config=config)
 
-    assert len(crossref_received) == 6
+    assert len(editorial_received) == 6
 
 
 def test_review_paper_uses_provided_config():
@@ -567,6 +713,7 @@ def test_review_section_chains_verify_for_proof():
         first_pass,
         abstract="abstract",
         document_form="manuscript",
+        author_notes=None,
     )
     assert result == verified
 

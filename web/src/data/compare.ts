@@ -6,15 +6,18 @@
  *
  * Sonnet 4.6 & Kimi K2.5 reviews: generated 2026-03-15 via the coarse web app.
  * GPT-5 Mini reviews: generated 2026-03-16 via coarse CLI.
+ * GPT-5.4 reviews: generated 2026-04-12 via coarse CLI with quote repair enabled.
  *
  * Quality scores vs refine.ink: scored using Gemini 3.1 Pro as judge with PDF
  * multimodal input (no format dimension).
  *   Sonnet & Kimi: quality_{model}_20260315_vs_refine_gemini31pro_pdf.md
  *   GPT-5 Mini:   quality_gpt5mini_20260316_vs_refine_gemini31pro_pdf.md
+ *   GPT-5.4:      quality_gpt54_20260412_vs_refine_gemini31pro.md
  *
  * Quality scores vs Stanford/Reviewer 3: scored 2026-03-16 using Gemini 3.1 Pro
  * as judge with PDF multimodal input (no format dimension).
- *   Files: quality_{model}_20260316_vs_{ref}_gemini31pro_pdf.md
+ *   GPT-5 Mini files: quality_gpt5mini_20260316_vs_{ref}_gemini31pro_pdf.md
+ *   GPT-5.4 files:    quality_gpt54_20260412_vs_{ref}_gemini31pro.md
  */
 import fs from "fs";
 import path from "path";
@@ -37,13 +40,19 @@ function parseQualityScores(report: string): QualityScores {
   };
 }
 
+function normalizeEscapedUnicode(text: string): string {
+  return text.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex: string) =>
+    String.fromCharCode(Number.parseInt(hex, 16)),
+  );
+}
+
 function readFile(filePath: string): string {
-  return fs.readFileSync(filePath, "utf8");
+  return normalizeEscapedUnicode(fs.readFileSync(filePath, "utf8"));
 }
 
 function tryReadFile(filePath: string): string | null {
   try {
-    return fs.readFileSync(filePath, "utf8");
+    return normalizeEscapedUnicode(fs.readFileSync(filePath, "utf8"));
   } catch {
     return null;
   }
@@ -109,6 +118,14 @@ export const papers: Record<PaperId, PaperData> = {
           "quality_gpt5mini_20260316_vs_reviewer3_gemini31pro_pdf.md",
         ),
       },
+      gpt54: {
+        review: readFile(path.join(corticalDir, "review_gpt54_20260412_quoterepair.md")),
+        scores: loadModelScores(corticalDir,
+          "quality_gpt54_20260412_vs_refine_gemini31pro.md",
+          "quality_gpt54_20260412_vs_stanford_gemini31pro.md",
+          "quality_gpt54_20260412_vs_reviewer3_gemini31pro.md",
+        ),
+      },
     },
     comparisons: {
       refine: { content: readFile(path.join(corticalDir, "reference_review.md")), pdfPath: null },
@@ -146,6 +163,14 @@ export const papers: Record<PaperId, PaperData> = {
           "quality_gpt5mini_20260316_vs_refine_gemini31pro_pdf.md",
           "quality_gpt5mini_20260316_vs_stanford_gemini31pro_pdf.md",
           "quality_gpt5mini_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
+      },
+      gpt54: {
+        review: readFile(path.join(cosetDir, "review_gpt54_20260412_quoterepair.md")),
+        scores: loadModelScores(cosetDir,
+          "quality_gpt54_20260412_vs_refine_gemini31pro.md",
+          "quality_gpt54_20260412_vs_stanford_gemini31pro.md",
+          "quality_gpt54_20260412_vs_reviewer3_gemini31pro.md",
         ),
       },
     },
@@ -187,6 +212,14 @@ export const papers: Record<PaperId, PaperData> = {
           "quality_gpt5mini_20260316_vs_reviewer3_gemini31pro_pdf.md",
         ),
       },
+      gpt54: {
+        review: readFile(path.join(popgenDir, "review_gpt54_20260412_quoterepair.md")),
+        scores: loadModelScores(popgenDir,
+          "quality_gpt54_20260412_vs_refine_gemini31pro.md",
+          "quality_gpt54_20260412_vs_stanford_gemini31pro.md",
+          "quality_gpt54_20260412_vs_reviewer3_gemini31pro.md",
+        ),
+      },
     },
     comparisons: {
       refine: { content: readFile(path.join(popgenDir, "reference_review.md")), pdfPath: null },
@@ -224,6 +257,14 @@ export const papers: Record<PaperId, PaperData> = {
           "quality_gpt5mini_20260316_vs_refine_gemini31pro_pdf.md",
           "quality_gpt5mini_20260316_vs_stanford_gemini31pro_pdf.md",
           "quality_gpt5mini_20260316_vs_reviewer3_gemini31pro_pdf.md",
+        ),
+      },
+      gpt54: {
+        review: readFile(path.join(targetDir, "review_gpt54_20260412_quoterepair.md")),
+        scores: loadModelScores(targetDir,
+          "quality_gpt54_20260412_vs_refine_gemini31pro.md",
+          "quality_gpt54_20260412_vs_stanford_gemini31pro.md",
+          "quality_gpt54_20260412_vs_reviewer3_gemini31pro.md",
         ),
       },
     },
