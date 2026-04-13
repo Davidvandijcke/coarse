@@ -20,6 +20,10 @@
 - **Prompt builders now fence and sanitize every remaining raw paper-content path (#92)** — the domain calibration and math-detection prompts now include the same boundary notice used by the review agents, and the previously inconsistent `calibration_user`, `completeness_user`, `cross_section_user`, and `math_detection_user` helpers now run untrusted paper-derived fields through `_strip_fence_tags()` before placing them in fenced blocks. This closes the remaining easy `</paper_content>` / `</paper_sections>` escape paths for extracted PDFs and adds regression coverage for injected closing tags and inline instruction payloads.
 - **The default install no longer resolves vulnerable `diskcache`, and the optional Docling stack now resolves safe `transformers` releases (#98)** — `instructor` is now pinned to a version where `diskcache` moved behind an optional extra instead of the default dependency set, and the `docling` extra now requires a current Docling release plus `transformers>=5.4,<6` so the optional extraction fallback no longer locks to the older vulnerable 4.x line.
 
+### Added
+
+- **Architecture drift tests now enforce package boundaries** — new regression tests statically scan `src/coarse/` to block import cycles, keep `models.py` dependency-free, keep `types.py` / `prompts.py` within their allowed layers, and prevent new non-whitelisted imports of `pipeline.py`.
+
 ## v1.2.2 — 2026-04-12
 
 Patch release. Clears the false "system busy (N/20 slots in use)" banner that the landing page was showing even when Modal was idle, and bundles the unreleased `dev` work (GPT-5.4 compare-panel + author-steering fallthroughs) that had accumulated since v1.2.1.
