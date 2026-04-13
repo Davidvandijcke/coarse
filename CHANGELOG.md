@@ -32,6 +32,10 @@
 
 - **Architecture docs now match the runtime pipeline** — README, CONTRIBUTING, and CLAUDE now describe the single overview pass, completeness stage, cross-section/editorial flow, and legacy `crossref`/`critique` fallback that the code actually runs. The changelog entry that prematurely claimed `StageRouter`/`STAGE_MODELS` shipped was also corrected, and `scripts/doc-sync-check.sh` now blocks stale architecture phrases from creeping back in.
 
+### Changed
+
+- **`pipeline.py` is back to being an orchestrator** — the section-review helpers, calibration/contribution extraction, and editorial fallback logic moved into `src/coarse/review_stages.py`, leaving `pipeline.py` responsible for stage ordering, fan-out, and final assembly instead of stage-local implementation details.
+
 ## v1.2.2 — 2026-04-12
 
 Patch release. Clears the false "system busy (N/20 slots in use)" banner that the landing page was showing even when Modal was idle, and bundles the unreleased `dev` work (GPT-5.4 compare-panel + author-steering fallthroughs) that had accumulated since v1.2.1.

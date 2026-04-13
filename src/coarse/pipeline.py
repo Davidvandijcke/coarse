@@ -25,22 +25,22 @@ from coarse.cost import run_cost_gate
 from coarse.extraction import extract_file
 from coarse.llm import LLMClient
 from coarse.pipeline_spec import MAX_REVIEWABLE_SECTIONS
-from coarse.prompts import (
-    CALIBRATION_SYSTEM,
-    CONTRIBUTION_EXTRACTION_SYSTEM,
-    calibration_user,
-    contribution_extraction_user,
-)
 from coarse.quote_verify import QuoteVerificationDrop, verify_quotes, verify_quotes_detailed
+from coarse.review_stages import (
+    _detect_section_focus,
+    _review_section,
+    calibrate_domain,
+    extract_contribution,
+    run_editorial_pass,
+)
+from coarse.review_stages import (
+    _section_needs_proof_verify as _section_needs_proof_verify,  # noqa: F401
+)
 from coarse.structure import analyze_structure
 from coarse.synthesis import render_review
 from coarse.types import (
-    ContributionContext,
     DetailedComment,
-    DocumentForm,
-    DomainCalibration,
     ExtractionError,
-    OverviewFeedback,
     PaperStructure,
     PaperText,
     Review,
@@ -185,116 +185,10 @@ def _verify_section_with_fallback(
 
 _MIN_APPENDIX_CHARS = 500  # skip appendix sections shorter than this
 
-# Minimum text length for proof_verify to run on a math-flagged section.
-# proof_verify chains an adversarial re-derivation pass after the section
-# agent and costs one full-budget LLM call (~$0.30 on sonnet-4.6,
-# proportionally more on reasoning models). Running it on a section that's
-# just one inline equation in a footnote isn't worth that cost — there's
-# nothing to adversarially verify in 150 chars of text. This threshold is
-# set deliberately LOW so short lemmas with their proofs aren't missed
-# (typical lemma-with-short-proof paragraphs run 300-800 chars), and
-# sections that have ANY extracted formal claim (`section.claims` non-
-# empty) bypass the length check entirely — we always verify real formal
-# statements regardless of how short the section is.
-_MIN_PROOF_VERIFY_SECTION_CHARS = 500
-
-
-def _section_needs_proof_verify(section: SectionInfo) -> bool:
-    """Return True iff proof_verify should chain after the section agent.
-
-    Requires the LLM-set ``math_content`` flag AND one of:
-    - at least one extracted formal claim (Theorem/Lemma/etc), OR
-    - section text length >= ``_MIN_PROOF_VERIFY_SECTION_CHARS``.
-
-    The claims-non-empty bypass is important: a short formal lemma with
-    a one-line proof might have only 250 characters of text but still
-    deserves verification because the paper explicitly called it out
-    as a formal result. The length threshold filters the opposite case:
-    a discussion section that happened to have one inline equation.
-    """
-    if not section.math_content:
-        return False
-    if section.claims:
-        return True
-    return len(section.text) >= _MIN_PROOF_VERIFY_SECTION_CHARS
-
 
 def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]:
     """Renumber comments sequentially 1..N."""
     return [c.model_copy(update={"number": i}) for i, c in enumerate(comments, start=1)]
-
-
-def _detect_section_focus(section: SectionInfo) -> str:
-    """Detect section focus based on LLM-detected math content and section type.
-
-    Returns one of: "proof", "methodology", "results", "literature", "discussion", "general".
-    The math_content flag is set during structure analysis by an LLM call.
-    """
-    if section.math_content:
-        return "proof"
-    if section.section_type == SectionType.METHODOLOGY:
-        return "methodology"
-    if section.section_type == SectionType.RESULTS:
-        return "results"
-    if section.section_type == SectionType.RELATED_WORK:
-        return "literature"
-    if section.section_type in (SectionType.DISCUSSION, SectionType.CONCLUSION):
-        return "discussion"
-    return "general"
-
-
-def _review_section(
-    section_agent: SectionAgent,
-    verify_agent: ProofVerifyAgent,
-    section: SectionInfo,
-    paper_markdown: str,
-    paper_title: str,
-    overview: OverviewFeedback | None,
-    calibration: DomainCalibration | None,
-    focus: str,
-    literature_context: str,
-    all_sections: list[SectionInfo],
-    abstract: str,
-    *,
-    document_form: DocumentForm = "manuscript",
-    author_notes: str | None = None,
-) -> list[DetailedComment]:
-    """Review a section; chain with adversarial verification for proof sections."""
-    comments = section_agent.run(
-        section,
-        paper_title,
-        overview,
-        calibration,
-        focus,
-        literature_context,
-        all_sections=all_sections,
-        abstract=abstract,
-        document_form=document_form,
-        author_notes=author_notes,
-    )
-    comments = _verify_with_fallback(
-        comments,
-        paper_markdown,
-        stage_name=f"Section-agent quote verification for '{section.title}'",
-        drop_unverified=False,
-    )
-    if focus == "proof" and comments and _section_needs_proof_verify(section):
-        comments = verify_agent.run(
-            section,
-            paper_title,
-            comments,
-            abstract=abstract,
-            document_form=document_form,
-            author_notes=author_notes,
-        )
-        comments = _verify_with_fallback(
-            comments,
-            paper_markdown,
-            stage_name=f"Proof-verify quote verification for '{section.title}'",
-            drop_unverified=False,
-        )
-    return comments
-
 
 def extract_and_structure(
     file_path: str | Path,
@@ -354,71 +248,6 @@ def extract_and_structure(
             "The file may be scanned/image-only with no extractable text."
         )
     return paper_text, structure
-
-
-def calibrate_domain(structure: PaperStructure, client: LLMClient) -> DomainCalibration | None:
-    """Generate domain-specific review criteria from the paper's content.
-
-    Single cheap LLM call (~$0.02). Returns None on failure (fallback to generic).
-    """
-    section_titles = ", ".join(f"{s.number}. {s.title}" for s in structure.sections)
-    messages = [
-        {"role": "system", "content": CALIBRATION_SYSTEM},
-        {
-            "role": "user",
-            "content": calibration_user(
-                structure.title,
-                structure.domain,
-                structure.abstract,
-                section_titles,
-            ),
-        },
-    ]
-    try:
-        return client.complete(messages, DomainCalibration, max_tokens=2048, temperature=0.3)
-    except Exception:
-        logger.warning("Domain calibration failed, using generic prompts", exc_info=True)
-        return None
-
-
-def extract_contribution(
-    structure: PaperStructure,
-    client: LLMClient,
-) -> ContributionContext | None:
-    """Extract paper's stated contributions via cheap LLM call (~$0.02).
-
-    Returns None on failure (pipeline proceeds without contribution context).
-    """
-    intro_text = ""
-    conclusion_text = ""
-    for s in structure.sections:
-        if s.section_type == SectionType.INTRODUCTION:
-            intro_text = s.text
-        elif s.section_type == SectionType.CONCLUSION:
-            conclusion_text = s.text
-
-    if not intro_text:
-        intro_text = structure.abstract
-
-    messages = [
-        {"role": "system", "content": CONTRIBUTION_EXTRACTION_SYSTEM},
-        {
-            "role": "user",
-            "content": contribution_extraction_user(
-                structure.title,
-                structure.abstract,
-                intro_text,
-                conclusion_text,
-            ),
-        },
-    ]
-    try:
-        return client.complete(messages, ContributionContext, max_tokens=2048, temperature=0.2)
-    except Exception:
-        logger.warning("Contribution extraction failed, proceeding without", exc_info=True)
-        return None
-
-
 def review_paper(
     pdf_path: str | Path,
     model: str | None = None,
@@ -453,9 +282,9 @@ def review_paper(
     1. Extract file → PaperText (format-specific extraction)
     2. Cost gate (optional)
     3. Analyze structure via markdown parsing + cheap LLM metadata → PaperStructure
-    4. Phase 1: Overview agent (blocking)
-    5. Phase 2: Section agents (parallel, text-only with overview context)
-    6. Cross-reference + quote verification + critique + quote re-verification
+    4. Phase 1: Overview, completeness, and section-context setup
+    5. Phase 2: Section agents + proof verification + cross-section synthesis
+    6. Editorial filtering (with legacy fallback) + quote verification/repair
     7. Synthesis → markdown
 
     Returns:
@@ -533,9 +362,7 @@ def review_paper(
 
     overview_agent = OverviewAgent(client)
     section_agent = SectionAgent(client)
-    editorial_agent = EditorialAgent(client)
     quote_repair_agent = QuoteRepairAgent(client)
-
     reviewable_sections = [
         s
         for s in structure.sections
@@ -650,61 +477,20 @@ def review_paper(
 
     # --- Phase 3: Editorial filter (single pass — dedup + contradiction + quality) ---
     # The editorial agent receives full paper text for quote/absence verification.
-    try:
-        filtered_comments = editorial_agent.run(
-            paper_text.full_markdown,
-            overview,
-            section_comments,
-            title=structure.title,
-            abstract=structure.abstract,
-            contribution_context=contribution_context,
-            document_form=structure.document_form,
-            author_notes=author_notes,
-        )
-        filtered_comments = _verify_with_fallback(
-            filtered_comments,
-            paper_text.full_markdown,
-            stage_name="Editorial quote verification",
-            drop_unverified=False,
-        )
-    except Exception:
-        # Fallback: use legacy crossref → critique pipeline if editorial agent fails
-        logger.warning("Editorial agent failed, falling back to crossref+critique", exc_info=True)
-        crossref_agent = CrossrefAgent(client)
-        critique_agent = CritiqueAgent(client)
-        try:
-            filtered_comments = crossref_agent.run(
-                overview,
-                section_comments,
-                title=structure.title,
-                abstract=structure.abstract,
-                author_notes=author_notes,
-            )
-            filtered_comments = _verify_with_fallback(
-                filtered_comments,
-                paper_text.full_markdown,
-                stage_name="Crossref quote verification",
-                drop_unverified=False,
-            )
-        except Exception:
-            logger.warning("Crossref fallback also failed", exc_info=True)
-            filtered_comments = section_comments
-        try:
-            filtered_comments = critique_agent.run(
-                overview,
-                filtered_comments,
-                title=structure.title,
-                abstract=structure.abstract,
-                author_notes=author_notes,
-            )
-            filtered_comments = _verify_with_fallback(
-                filtered_comments,
-                paper_text.full_markdown,
-                stage_name="Critique quote verification",
-                drop_unverified=False,
-            )
-        except Exception:
-            logger.warning("Critique fallback also failed", exc_info=True)
+    filtered_comments = run_editorial_pass(
+        client,
+        paper_text.full_markdown,
+        overview,
+        section_comments,
+        title=structure.title,
+        abstract=structure.abstract,
+        contribution_context=contribution_context,
+        document_form=structure.document_form,
+        author_notes=author_notes,
+        editorial_agent_cls=EditorialAgent,
+        crossref_agent_cls=CrossrefAgent,
+        critique_agent_cls=CritiqueAgent,
+    )
 
     # Programmatic quote verification against full paper text
     final_comments = _verify_with_repair_fallback(
