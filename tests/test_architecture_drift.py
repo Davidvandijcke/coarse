@@ -6,43 +6,81 @@ import ast
 from collections.abc import Iterator
 from pathlib import Path
 
-SRC_ROOT = Path(__file__).resolve().parent.parent / "src" / "coarse"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SRC_ROOT = REPO_ROOT / "src" / "coarse"
+DEPLOY_ROOT = REPO_ROOT / "deploy"
 AGENT_DENY = {"pipeline", "cli", "synthesis", "extraction", "extraction_qa"}
 PIPELINE_ALLOW = {"cli", "__init__", "__main__"}
 TYPES_ALLOW = {"models"}
 PROMPTS_ALLOW = {"models", "types"}
+MAX_SOURCE_LINES = 800
+KNOWN_OVERSIZED = {"extraction", "prompts"}
 
 
 def _module_name(path: Path) -> str:
     return path.relative_to(SRC_ROOT).with_suffix("").as_posix().replace("/", ".")
 
 
+def _imported_targets(current_module: str, node: ast.AST) -> set[str]:
+    targets: set[str] = set()
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            if alias.name.startswith("coarse."):
+                targets.add(alias.name.removeprefix("coarse."))
+    elif isinstance(node, ast.ImportFrom):
+        if node.level:
+            base = current_module.split(".")[: -node.level]
+            if node.module:
+                targets.add(".".join([*base, node.module]))
+            else:
+                for alias in node.names:
+                    if alias.name != "*":
+                        targets.add(".".join([*base, alias.name]))
+        elif node.module == "coarse":
+            for alias in node.names:
+                if alias.name != "*":
+                    targets.add(alias.name)
+        elif node.module and node.module.startswith("coarse."):
+            base = node.module.removeprefix("coarse.")
+            targets.add(base)
+            for alias in node.names:
+                if alias.name != "*":
+                    targets.add(f"{base}.{alias.name}")
+    return {target for target in targets if target}
+
+
 def _build_import_graph() -> dict[str, set[str]]:
     graph: dict[str, set[str]] = {}
     for path in sorted(SRC_ROOT.rglob("*.py")):
+        module = _module_name(path)
         imports: set[str] = set()
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.ImportFrom)
-                and node.module
-                and node.module.startswith("coarse")
-            ):
-                imports.add(node.module.removeprefix("coarse.").split(".")[0] or "")
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name.startswith("coarse."):
-                        imports.add(alias.name.removeprefix("coarse.").split(".")[0])
-        graph[_module_name(path)] = {name for name in imports if name}
+            imports.update(_imported_targets(module, node))
+        graph[module] = imports
+    return graph
+
+
+def _build_deploy_import_graph() -> dict[str, set[str]]:
+    graph: dict[str, set[str]] = {}
+    for path in sorted(DEPLOY_ROOT.rglob("*.py")):
+        module = path.relative_to(DEPLOY_ROOT).with_suffix("").as_posix().replace("/", ".")
+        imports: set[str] = set()
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            imports.update(_imported_targets(module, node))
+        graph[module] = imports
     return graph
 
 
 def _resolve_module(graph: dict[str, set[str]], name: str) -> str | None:
-    if name in graph:
-        return name
-    for module in graph:
-        if module == name or module.endswith(f".{name}"):
-            return module
+    candidate = name
+    while candidate:
+        if candidate in graph:
+            return candidate
+        if "." not in candidate:
+            break
+        candidate = candidate.rsplit(".", 1)[0]
     return None
 
 
@@ -84,27 +122,47 @@ def _find_cycles(graph: dict[str, set[str]]) -> list[list[str]]:
     return cycles
 
 
+def _resolved_imports(graph: dict[str, set[str]], imports: set[str]) -> set[str]:
+    return {_resolve_module(graph, name) or name for name in imports}
+
+
 def test_import_graph_has_no_cycles():
     graph = _build_import_graph()
 
     assert _find_cycles(graph) == []
 
 
+def test_no_src_coarse_file_exceeds_800_lines():
+    offenders = {
+        _module_name(path): path.read_text().count("\n") + 1
+        for path in sorted(SRC_ROOT.rglob("*.py"))
+        if path.read_text().count("\n") + 1 > MAX_SOURCE_LINES
+    }
+    unexpected = {
+        module: lines for module, lines in offenders.items() if module not in KNOWN_OVERSIZED
+    }
+
+    assert unexpected == {}
+
+
 def test_models_types_and_prompts_stay_within_allowed_layers():
     graph = _build_import_graph()
 
-    assert graph["models"] == set()
-    assert graph["types"] <= TYPES_ALLOW
-    assert graph["prompts"] <= PROMPTS_ALLOW
+    assert _resolved_imports(graph, graph["models"]) == set()
+    assert _resolved_imports(graph, graph["types"]) <= TYPES_ALLOW
+    assert _resolved_imports(graph, graph["prompts"]) <= PROMPTS_ALLOW
 
 
 def test_agents_do_not_import_orchestration_modules():
     graph = _build_import_graph()
 
     offenders = {
-        module: sorted(imports & AGENT_DENY)
+        module: sorted(
+            target for target in imports if (_resolve_module(graph, target) or target) in AGENT_DENY
+        )
         for module, imports in graph.items()
-        if module.startswith("agents.") and imports & AGENT_DENY
+        if module.startswith("agents.")
+        and any((_resolve_module(graph, target) or target) in AGENT_DENY for target in imports)
     }
 
     assert offenders == {}
@@ -113,13 +171,29 @@ def test_agents_do_not_import_orchestration_modules():
 def test_pipeline_importers_stay_whitelisted():
     graph = _build_import_graph()
 
-    offenders = []
+    offenders: dict[str, list[str]] = {}
     for module, imports in graph.items():
-        if "pipeline" not in imports:
+        pipeline_imports = sorted(
+            target for target in imports if _resolve_module(graph, target) == "pipeline"
+        )
+        if not pipeline_imports:
             continue
-        module_name = module.split(".")[-1]
-        if module_name in PIPELINE_ALLOW or module.startswith("deploy."):
+        if module in PIPELINE_ALLOW:
             continue
-        offenders.append(module)
+        offenders[module] = pipeline_imports
 
-    assert offenders == []
+    assert offenders == {}
+
+
+def test_deploy_modules_do_not_import_pipeline_directly():
+    graph = _build_deploy_import_graph()
+
+    offenders = {
+        module: sorted(
+            target for target in imports if target == "pipeline" or target.startswith("pipeline.")
+        )
+        for module, imports in graph.items()
+        if any(target == "pipeline" or target.startswith("pipeline.") for target in imports)
+    }
+
+    assert offenders == {}
