@@ -65,6 +65,7 @@ src/coarse/
 ├── prompts.py               # All prompt templates
 ├── types.py                 # Pydantic models
 ├── pipeline.py              # review_paper() orchestrator
+├── review_stages.py         # Stage-local review helpers used by pipeline.py
 ├── synthesis.py             # Review → markdown string
 ├── quality.py               # Quality eval against reference (dev only)
 ├── recall.py                # Recall eval vs. ground-truth expert reviews (dev only)
