@@ -67,6 +67,7 @@ logged, and never sent to the host LLM in a tool response.
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import logging
 import os
@@ -90,6 +91,8 @@ logger.setLevel(logging.INFO)
 _MAX_PAPER_BYTES = 100 * 1024 * 1024  # 100 MB — mirrors extraction.py
 _MAX_URL_REDIRECTS = 5
 _URL_FETCH_TIMEOUT = 120  # seconds
+_DEFAULT_SITE_URL = "https://coarse.vercel.app"
+_DEFAULT_SUPABASE_HOST_SUFFIXES = (".supabase.co", ".supabase.in")
 _SUPPORTED_EXT_FOR_URL = frozenset(
     {
         ".pdf",
@@ -103,6 +106,7 @@ _SUPPORTED_EXT_FOR_URL = frozenset(
         ".epub",
     }
 )
+_OPENROUTER_ENV_LOCK = threading.RLock()
 
 
 # ---------------------------------------------------------------------------
@@ -180,14 +184,120 @@ def scoped_openrouter_key(key: str):
     if not key or not key.strip():
         raise ValueError("openrouter_key must be non-empty")
     key = key.strip()
-    original = os.environ.get("OPENROUTER_API_KEY")
-    os.environ["OPENROUTER_API_KEY"] = key
+    with _OPENROUTER_ENV_LOCK:
+        original = os.environ.get("OPENROUTER_API_KEY")
+        os.environ["OPENROUTER_API_KEY"] = key
+        try:
+            yield
+        finally:
+            os.environ.pop("OPENROUTER_API_KEY", None)
+            if original is not None:
+                os.environ["OPENROUTER_API_KEY"] = original
+
+
+def _public_http_mode() -> bool:
+    """Return True when the server is handling public HTTP traffic."""
+    return os.environ.get("COARSE_MCP_PUBLIC_HTTP", "").strip() == "1"
+
+
+def _configured_site_origins() -> set[str]:
+    """Return the allowed callback origins for finalize_review."""
+    origins = {_DEFAULT_SITE_URL}
+    if not _public_http_mode():
+        origins.update({"http://localhost:3000", "http://127.0.0.1:3000"})
+    for raw in (
+        os.environ.get("NEXT_PUBLIC_SITE_URL"),
+        os.environ.get("SITE_URL"),
+        (
+            f"https://{os.environ['NEXT_PUBLIC_VERCEL_URL']}"
+            if os.environ.get("NEXT_PUBLIC_VERCEL_URL")
+            else None
+        ),
+    ):
+        if not raw:
+            continue
+        parsed = urlparse(raw)
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            origins.add(f"{parsed.scheme}://{parsed.netloc}")
+    return origins
+
+
+def _configured_supabase_hosts() -> set[str]:
+    """Return the expected Supabase hosts for signed storage URLs."""
+    hosts: set[str] = set()
+    for raw in (os.environ.get("NEXT_PUBLIC_SUPABASE_URL"), os.environ.get("SUPABASE_URL")):
+        if not raw:
+            continue
+        parsed = urlparse(raw)
+        if parsed.hostname:
+            hosts.add(parsed.hostname.lower())
+    return hosts
+
+
+def _is_ip_literal(hostname: str) -> bool:
     try:
-        yield
-    finally:
-        os.environ.pop("OPENROUTER_API_KEY", None)
-        if original is not None:
-            os.environ["OPENROUTER_API_KEY"] = original
+        ipaddress.ip_address(hostname)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_loopbackish_host(hostname: str) -> bool:
+    lowered = hostname.lower()
+    if lowered in {"localhost", "localhost.localdomain"} or lowered.endswith(".localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(lowered)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved
+
+
+def _validate_signed_state_url(url: str) -> None:
+    """Allow only signed Supabase storage URLs for the MCP state blob."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError(f"signed_state_url must be a fully-qualified http(s) URL, got {url!r}")
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("signed_state_url is missing a hostname")
+    if _is_ip_literal(hostname):
+        raise ValueError("signed_state_url must use a configured Supabase hostname, not a raw IP")
+    configured_hosts = _configured_supabase_hosts()
+    if configured_hosts:
+        if hostname not in configured_hosts:
+            raise ValueError(
+                f"signed_state_url host {hostname!r} does not match the configured Supabase host"
+            )
+    elif not hostname.endswith(_DEFAULT_SUPABASE_HOST_SUFFIXES):
+        raise ValueError(
+            "signed_state_url must point at a Supabase Storage signed URL for the papers bucket"
+        )
+    if "/storage/v1/object/sign/papers/" not in parsed.path:
+        raise ValueError("signed_state_url must target the signed papers bucket path")
+    if not parsed.path.endswith(".mcp.json"):
+        raise ValueError("signed_state_url must point to a .mcp.json state blob")
+    if not parsed.query:
+        raise ValueError("signed_state_url must include a signed query string")
+
+
+def _validate_callback_url(url: str) -> None:
+    """Allow only coarse's own finalize callback endpoint."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError(f"callback_url must be a fully-qualified http(s) URL, got {url!r}")
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("callback_url is missing a hostname")
+    if _public_http_mode() and _is_loopbackish_host(hostname):
+        raise ValueError(
+            "callback_url cannot target localhost or a private host in public HTTP mode"
+        )
+    if parsed.path.rstrip("/") != "/api/mcp-finalize":
+        raise ValueError("callback_url must point to /api/mcp-finalize")
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    if origin not in _configured_site_origins():
+        raise ValueError(f"callback_url origin {origin!r} is not an allowed coarse site origin")
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +542,14 @@ def _load_paper(paper_id: str) -> tuple[dict, Any]:
     return row, _structure_from_dict(raw_structure)
 
 
+def _fence_untrusted_block(tag: str, text: str) -> str:
+    """Wrap untrusted paper-derived text in a safe fence tag."""
+    from coarse.prompts import _strip_fence_tags
+
+    safe = _strip_fence_tags(text or "")
+    return f"<{tag}>\n{safe}\n</{tag}>"
+
+
 # ---------------------------------------------------------------------------
 # FastMCP server + tool registration
 # ---------------------------------------------------------------------------
@@ -594,6 +712,12 @@ def upload_paper_path(
     read in place — this tool never modifies or deletes the user's
     file.
     """
+    if _public_http_mode():
+        raise ValueError(
+            "upload_paper_path is disabled on the public HTTP MCP server. "
+            "Use load_paper_state for coarse.vercel.app handoffs or "
+            "upload_paper_url/upload_paper_bytes in local stdio mode."
+        )
     p = Path(path).expanduser()
     if not p.is_absolute():
         raise ValueError(
@@ -617,7 +741,8 @@ def upload_paper_path(
             f"file exceeds {_MAX_PAPER_BYTES // 1024 // 1024} MB cap "
             f"(got {size // 1024 // 1024} MB)"
         )
-    return _ingest_file(p, openrouter_key, own_file=False)
+    resolved_paper_id = _validate_paper_id(paper_id)
+    return _ingest_file(p, openrouter_key, own_file=False, paper_id=resolved_paper_id)
 
 
 # NOTE: There is deliberately no ``upload_paper_from_id`` tool here.
@@ -676,11 +801,7 @@ def load_paper_state(
     resolved_paper_id = _validate_paper_id(paper_id)
     if resolved_paper_id is None:
         raise ValueError("paper_id is required and must be a UUID")
-
-    if not signed_state_url or not signed_state_url.startswith(("http://", "https://")):
-        raise ValueError(
-            f"signed_state_url must be a fully-qualified http(s) URL, got {signed_state_url!r}"
-        )
+    _validate_signed_state_url(signed_state_url)
 
     try:
         resp = requests.get(
@@ -729,6 +850,8 @@ def load_paper_state(
 
     # Build the review instructions inline so the host LLM gets
     # everything in one tool call (no need for get_review_instructions).
+    from coarse.prompts import _CONTENT_BOUNDARY_NOTICE, _strip_fence_tags
+
     sections_block = []
     for sec in structure.sections:
         text_len = len(sec.text.strip()) if sec.text else 0
@@ -737,16 +860,23 @@ def load_paper_state(
         if sec.section_type == "references":
             continue
         focus = _detect_focus(sec)
+        safe_section_title = _strip_fence_tags(sec.title or "")
         sections_block.append(
-            f"### Section {sec.number}: {sec.title}\n"
+            f"### Section {sec.number}\n"
+            f"{_fence_untrusted_block('paper_section_title', safe_section_title)}\n\n"
             f"**Focus**: {focus}"
             f"{' — VERIFY PROOFS CAREFULLY' if focus == 'proof' else ''}\n"
             f"**Type**: {sec.section_type}\n\n"
-            f"{sec.text}\n"
+            f"{_fence_untrusted_block('paper_content', sec.text)}\n"
         )
 
     paper_body = "\n---\n\n".join(sections_block)
     sections = _section_summary(structure)
+    safe_title = _strip_fence_tags(row["title"] or "")
+    safe_domain = _strip_fence_tags(row["domain"] or "")
+    safe_taxonomy = _strip_fence_tags(row["taxonomy"] or "")
+    abstract_block = _fence_untrusted_block("paper_abstract", row.get("abstract", ""))
+    sections_wrapped = f"<paper_sections>\n{paper_body}\n</paper_sections>"
 
     return {
         "paper_id": resolved_paper_id,
@@ -758,6 +888,7 @@ def load_paper_state(
         "review_instructions": (
             "You are a rigorous academic peer reviewer. Produce a structured "
             "review. Your response MUST be a JSON object with two fields:\n\n"
+            f"{_CONTENT_BOUNDARY_NOTICE.strip()}\n\n"
             "1. **overview**: {summary (1-2 sentences), assessment (1 paragraph), "
             "issues (4-6 titled macro issues, each {title, body}), "
             "recommendation (accept/revise_and_resubmit/reject), "
@@ -773,11 +904,11 @@ def load_paper_state(
             "Respond with ONLY the JSON — no prose outside it."
         ),
         "paper_text": (
-            f"# {row['title']}\n\n"
-            f"**Domain**: {row['domain']}\n"
-            f"**Taxonomy**: {row['taxonomy']}\n\n"
-            f"## Abstract\n\n{row.get('abstract', '')}\n\n"
-            f"## Sections\n\n{paper_body}"
+            f"{_fence_untrusted_block('paper_title', safe_title)}\n\n"
+            f"{_fence_untrusted_block('paper_domain', safe_domain)}\n\n"
+            f"{_fence_untrusted_block('paper_taxonomy', safe_taxonomy)}\n\n"
+            f"## Abstract\n\n{abstract_block}\n\n"
+            f"## Sections\n\n{sections_wrapped}"
         ),
         "next_step": (
             "Read review_instructions above. Use paper_text as the paper "
@@ -1357,6 +1488,7 @@ def _finalize_via_callback(
         "paper_markdown": row.get("paper_markdown") or "",
         "model": "mcp-host",
     }
+    _validate_callback_url(callback_url)
 
     try:
         resp = requests.post(
@@ -1490,6 +1622,7 @@ try:
         Starlette ASGI app with the streamable-HTTP transport FastMCP
         clients expect.
         """
+        os.environ["COARSE_MCP_PUBLIC_HTTP"] = "1"
         inner = mcp.http_app(transport="http")
 
         async def _wrapper(scope, receive, send):
@@ -1836,24 +1969,29 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
+def _unwrap_tool_fn(tool_or_fn):
+    """Return the underlying callable for either a FastMCP tool wrapper or plain function."""
+    return getattr(tool_or_fn, "fn", tool_or_fn)
+
+
 # Preserve plain-callable module exports for tests and local helpers while the
 # FastMCP registry keeps the wrapped FunctionTool instances.
 upload_paper_url_tool = upload_paper_url
-upload_paper_url = upload_paper_url_tool.fn
+upload_paper_url = _unwrap_tool_fn(upload_paper_url_tool)
 upload_paper_bytes_tool = upload_paper_bytes
-upload_paper_bytes = upload_paper_bytes_tool.fn
+upload_paper_bytes = _unwrap_tool_fn(upload_paper_bytes_tool)
 upload_paper_path_tool = upload_paper_path
-upload_paper_path = upload_paper_path_tool.fn
+upload_paper_path = _unwrap_tool_fn(upload_paper_path_tool)
 load_paper_state_tool = load_paper_state
-load_paper_state = load_paper_state_tool.fn
+load_paper_state = _unwrap_tool_fn(load_paper_state_tool)
 get_paper_section_tool = get_paper_section
-get_paper_section = get_paper_section_tool.fn
+get_paper_section = _unwrap_tool_fn(get_paper_section_tool)
 get_review_prompt_tool = get_review_prompt
-get_review_prompt = get_review_prompt_tool.fn
+get_review_prompt = _unwrap_tool_fn(get_review_prompt_tool)
 verify_quotes_tool = verify_quotes
-verify_quotes = verify_quotes_tool.fn
+verify_quotes = _unwrap_tool_fn(verify_quotes_tool)
 finalize_review_tool = finalize_review
-finalize_review = finalize_review_tool.fn
+finalize_review = _unwrap_tool_fn(finalize_review_tool)
 
 
 async def _compat_list_tools():
@@ -1893,12 +2031,15 @@ if __name__ == "__main__":
         args.port,
     )
     if args.transport == "stdio":
+        os.environ["COARSE_MCP_PUBLIC_HTTP"] = "0"
         mcp.run(transport="stdio")
     elif args.transport == "sse":
+        os.environ["COARSE_MCP_PUBLIC_HTTP"] = "0"
         mcp.run(transport="sse", host=args.host, port=args.port)
     else:
         import uvicorn
 
+        os.environ["COARSE_MCP_PUBLIC_HTTP"] = "0"
         inner = mcp.http_app(transport="http")
 
         async def app(scope, receive, send):

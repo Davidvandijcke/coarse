@@ -213,6 +213,7 @@ export async function POST(request: NextRequest) {
     .update({
       paper_title: paperTitle || undefined,
       domain: domain || undefined,
+      taxonomy: taxonomy || undefined,
       model: model || "mcp-host",
       status: "done",
       result_markdown: markdown,
@@ -243,6 +244,14 @@ export async function POST(request: NextRequest) {
     console.error("[mcp-finalize] storage cleanup failed", {
       paperId,
       storageObjects,
+      cleanupErr,
+    });
+  }
+  try {
+    await supabase.from("review_handoff_secrets").delete().eq("review_id", paperId);
+  } catch (cleanupErr) {
+    console.error("[mcp-finalize] handoff-secret cleanup failed", {
+      paperId,
       cleanupErr,
     });
   }

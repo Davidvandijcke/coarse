@@ -65,8 +65,23 @@ export const HOST_DEFAULT_MODELS: Record<ChatHost, string[]> = {
 export const EFFORT_LEVELS = ["low", "medium", "high", "max"] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
-const MCP_UVX_FROM =
-  "'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'";
+const DEFAULT_MCP_UVX_FROM = "coarse-ink[mcp]==1.2.2";
+
+function resolvePinnedUvFrom(): string {
+  const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();
+  if (!raw) return DEFAULT_MCP_UVX_FROM;
+  const exactVersion = /^coarse-ink\[mcp\]==[A-Za-z0-9.+-]+$/;
+  const exactCommit =
+    /^coarse-ink\[mcp\]\s*@\s*git\+https:\/\/github\.com\/Davidvandijcke\/coarse@[0-9a-f]{7,40}$/i;
+  if (exactVersion.test(raw) || exactCommit.test(raw)) return raw;
+  return DEFAULT_MCP_UVX_FROM;
+}
+
+const MCP_UVX_FROM = resolvePinnedUvFrom();
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
 
 // Short install-guide URLs for users who don't have the chosen CLI yet.
 export const HOST_INSTALL_URL: Record<ChatHost, string> = {
@@ -121,9 +136,9 @@ export function buildAgentPrompt(args: {
     `wherever the steps below say \`uvx --from ...\`. Do NOT get stuck on ` +
     `\`uvx: command not found\`.\n\n` +
     `STEP 1 — Refresh the coarse-review skill files. ` +
-    `Run this command to copy the latest skill instructions from the ` +
-    `feat/mcp-server branch into your Claude Code / Codex / Gemini CLI ` +
-    `skill folder. This uses uvx, so it does not permanently install ` +
+    `Run this command to copy the pinned coarse-review skill bundle into ` +
+    `your Claude Code / Codex / Gemini CLI skill folder. This uses uvx, ` +
+    `so it does not permanently install ` +
     `coarse-ink into your global environment:\n\n` +
     `${setupCmd}\n\n` +
     `STEP 2 — Check for an OpenRouter API key. ` +
@@ -221,11 +236,12 @@ export interface CliHandoffBundle {
 export async function mintCliHandoff(
   paperId: string,
   host: ChatHost,
+  handoffSecret: string,
 ): Promise<CliHandoffBundle> {
   const resp = await fetch("/api/cli-handoff", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ paper_id: paperId, host }),
+    body: JSON.stringify({ paper_id: paperId, host, handoff_secret: handoffSecret }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ error: "Unknown error" }));
@@ -247,9 +263,10 @@ export function buildCliCommands(args: {
 }): { setupCmd: string; runCmd: string } {
   const { handoffUrl, host, model, effort } = args;
   const cliName = HOST_CLI_NAME[host];
-  const setupCmd = `uvx --from ${MCP_UVX_FROM} coarse install-skills --all --force`;
+  const quotedUvFrom = shellQuote(MCP_UVX_FROM);
+  const setupCmd = `uvx --from ${quotedUvFrom} coarse install-skills --all --force`;
   const runCmd =
-    `uvx --from ${MCP_UVX_FROM} coarse-review --handoff ${handoffUrl}` +
+    `uvx --from ${quotedUvFrom} coarse-review --handoff ${handoffUrl}` +
     ` --host ${cliName}` +
     ` --model ${model}` +
     ` --effort ${effort}`;

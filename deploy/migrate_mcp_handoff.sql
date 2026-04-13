@@ -63,6 +63,21 @@ begin
 end;
 $$;
 
+-- Browser proof-of-possession for follow-up routes after /api/presign.
+-- The public review UUID remains readable, but callers must also present
+-- this high-entropy secret to /api/submit, /api/cli-handoff, /api/mcp-extract,
+-- and /api/mcp-handoff. Store only the SHA-256 hash server-side.
+create table if not exists review_handoff_secrets (
+  review_id uuid primary key references reviews(id) on delete cascade,
+  secret_hash text not null check (length(secret_hash) = 64),
+  created_at timestamptz default now()
+);
+
+alter table review_handoff_secrets enable row level security;
+
+create index if not exists idx_review_handoff_secrets_created_at
+  on review_handoff_secrets (created_at);
+
 -- ============================================================================
 -- Expand reviews.status enum to cover the MCP extract-and-handoff flow.
 -- ============================================================================
@@ -91,3 +106,5 @@ alter table reviews add constraint reviews_status_check
     'done',
     'failed'
   ));
+
+alter table reviews add column if not exists taxonomy text;

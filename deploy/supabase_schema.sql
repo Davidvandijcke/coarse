@@ -13,6 +13,7 @@ create table reviews (
   paper_title text,
   model text,
   domain text,
+  taxonomy text,
   result_markdown text,
   paper_markdown text,
   cost_usd numeric(8,4),
@@ -58,6 +59,20 @@ create table review_secrets (
 alter table review_secrets enable row level security;
 
 create index idx_review_secrets_created_at on review_secrets (created_at);
+
+-- ============================================================================
+-- Review handoff secrets (browser proof-of-possession for follow-up routes)
+-- ============================================================================
+
+create table review_handoff_secrets (
+  review_id uuid primary key references reviews(id) on delete cascade,
+  secret_hash text not null check (length(secret_hash) = 64),
+  created_at timestamptz default now()
+);
+
+alter table review_handoff_secrets enable row level security;
+
+create index idx_review_handoff_secrets_created_at on review_handoff_secrets (created_at);
 
 -- ============================================================================
 -- Storage buckets

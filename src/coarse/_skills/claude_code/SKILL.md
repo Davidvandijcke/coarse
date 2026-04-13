@@ -29,7 +29,7 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
   - If `uv` exists but `uvx` does not, replace `uvx --from ...` below with
     `uv tool run --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
-  `uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' coarse install-skills --all --force`
+  `uvx --from 'coarse-ink[mcp]==1.2.2' coarse install-skills --all --force`
 - **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key is NOT passed through the web handoff for security reasons.
 
   Before running the review, check if `OPENROUTER_API_KEY` is set:
@@ -58,7 +58,7 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
 **Launch in the background** — full review takes 10-25 minutes, which exceeds Claude Code's default 2-minute tool timeout. Always use `run_in_background: true` or redirect to a log file so it's not killed mid-run:
 
 ```bash
-nohup uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' \
+nohup uvx --from 'coarse-ink[mcp]==1.2.2' \
   coarse-review <paper_path> --host claude [--model claude-opus-4-6] [--effort high] \
   > /tmp/coarse-review.log 2>&1 < /dev/null &
 echo "Review PID: $!"
@@ -83,7 +83,7 @@ Available effort levels: `low`, `medium`, `high` (default), `max`.
 If the user came from the coarse web form, they'll have a handoff URL instead. Run:
 
 ```bash
-nohup uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' \
+nohup uvx --from 'coarse-ink[mcp]==1.2.2' \
   coarse-review --handoff coarse.vercel.app/h/<token> --host claude [--model ...] [--effort ...] \
   > /tmp/coarse-review.log 2>&1 < /dev/null &
 echo "Review PID: $!"

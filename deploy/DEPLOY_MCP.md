@@ -58,7 +58,7 @@ place.
  │   upload_paper_url(signed_url,   │
  │                    or_key)       │
  │   upload_paper_bytes(...)        │
- │   upload_paper_path(...)         │
+ │   upload_paper_path(...)         │   local-only
  │   get_paper_section              │
  │   get_review_prompt              │
  │   verify_quotes                  │

@@ -27,6 +27,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { requireReviewHandoffSecret } from "@/lib/routeHandoffAuth";
 
 export const maxDuration = 30;
 
@@ -69,11 +70,13 @@ export async function POST(request: NextRequest) {
   let id = "";
   let apiKey = "";
   let storagePath = "";
+  let handoffSecret = "";
   try {
     const body = await request.json();
     id = String(body.id ?? "").trim();
     apiKey = String(body.api_key ?? "").trim();
     storagePath = String(body.storage_path ?? "").trim();
+    handoffSecret = String(body.handoff_secret ?? "").trim();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -92,6 +95,10 @@ export async function POST(request: NextRequest) {
       { error: "Invalid storage path" },
       { status: 400 },
     );
+  }
+  const handoffAuth = await requireReviewHandoffSecret(supabaseAdmin, id, handoffSecret);
+  if (!handoffAuth.ok) {
+    return NextResponse.json({ error: handoffAuth.error }, { status: handoffAuth.status });
   }
 
   // Verify the review row exists (and prevent issuing extract for an

@@ -266,20 +266,16 @@ export default function Home() {
     emailCapacityReached?: boolean;
   } | null>(null);
 
-  // MCP handoff state machine:
+  // CLI handoff state machine:
   //
-  //   idle → extracting → ready → handed-off
+  //   idle → extracting → ready
   //           │
   //           └─► failed
   //
   //  - idle: user hasn't clicked the subscription button yet
-  //  - extracting: /api/mcp-extract fired, waiting for status='extracted'
-  //  - ready: /api/mcp-handoff succeeded, clipboard copied, tab opened
-  //  - failed: extraction or handoff errored; show error in form
-  //
-  // The extraction stage is user-initiated (click-gated) so we never
-  // charge the user's OpenRouter key for a paper they uploaded but
-  // never wanted to route through their subscription.
+  //  - extracting: presign + upload + /api/cli-handoff in flight
+  //  - ready: clipboard prompt and host launch affordances are ready
+  //  - failed: upload or handoff errored; show error in form
   type HandoffPhase = "idle" | "extracting" | "ready" | "failed";
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
   const [handoffPhase, setHandoffPhase] = useState<HandoffPhase>("idle");
@@ -425,7 +421,7 @@ export default function Home() {
         const data = await presignResp.json();
         throw new Error(data.error || "Failed to prepare upload");
       }
-      const { id, storagePath, signedUrl, token } = await presignResp.json();
+      const { id, storagePath, signedUrl, token, handoffSecret } = await presignResp.json();
 
       // Step 2: Upload file directly to Supabase Storage (bypasses Vercel 4.5MB limit)
       const uploadResp = await fetch(signedUrl, {
@@ -451,6 +447,7 @@ export default function Home() {
           model,
           storage_path: storagePath,
           author_notes: authorNotes || undefined,
+          handoff_secret: handoffSecret,
         }),
       });
       if (!submitResp.ok) {
@@ -465,23 +462,14 @@ export default function Home() {
   }
 
   /**
-   * Route this review to one of the user's chat hosts via the coarse MCP
-   * connector, using the capability-handoff flow with click-gated extraction.
+   * Route this review to one of the user's local coding-agent hosts using the
+   * CLI handoff flow.
    *
-   * State machine:
-   *   1. phase='extracting': upload + POST /api/mcp-extract (spawns Modal
-   *      do_extract). UI shows a status line "Extracting paper text via OCR…".
-   *   2. Subscribe to reviews row via Supabase realtime; wait for
-   *      status='extracted'. (Falls back to 1-second polling if realtime
-   *      fails.) Extraction typically finishes in 30-90s.
-   *   3. phase='ready': POST /api/mcp-handoff to mint the signed state URL
-   *      and finalize token. Copy the prompt to clipboard. Open the chat
-   *      host in a new tab. Show the "prompt copied" panel.
-   *
-   * The OpenRouter key never leaves the Next.js → Modal path — it's used
-   * once by Modal's do_extract to pay for Mistral OCR + structure parsing,
-   * then discarded. The host LLM's clipboard prompt carries only
-   * capability tokens, never the raw key.
+   * The browser uploads the source file, receives a paper-scoped handoff URL,
+   * copies the review prompt to the clipboard, and then lets the local
+   * `coarse-review --handoff ...` command do extraction and finalization on the
+   * user's machine with the user's own OpenRouter key and coding-agent
+   * subscription.
    */
   async function handleMcpHandoff(host: ChatHost) {
     if (!file) return;
@@ -505,7 +493,7 @@ export default function Home() {
         const data = await presignResp.json();
         throw new Error(data.error || "Failed to prepare upload");
       }
-      const { id, signedUrl } = await presignResp.json();
+      const { id, signedUrl, handoffSecret } = await presignResp.json();
 
       const uploadResp = await fetch(signedUrl, {
         method: "PUT",
@@ -524,7 +512,7 @@ export default function Home() {
       // does Mistral OCR locally with their own OpenRouter key, then
       // POSTs the rendered review back to /api/mcp-finalize.
       setHandoffMessage("Preparing handoff...");
-      const bundle = await mintCliHandoff(id, host);
+      const bundle = await mintCliHandoff(id, host, handoffSecret);
 
       // Step 3: defaults for the modal dropdowns.
       setSelectedModel(HOST_DEFAULT_MODELS[host][0]);

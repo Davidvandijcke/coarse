@@ -28,6 +28,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { consumeReviewHandoffSecret } from "@/lib/routeHandoffAuth";
 
 export const maxDuration = 15;
 
@@ -55,15 +56,21 @@ export async function POST(request: NextRequest) {
 
   let paperId = "";
   let host = "";
+  let handoffSecret = "";
   try {
     const body = await request.json();
     paperId = (body.paper_id ?? "").trim();
     host = (body.host ?? "").trim();
+    handoffSecret = (body.handoff_secret ?? "").trim();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
   if (!paperId || !isValidUuid(paperId)) {
     return NextResponse.json({ error: "Invalid paper_id" }, { status: 400 });
+  }
+  const handoffAuth = await consumeReviewHandoffSecret(supabase, paperId, handoffSecret);
+  if (!handoffAuth.ok) {
+    return NextResponse.json({ error: handoffAuth.error }, { status: handoffAuth.status });
   }
 
   // Step 1: verify the review row exists. Unlike mcp-handoff, we don't

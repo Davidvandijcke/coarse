@@ -23,11 +23,12 @@ def test_bundled_skill_assets_use_ephemeral_uvx_flow() -> None:
         assert "command -v uvx || command -v uv" in text
         assert "curl -LsSf https://astral.sh/uv/install.sh | sh" in text
         assert "uv tool run --from ..." in text
-        assert "uvx --from 'coarse-ink[mcp] @" in text
+        assert "uvx --from 'coarse-ink[mcp]==1.2.2'" in text
         assert "coarse install-skills --all --force" in text
-        assert "nohup uvx --from 'coarse-ink[mcp] @" in text
+        assert "nohup uvx --from 'coarse-ink[mcp]==1.2.2'" in text
         assert "rg '^  view:|^  local:' /tmp/coarse-review.log" in text
         assert "uv pip install --reinstall" not in text
+        assert "@feat/mcp-server" not in text
 
 
 def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
@@ -39,12 +40,18 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     assert "curl -LsSf https://astral.sh/uv/install.sh | sh" in handoff_lib
     assert "uv tool run --from ..." in handoff_lib
     assert "const MCP_UVX_FROM =" in handoff_lib
-    assert "uvx --from ${MCP_UVX_FROM} coarse install-skills --all --force" in handoff_lib
-    assert "uvx --from ${MCP_UVX_FROM} coarse-review --handoff ${handoffUrl}" in handoff_lib
+    assert "const quotedUvFrom = shellQuote(MCP_UVX_FROM);" in handoff_lib
+    assert "uvx --from ${quotedUvFrom} coarse install-skills --all --force" in handoff_lib
+    assert "uvx --from ${quotedUvFrom} coarse-review --handoff ${handoffUrl}" in handoff_lib
     assert "nohup ${runCmd} > /tmp/coarse-review.log 2>&1 < /dev/null &" in handoff_lib
     assert "rg '^  view:|^  local:' /tmp/coarse-review.log" in handoff_lib
 
     assert "const fullPrompt = buildAgentPrompt({ setupCmd, runCmd });" in handoff_page
 
-    assert "uvx --from ${pinnedFrom} coarse install-skills --all --force" in handoff_route
-    assert "nohup uvx --from ${pinnedFrom} coarse-review --handoff ${handoffUrl}" in handoff_route
+    assert "const quotedFrom = `'${pinnedFrom}'`;" in handoff_route
+    assert "uvx --from ${quotedFrom} coarse install-skills --all --force" in handoff_route
+    assert "nohup uvx --from ${quotedFrom} coarse-review --handoff ${handoffUrl}" in handoff_route
+    assert "coarse-ink[mcp]==1.2.2" in handoff_lib
+    assert "coarse-ink[mcp]==1.2.2" in handoff_route
+    assert "@feat/mcp-server" not in handoff_lib
+    assert "@feat/mcp-server" not in handoff_route

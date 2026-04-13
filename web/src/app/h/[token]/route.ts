@@ -163,9 +163,10 @@ function renderLandingPage(args: {
   const safe = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-  const pinnedFrom = `'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'`;
-  const setupCmd = `uvx --from ${pinnedFrom} coarse install-skills --all --force`;
-  const runCmd = `nohup uvx --from ${pinnedFrom} coarse-review --handoff ${handoffUrl} > /tmp/coarse-review.log 2>&1 < /dev/null &\necho "Review PID: $!"`;
+  const pinnedFrom = "coarse-ink[mcp]==1.2.2";
+  const quotedFrom = `'${pinnedFrom}'`;
+  const setupCmd = `uvx --from ${quotedFrom} coarse install-skills --all --force`;
+  const runCmd = `nohup uvx --from ${quotedFrom} coarse-review --handoff ${handoffUrl} > /tmp/coarse-review.log 2>&1 < /dev/null &\necho "Review PID: $!"`;
 
   return `<!doctype html>
 <html lang="en">

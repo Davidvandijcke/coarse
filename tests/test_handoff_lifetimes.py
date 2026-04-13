@@ -34,3 +34,30 @@ def test_finalize_route_deletes_source_and_state_blob() -> None:
     assert "const storageObjects = [`${paperId}.mcp.json`];" in text
     assert "storageObjects.unshift(`${paperId}${sourceExt}`);" in text
     assert 'await supabase.storage.from("papers").remove(storageObjects);' in text
+
+
+def test_presign_and_followup_routes_require_handoff_secret() -> None:
+    presign = _read("web/src/app/api/presign/route.ts")
+    submit = _read("web/src/app/api/submit/route.ts")
+    cli_handoff = _read("web/src/app/api/cli-handoff/route.ts")
+    mcp_extract = _read("web/src/app/api/mcp-extract/route.ts")
+    mcp_handoff = _read("web/src/app/api/mcp-handoff/route.ts")
+
+    assert 'from("review_handoff_secrets")' in presign
+    assert "handoffSecret" in presign
+    assert "consumeReviewHandoffSecret" in submit
+    assert "consumeReviewHandoffSecret" in cli_handoff
+    assert "requireReviewHandoffSecret" in mcp_extract
+    assert "consumeReviewHandoffSecret" in mcp_handoff
+
+
+def test_success_paths_consume_handoff_secret() -> None:
+    submit = _read("web/src/app/api/submit/route.ts")
+    cli_handoff = _read("web/src/app/api/cli-handoff/route.ts")
+    mcp_handoff = _read("web/src/app/api/mcp-handoff/route.ts")
+    finalize = _read("web/src/app/api/mcp-finalize/route.ts")
+
+    assert "consumeReviewHandoffSecret(supabaseAdmin, id, handoffSecret)" in submit
+    assert "consumeReviewHandoffSecret(supabase, paperId, handoffSecret)" in cli_handoff
+    assert "consumeReviewHandoffSecret(supabase, paperId, handoffSecret)" in mcp_handoff
+    assert 'from("review_handoff_secrets").delete().eq("review_id", paperId);' in finalize

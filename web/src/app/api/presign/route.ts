@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { hashHandoffSecret, mintHandoffSecret } from "@/lib/handoffAuth";
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".pdf", ".txt", ".md", ".tex", ".latex",
@@ -66,6 +67,15 @@ export async function POST(request: NextRequest) {
 
   const id: string = reviewRow.id;
   const storagePath = `${id}${ext}`;
+  const handoffSecret = mintHandoffSecret();
+
+  const { error: secretError } = await supabaseAdmin
+    .from("review_handoff_secrets")
+    .upsert({ review_id: id, secret_hash: hashHandoffSecret(handoffSecret) });
+  if (secretError) {
+    await supabaseAdmin.from("reviews").delete().eq("id", id);
+    return NextResponse.json({ error: "Failed to prepare handoff secret" }, { status: 500 });
+  }
 
   // Create a signed upload URL for direct client upload.
   // Supabase hardcodes 2-hour TTL; the token is single-use (consumed on upload).
@@ -83,5 +93,6 @@ export async function POST(request: NextRequest) {
     storagePath,
     signedUrl: uploadData.signedUrl,
     token: uploadData.token,
+    handoffSecret,
   });
 }

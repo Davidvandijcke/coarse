@@ -26,7 +26,7 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
   - If `uv` exists but `uvx` does not, replace `uvx --from ...` below with
     `uv tool run --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
-  `uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' coarse install-skills --all --force`
+  `uvx --from 'coarse-ink[mcp]==1.2.2' coarse install-skills --all --force`
 - **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key is NOT passed through the web handoff for security reasons.
 
   Before running the review, check if `OPENROUTER_API_KEY` is set:
@@ -53,7 +53,7 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 Use this pattern:
 
 ```bash
-nohup uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' \
+nohup uvx --from 'coarse-ink[mcp]==1.2.2' \
   coarse-review <paper_path> --host codex [--model gpt-5.4] [--effort high] \
   > /tmp/coarse-review.log 2>&1 < /dev/null &
 echo "Review PID: $!"
@@ -88,7 +88,7 @@ These map to Codex's internal reasoning effort:
 **Handoff mode** (when the user came from the coarse web form), same background-process pattern:
 
 ```bash
-nohup uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' \
+nohup uvx --from 'coarse-ink[mcp]==1.2.2' \
   coarse-review --handoff coarse.vercel.app/h/<token> --host codex \
   > /tmp/coarse-review.log 2>&1 < /dev/null &
 echo "Review PID: $!"

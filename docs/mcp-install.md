@@ -123,7 +123,8 @@ The MCP server runs *only* these deterministic steps:
 
 | Tool | What it does |
 |---|---|
-| `upload_paper_url` / `upload_paper_bytes` / `upload_paper_path` | Mistral OCR + structure parsing, paid by your OpenRouter key |
+| `upload_paper_url` / `upload_paper_bytes` | Mistral OCR + structure parsing, paid by your OpenRouter key |
+| `upload_paper_path` | Local-only ingestion for stdio / local dev; disabled on the public HTTP deployment |
 | `get_paper_section` | Returns one section's text from stored state |
 | `get_review_prompt` | Returns the coarse prompt strings for a stage |
 | `verify_quotes` | Fuzzy-matches quotes against the paper text |

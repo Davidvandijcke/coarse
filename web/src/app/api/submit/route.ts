@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { isEmailCapacityReached } from "@/lib/emailCapacity";
+import { consumeReviewHandoffSecret } from "@/lib/routeHandoffAuth";
 
 export const maxDuration = 30;
 const MODAL_TRIGGER_TIMEOUT_MS = 10_000;
@@ -106,6 +107,7 @@ export async function POST(request: NextRequest) {
   let model = "";
   let storagePath = "";
   let authorNotes = "";
+  let handoffSecret = "";
 
   try {
     const body = await request.json();
@@ -115,6 +117,7 @@ export async function POST(request: NextRequest) {
     model = (body.model ?? "").trim();
     storagePath = (body.storage_path ?? "").trim();
     authorNotes = (body.author_notes ?? "").trim();
+    handoffSecret = (body.handoff_secret ?? "").trim();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -155,6 +158,20 @@ export async function POST(request: NextRequest) {
   // Storage path must be UUID.extension (set by presign) — reject anything else
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|txt|md|tex|latex|html|htm|docx|epub)$/i.test(storagePath)) {
     return NextResponse.json({ error: "Invalid storage path" }, { status: 400 });
+  }
+  const handoffAuth = await consumeReviewHandoffSecret(supabaseAdmin, id, handoffSecret);
+  if (!handoffAuth.ok) {
+    if (handoffAuth.status === 403) {
+      const { data: existingEmail } = await supabaseAdmin
+        .from("review_emails")
+        .select("review_id")
+        .eq("review_id", id)
+        .maybeSingle();
+      if (existingEmail?.review_id) {
+        return NextResponse.json({ id });
+      }
+    }
+    return NextResponse.json({ error: handoffAuth.error }, { status: handoffAuth.status });
   }
 
   // Verify the review record exists
