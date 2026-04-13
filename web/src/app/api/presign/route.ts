@@ -2,6 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { hashHandoffSecret, mintHandoffSecret } from "@/lib/handoffAuth";
+import { signReviewAccessToken } from "@/lib/reviewAuth";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".pdf", ".txt", ".md", ".tex", ".latex",
@@ -31,9 +33,11 @@ export async function POST(request: NextRequest) {
   if (rateLimited) return rateLimited;
 
   let filename = "";
+  let turnstileToken = "";
   try {
     const body = await request.json();
     filename = (body.filename ?? "").trim();
+    turnstileToken = (body.turnstile_token ?? "").trim();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -54,10 +58,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Turnstile guards the entry point to the review pipeline. Fails open when
+  // TURNSTILE_SECRET_KEY is unset so local dev without a secret still works;
+  // in production set the env var on Vercel to enable enforcement.
+  const turnstileResult = await verifyTurnstileToken(turnstileToken, ip);
+  if (!turnstileResult.ok) {
+    return NextResponse.json(
+      { error: "Human check failed. Please refresh the page and try again." },
+      { status: 403 },
+    );
+  }
+
   // Create review record to get UUID
   const { data: reviewRow, error: insertError } = await supabaseAdmin
     .from("reviews")
-    .insert({ paper_filename: filename, status: "queued" })
+    .insert({
+      paper_filename: filename,
+      status: "queued",
+      access_token_required: true,
+    })
     .select("id")
     .single();
 
@@ -77,6 +96,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to prepare handoff secret" }, { status: 500 });
   }
 
+  const accessToken = signReviewAccessToken(id);
+
   // Create a signed upload URL for direct client upload.
   // Supabase hardcodes 2-hour TTL; the token is single-use (consumed on upload).
   const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
@@ -94,5 +115,6 @@ export async function POST(request: NextRequest) {
     signedUrl: uploadData.signedUrl,
     token: uploadData.token,
     handoffSecret,
+    accessToken,
   });
 }

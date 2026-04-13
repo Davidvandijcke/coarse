@@ -15,6 +15,7 @@ import {
 } from "@/lib/useCommentStatus";
 import PaperPanel from "@/components/PaperPanel";
 import { preprocessLatex } from "@/lib/preprocessLatex";
+import { buildReviewUrl } from "@/lib/reviewAccess";
 
 const katexOptions = { strict: false, throwOnError: false };
 
@@ -621,6 +622,7 @@ export default function ReviewDisplay({
   parsed,
   markdown,
   reviewId,
+  accessToken,
   paperMarkdown,
   paperTitle,
   model,
@@ -631,6 +633,7 @@ export default function ReviewDisplay({
   parsed: ParsedReview;
   markdown: string;
   reviewId: string;
+  accessToken: string;
   paperMarkdown?: string | null;
   paperTitle?: string | null;
   model?: string | null;
@@ -684,7 +687,9 @@ export default function ReviewDisplay({
   }, []);
 
   function copyLink() {
-    navigator.clipboard.writeText(window.location.href);
+    navigator.clipboard.writeText(
+      buildReviewUrl(window.location.origin, "review", reviewId, accessToken),
+    );
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -702,7 +707,10 @@ export default function ReviewDisplay({
     try {
       const res = await fetch("/api/delete", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ id: reviewId }),
       });
       if (res.ok) {

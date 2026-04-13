@@ -1,0 +1,58 @@
+import { createClient } from "@supabase/supabase-js";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  extractReviewAccessToken,
+  hasValidReviewAccessToken,
+} from "@/lib/reviewAuth";
+import { isReviewId } from "@/lib/reviewAccess";
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  if (!isReviewId(id)) {
+    return NextResponse.json({ error: "Invalid review ID" }, { status: 400 });
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.json({ error: "Server not configured" }, { status: 503 });
+  }
+
+  const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
+  const { data, error } = await supabaseAdmin
+    .from("reviews")
+    .select(
+      "id, paper_filename, status, paper_title, model, domain, result_markdown, paper_markdown, cost_usd, duration_seconds, error_message, created_at, completed_at, access_token_required",
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`[review:${id}] fetch failed`, error);
+    return NextResponse.json(
+      {
+        error:
+          "Review lookup failed because the deployment and database schema are out of sync. Run deploy/migrate_review_access_security.sql.",
+      },
+      { status: 503 },
+    );
+  }
+
+  if (!data) {
+    return NextResponse.json({ error: "Review not found" }, { status: 404 });
+  }
+
+  const token = extractReviewAccessToken(request);
+  if (data.access_token_required && !hasValidReviewAccessToken(id, token)) {
+    return NextResponse.json(
+      { error: "Missing or invalid review access token" },
+      { status: 401 },
+    );
+  }
+
+  const { access_token_required: _ignored, ...review } = data;
+  return NextResponse.json(review);
+}

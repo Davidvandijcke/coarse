@@ -46,6 +46,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
         run: uv sync --extra dev
@@ -71,6 +73,12 @@ jobs:
           print("instructor", instructor.__version__)
           print("transformers", transformers.__version__)
           PY
+
+      - name: Build web app
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
 
   version-check:
     runs-on: ubuntu-latest

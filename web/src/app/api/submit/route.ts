@@ -1,9 +1,18 @@
 import { createClient, type PostgrestError } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import nodemailer from "nodemailer";
 import { checkRateLimit } from "@/lib/rateLimit";
+import {
+  extractReviewAccessToken,
+  hasValidReviewAccessToken,
+} from "@/lib/reviewAuth";
+import { buildReviewKey, buildReviewUrl } from "@/lib/reviewAccess";
 import { isEmailCapacityReached } from "@/lib/emailCapacity";
 import { consumeReviewHandoffSecret } from "@/lib/routeHandoffAuth";
+import { sendReviewEmail } from "@/lib/email";
+import {
+  getActiveReviewWindowStartIso,
+  MAX_CONCURRENT_REVIEWS,
+} from "@/lib/reviewCapacity";
 
 export const maxDuration = 30;
 const MODAL_TRIGGER_TIMEOUT_MS = 10_000;
@@ -47,16 +56,6 @@ function getModalWebhookConfig(): { url: string; secret: string } | null {
   throw new Error("MODAL_FUNCTION_URL must use https (except http://localhost in development)");
 }
 
-function getMailer() {
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-  if (!user || !pass) return null;
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass },
-  });
-}
-
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
@@ -98,8 +97,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const mailer = getMailer();
-
   // Parse JSON body (no file — file was uploaded directly to Supabase via presign)
   let id = "";
   let email = "";
@@ -124,6 +121,13 @@ export async function POST(request: NextRequest) {
 
   if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return NextResponse.json({ error: "Invalid review ID" }, { status: 400 });
+  }
+  const accessToken = extractReviewAccessToken(request);
+  if (!hasValidReviewAccessToken(id, accessToken)) {
+    return NextResponse.json(
+      { error: "Missing or invalid review access token" },
+      { status: 401 },
+    );
   }
   // Email is optional when the daily email-capacity gate is active. Re-check
   // server-side so a client can't bypass the regex by lying about capacity.
@@ -159,6 +163,16 @@ export async function POST(request: NextRequest) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|txt|md|tex|latex|html|htm|docx|epub)$/i.test(storagePath)) {
     return NextResponse.json({ error: "Invalid storage path" }, { status: 400 });
   }
+  // Bind the uploaded object name to the review id so a caller cannot point a
+  // valid review token at another review's uploaded file.
+  const storagePathReviewId = storagePath.split(".", 1)[0];
+  if (storagePathReviewId.toLowerCase() !== id.toLowerCase()) {
+    return NextResponse.json(
+      { error: "Storage path does not match review ID" },
+      { status: 400 },
+    );
+  }
+
   const handoffAuth = await consumeReviewHandoffSecret(supabaseAdmin, id, handoffSecret);
   if (!handoffAuth.ok) {
     if (handoffAuth.status === 403) {
@@ -168,7 +182,7 @@ export async function POST(request: NextRequest) {
         .eq("review_id", id)
         .maybeSingle();
       if (existingEmail?.review_id) {
-        return NextResponse.json({ id });
+        return NextResponse.json({ id, accessToken });
       }
     }
     return NextResponse.json({ error: handoffAuth.error }, { status: handoffAuth.status });
@@ -184,6 +198,32 @@ export async function POST(request: NextRequest) {
   if (fetchError || !reviewRow) {
     return NextResponse.json({ error: "Review not found — presign first" }, { status: 404 });
   }
+
+  const activeCountSince = getActiveReviewWindowStartIso();
+  const { data: activeReviewCount, error: activeCountError } = await supabaseAdmin.rpc(
+    "count_active_submitted_reviews",
+    { since: activeCountSince },
+  );
+  if (activeCountError) {
+    console.error("[submit] active review count failed", activeCountError);
+    return NextResponse.json(
+      { error: "Capacity check unavailable. Please try again in a moment." },
+      { status: 503 },
+    );
+  }
+  if (Number(activeReviewCount ?? 0) >= MAX_CONCURRENT_REVIEWS) {
+    return NextResponse.json(
+      {
+        error:
+          "We're seeing high traffic right now. Please try again in a few minutes.",
+      },
+      { status: 503 },
+    );
+  }
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://coarse.ink";
+  const statusUrl = buildReviewUrl(siteUrl, "status", id, accessToken);
+  const reviewKey = buildReviewKey(id, accessToken);
 
   // Update model on the review record
   if (model) {
@@ -223,7 +263,7 @@ export async function POST(request: NextRequest) {
     .insert({ review_id: id, email });
   if (emailError) {
     if ((emailError as PostgrestError).code === "23505") {
-      return NextResponse.json({ id });
+      return NextResponse.json({ id, accessToken });
     }
     await markFailed("Failed to save contact info");
     return NextResponse.json({ error: "Failed to save contact info" }, { status: 500 });
@@ -244,13 +284,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to stage review credentials" }, { status: 500 });
   }
 
-  // Trigger Modal worker (fire-and-forget — the worker updates Supabase directly).
-  // NOTE: user_api_key is intentionally NOT in the body. The worker resolves it
-  // from review_secrets. This keeps the key out of Modal's spawn() payload.
-  if (modalWebhookConfig) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), MODAL_TRIGGER_TIMEOUT_MS);
-    fetch(modalWebhookConfig.url, {
+  // Trigger Modal worker and fail closed if dispatch is unavailable. Returning
+  // success before the worker accepts the job leaves reviews stuck in queued.
+  // NOTE: user_api_key is intentionally NOT in the body — the worker resolves
+  // it from review_secrets, keeping the key out of the webhook payload.
+  if (!modalWebhookConfig) {
+    await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
+    await markFailed("Review worker is not configured");
+    return NextResponse.json(
+      { error: "Review worker is not configured. Please try again later." },
+      { status: 503 },
+    );
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), MODAL_TRIGGER_TIMEOUT_MS);
+  try {
+    const workerResp = await fetch(modalWebhookConfig.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -264,69 +314,56 @@ export async function POST(request: NextRequest) {
         model: model || undefined,
         author_notes: authorNotes || undefined,
       }),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          // Modal never consumed the key — drop it from review_secrets so the
-          // orphaned row doesn't sit for up to 3h waiting for the TTL cron.
-          try {
-            await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
-            await supabaseAdmin
-              .from("reviews")
-              .update({
-                status: "failed",
-                error_message:
-                  "We are seeing high traffic right now. Please try again later or use the command line version.",
-              })
-              .eq("id", id);
-          } catch (cleanupErr) {
-            // Best-effort cleanup — log so stuck rows surface in vercel logs.
-            console.error(`[${id}] submit cleanup after !res.ok failed`, cleanupErr);
-          }
-        }
-      })
-      .catch(async (fetchErr) => {
-        if (fetchErr instanceof Error && fetchErr.name === "AbortError") {
-          console.warn(`[${id}] Modal webhook timed out after ${MODAL_TRIGGER_TIMEOUT_MS}ms; delivery status unknown`);
-          return;
-        }
-        // Modal fetch itself rejected — same cleanup as the !res.ok branch.
-        try {
-          await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
-          await supabaseAdmin
-            .from("reviews")
-            .update({ status: "failed", error_message: "Failed to start review worker" })
-            .eq("id", id);
-        } catch (cleanupErr) {
-          console.error(`[${id}] submit cleanup after fetch reject failed`, {
-            fetchErr,
-            cleanupErr,
-          });
-        }
-      })
-      .finally(() => {
-        clearTimeout(timeoutId);
-      });
+    });
+
+    if (!workerResp.ok) {
+      await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
+      await markFailed(
+        "We are seeing high traffic right now. Please try again later or use the command line version.",
+      );
+      return NextResponse.json(
+        {
+          error:
+            "We are seeing high traffic right now. Please try again later or use the command line version.",
+        },
+        { status: 503 },
+      );
+    }
+  } catch (err) {
+    await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
+    const isAbort = err instanceof Error && err.name === "AbortError";
+    const message = isAbort
+      ? "Review worker did not respond in time"
+      : "Failed to start review worker";
+    await markFailed(message);
+    console.error(`[${id}] worker dispatch failed`, err);
+    return NextResponse.json({ error: message }, { status: 503 });
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   // Send confirmation email (only when a real address was provided — the
-  // email-capacity gate lets users submit without one).
+  // email-capacity gate lets users submit without one). sendReviewEmail is
+  // best-effort by contract and never throws; no try/catch needed here. The
+  // Gmail outage that killed production last week was caused by an uncaught
+  // `await mailer.sendMail(...)` in this exact spot, so if a future refactor
+  // ever makes sendReviewEmail throw, that's a regression that needs to be
+  // fixed in the wrapper, not papered over at the call site.
   const paperFilename = reviewRow.paper_filename ?? "your paper";
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://coarse.vercel.app";
-  if (mailer && email) {
-    await mailer.sendMail({
-      from: `coarse <${process.env.GMAIL_USER}>`,
+  if (email) {
+    await sendReviewEmail({
       to: email,
-      subject: `Your paper "${escapeHtml(paperFilename)}" is being reviewed`,
+      subject: `Your paper "${paperFilename}" is being reviewed`,
+      reviewId: id,
       html: [
         `<p>Hi,</p>`,
         `<p>Your paper <strong>${escapeHtml(paperFilename)}</strong> is being reviewed${model ? ` using <strong>${escapeHtml(model)}</strong>` : ""}. We'll email you when it's done (usually 30–60 minutes).</p>`,
-        `<p>Track progress: <a href="${siteUrl}/status/${id}">${siteUrl}/status/${id}</a></p>`,
-        `<p><strong>Save your review key:</strong> <code>${id}</code></p>`,
+        `<p>Track progress: <a href="${statusUrl}">${statusUrl}</a></p>`,
+        `<p><strong>Save your review key:</strong> <code>${reviewKey}</code></p>`,
         `<p>— coarse</p>`,
       ].join(""),
     });
   }
 
-  return NextResponse.json({ id });
+  return NextResponse.json({ id, accessToken });
 }

@@ -7,17 +7,17 @@ The web app runs on four free services:
 | **Vercel** | Frontend + `/api/submit` | 100 GB bandwidth, 10s function timeout |
 | **Supabase** | PostgreSQL + file storage | 500 MB DB, 1 GB storage, 50K MAU |
 | **Modal** | Serverless Python worker | $30/month compute credits |
-| **Gmail** | Email notifications | 500 emails/day (app password) |
+| **Resend** | Transactional email | 3k emails/month (≈1500 reviews) |
 
-Users provide their own OpenRouter API key, which covers **everything**: review agents, literature search, and Mistral OCR for PDF extraction (all routed through OpenRouter's file-parser plugin). The operator pays only for Modal compute (~$0.08–0.10 per review) and Gmail SMTP.
+Users provide their own OpenRouter API key, which covers **everything**: review agents, literature search, and Mistral OCR for PDF extraction (all routed through OpenRouter's file-parser plugin). The operator pays only for Modal compute (~$0.08–0.10 per review) and Resend email.
 
 ---
 
 ## Prerequisites
 
 - GitHub repo (public, for free GitHub Actions)
-- Accounts on: [Supabase](https://supabase.com), [Modal](https://modal.com), [Vercel](https://vercel.com)
-- A Gmail account with an App Password for notification emails
+- Accounts on: [Supabase](https://supabase.com), [Modal](https://modal.com), [Vercel](https://vercel.com), [Resend](https://resend.com)
+- A verified sending domain in Resend (e.g. `coarse.ink`) with SPF + DKIM published
 - A shared secret for the Modal webhook (`python -c "import secrets; print(secrets.token_urlsafe(32))"`)
 
 No LLM provider API keys are needed on the deployment side — users supply their own.
@@ -54,7 +54,7 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
    |-------------|----------------------|
    | `coarse-supabase` | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` |
    | `coarse-webhook` | `MODAL_WEBHOOK_SECRET` (generate: `python -c "import secrets; print(secrets.token_urlsafe(32))"`) |
-   | `coarse-gmail` | `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `SITE_URL` (e.g. `https://coarse.vercel.app`) |
+   | `coarse-resend` | `RESEND_API_KEY` (sending-access key scoped to `coarse.ink` — mint at [resend.com/api-keys](https://resend.com/api-keys)), `SITE_URL` (e.g. `https://coarse.ink`) |
 
    **No LLM provider secrets are mounted.** The user's OpenRouter key arrives with each review request and is set into the container's env for the duration of the run, then unset. See `modal_worker.py` for the pattern.
 
@@ -118,11 +118,10 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
    | `SUPABASE_SERVICE_KEY` | `eyJ...` | From step 1 (server-side only) |
    | `MODAL_FUNCTION_URL` | `https://...modal.run` | From step 2 |
    | `MODAL_WEBHOOK_SECRET` | (same value as Modal secret) | Shared secret |
-   | `GMAIL_USER` | `your@gmail.com` | Gmail address for sending |
-   | `GMAIL_APP_PASSWORD` | `xxxx xxxx xxxx xxxx` | Gmail app password |
-   | `NEXT_PUBLIC_SITE_URL` | `https://coarse.vercel.app` | Your public URL |
+   | `RESEND_API_KEY` | `re_...` | Resend sending-access key (see step 5) |
+   | `NEXT_PUBLIC_SITE_URL` | `https://coarse.ink` | Your public URL |
 
-3. Deploy. The site will be live at `https://coarse.vercel.app` (or a custom domain if configured).
+3. Deploy. The site will be live at `https://coarse.ink` (or your Vercel preview URL during development).
 
 ---
 
@@ -141,14 +140,19 @@ The workflow is already at `.github/workflows/keepalive.yml`. You just need to a
 
 ## 5. Email (Optional)
 
-Email notifications use Gmail with an app password. To set up:
+Email notifications go through Resend. coarse sends both the "review received" confirmation and the "review ready" completion mail from `reviews@coarse.ink`. To set up:
 
-1. Use or create a Gmail account for sending
-2. Enable 2-Factor Authentication on the account
-3. Go to [Google App Passwords](https://myaccount.google.com/apppasswords) and generate a new app password
-4. Set `GMAIL_USER` and `GMAIL_APP_PASSWORD` in both Vercel and Modal secrets
+1. Create a free Resend account at [resend.com](https://resend.com).
+2. Add and verify the sending domain (e.g. `coarse.ink`) in **Domains → Add Domain**. Resend gives you SPF + DKIM records to publish with your DNS host.
+3. Mint a **sending-access** API key at [resend.com/api-keys](https://resend.com/api-keys), scoped to that domain.
+4. Set `RESEND_API_KEY` in all three places:
+   - **Vercel**: Settings → Environment Variables → add to Production, Preview, and Development.
+   - **Modal**: `modal secret create coarse-resend RESEND_API_KEY=...` (matches `@app.function(secrets=[...])` in `deploy/modal_worker.py`).
+   - **GitHub Actions**: `gh secret set RESEND_API_KEY` (used by `.github/workflows/monitor.yml` for capacity alerts).
 
-Gmail app passwords support ~500 emails/day, which covers ~250 reviews/day. If you need more volume, swap to a transactional email service (Resend, SES, etc.).
+**Key rotation**: all three must rotate together — revoke the old key in the Resend dashboard only after the new one has replaced every environment. Fastest escape hatch if Resend ever breaks: flip `EMAIL_DELIVERY_DISABLED` to `true` in `web/src/lib/emailCapacity.ts` and redeploy — the web UI accepts empty-email submissions and the banner points users at their review key.
+
+Resend Free is 3k emails/month (≈1500 reviews); Pro is 50k/month for $20. See `deploy/CAPACITY.md` for the math.
 
 ---
 
@@ -162,7 +166,7 @@ Vercel: POST /api/submit
   ├── INSERT into Supabase reviews table → gets UUID
   ├── Upload PDF to Supabase Storage as {uuid}.pdf
   ├── POST to Modal webhook with {uuid, pdf_path, api_key, email}
-  ├── Send confirmation email (Gmail)
+  ├── Send confirmation email (Resend)
   └── Return { id: uuid } → redirect to /status/{uuid}
   │
   ▼
@@ -171,7 +175,7 @@ Modal worker (async, up to 10 min)
   ├── Run coarse.review_paper() with user's OpenRouter key
   ├── UPDATE reviews SET status='done', result_markdown=...
   ├── Delete PDF from Supabase Storage
-  └── Send completion email (Gmail)
+  └── Send completion email (Resend)
   │
   ▼
 User views /review/{uuid}
@@ -241,6 +245,6 @@ The frontend works locally without Supabase/Modal — form submission will fail 
 
 **Review stuck on "queued"**: Modal worker crashed or timed out. Check Modal logs at [modal.com/apps](https://modal.com/apps).
 
-**No emails received**: Check that `GMAIL_USER` and `GMAIL_APP_PASSWORD` are set in both Vercel and Modal. Verify the app password is valid at [Google App Passwords](https://myaccount.google.com/apppasswords). Check spam folders.
+**No emails received**: Check that `RESEND_API_KEY` is set in both Vercel and Modal (and in GitHub secrets for the monitor workflow). Verify the key is live in the [Resend dashboard](https://resend.com/api-keys). Confirm the `coarse.ink` sending domain is still verified (Resend dashboard → Domains). Open the `/api/submit` and Modal worker logs and search for `Resend send ok` / `Resend send failed` lines. Finally, check spam folders — Resend domain warm-up takes a few days.
 
 **Database paused**: Go to [supabase.com](https://supabase.com) dashboard and click "Restore". Ensure the keep-alive cron is running (check GitHub Actions).

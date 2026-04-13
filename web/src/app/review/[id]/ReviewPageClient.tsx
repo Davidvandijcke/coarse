@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { createClient } from "@/lib/supabase";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { Review } from "@/lib/types";
 import { PageMarks } from "@/components/charcoal";
 import { parseReview } from "@/lib/parseReview";
@@ -11,39 +11,62 @@ export default function ReviewPageClient({ id }: { id: string }) {
   const [review, setReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const supabase = createClient();
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token")?.trim() ?? "";
 
   useEffect(() => {
-    async function load() {
-      const { data } = await supabase
-        .from("reviews")
-        .select("*")
-        .eq("id", id)
-        .single();
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
 
-      if (!data) {
-        setNotFound(true);
-      } else {
-        setReview(data as Review);
+    async function load() {
+      const res = await fetch(`/api/review/${id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        cache: "no-store",
+      });
+
+      if (cancelled) return;
+
+      if (res.status === 401) {
+        setAccessError("This review needs the full secure review link or review key.");
+        setLoading(false);
+        return;
       }
+      if (res.status === 404) {
+        setNotFound(true);
+        setLoading(false);
+        return;
+      }
+      if (!res.ok) {
+        let message = "Failed to load the review. Please try again.";
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body.error) message = body.error;
+        } catch {}
+        setAccessError(message);
+        setLoading(false);
+        return;
+      }
+
+      const data = (await res.json()) as Review;
+      setReview(data);
       setLoading(false);
+      setNotFound(false);
+      setAccessError(null);
+
+      if (data.status !== "queued" && data.status !== "running" && interval) {
+        clearInterval(interval);
+      }
     }
 
     load();
+    interval = setInterval(load, 3000);
 
-    const channel = supabase
-      .channel(`review-${id}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "reviews", filter: `id=eq.${id}` },
-        (payload) => {
-          setReview((prev) => (prev ? { ...prev, ...payload.new } : null));
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [id]);
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [id, token]);
 
   const parsed = useMemo(
     () => (review?.result_markdown ? parseReview(review.result_markdown) : null),
@@ -126,6 +149,60 @@ export default function ReviewPageClient({ id }: { id: string }) {
           }}
         >
           Submit a new paper →
+        </a>
+      </div>
+    );
+  }
+
+  if (accessError) {
+    return (
+      <div
+        style={{
+          background: "var(--board)",
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "2rem",
+          textAlign: "center",
+        }}
+      >
+        <p
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: "1.625rem",
+            fontStyle: "italic",
+            fontWeight: 700,
+            color: "var(--chalk-bright)",
+            margin: "0 0 0.75rem",
+          }}
+        >
+          Access token required.
+        </p>
+        <p
+          style={{
+            fontFamily: "Georgia, serif",
+            fontStyle: "italic",
+            color: "var(--dust)",
+            fontSize: "1.1rem",
+            margin: "0 0 1.25rem",
+          }}
+        >
+          {accessError}
+        </p>
+        <a
+          href="/"
+          style={{
+            fontFamily: "var(--font-space-mono), monospace",
+            fontSize: "0.85rem",
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "var(--yellow-chalk)",
+            textDecoration: "none",
+          }}
+        >
+          Back home →
         </a>
       </div>
     );
@@ -229,12 +306,67 @@ export default function ReviewPageClient({ id }: { id: string }) {
         </div>
       )}
 
+      {review.status === "cancelled" && (
+        <div
+          style={{
+            maxWidth: "600px",
+            margin: "0 auto",
+            padding: "6rem 2rem",
+          }}
+        >
+          <div
+            style={{
+              borderLeft: "3px solid var(--yellow-chalk)",
+              paddingLeft: "1.25rem",
+            }}
+          >
+            <p
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontSize: "1.375rem",
+                fontStyle: "italic",
+                fontWeight: 700,
+                color: "var(--yellow-chalk)",
+                margin: "0 0 0.5rem",
+              }}
+            >
+              Review cancelled.
+            </p>
+            <p
+              style={{
+                fontFamily: "Georgia, serif",
+                color: "var(--dust)",
+                fontStyle: "italic",
+                fontSize: "1.1rem",
+                margin: "0 0 1rem",
+              }}
+            >
+              {review.error_message ?? "This review was cancelled before completion."}
+            </p>
+            <a
+              href="/"
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.85rem",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "var(--yellow-chalk)",
+                textDecoration: "none",
+              }}
+            >
+              Submit a new paper →
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* ── Done: structured display ────────────────────── */}
       {isDone && review.result_markdown && parsed && (
         <ReviewDisplay
           parsed={parsed}
           markdown={review.result_markdown}
           reviewId={review.id}
+          accessToken={token}
           paperMarkdown={review.paper_markdown}
           paperTitle={review.paper_title}
           model={review.model}

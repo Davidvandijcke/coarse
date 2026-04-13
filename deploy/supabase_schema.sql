@@ -9,7 +9,7 @@ create table reviews (
   id uuid primary key default gen_random_uuid(),   -- serves as the unique access key
   paper_filename text not null,
   status text not null default 'queued'
-    check (status in ('queued', 'running', 'done', 'failed')),
+    check (status in ('queued', 'running', 'done', 'failed', 'cancelled')),
   paper_title text,
   model text,
   domain text,
@@ -20,15 +20,17 @@ create table reviews (
   duration_seconds int,
   error_message text,
   created_at timestamptz default now(),
-  completed_at timestamptz
+  completed_at timestamptz,
+  -- Legacy reviews created before token hardening remain retrievable by bare
+  -- UUID links; new reviews set this true at creation and require the signed
+  -- review access token for web reads.
+  access_token_required boolean not null default false
 );
 
--- RLS: reads are open (UUID is unguessable, serves as access token).
--- All writes are done server-side via the service key, which bypasses RLS.
+-- RLS: deny anonymous reads and writes. Reviews are fetched through server-side
+-- API routes that validate the review-scoped access token and use the service
+-- role. The service role bypasses RLS; browser anon clients do not.
 alter table reviews enable row level security;
-
-create policy "Anyone can view reviews by id"
-  on reviews for select using (true);
 
 -- ============================================================================
 -- Review emails (PII separated from public review data)
@@ -59,6 +61,7 @@ create table review_secrets (
 alter table review_secrets enable row level security;
 
 create index idx_review_secrets_created_at on review_secrets (created_at);
+create index idx_reviews_status_created_at on reviews (status, created_at);
 
 -- ============================================================================
 -- Review handoff secrets (browser proof-of-possession for follow-up routes)
@@ -180,4 +183,20 @@ alter publication supabase_realtime add table system_status;
 create or replace function count_reviews_since(since timestamptz)
 returns bigint language sql security definer as $$
   select count(*) from reviews where created_at >= since;
+$$;
+
+-- Count reviews that were actually submitted (review_emails row exists) and
+-- are still within the active worker window. This excludes abandoned presign
+-- rows from capacity checks.
+create or replace function count_active_submitted_reviews(since timestamptz)
+returns bigint language sql security definer as $$
+  select count(*)
+  from reviews r
+  where r.created_at >= since
+    and r.status in ('queued', 'running', 'extracting', 'extracted')
+    and exists (
+      select 1
+      from review_emails e
+      where e.review_id = r.id
+    );
 $$;
