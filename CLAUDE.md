@@ -54,6 +54,7 @@ src/coarse/
 ├── garble.py                # OCR garble detection and normalization
 ├── llm.py                   # litellm wrapper, model registry, cost tracking
 ├── prompts.py               # All prompt templates
+├── review_utils.py          # Shared text/token/similarity helpers across review modules
 ├── types.py                 # Pydantic models
 ├── pipeline.py              # review_paper() orchestrator
 ├── synthesis.py             # Review → markdown string

@@ -149,7 +149,7 @@ def _find_nearest_passage(
     window_size = max(int(quote_len * window_factor), _MIN_WINDOW_SIZE)
     step = max(1, quote_len // 4)
 
-    quote_tokens = tokenize_text(quote)
+    quote_tokens = tokenize_text(quote, mode="whitespace")
 
     # Phase 1: Jaccard pre-filter — score all chunks cheaply. Stop the range
     # at len(paper_text) - window_size + 1 so every chunk is a full window;
@@ -158,7 +158,7 @@ def _find_nearest_passage(
     candidates: list[tuple[float, int]] = []
     for i in range(0, stop, step):
         chunk = paper_text[i : i + window_size]
-        score = jaccard_similarity(quote_tokens, tokenize_text(chunk))
+        score = jaccard_similarity(quote_tokens, tokenize_text(chunk, mode="whitespace"))
         candidates.append((score, i))
 
     # Take top-k by Jaccard score
