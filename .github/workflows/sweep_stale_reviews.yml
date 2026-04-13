@@ -14,6 +14,11 @@ name: Sweep stale queued/running reviews
 # The Modal review timeout is 2 hours, so anything `queued` or `running` that
 # is older than 3 hours is unambiguously stale (1 hour margin for clock skew
 # and in-flight worker tails that haven't flushed their final status write).
+# Note: `created_at` is stamped at /api/presign time, not at Modal-worker
+# start. The 1h margin covers the usual presign→submit→Modal-pickup delay
+# under current traffic (<20 concurrent reviews); if steady-state saturation
+# pushes that delay past an hour, bump the window or switch the filter to
+# key off `updated_at` so long-queued real workers aren't reaped.
 #
 # Runs every 15 minutes. The worker's own success/failure path still handles
 # the common case; this cron only catches the drop-outs.
@@ -24,6 +29,14 @@ on:
   workflow_dispatch: {}
 
 permissions: read-all
+
+# GitHub Actions doesn't serialize scheduled runs; if one run stalls past
+# 15m the next can overlap. The PATCH is filter-based and idempotent, so
+# a collision is harmless, but cancelling overlaps keeps the audit log
+# clean and saves a pointless second round-trip.
+concurrency:
+  group: sweep-stale-reviews
+  cancel-in-progress: false
 
 jobs:
   sweep:
@@ -44,10 +57,8 @@ jobs:
           URL = os.environ["SUPABASE_URL"].rstrip("/")
           KEY = os.environ["SUPABASE_SERVICE_KEY"]
 
-          def api(method, path, body=None, prefer=None):
+          def api(method, path, body=None):
               headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}"}
-              if prefer:
-                  headers["Prefer"] = prefer
               data = None
               if body is not None:
                   data = json.dumps(body).encode()
@@ -102,7 +113,6 @@ jobs:
                           "expected it to run, please try again."
                       ),
                   },
-                  prefer="return=minimal",
               )
               print(f"reviews: swept {len(stale)} row(s) to status=failed")
           except HTTPError as e:
