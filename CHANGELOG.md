@@ -28,6 +28,10 @@
 
 - **Pipeline cost heuristics now come from a shared stage manifest** — the review section cap, stage output budgets, math/cross-section heuristics, and web cost-estimator constants now live in `src/coarse/pipeline_spec.py`, with a generated JSON export consumed by the frontend. This removes the hand-maintained drift between `pipeline.py`, `cost.py`, and `web/src/lib/estimateCost.ts`.
 
+### Changed
+
+- **Architecture docs now match the runtime pipeline** — README, CONTRIBUTING, and CLAUDE now describe the single overview pass, completeness stage, cross-section/editorial flow, and legacy `crossref`/`critique` fallback that the code actually runs. The changelog entry that prematurely claimed `StageRouter`/`STAGE_MODELS` shipped was also corrected, and `scripts/doc-sync-check.sh` now blocks stale architecture phrases from creeping back in.
+
 ## v1.2.2 — 2026-04-12
 
 Patch release. Clears the false "system busy (N/20 slots in use)" banner that the landing page was showing even when Modal was idle, and bundles the unreleased `dev` work (GPT-5.4 compare-panel + author-steering fallthroughs) that had accumulated since v1.2.1.
@@ -95,7 +99,7 @@ Minor release. Headline is the new **optional author-steering notes** field on t
 
 ## v1.1.6 — 2026-04-11
 
-Security and routing release. Headline fix is the user-OpenRouter-key ferry (#50): the user's API key no longer rides through Modal's `spawn()` managed-queue payload. Also ships the per-stage model routing feature (`StageRouter` + `STAGE_MODELS` + `--stage-override`) — the three "Added" entries below were retroactively documented under v1.1.4 on `dev` but never actually landed in the tagged v1.1.4 or v1.1.5 releases; they ship for real in v1.1.6. Rounds out with a cheap-tier glm-5.1 thinking-mode fix found in end-to-end testing and a double-click race fix in the `/api/submit` route.
+Security release. Headline fix is the user-OpenRouter-key ferry (#50): the user's API key no longer rides through Modal's `spawn()` managed-queue payload. The three routing entries below were documented in error during the v1.1.4/v1.1.5 cycle and did not ship in v1.1.6; the runtime still used a single shared `LLMClient` threaded through `pipeline.py`. They are retained here as historical notes so the release log stays auditable. The release also includes a cheap-tier glm-5.1 thinking-mode fix found in end-to-end testing and a double-click race fix in the `/api/submit` route.
 
 ### Security
 
@@ -104,13 +108,13 @@ Security and routing release. Headline fix is the user-OpenRouter-key ferry (#50
 
 ### Added
 
-- **Per-stage model routing (`--stage-override`, `STAGE_MODELS`)** — the review pipeline now resolves an LLM client per stage instead of threading a single client through every agent. Stages classified as "cheap-safe" (`metadata`, `math_detection`, `contribution_extraction`, `calibration`) are pinned to a new `CHEAP_STAGE_MODEL = "z-ai/glm-5.1"` regardless of what `--model` the user passes, while reasoning-heavy stages (`overview`, `completeness`, `section`, `cross_section`, `verify`, `editorial`) use `--model` as-is. The routing map lives in `src/coarse/models.py::STAGE_MODELS`; the resolver is `src/coarse/routing.py::StageRouter`; the CLI gets a repeatable `--stage-override name=model` flag for ad-hoc per-stage overrides. Worked example: running `coarse-ink review paper.pdf --model anthropic/claude-opus-4.6` previously paid opus rates (~$15/$75 per 1M tok) on the trivial 500-token `metadata` call and the 2000-token `math_detection` call; now those route to glm-5.1 on US-HQ providers while overview/section/editorial continue to use opus. Estimated savings ≈$0.30-0.40 per review. Theory-driven classification (gh #46), not empirically validated — per-stage regressions are recoverable via `--stage-override`.
-- **US-HQ provider allowlist for cheap-tier routing (`CHEAP_STAGE_PROVIDERS`)** — the glm-5.1 cheap tier is restricted to `("DeepInfra", "Parasail", "Fireworks")` via OpenRouter's `provider.only` preference so request data stays on US servers even though the model weights are from a Chinese company. Layered on top of the existing `data_collection=deny` injection: both are active. Enforced through a new `LLMClient(provider_allowlist=...)` kwarg and `_apply_provider_prefs` helper that merge the allowlist into `extra_body.provider.only` on every call. Z.AI's own hosting (HQ=SG) and Alibaba (the only qwen endpoint, HQ=SG+CN) are explicitly excluded.
-- **Cheap-tier kimi-k2.5 fallback (`CHEAP_STAGE_FALLBACK_MODEL`)** — if the glm-5.1 call fails (provider outage, transient OpenRouter error), the `StageRouter`-built cheap client transparently retries on `moonshotai/kimi-k2.5` with the same `CHEAP_STAGE_PROVIDERS` US-HQ allowlist. Each underlying model gets its own instructor mode (JSON for glm, MD_JSON for kimi — required because kimi is in `MARKDOWN_JSON_PREFIXES`), so the fallback is client-level rather than OpenRouter's server-side `models` preference. Wired through a new `LLMClient(fallback_client=...)` kwarg that catches exceptions in `complete()` / `complete_text()` and delegates to the fallback's method with the same kwargs. Both primary and fallback clients are cached in the router so their cumulative costs both flow into `router.cost_usd`.
+- **Historical note: per-stage model routing docs were premature** — this feature set (`--stage-override`, `STAGE_MODELS`, `StageRouter`) was described in release notes before the implementation existed. It did not ship in v1.1.6; the actual runtime still used one shared `LLMClient` in `pipeline.py`. Any future implementation should land in code first, then be documented.
+- **Historical note: cheap-tier provider allowlist docs were premature** — the documented `CHEAP_STAGE_PROVIDERS` allowlist and related provider-routing helpers were not present in the released code for v1.1.6.
+- **Historical note: cheap-tier kimi fallback docs were premature** — the documented `CHEAP_STAGE_FALLBACK_MODEL` / router-level fallback path was not present in the released code for v1.1.6.
 
 ### Fixed
 
-- **Cheap-tier glm-5.1 no longer truncates on invisible thinking overhead** — end-to-end test of the per-stage routing on a 20k+ token paper surfaced a systematic `instructor.core.exceptions.IncompleteOutputException` on every glm-5.1 cheap-tier structured-output call. Root cause: glm-5.1 via OpenRouter defaults to thinking-on, and the invisible reasoning preamble consumes `max_tokens` before any JSON emits. Structured-output calls with `max_tokens <= 2048` (metadata 256, math_detection 1024, calibration 2048, contribution_extraction 2048) never reached the JSON phase. Fix applies OpenRouter's documented `{"reasoning": {"effort": "none"}}` to both the glm-5.1 primary and the kimi-k2.5 fallback via a new `LLMClient(default_extra_body=...)` kwarg that merges per-call `extra_body` with `setdefault` so caller-supplied fields still win. `StageRouter._build_client` applies `_CHEAP_STAGE_EXTRA_BODY = {"reasoning": {"effort": "none"}}` to both the cheap primary and fallback. Pre-fix every cheap-tier call silently failed over to the kimi fallback; post-fix both paths clean-exit. Three new tests in `tests/test_llm.py` and `tests/test_routing.py`.
+- **Historical note: cheap-tier glm-5.1 routing fix docs were premature** — this note referred to the same unshipped stage-routing implementation above and did not correspond to code in the v1.1.6 release artifact.
 
 ## v1.1.5 — 2026-04-11
 

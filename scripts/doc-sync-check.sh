@@ -88,6 +88,22 @@ else
     note "[WARN] base branch '$base' not found; skipping diff checks"
 fi
 
+# 5) Current architecture docs must match runtime shape
+stale_hits=$(rg -n \
+    -e '3-judge overview panel' \
+    -e 'overview panel +3-judge' \
+    -e 'crossref agent.*Deduplicate, validate quotes, consistency' \
+    -e 'critique agent.*Self-critique quality gate' \
+    -e 'StageRouter' \
+    -e 'STAGE_MODELS' \
+    CLAUDE.md README.md CONTRIBUTING.md 2>/dev/null || true)
+if [ -n "$stale_hits" ]; then
+    fail "stale architecture wording found in canonical docs:"
+    echo "$stale_hits" | sed 's/^/       /' >&2
+else
+    note "[OK] canonical docs match current runtime architecture"
+fi
+
 echo ""
 if [ "$FAIL" -eq 0 ]; then
     echo "doc-sync: OK"

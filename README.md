@@ -72,23 +72,25 @@ paper.pdf (or .txt, .md, .tex, .docx, .html, .epub)
   -> Vision LLM spot-check               Optional QA (auto-triggers on garbled text)
   -> Structure analysis                   Parse sections, detect math content, classify domain
   -> Domain calibration + lit search      Parallel: domain-specific criteria + Perplexity Sonar Pro
-  -> 3-judge overview panel               Three personas review full paper, then synthesize
+  -> Overview agent                       Single macro-level review pass
+  -> Completeness agent                   Structural-gap pass merged into overview
   -> Section agents + proof verification  Parallel: 15-25 detailed comments; math sections get adversarial proof check
-  -> Cross-reference agent                Deduplicate, validate consistency
+  -> Cross-section synthesis              Results vs discussion consistency check
+  -> Editorial filter                     Primary deduplication, contradiction, and quality pass
   -> Quote verification                   Fuzzy-match quotes against paper text (stricter for math)
-  -> Self-critique agent                  Quality gate, revise weak comments
-  -> Quote re-verification               Fix any quotes garbled during critique
+  -> Legacy crossref/critique fallback    Only used if the editorial pass fails
   -> Synthesis                            Render final paper_review.md
 ```
 
 The pipeline extracts text, classifies the paper's domain and structure, then generates
 domain-specific review criteria and searches for related literature (via
-[Perplexity Sonar Pro](https://docs.perplexity.ai/), with arXiv fallback). A 3-judge
-overview panel produces macro-level feedback from different perspectives, which is then
-synthesized into a unified assessment. Section agents run in parallel, with an adversarial
-proof verification pass for math-heavy sections. A cross-reference pass deduplicates comments
-and a self-critique agent acts as a quality gate. All quotes are programmatically verified
-against the source text, with stricter thresholds for math content.
+[Perplexity Sonar Pro](https://docs.perplexity.ai/), with arXiv fallback). A single
+overview pass produces macro-level feedback, completeness can add structural gaps, and
+section agents run in parallel with adversarial proof verification for math-heavy sections.
+A conditional cross-section pass checks whether discussion claims are supported by formal
+results, and an editorial pass is the primary deduplication and quality gate. All quotes
+are programmatically verified against the source text, with stricter thresholds for math
+content.
 
 ## Model selection
 
@@ -144,9 +146,9 @@ coarse estimates cost before running and asks for confirmation. The estimate inc
 | Short (< 20pp)  | $0.25 - $0.50 |
 | Long (30+ pp)   | $0.50 - $1    |
 
-**Actual costs can run up to ~2× the estimate** on complex papers depending on
-model reasoning depth, critique agent rewrites, and proof-verification chains
-for math-heavy sections. The 15% buffer is a first approximation, not a ceiling.
+**Actual costs can run materially above the estimate** on complex papers depending on
+model reasoning depth, editorial filtering behavior, and proof-verification chains
+for math-heavy sections. The built-in buffer is conservative, not a ceiling.
 Make sure your OpenRouter per-key spend limit has headroom above the estimate.
 
 The default spending cap is **$10 per review** (`max_cost_usd` in config). Use `--yes` to skip the

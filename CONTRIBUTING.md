@@ -44,11 +44,14 @@ src/coarse/
 ├── quality.py          # Quality eval against reference review (dev only)
 └── agents/
     ├── base.py             # ReviewAgent ABC + prompt caching support
-    ├── overview.py         # 3-judge panel overview (macro-level feedback)
+    ├── overview.py         # Single-pass overview feedback
     ├── section.py          # Per-section detailed review
-    ├── crossref.py         # Cross-reference deduplication
-    ├── critique.py         # Self-critique quality gate
+    ├── completeness.py     # Structural-gap assessment merged into overview
+    ├── editorial.py        # Primary filtering pass for detailed comments
+    ├── crossref.py         # Legacy cross-reference fallback
+    ├── critique.py         # Legacy critique fallback
     ├── verify.py           # Adversarial proof verification for math sections
+    ├── cross_section.py    # Results vs discussion synthesis
     └── literature.py       # Literature search (Perplexity Sonar Pro, arXiv fallback)
 ```
 
@@ -62,14 +65,16 @@ paper.pdf (or .txt, .md, .tex, .docx, .html, .epub)
   -> calibrate_domain \
                        |  Parallel: domain-specific criteria + literature search
   -> search_literature /  (Perplexity Sonar Pro, arXiv fallback)
-  -> overview panel       3-judge panel with different personas -> synthesized OverviewFeedback
+  -> overview.py          Single overview agent -> OverviewFeedback
+  -> completeness.py      Structural-gap pass merged into overview
   -> section agents   \
                        |  Parallel: detailed comments + adversarial proof verification
   -> proof verify      /  (math sections only)
-  -> crossref agent      Deduplicate, validate quotes, consistency
+  -> cross_section.py     Results vs discussion synthesis (conditional)
+  -> editorial.py         Primary dedup/consistency/quality filter
+  -> crossref agent       Legacy fallback if editorial fails
   -> quote_verify.py     Programmatic fuzzy-match quotes against text
-  -> critique agent      Self-critique quality gate, revise weak comments
-  -> quote_verify.py     Re-verify (critique can re-garble quotes via JSON)
+  -> critique agent      Legacy fallback if editorial fails
   -> synthesis.py        Deterministic render -> paper_review.md
 ```
 

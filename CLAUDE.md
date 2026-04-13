@@ -27,12 +27,15 @@ paper (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)
     → [structure.py]     Parse headings + LLM → PaperStructure (sections, math detection, domain)
     → [calibrate_domain] Domain-specific review criteria (parallel with literature)
     → [literature.py]    Perplexity Sonar Pro search, arXiv fallback (parallel with calibration)
-    → [overview panel]   3-judge panel → synthesized OverviewFeedback (4-6 macro issues)
+    → [overview.py]      Single overview agent → OverviewFeedback (macro issues)
+    → [completeness.py]  Structural-gap pass merged into overview
     → [section agents]   LLM → 15-25 detailed comments (1 per section, parallel)
     → [verify agent]     Adversarial proof verification (math sections only, chained)
-    → [crossref agent]   LLM → deduplicate, validate quotes, consistency
+    → [cross_section.py] Results ↔ discussion synthesis (conditional)
+    → [editorial.py]     Primary filtering pass → dedup, contradiction, quality, ordering
+    → [crossref.py]      Legacy fallback if editorial fails
+    → [critique.py]      Legacy fallback if editorial fails
     → [quote_verify.py]  Programmatic → exact/normalized/table-aware quote verification
-    → [critique agent]   LLM → self-critique quality gate, revise weak comments
     → [quote_repair.py]  LLM → batched near-miss quote-anchor repair (bounded contexts only)
     → [quote_verify.py]  Programmatic → re-verify repaired quotes before synthesis
     → [synthesis.py]     Deterministic → paper_review.md (refine.ink format)
@@ -68,7 +71,7 @@ src/coarse/
 └── agents/
     ├── __init__.py
     ├── base.py              # ReviewAgent ABC + _build_messages helper + prompt caching
-    ├── overview.py          # 3-judge panel overview (macro-level feedback, 4-6 issues)
+    ├── overview.py          # Single-pass macro-level overview feedback
     ├── section.py           # Per-section detailed review
     ├── completeness.py      # Flags structural gaps and missing content
     ├── cross_section.py     # Cross-section synthesis: discussion claims vs formal results
