@@ -11,10 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from coarse.agents.completeness import CompletenessAgent
-from coarse.agents.critique import CritiqueAgent
 from coarse.agents.cross_section import CrossSectionAgent
-from coarse.agents.crossref import CrossrefAgent
-from coarse.agents.editorial import EditorialAgent
 from coarse.agents.literature import search_literature
 from coarse.agents.overview import OverviewAgent, merge_overview
 from coarse.agents.quote_repair import QuoteRepairAgent
@@ -487,9 +484,6 @@ def review_paper(
         contribution_context=contribution_context,
         document_form=structure.document_form,
         author_notes=author_notes,
-        editorial_agent_cls=EditorialAgent,
-        crossref_agent_cls=CrossrefAgent,
-        critique_agent_cls=CritiqueAgent,
     )
 
     # Programmatic quote verification against full paper text
