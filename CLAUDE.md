@@ -46,6 +46,7 @@ src/coarse/
 ├── cli.py                   # Typer CLI, progress display (rich)
 ├── config.py                # ~/.coarse/config.toml, API key management
 ├── cost.py                  # Cost estimation + user approval gate
+├── pipeline_spec.py         # Shared stage manifest for runtime + cost estimators
 ├── extraction.py            # PDF/TXT/MD/TeX/DOCX/HTML/EPUB → PaperText
 ├── extraction_qa.py         # Post-extraction QA via vision LLM (Gemini Flash)
 ├── structure.py             # PaperText → PaperStructure (heading parse + math detection + LLM metadata)

@@ -18,9 +18,12 @@ from coarse.pipeline_spec import (
     AVG_COMMENTS_PER_SECTION,
     COST_BUFFER,
     EDITORIAL_OVERHEAD,
+    EXTRACTION_QA_IMAGE_OVERHEAD,
+    FIXED_STAGE_INPUT_TOKENS,
     LITERATURE_FLAT_COST,
     OCR_COST_PER_PAGE,
     OVERVIEW_CONTEXT_OVERHEAD,
+    OVERVIEW_INPUT_OVERHEAD,
     SECTION_PROMPT_OVERHEAD,
     STAGE_OUTPUT_TOKENS,
     TOKENS_PER_COMMENT,
@@ -139,20 +142,36 @@ def build_cost_estimate(
             stages,
             "extraction_qa",
             config.vision_model,
-            total_tokens + 5000,
+            total_tokens + EXTRACTION_QA_IMAGE_OVERHEAD,
             STAGE_OUTPUT_TOKENS["extraction_qa"],
         )
 
     # Structure analysis (metadata + math detection) — both cheap.
-    _append_model_stage(stages, "metadata", model, 500, STAGE_OUTPUT_TOKENS["metadata"])
     _append_model_stage(
-        stages, "math_detection", model, 2000, STAGE_OUTPUT_TOKENS["math_detection"]
+        stages,
+        "metadata",
+        model,
+        FIXED_STAGE_INPUT_TOKENS["metadata"],
+        STAGE_OUTPUT_TOKENS["metadata"],
+    )
+    _append_model_stage(
+        stages,
+        "math_detection",
+        model,
+        FIXED_STAGE_INPUT_TOKENS["math_detection"],
+        STAGE_OUTPUT_TOKENS["math_detection"],
     )
 
     # Parallel trio: calibration, literature search, contribution
     # extraction. All use the default model except Perplexity literature
     # search, which is flat-fee.
-    _append_model_stage(stages, "calibration", model, 1500, STAGE_OUTPUT_TOKENS["calibration"])
+    _append_model_stage(
+        stages,
+        "calibration",
+        model,
+        FIXED_STAGE_INPUT_TOKENS["calibration"],
+        STAGE_OUTPUT_TOKENS["calibration"],
+    )
 
     if has_provider_key("openrouter", config):
         stages.append(
@@ -171,14 +190,14 @@ def build_cost_estimate(
             stages,
             "literature_query_gen",
             model,
-            1500,
+            FIXED_STAGE_INPUT_TOKENS["literature_query_gen"],
             STAGE_OUTPUT_TOKENS["literature_query_gen"],
         )
         _append_model_stage(
             stages,
             "literature_ranking",
             model,
-            4000,
+            FIXED_STAGE_INPUT_TOKENS["literature_ranking"],
             STAGE_OUTPUT_TOKENS["literature_ranking"],
         )
 
@@ -186,7 +205,7 @@ def build_cost_estimate(
         stages,
         "contribution_extraction",
         model,
-        3000,
+        FIXED_STAGE_INPUT_TOKENS["contribution_extraction"],
         STAGE_OUTPUT_TOKENS["contribution_extraction"],
     )
 
@@ -194,7 +213,11 @@ def build_cost_estimate(
     # `OverviewAgent.run()` at src/coarse/agents/overview.py:80 makes
     # one `client.complete(..., max_tokens=8192)` call and returns.
     _append_model_stage(
-        stages, "overview", model, total_tokens + 3000, STAGE_OUTPUT_TOKENS["overview"]
+        stages,
+        "overview",
+        model,
+        total_tokens + OVERVIEW_INPUT_OVERHEAD,
+        STAGE_OUTPUT_TOKENS["overview"],
     )
 
     # Completeness agent. Reads the full paper via `_build_sections_text`

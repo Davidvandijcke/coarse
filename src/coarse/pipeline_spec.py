@@ -14,22 +14,34 @@ TOKENS_PER_SECTION = 1200
 MAX_REVIEWABLE_SECTIONS = 25
 MIN_SECTIONS = 4
 SECTION_PROMPT_OVERHEAD = 8000
+OVERVIEW_INPUT_OVERHEAD = 3000
 
 # PDF/file extraction
 TOKENS_PER_PAGE = 250
 OCR_COST_PER_PAGE = 0.002
 EXTRACTION_QA_FLAT_COST = 0.035
+EXTRACTION_QA_IMAGE_OVERHEAD = 5000
 
 # Conditional-stage heuristics
 MATH_SECTION_FRACTION = 0.2
 CROSS_SECTION_MIN_SECTIONS = 6
-EXPECTED_CROSS_SECTION_CALLS = 1
+MAX_CROSS_SECTION_CALLS = 3
 
 # Comment/editorial heuristics
 AVG_COMMENTS_PER_SECTION = 3
 TOKENS_PER_COMMENT = 350
 EDITORIAL_OVERHEAD = 5000
 OVERVIEW_CONTEXT_OVERHEAD = 5000
+REASONING_OVERHEAD_MULTIPLIER = 4
+
+FIXED_STAGE_INPUT_TOKENS: dict[str, int] = {
+    "metadata": 500,
+    "math_detection": 2000,
+    "calibration": 1500,
+    "literature_query_gen": 1500,
+    "literature_ranking": 4000,
+    "contribution_extraction": 3000,
+}
 
 # Flat-fee stages
 LITERATURE_FLAT_COST = 0.03
@@ -75,7 +87,7 @@ def estimate_math_section_count(section_count: int) -> int:
 
 def estimate_cross_section_count(section_count: int) -> int:
     """Estimate how many cross-section synthesis calls will fire."""
-    return EXPECTED_CROSS_SECTION_CALLS if section_count >= CROSS_SECTION_MIN_SECTIONS else 0
+    return min(MAX_CROSS_SECTION_CALLS, section_count // CROSS_SECTION_MIN_SECTIONS)
 
 
 def export_web_spec() -> dict[str, object]:
@@ -85,16 +97,20 @@ def export_web_spec() -> dict[str, object]:
         "maxReviewableSections": MAX_REVIEWABLE_SECTIONS,
         "minSections": MIN_SECTIONS,
         "sectionPromptOverhead": SECTION_PROMPT_OVERHEAD,
+        "overviewInputOverhead": OVERVIEW_INPUT_OVERHEAD,
         "tokensPerPage": TOKENS_PER_PAGE,
         "ocrCostPerPage": OCR_COST_PER_PAGE,
         "extractionQaFlatCost": EXTRACTION_QA_FLAT_COST,
+        "extractionQaImageOverhead": EXTRACTION_QA_IMAGE_OVERHEAD,
         "mathSectionFraction": MATH_SECTION_FRACTION,
         "crossSectionMinSections": CROSS_SECTION_MIN_SECTIONS,
-        "expectedCrossSectionCalls": EXPECTED_CROSS_SECTION_CALLS,
+        "maxCrossSectionCalls": MAX_CROSS_SECTION_CALLS,
         "avgCommentsPerSection": AVG_COMMENTS_PER_SECTION,
         "tokensPerComment": TOKENS_PER_COMMENT,
         "editorialOverhead": EDITORIAL_OVERHEAD,
         "overviewContextOverhead": OVERVIEW_CONTEXT_OVERHEAD,
+        "reasoningOverheadMultiplier": REASONING_OVERHEAD_MULTIPLIER,
+        "fixedStageInputTokens": FIXED_STAGE_INPUT_TOKENS,
         "literatureFlatCost": LITERATURE_FLAT_COST,
         "costBuffer": COST_BUFFER,
         "stageOutputTokens": STAGE_OUTPUT_TOKENS,

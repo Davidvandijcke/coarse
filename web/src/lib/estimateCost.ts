@@ -10,7 +10,7 @@
  * Pricing: fetched from OpenRouter /api/v1/models.
  */
 
-import pipelineSpec from "@/data/pipelineSpec.json";
+import pipelineSpec from "../data/pipelineSpec.json" with { type: "json" };
 
 const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs";
 const PDFJS_WORKER_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs";
@@ -105,18 +105,21 @@ const TOKENS_PER_SECTION = pipelineSpec.tokensPerSection;
 const MAX_REVIEWABLE_SECTIONS = pipelineSpec.maxReviewableSections;
 const MIN_SECTIONS = pipelineSpec.minSections;
 const SECTION_PROMPT_OVERHEAD = pipelineSpec.sectionPromptOverhead;
+const OVERVIEW_INPUT_OVERHEAD = pipelineSpec.overviewInputOverhead;
 
 const TOKENS_PER_PAGE = pipelineSpec.tokensPerPage;
 const OCR_COST_PER_PAGE = pipelineSpec.ocrCostPerPage;
 
 const MATH_SECTION_FRACTION = pipelineSpec.mathSectionFraction;
 const CROSS_SECTION_MIN_SECTIONS = pipelineSpec.crossSectionMinSections;
-const EXPECTED_CROSS_SECTION_CALLS = pipelineSpec.expectedCrossSectionCalls;
+const MAX_CROSS_SECTION_CALLS = pipelineSpec.maxCrossSectionCalls;
 
 const AVG_COMMENTS_PER_SECTION = pipelineSpec.avgCommentsPerSection;
 const TOKENS_PER_COMMENT = pipelineSpec.tokensPerComment;
 const EDITORIAL_OVERHEAD = pipelineSpec.editorialOverhead;
 const OVERVIEW_CONTEXT_OVERHEAD = pipelineSpec.overviewContextOverhead;
+const REASONING_OVERHEAD_MULTIPLIER = pipelineSpec.reasoningOverheadMultiplier;
+const FIXED_STAGE_INPUT_TOKENS = pipelineSpec.fixedStageInputTokens;
 
 const LITERATURE_FLAT_COST = pipelineSpec.literatureFlatCost;
 const EXTRACTION_QA_FLAT_COST = pipelineSpec.extractionQaFlatCost;
@@ -125,10 +128,6 @@ const STAGE_OUTPUT_TOKENS = pipelineSpec.stageOutputTokens;
 
 const REASONING_MODEL_PREFIXES: readonly string[] = pipelineSpec.reasoningModelPrefixes;
 const REASONING_MODEL_SUBSTRINGS: readonly string[] = pipelineSpec.reasoningModelSubstrings;
-// Empirical: reasoning models bill ~4x the visible output budget in hidden
-// reasoning tokens, charged at the output-token rate. See
-// _REASONING_OVERHEAD_MULTIPLIER in src/coarse/llm.py.
-const REASONING_OVERHEAD_MULTIPLIER = 4;
 
 function isReasoningModel(modelId: string): boolean {
   const lower = modelId.toLowerCase().replace(/^openrouter\//, "");
@@ -149,6 +148,10 @@ function estimateSectionCount(tokenEstimate: number): number {
   );
 }
 
+function estimateCrossSectionCount(sectionCount: number): number {
+  return Math.min(MAX_CROSS_SECTION_CALLS, Math.floor(sectionCount / CROSS_SECTION_MIN_SECTIONS));
+}
+
 /**
  * Estimate total review cost in USD.
  * Mirrors build_cost_estimate() from src/coarse/cost.py. Stage list and
@@ -160,6 +163,7 @@ export function estimateReviewCost(
   modelId: string = "",
   isPdf: boolean = true,
   sectionCount?: number,
+  hasOpenRouterKey: boolean = true,
 ): number {
   const { promptCostPerToken: inp, completionCostPerToken: out } = pricing;
   const totalTokens = Math.max(0, tokenEstimate);
@@ -169,8 +173,7 @@ export function estimateReviewCost(
   sections = Math.max(1, sections);
 
   const mathSectionCount = Math.max(0, Math.round(sections * MATH_SECTION_FRACTION));
-  const crossSectionCount =
-    sections >= CROSS_SECTION_MIN_SECTIONS ? EXPECTED_CROSS_SECTION_CALLS : 0;
+  const crossSectionCount = estimateCrossSectionCount(sections);
 
   const sectionTextTokens = Math.max(1, Math.floor(totalTokens / sections));
   const sectionInput = sectionTextTokens + SECTION_PROMPT_OVERHEAD;
@@ -189,7 +192,6 @@ export function estimateReviewCost(
   // Flat-fee stages (non-LLM / non-review-model).
   const estPages = Math.max(1, Math.floor(totalTokens / TOKENS_PER_PAGE));
   let total = estPages * OCR_COST_PER_PAGE; // pdf_extraction
-  total += LITERATURE_FLAT_COST; // literature_search (OpenRouter flat fee)
   if (isPdf) {
     // extraction_qa only runs on PDFs in the real pipeline (pipeline.py:226).
     total += EXTRACTION_QA_FLAT_COST;
@@ -198,11 +200,35 @@ export function estimateReviewCost(
   // Default-model stages mirror pipeline.py:review_paper() 1:1.
   // Format: [name, tokens_in, tokens_out]
   const stages: [string, number, number][] = [
-    ["metadata", 500, STAGE_OUTPUT_TOKENS.metadata],
-    ["math_detection", 2000, STAGE_OUTPUT_TOKENS.math_detection],
-    ["calibration", 1500, STAGE_OUTPUT_TOKENS.calibration],
-    ["contribution_extraction", 3000, STAGE_OUTPUT_TOKENS.contribution_extraction],
-    ["overview", totalTokens + 3000, STAGE_OUTPUT_TOKENS.overview],
+    ["metadata", FIXED_STAGE_INPUT_TOKENS.metadata, STAGE_OUTPUT_TOKENS.metadata],
+    ["math_detection", FIXED_STAGE_INPUT_TOKENS.math_detection, STAGE_OUTPUT_TOKENS.math_detection],
+    ["calibration", FIXED_STAGE_INPUT_TOKENS.calibration, STAGE_OUTPUT_TOKENS.calibration],
+  ];
+
+  if (hasOpenRouterKey) {
+    total += LITERATURE_FLAT_COST;
+  } else {
+    stages.push(
+      [
+        "literature_query_gen",
+        FIXED_STAGE_INPUT_TOKENS.literature_query_gen,
+        STAGE_OUTPUT_TOKENS.literature_query_gen,
+      ],
+      [
+        "literature_ranking",
+        FIXED_STAGE_INPUT_TOKENS.literature_ranking,
+        STAGE_OUTPUT_TOKENS.literature_ranking,
+      ],
+    );
+  }
+
+  stages.push(
+    [
+      "contribution_extraction",
+      FIXED_STAGE_INPUT_TOKENS.contribution_extraction,
+      STAGE_OUTPUT_TOKENS.contribution_extraction,
+    ],
+    ["overview", totalTokens + OVERVIEW_INPUT_OVERHEAD, STAGE_OUTPUT_TOKENS.overview],
     // Completeness reads the full paper via _build_sections_text
     // (agents/completeness.py:44), not a small 3k prompt.
     ["completeness", totalTokens + OVERVIEW_CONTEXT_OVERHEAD, STAGE_OUTPUT_TOKENS.completeness],
@@ -237,7 +263,7 @@ export function estimateReviewCost(
         ] as [string, number, number],
     ),
     ["editorial", editorialIn, STAGE_OUTPUT_TOKENS.editorial],
-  ];
+  );
 
   const reasoning = isReasoningModel(modelId);
   for (const [, tokIn, tokOut] of stages) {
