@@ -541,7 +541,7 @@ def _get_review_status(db, job_id: str) -> str | None:
     # 4 GB: large PDFs + Docling's torch/RapidOCR stack can blow past 2 GB when
     # the OpenRouter OCR path fails and we fall through to offline extraction.
     memory=4096,
-    max_containers=20,
+    max_containers=40,
     # Explicit retries=0: _resolve_user_api_key consumes the review_secrets row
     # on first read, so a retry would find an empty row, fall back to an empty
     # req.user_api_key, and 401 on the first LLM call. If retries are ever
