@@ -172,6 +172,10 @@ export default function Home() {
   const [costLoading, setCostLoading] = useState(false);
   const tokenCacheRef = useRef<{ name: string; size: number; tokens: number } | null>(null);
   const oauthConsumedRef = useRef(false);
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const turnstileTokenRef = useRef<string>("");
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetIdRef = useRef<string | undefined>(undefined);
   const [systemStatus, setSystemStatus] = useState<{
     accepting: boolean; banner: string | null; activeReviews: number; capacity: number;
     emailCapacityReached?: boolean;
@@ -180,6 +184,92 @@ export default function Home() {
   // Fetch system capacity status on mount
   useEffect(() => {
     fetch("/api/status").then(r => r.json()).then(setSystemStatus).catch(() => {});
+  }, []);
+
+  // Render the Cloudflare Turnstile widget once its script has loaded. The
+  // <Script strategy="afterInteractive"> tag in layout.tsx pulls the API
+  // asynchronously, so window.turnstile may not exist yet on first effect
+  // run — retry with a small backoff until it shows up or the component
+  // unmounts. No-op entirely when NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset.
+  useEffect(() => {
+    if (!turnstileSiteKey) return;
+    const container = turnstileContainerRef.current;
+    if (!container) return;
+
+    type TurnstileApi = {
+      render: (
+        el: HTMLElement,
+        opts: {
+          sitekey: string;
+          callback: (token: string) => void;
+          "error-callback"?: () => void;
+          "expired-callback"?: () => void;
+          theme?: "light" | "dark" | "auto";
+        },
+      ) => string;
+      reset: (widgetId?: string) => void;
+      remove: (widgetId?: string) => void;
+    };
+    const getTurnstile = (): TurnstileApi | undefined =>
+      (window as unknown as { turnstile?: TurnstileApi }).turnstile;
+
+    let cancelled = false;
+    let retryTimer: number | undefined;
+
+    const tryRender = () => {
+      if (cancelled) return;
+      const api = getTurnstile();
+      if (!api) {
+        retryTimer = window.setTimeout(tryRender, 150);
+        return;
+      }
+      if (turnstileWidgetIdRef.current !== undefined) return;
+      turnstileWidgetIdRef.current = api.render(container, {
+        sitekey: turnstileSiteKey,
+        callback: (token: string) => {
+          turnstileTokenRef.current = token;
+        },
+        "error-callback": () => {
+          turnstileTokenRef.current = "";
+        },
+        "expired-callback": () => {
+          turnstileTokenRef.current = "";
+        },
+        theme: "dark",
+      });
+    };
+    tryRender();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      const api = getTurnstile();
+      const widgetId = turnstileWidgetIdRef.current;
+      if (api && widgetId !== undefined) {
+        try {
+          api.remove(widgetId);
+        } catch {
+          /* best-effort; happens if the script was torn down first */
+        }
+      }
+      turnstileWidgetIdRef.current = undefined;
+      turnstileTokenRef.current = "";
+    };
+  }, [turnstileSiteKey]);
+
+  // Reset the Turnstile widget so the next presign call gets a fresh,
+  // single-use token. Called after every presign attempt (success or
+  // failure). No-op when Turnstile is disabled.
+  const resetTurnstile = useCallback(() => {
+    turnstileTokenRef.current = "";
+    const api = (window as unknown as { turnstile?: { reset: (w?: string) => void } }).turnstile;
+    if (api) {
+      try {
+        api.reset(turnstileWidgetIdRef.current);
+      } catch {
+        /* best-effort */
+      }
+    }
   }, []);
 
   // Hydrate OpenRouter key from localStorage and handle OAuth callback (?code=...)
@@ -292,11 +382,16 @@ export default function Home() {
     setError(null);
     try {
       // Step 1: Get a presigned upload URL (small JSON request — no file)
+      const turnstileToken = turnstileTokenRef.current;
+      if (turnstileSiteKey && !turnstileToken) {
+        throw new Error("Please complete the human check before submitting.");
+      }
       const presignResp = await fetch("/api/presign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name }),
+        body: JSON.stringify({ filename: file.name, turnstile_token: turnstileToken }),
       });
+      resetTurnstile();
       if (!presignResp.ok) {
         const data = await presignResp.json();
         throw new Error(data.error || "Failed to prepare upload");
@@ -801,6 +896,13 @@ export default function Home() {
                     ? `Estimated API cost: $${costEstimate < 0.01 ? costEstimate.toFixed(4) : costEstimate.toFixed(2)}`
                     : "Cost estimate unavailable for this model"}
               </p>
+            )}
+
+            {turnstileSiteKey && (
+              <div
+                ref={turnstileContainerRef}
+                style={{ minHeight: "65px" }}
+              />
             )}
 
             {error && (
