@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
   // table never grows without bound. Runs <1% of calls to keep the
   // handoff route fast; a cron job is an acceptable alternative.
   if (Math.random() < 0.01) {
-    void supabase.rpc("cleanup_mcp_handoff_tokens").then(() => {}).catch(() => {});
+    void Promise.resolve(supabase.rpc("cleanup_mcp_handoff_tokens")).catch(() => {});
   }
 
   // Derive the absolute callback URL the MCP server will POST the rendered

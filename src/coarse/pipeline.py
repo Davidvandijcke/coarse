@@ -17,6 +17,7 @@ from coarse.agents.crossref import CrossrefAgent
 from coarse.agents.editorial import EditorialAgent
 from coarse.agents.literature import search_literature
 from coarse.agents.overview import OverviewAgent, merge_overview
+from coarse.agents.quote_repair import QuoteRepairAgent
 from coarse.agents.section import SectionAgent
 from coarse.agents.verify import ProofVerifyAgent
 from coarse.config import CoarseConfig, load_config
@@ -30,7 +31,7 @@ from coarse.prompts import (
     calibration_user,
     contribution_extraction_user,
 )
-from coarse.quote_verify import verify_quotes
+from coarse.quote_verify import QuoteVerificationDrop, verify_quotes, verify_quotes_detailed
 from coarse.routing import StageRouter
 from coarse.structure import analyze_structure
 from coarse.synthesis import render_review
@@ -79,6 +80,103 @@ def _verify_with_fallback(
     verified = verify_quotes(comments, paper_markdown, drop_unverified=True)
     if comments and not verified:
         logger.warning("Quote verification dropped ALL comments — skipping verification")
+        return comments
+    return verified
+
+
+_QUOTE_REPAIR_RATIO_FLOOR = 0.65
+_QUOTE_REPAIR_MATH_RATIO_FLOOR = 0.75
+
+
+def _should_attempt_quote_repair(drop: QuoteVerificationDrop) -> bool:
+    """Return True iff a dropped comment is a plausible quote-repair candidate."""
+    floor = _QUOTE_REPAIR_MATH_RATIO_FLOOR if drop.math_heavy else _QUOTE_REPAIR_RATIO_FLOOR
+    return drop.ratio >= floor and bool(drop.candidate_passages)
+
+
+def _repair_quotes_with_agent(
+    dropped: list[QuoteVerificationDrop],
+    paper_markdown: str,
+    repair_agent: QuoteRepairAgent,
+) -> list[DetailedComment]:
+    """Ask the LLM to re-anchor plausible dropped comments, then re-verify."""
+    candidates = [drop for drop in dropped if _should_attempt_quote_repair(drop)]
+    if not candidates:
+        return []
+
+    payload = [
+        {
+            "number": drop.comment.number,
+            "title": drop.comment.title,
+            "feedback": drop.comment.feedback,
+            "original_quote": drop.comment.quote,
+            "candidate_passages": drop.candidate_passages,
+            "ratio": drop.ratio,
+            "threshold": drop.threshold,
+        }
+        for drop in candidates
+    ]
+
+    try:
+        repaired_map = repair_agent.run(payload)
+    except Exception:
+        logger.warning("Quote repair agent failed, skipping salvage", exc_info=True)
+        return []
+
+    repaired_comments: list[DetailedComment] = []
+    for drop in candidates:
+        repaired_quote = repaired_map.get(drop.comment.number, "").strip()
+        if not repaired_quote or repaired_quote == drop.comment.quote:
+            continue
+        repaired_comments.append(drop.comment.model_copy(update={"quote": repaired_quote}))
+
+    if not repaired_comments:
+        return []
+
+    repaired_verified = verify_quotes(repaired_comments, paper_markdown, drop_unverified=True)
+    if repaired_verified:
+        logger.info("Quote repair salvaged %d comments", len(repaired_verified))
+    return repaired_verified
+
+
+def _verify_with_repair_fallback(
+    comments: list[DetailedComment],
+    paper_markdown: str,
+    repair_agent: QuoteRepairAgent | None = None,
+) -> list[DetailedComment]:
+    """Run deterministic quote verification, then bounded batched repair."""
+    verification = verify_quotes_detailed(comments, paper_markdown, drop_unverified=True)
+    verified_map = {comment.number: comment for comment in verification.verified_comments}
+
+    if repair_agent and verification.dropped_comments:
+        repaired = _repair_quotes_with_agent(
+            verification.dropped_comments,
+            paper_markdown,
+            repair_agent,
+        )
+        for comment in repaired:
+            verified_map[comment.number] = comment
+
+    ordered = [verified_map[c.number] for c in comments if c.number in verified_map]
+    if comments and not ordered:
+        logger.warning("Quote verification dropped ALL comments — skipping verification")
+        return comments
+    return ordered
+
+
+def _verify_section_with_fallback(
+    comments: list["DetailedComment"],
+    section: SectionInfo,
+) -> list["DetailedComment"]:
+    """Verify quotes against the local section text before global verification."""
+    verified = verify_quotes(comments, section.text, drop_unverified=True)
+    if comments and not verified:
+        logger.warning(
+            "Section-local quote verification dropped ALL comments for section %s (%s) "
+            "— keeping originals",
+            section.number,
+            section.title,
+        )
         return comments
     return verified
 
@@ -143,7 +241,7 @@ def _review_section(
             abstract=abstract,
             document_form=document_form,
         )
-    return comments
+    return _verify_section_with_fallback(comments, section)
 
 
 def extract_and_structure(
@@ -307,11 +405,6 @@ def review_paper(
         config = load_config()
 
     resolved_model = model or config.default_model
-
-    # The router resolves per-stage LLM clients. STAGE_MODELS holds the
-    # default cheap-tier routing (see models.py); stage_overrides from
-    # the caller take precedence. Stages not listed in either fall back
-    # to resolved_model (the user's --model choice or config default).
     router = StageRouter(
         base_model=resolved_model,
         overrides={**STAGE_MODELS, **(stage_overrides or {})},
@@ -409,6 +502,7 @@ def review_paper(
     overview_agent = OverviewAgent(router.client_for("overview"))
     section_agent = SectionAgent(router.client_for("section"))
     editorial_agent = EditorialAgent(router.client_for("editorial"))
+    quote_repair_agent = QuoteRepairAgent(router.client_for("editorial"))
 
     reviewable_sections = [
         s
@@ -550,7 +644,11 @@ def review_paper(
             logger.warning("Critique fallback also failed", exc_info=True)
 
     # Programmatic quote verification against full paper text
-    final_comments = _verify_with_fallback(filtered_comments, paper_text.full_markdown)
+    final_comments = _verify_with_repair_fallback(
+        filtered_comments,
+        paper_text.full_markdown,
+        repair_agent=quote_repair_agent,
+    )
 
     # Ensure sequential numbering 1..N
     final_comments = _renumber_comments(final_comments)

@@ -10,10 +10,10 @@
 //      handoff URL of the form ``coarse.vercel.app/h/<token>``.
 //   4. A modal renders the two commands the user pastes into their
 //      terminal:
-//        - one-time setup: `pipx install coarse-ink[mcp] && coarse
-//          setup && coarse install-skills`
-//        - the review: `coarse-review --handoff <handoff-url> --host
-//          claude|codex|gemini [--model ...] [--effort ...]`
+//        - one-time skill refresh: `uvx --from ... coarse install-skills`
+//        - the review: `uvx --from ... coarse-review --handoff
+//          <handoff-url> --host claude|codex|gemini [--model ...]
+//          [--effort ...]`
 //   5. The user's local `coarse-review` command:
 //        a. Fetches the bundle from /h/<token> as JSON
 //        b. Downloads the raw PDF from the signed URL inside the bundle
@@ -65,6 +65,9 @@ export const HOST_DEFAULT_MODELS: Record<ChatHost, string[]> = {
 export const EFFORT_LEVELS = ["low", "medium", "high", "max"] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
+const MCP_UVX_FROM =
+  "'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'";
+
 // Short install-guide URLs for users who don't have the chosen CLI yet.
 export const HOST_INSTALL_URL: Record<ChatHost, string> = {
   "claude-code": "https://claude.ai/download",
@@ -110,11 +113,11 @@ export function buildAgentPrompt(args: {
   const { setupCmd, runCmd } = args;
   return (
     `Please review an academic paper for me using the coarse-review skill.\n\n` +
-    `STEP 1 — (Re)install coarse-ink to make sure it's up to date. ` +
-    `Run this command every time, even if coarse-ink seems to already ` +
-    `be installed — the --reinstall flag ensures you pull the latest ` +
-    `commit from the feat/mcp-server branch (which contains critical ` +
-    `fixes that may not be in your cached install):\n\n` +
+    `STEP 1 — Refresh the coarse-review skill files. ` +
+    `Run this command to copy the latest skill instructions from the ` +
+    `feat/mcp-server branch into your Claude Code / Codex / Gemini CLI ` +
+    `skill folder. This uses uvx, so it does not permanently install ` +
+    `coarse-ink into your global environment:\n\n` +
     `${setupCmd}\n\n` +
     `STEP 2 — Check for an OpenRouter API key. ` +
     `Run \`echo $OPENROUTER_API_KEY\` and \`grep OPENROUTER_API_KEY .env 2>/dev/null\`. ` +
@@ -136,7 +139,7 @@ export function buildAgentPrompt(args: {
     `agent tool timeouts (5 minutes default) — you MUST run it as a ` +
     `background process, NOT a foreground command. Use this exact ` +
     `pattern:\n\n` +
-    `  ${runCmd} > /tmp/coarse-review.log 2>&1 &\n` +
+    `  nohup ${runCmd} > /tmp/coarse-review.log 2>&1 < /dev/null &\n` +
     `  echo "Review PID: $!"\n\n` +
     `Then poll the log file every 60-90 seconds with ` +
     `\`tail -20 /tmp/coarse-review.log\` to check progress. Do NOT ` +
@@ -224,9 +227,9 @@ export function buildCliCommands(args: {
 }): { setupCmd: string; runCmd: string } {
   const { handoffUrl, host, model, effort } = args;
   const cliName = HOST_CLI_NAME[host];
-  const setupCmd = "uv pip install --reinstall 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' && coarse install-skills --all --force";
+  const setupCmd = `uvx --from ${MCP_UVX_FROM} coarse install-skills --all --force`;
   const runCmd =
-    `coarse-review --handoff ${handoffUrl}` +
+    `uvx --from ${MCP_UVX_FROM} coarse-review --handoff ${handoffUrl}` +
     ` --host ${cliName}` +
     ` --model ${model}` +
     ` --effort ${effort}`;

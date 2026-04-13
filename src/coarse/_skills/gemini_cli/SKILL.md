@@ -17,7 +17,8 @@ Runs the **full coarse review pipeline** on a paper using the local `gemini -p` 
 
 ## Prerequisites
 
-- `coarse-ink` installed: `uv pip install --reinstall 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'` (or `uv pip install 'coarse-ink[mcp]'` once released)
+- Refresh the bundled `coarse-review` skill with an ephemeral install:
+  `uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' coarse install-skills --all --force`
 - **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key is NOT passed through the web handoff for security reasons.
 
   Before running the review, check if `OPENROUTER_API_KEY` is set:
@@ -44,7 +45,9 @@ Runs the **full coarse review pipeline** on a paper using the local `gemini -p` 
 Use this exact pattern:
 
 ```bash
-coarse-review <paper_path> --host gemini [--model gemini-3.1-pro-preview] [--effort high] > /tmp/coarse-review.log 2>&1 &
+nohup uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' \
+  coarse-review <paper_path> --host gemini [--model gemini-3.1-pro-preview] [--effort high] \
+  > /tmp/coarse-review.log 2>&1 < /dev/null &
 echo "Review PID: $!"
 ```
 
@@ -62,7 +65,9 @@ Available effort levels: `low`, `medium`, `high` (default), `max`.
 **Handoff mode** (when the user came from the coarse web form), same background-process pattern:
 
 ```bash
-coarse-review --handoff coarse.vercel.app/h/<token> --host gemini > /tmp/coarse-review.log 2>&1 &
+nohup uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' \
+  coarse-review --handoff coarse.vercel.app/h/<token> --host gemini \
+  > /tmp/coarse-review.log 2>&1 < /dev/null &
 echo "Review PID: $!"
 ```
 
@@ -70,5 +75,6 @@ echo "Review PID: $!"
 
 ## Notes
 
+- `uvx --from ... coarse-review ...` runs coarse from a temporary environment, so the agent does not mutate the user's global tool install.
 - `coarse-review` monkey-patches `coarse.llm.LLMClient` → `coarse.headless_clients.GeminiClient`, which spawns `gemini --approval-mode yolo --output-format text` and feeds the prompt via stdin.
 - Gemini session env vars are stripped so nested sessions don't conflict.

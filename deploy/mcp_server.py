@@ -732,7 +732,7 @@ def load_paper_state(
     sections_block = []
     for sec in structure.sections:
         text_len = len(sec.text.strip()) if sec.text else 0
-        if text_len < _MIN_SECTION_CHARS:
+        if text_len == 0:
             continue
         if sec.section_type == "references":
             continue
@@ -746,13 +746,15 @@ def load_paper_state(
         )
 
     paper_body = "\n---\n\n".join(sections_block)
+    sections = _section_summary(structure)
 
     return {
         "paper_id": resolved_paper_id,
         "title": row["title"],
         "domain": row["domain"],
         "taxonomy": row["taxonomy"],
-        "section_count": len(sections_block),
+        "section_count": len(sections),
+        "sections": sections,
         "review_instructions": (
             "You are a rigorous academic peer reviewer. Produce a structured "
             "review. Your response MUST be a JSON object with two fields:\n\n"
@@ -862,7 +864,11 @@ def get_review_prompt(
         return [DetailedComment.model_validate(b) for b in blobs]
 
     if stage == "overview":
-        system, user = get_prompt("overview", structure=structure)
+        system, user = get_prompt(
+            "overview",
+            structure=structure,
+            document_form=structure.document_form,
+        )
         schema = _response_schema("OverviewFeedback")
     elif stage == "section":
         if not section_id:
@@ -879,6 +885,7 @@ def get_review_prompt(
             overview=_rehydrate_overview(overview),
             title=structure.title,
             abstract=structure.abstract,
+            document_form=structure.document_form,
         )
         schema = _response_schema("SectionComments")
     elif stage in ("crossref", "critique"):
@@ -894,6 +901,7 @@ def get_review_prompt(
             comments=cm,
             title=structure.title,
             abstract=structure.abstract,
+            document_form=structure.document_form,
         )
         schema = _response_schema("CommentList")
     else:
@@ -911,7 +919,6 @@ def get_review_prompt(
 _MIN_SECTION_CHARS = 200
 
 
-@mcp.tool()
 def get_review_instructions(paper_id: str) -> dict:
     """Return a single compact prompt to produce a full paper review.
 
@@ -933,7 +940,7 @@ def get_review_instructions(paper_id: str) -> dict:
     sections_block = []
     for sec in structure.sections:
         text_len = len(sec.text.strip()) if sec.text else 0
-        if text_len < _MIN_SECTION_CHARS:
+        if text_len == 0:
             continue
         if sec.section_type == "references":
             continue
@@ -1002,7 +1009,6 @@ def get_review_instructions(paper_id: str) -> dict:
     }
 
 
-@mcp.tool()
 def get_all_section_prompts(
     paper_id: str,
     overview: dict,

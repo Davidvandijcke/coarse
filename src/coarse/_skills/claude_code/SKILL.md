@@ -20,7 +20,8 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
 
 ## Prerequisites
 
-- `coarse-ink` installed: `uv pip install --reinstall 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'` (or `uv pip install 'coarse-ink[mcp]'` once released)
+- Refresh the bundled `coarse-review` skill with an ephemeral install:
+  `uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' coarse install-skills --all --force`
 - **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key is NOT passed through the web handoff for security reasons.
 
   Before running the review, check if `OPENROUTER_API_KEY` is set:
@@ -49,7 +50,9 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
 **Launch in the background** — full review takes 10-25 minutes, which exceeds Claude Code's default 2-minute tool timeout. Always use `run_in_background: true` or redirect to a log file so it's not killed mid-run:
 
 ```bash
-coarse-review <paper_path> --host claude [--model claude-opus-4-6] [--effort high] > /tmp/coarse-review.log 2>&1 &
+nohup uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' \
+  coarse-review <paper_path> --host claude [--model claude-opus-4-6] [--effort high] \
+  > /tmp/coarse-review.log 2>&1 < /dev/null &
 echo "Review PID: $!"
 ```
 
@@ -61,7 +64,10 @@ Available effort levels: `low`, `medium`, `high` (default), `max`.
 If the user came from the coarse web form, they'll have a handoff URL instead. Run:
 
 ```bash
-coarse-review --handoff coarse.vercel.app/h/<token> --host claude [--model ...] [--effort ...]
+nohup uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' \
+  coarse-review --handoff coarse.vercel.app/h/<token> --host claude [--model ...] [--effort ...] \
+  > /tmp/coarse-review.log 2>&1 < /dev/null &
+echo "Review PID: $!"
 ```
 
 This downloads the paper, runs the pipeline, and POSTs the final review back so it shows up at `coarse.vercel.app/review/<paper_id>`.
@@ -76,6 +82,7 @@ This downloads the paper, runs the pipeline, and POSTs the final review back so 
 
 ## Notes
 
+- `uvx --from ... coarse-review ...` runs coarse from a temporary environment, so the agent does not mutate the user's global tool install.
 - The driver monkey-patches `coarse.llm.LLMClient` → `coarse.headless_clients.ClaudeCodeClient`, which spawns `claude -p` subprocesses for every pipeline LLM call.
 - Host-CLI env vars (`CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, etc.) are stripped from the subprocess environment so nested sessions don't conflict with the parent.
 - If a single `claude -p` call exceeds 30 minutes, it's killed and the pipeline continues without that section's comments.

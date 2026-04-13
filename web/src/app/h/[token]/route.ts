@@ -104,7 +104,7 @@ export async function GET(
   }
   const storagePath = `${tokenRow.paper_id}${ext}`;
 
-  // Step 3: mint a fresh signed download URL for the raw PDF. 15-min TTL.
+// Step 3: mint a fresh signed download URL for the original source file. 15-min TTL.
   const { data: signed, error: signedErr } = await supabase.storage
     .from("papers")
     .createSignedUrl(storagePath, PDF_SIGNED_URL_TTL_SECONDS);
@@ -161,8 +161,9 @@ function renderLandingPage(args: {
   const safe = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-  const setupCmd = `uv pip install --reinstall 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' && coarse install-skills --all --force`;
-  const runCmd = `coarse-review --handoff ${handoffUrl}`;
+  const pinnedFrom = `'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server'`;
+  const setupCmd = `uvx --from ${pinnedFrom} coarse install-skills --all --force`;
+  const runCmd = `nohup uvx --from ${pinnedFrom} coarse-review --handoff ${handoffUrl} > /tmp/coarse-review.log 2>&1 < /dev/null &\necho "Review PID: $!"`;
 
   return `<!doctype html>
 <html lang="en">
@@ -204,14 +205,14 @@ function renderLandingPage(args: {
   <div class="step">
     <h2>1. One-time setup</h2>
     <pre class="cmd" id="setup"><button class="copy" onclick="copy('setup')">copy</button>${safe(setupCmd)}</pre>
-    <p class="note">Installs coarse-ink, prompts for your OpenRouter key (for local OCR extraction — ~$0.10 per paper), and drops the coarse-review skill into your Claude Code / Codex / Gemini CLI skill folders.</p>
+    <p class="note">Refreshes the bundled coarse-review skill in your Claude Code / Codex / Gemini CLI skill folders via an ephemeral <code>uvx</code> environment. No permanent install required.</p>
   </div>
 
   <div class="step">
     <h2>2. Run the review</h2>
     <pre class="cmd" id="run"><button class="copy" onclick="copy('run')">copy</button>${safe(runCmd)}</pre>
-    <p class="note">This downloads your paper, runs the full coarse pipeline locally using your chosen CLI, and posts the finished review back here. Takes 10–25 minutes. The review will appear at <a href="/" >coarse.vercel.app/review/…</a> when it's done.</p>
-    <p class="note"><strong>Options:</strong> add <code>--host claude|codex|gemini</code> (default: first CLI found on PATH), <code>--model &lt;id&gt;</code>, and <code>--effort low|medium|high|max</code>.</p>
+    <p class="note">This runs the review in the background, writes logs to <code>/tmp/coarse-review.log</code>, and posts the finished review back here. Takes 10–25 minutes. Check progress with <code>tail -20 /tmp/coarse-review.log</code>. The review will appear at <a href="/" >coarse.vercel.app/review/…</a> when it's done.</p>
+    <p class="note"><strong>Options:</strong> edit the command before running to add <code>--host claude|codex|gemini</code> (default: first CLI found on PATH), <code>--model &lt;id&gt;</code>, and <code>--effort low|medium|high|max</code>.</p>
   </div>
 
   <footer>

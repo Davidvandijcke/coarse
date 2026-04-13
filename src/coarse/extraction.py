@@ -566,7 +566,16 @@ def _extract_mistral_openrouter(path: Path) -> str:
     if not api_key:
         raise ValueError("No OPENROUTER_API_KEY")
 
-    doc = pymupdf.open(str(path))
+    try:
+        doc = pymupdf.open(str(path))
+    except Exception as exc:
+        logger.info(
+            "PyMuPDF could not open %s for chunked OCR (%s); falling back to whole-file "
+            "mistral-ocr",
+            path,
+            exc,
+        )
+        return _extract_openrouter_file_parser(path, engine="mistral-ocr")
     n_pages = len(doc)
 
     if n_pages <= _CHUNK_PAGES:

@@ -6,7 +6,7 @@ Free, open-source AI academic paper reviewer. The rough alternative to refine.in
 Users provide their own API keys and pay only the LLM provider directly (~$2-5 per review vs refine.ink's ~$50).
 
 **Package:** `coarse-ink` on PyPI; import name is still `coarse` (Python 3.12+, Pydantic, litellm, instructor). The bare `coarse` name on PyPI is held by an unrelated package — see CHANGELOG Unreleased / #17.
-**Install:** `pip install coarse-ink` / `pipx install coarse-ink` / `uvx coarse-ink paper.pdf`
+**Install:** `pip install coarse-ink` / `pipx install coarse-ink` / `uvx coarse-ink review paper.pdf`
 
 ## Python Environment
 
@@ -31,9 +31,10 @@ paper (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)
     → [section agents]   LLM → 15-25 detailed comments (1 per section, parallel)
     → [verify agent]     Adversarial proof verification (math sections only, chained)
     → [crossref agent]   LLM → deduplicate, validate quotes, consistency
-    → [quote_verify.py]  Programmatic → fuzzy-match quotes (stricter for math)
+    → [quote_verify.py]  Programmatic → exact/normalized/table-aware quote verification
     → [critique agent]   LLM → self-critique quality gate, revise weak comments
-    → [quote_verify.py]  Programmatic → re-verify quotes (critique re-garbles via JSON)
+    → [quote_repair.py]  LLM → batched near-miss quote-anchor repair (bounded contexts only)
+    → [quote_verify.py]  Programmatic → re-verify repaired quotes before synthesis
     → [synthesis.py]     Deterministic → paper_review.md (refine.ink format)
 ```
 
@@ -44,10 +45,14 @@ src/coarse/
 ├── __init__.py              # __version__, review_paper()
 ├── __main__.py              # python -m coarse
 ├── cli.py                   # Typer CLI, progress display (rich)
+├── cli_review.py            # Standalone coarse-review CLI for headless local/handoff runs
+├── claude_code_client.py    # Back-compat re-export for headless Claude client helpers
 ├── config.py                # ~/.coarse/config.toml, API key management
 ├── cost.py                  # Cost estimation + user approval gate
 ├── extraction.py            # PDF/TXT/MD/TeX/DOCX/HTML/EPUB → PaperText
 ├── extraction_qa.py         # Post-extraction QA via vision LLM (Gemini Flash)
+├── headless_clients.py      # Claude/Codex/Gemini CLI-backed LLMClient replacements
+├── headless_review.py       # Shared entrypoint for headless CLI review runs
 ├── structure.py             # PaperText → PaperStructure (heading parse + math detection + LLM metadata)
 ├── quote_verify.py          # Post-processing quote verification (stricter for math)
 ├── models.py                # Model manifest — single source of truth for all model IDs
@@ -71,6 +76,7 @@ src/coarse/
     ├── crossref.py          # Cross-reference consistency (legacy, superseded by editorial)
     ├── contradiction.py     # Flags comments contradicting the paper's contribution (legacy)
     ├── critique.py          # Self-critique quality gate (legacy, superseded by editorial)
+    ├── quote_repair.py      # Batched near-miss quote re-anchoring before deterministic re-check
     ├── verify.py            # Adversarial proof verification (math sections)
     └── literature.py        # Literature search (Perplexity Sonar Pro, arXiv fallback)
 ```

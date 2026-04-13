@@ -552,12 +552,7 @@ export default function Home() {
 
     // Copy the full prompt to clipboard (fallback for hosts that can't
     // receive prompts via URL scheme — currently Claude Code and Gemini).
-    const fullPrompt =
-      `Please review an academic paper for me using the coarse-review skill. ` +
-      `If coarse-ink is not installed yet, first run:\n\n${setupCmd}\n\n` +
-      `Then run the review:\n\n${runCmd}\n\n` +
-      `Run both commands in the terminal. The review takes 10-25 minutes. ` +
-      `When it finishes, show me the review URL and a summary.`;
+    const fullPrompt = buildAgentPrompt({ setupCmd, runCmd });
     try {
       await navigator.clipboard.writeText(fullPrompt);
     } catch (err) {
@@ -1362,8 +1357,8 @@ export default function Home() {
                             lineHeight: 1.5,
                           }}
                         >
-                          The agent will install coarse-ink, ask for your
-                          OpenRouter key if needed, and run the full review
+                          The agent will refresh the coarse-review skill, ask
+                          for your OpenRouter key if needed, and run the full review
                           locally. Takes 10–25 minutes.
                         </p>
                       </div>

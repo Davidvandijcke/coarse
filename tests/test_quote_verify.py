@@ -1,7 +1,14 @@
 """Tests for coarse.quote_verify."""
+
 from __future__ import annotations
 
-from coarse.quote_verify import _is_math_heavy, _passage_garble_score, _trim_to_best_match, verify_quotes
+from coarse.quote_verify import (
+    _is_math_heavy,
+    _passage_garble_score,
+    _trim_to_best_match,
+    verify_quotes,
+    verify_quotes_detailed,
+)
 from coarse.types import DetailedComment
 
 
@@ -46,6 +53,38 @@ def test_fuzzy_match_corrects_quote():
     # Should be corrected, not flagged as approximate
     assert "[approximate]" not in result[0].quote
     assert len(result) == 1
+
+
+def test_normalized_exact_match_recovers_whitespace_and_dash_drift():
+    """Quotes with only formatting drift should be corrected, not dropped."""
+    paper = (
+        "For large budgets, optimal interventions are simple — they involve a single "
+        "principal component."
+    )
+    quote = (
+        "For large budgets, optimal interventions are simple - they involve a single "
+        "principal component."
+    )
+    comment = _make_comment(quote)
+    result = verify_quotes([comment], paper)
+    assert len(result) == 1
+    assert result[0].quote == paper
+
+
+def test_table_match_recovers_spacing_drift():
+    """Markdown table rows should match despite alignment whitespace drift."""
+    paper = (
+        "| Code | Lattice | States |\n"
+        "| --- | --- | --- |\n"
+        "| E8 | RE8 | 16 |\n"
+        "| D8 | RE8 | 32 |\n"
+        "| D8 | RE8 | 128 |"
+    )
+    quote = "|  E8  | RE8 | 16 |\n| D8 |  RE8 | 32  |\n| D8 | RE8 | 128 |"
+    comment = _make_comment(quote)
+    result = verify_quotes([comment], paper)
+    assert len(result) == 1
+    assert result[0].quote == "| E8 | RE8 | 16 |\n| D8 | RE8 | 32 |\n| D8 | RE8 | 128 |"
 
 
 def test_heavily_garbled_quote_dropped():
@@ -105,6 +144,27 @@ def test_trim_to_best_match_expands_truncated_quote():
     assert len(result) > len(truncated_quote)
     # Should include the closing bracket that was truncated
     assert "}" in result
+
+
+def test_math_quote_with_line_wrap_survives_after_local_trim_rescore():
+    """Math-heavy quotes should be scored against the trimmed local span."""
+    paper = (
+        "Introductory context before the statement. "
+        "The second factor, $\\frac{w\\alpha_{\\ell}}{\\mu-w\\alpha_{\\ell}}$, is determined "
+        "by two quantities:\n\n"
+        "the eigenvalue corresponding to $\\bm{u}^{\\ell}(\\bm{G})$ (via "
+        "$\\alpha_{\\ell}=\\frac{1}{(1-\\beta\\lambda_{\\ell})^2}$), and the budget $C$.\n\n"
+        "Additional trailing context after the statement."
+    )
+    quote = (
+        "The second factor, $\\frac{w\\alpha_{\\ell}}{\\mu-w\\alpha_{\\ell}}$, is determined "
+        "by two quantities: the eigenvalue corresponding to $\\bm{u}^{\\ell}(\\bm{G})$ "
+        "(via $\\alpha_{\\ell}=\\frac{1}{(1-\\beta\\lambda_{\\ell})^2}$), and the budget $C$."
+    )
+    comment = _make_comment(quote)
+    result = verify_quotes([comment], paper)
+    assert len(result) == 1
+    assert "(1-\\beta\\lambda_{\\ell})^2" in result[0].quote
 
 
 # --- Passage garble scoring ---
@@ -175,3 +235,19 @@ def test_math_quote_exact_match_kept():
     result = verify_quotes([comment], MATH_PAPER)
     assert len(result) == 1
     assert r"\phi^3" in result[0].quote
+
+
+def test_verify_quotes_detailed_returns_drop_diagnostics():
+    """Detailed verification should expose candidate passages for salvage."""
+    quote = (
+        "For large budgets, optimal interventions are simple - they involve a single "
+        "principal component."
+    )
+    paper = "For large budgets, optimal interventions are simple yet nuanced in other ways."
+    comment = _make_comment(quote)
+    result = verify_quotes_detailed([comment], paper, drop_unverified=True)
+    assert len(result.verified_comments) == 0
+    assert len(result.dropped_comments) == 1
+    drop = result.dropped_comments[0]
+    assert drop.comment.title == "Test comment"
+    assert drop.candidate_passages
