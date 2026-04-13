@@ -407,6 +407,16 @@ def do_review(req_dict: dict):
     if resolved_user_key:
         os.environ["OPENROUTER_API_KEY"] = resolved_user_key
 
+    # Hosted reviews always pay with the user's OpenRouter key for the
+    # model the user explicitly selected — using the cheap-tier glm-5.1 /
+    # kimi-k2.5 router on metadata/math_detection/calibration/
+    # contribution_extraction is wrong here (the user is paying for Opus/
+    # GPT-5/etc. and expects those stages to reflect it). Flip the kill
+    # switch in src/coarse/routing.py::StageRouter so every stage uses
+    # `model` directly. CLI users who want the default cost savings leave
+    # the env var unset and get the legacy router behavior.
+    os.environ["COARSE_DISABLE_STAGE_ROUTING"] = "1"
+
     # Download file from Supabase Storage
     pdf_bytes = db.storage.from_("papers").download(pdf_storage_path)
     if not pdf_bytes:
@@ -424,8 +434,16 @@ def do_review(req_dict: dict):
         from coarse import review_paper
         from coarse.config import CoarseConfig
 
-        has_or_key = bool(resolved_user_key or original_key)
-        print(f"[{job_id}] Import OK — OPENROUTER_API_KEY={'set' if has_or_key else 'MISSING'}")
+        # Read os.environ directly — the previous version inferred from local
+        # variables, which could lie about the actual state reaching litellm
+        # if something between env set and pipeline start cleared the var.
+        env_or_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+        print(
+            f"[{job_id}] Import OK — OPENROUTER_API_KEY="
+            f"{'set' if env_or_key else 'MISSING'} "
+            f"(len={len(env_or_key)}) "
+            f"COARSE_DISABLE_STAGE_ROUTING={os.environ.get('COARSE_DISABLE_STAGE_ROUTING', '0')}"
+        )
         print(f"[{job_id}] Starting pipeline")
 
         config = CoarseConfig(extraction_qa=True)
@@ -499,6 +517,10 @@ def do_review(req_dict: dict):
         os.environ.pop("OPENROUTER_API_KEY", None)
         if original_key is not None:
             os.environ["OPENROUTER_API_KEY"] = original_key
+        # Clear the stage-routing kill switch so any non-review code that
+        # happens to share this container (other Modal functions, warm
+        # imports) sees the default behavior next time.
+        os.environ.pop("COARSE_DISABLE_STAGE_ROUTING", None)
 
         # Clean up temp file on local disk (always — no retry needs this).
         # NOTE: we intentionally do NOT delete the PDF from Supabase Storage

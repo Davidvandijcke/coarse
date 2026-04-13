@@ -1045,3 +1045,119 @@ def test_complete_does_not_salvage_non_overview_retry_errors(mock_instructor_cli
             messages=[{"role": "user", "content": "x"}],
             response_model=_SimpleModel,
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression: eagerly-resolved api_key is forwarded on every call.
+#
+# Background: production Modal runs were landing on OpenRouter with
+# "Missing Authentication header" (401) even though OPENROUTER_API_KEY was
+# set in os.environ at the moment `review_paper()` ran. The old pipeline
+# relied on `_inject_openrouter_privacy` reading `resolve_api_key(...)` at
+# call time inside `_sanitized_completion` — that read was either racing a
+# concurrent env-var reset or being shadowed somewhere inside litellm's
+# openrouter handler. The fix stashes the key at `LLMClient.__init__` time
+# into `self._api_key` and threads it into every `call_kwargs` so it is
+# always present at the litellm boundary regardless of what happens to the
+# process env after construction.
+# ---------------------------------------------------------------------------
+
+
+def test_llmclient_stashes_api_key_from_env(monkeypatch, mock_instructor_client):
+    """__init__ resolves the OpenRouter key once via resolve_api_key and stores it."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-fake-construction-time")
+    client = LLMClient(model="openrouter/anthropic/claude-opus-4.6", config=CoarseConfig())
+    assert client._api_key == "sk-or-v1-fake-construction-time"
+
+
+def test_complete_forwards_stashed_api_key(monkeypatch, mock_instructor_client):
+    """`api_key=` shows up in the instructor call even if env is wiped post-__init__."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-stashed")
+    client = LLMClient(model="openrouter/anthropic/claude-opus-4.6", config=CoarseConfig())
+
+    # Simulate the bad production state: env gets cleared between __init__
+    # and the actual LLM call. If the fix works, the stashed api_key is
+    # still forwarded into the kwargs because it was captured at __init__.
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    expected = _SimpleModel(value="ok")
+    mock_instructor_client.chat.completions.create_with_completion.return_value = (
+        expected,
+        _make_mock_completion(),
+    )
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.001):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+        )
+
+    call_kwargs = mock_instructor_client.chat.completions.create_with_completion.call_args.kwargs
+    assert call_kwargs.get("api_key") == "sk-or-v1-stashed"
+
+
+def test_complete_caller_api_key_overrides_stashed(monkeypatch, mock_instructor_client):
+    """An explicit api_key= kwarg from the caller wins over the stashed one."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-stashed")
+    client = LLMClient(model="openrouter/anthropic/claude-opus-4.6", config=CoarseConfig())
+    mock_instructor_client.chat.completions.create_with_completion.return_value = (
+        _SimpleModel(value="ok"),
+        _make_mock_completion(),
+    )
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            api_key="sk-or-v1-caller-override",
+        )
+
+    call_kwargs = mock_instructor_client.chat.completions.create_with_completion.call_args.kwargs
+    assert call_kwargs.get("api_key") == "sk-or-v1-caller-override"
+
+
+def test_complete_text_forwards_stashed_api_key(monkeypatch):
+    """_complete_text_primary (used by Perplexity search) also threads api_key through."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-text-path")
+    monkeypatch.setenv("PERPLEXITY_API_KEY", "pplx-fake-should-not-be-used")
+
+    captured: dict = {}
+
+    def fake_sanitized_completion(*args, **kwargs):
+        captured.update(kwargs)
+        return _completion_with_content("perplexity text response")
+
+    with (
+        patch("coarse.llm._sanitized_completion", side_effect=fake_sanitized_completion),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(model="openrouter/perplexity/sonar-pro-search", config=CoarseConfig())
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        client.complete_text(messages=[{"role": "user", "content": "x"}])
+
+    assert captured.get("api_key") == "sk-or-v1-text-path"
+
+
+def test_sanitized_completion_falls_back_to_positional_model():
+    """If a caller passes model positionally, _inject_openrouter_privacy still sees it.
+
+    The privacy/auth injector used to read model exclusively via
+    `kwargs.get("model", "")`. If anything upstream (a future wrapper, a
+    test double, a different instructor version) routed the model through
+    the positional `args[0]` slot instead, the injector silently no-opped
+    and the api_key branch never fired. This guard makes the injector
+    tolerant of either shape.
+    """
+    captured: dict = {}
+
+    def fake_litellm_completion(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return _completion_with_content("ok")
+
+    with (
+        patch("coarse.llm.litellm.completion", side_effect=fake_litellm_completion),
+        patch("coarse.llm.resolve_api_key", return_value="sk-or-v1-fallback-positional"),
+    ):
+        _sanitized_completion("openrouter/anthropic/claude-opus-4.6", messages=[])
+
+    # api_key must be injected even though model arrived as args[0].
+    assert captured["kwargs"].get("api_key") == "sk-or-v1-fallback-positional"

@@ -23,6 +23,7 @@ and is deferred.
 from __future__ import annotations
 
 import inspect
+import os
 from typing import Final
 
 from coarse.config import CoarseConfig, load_config
@@ -33,6 +34,22 @@ from coarse.models import (
     CHEAP_STAGE_PROVIDERS,
     STAGE_MODELS,
 )
+
+# Operational kill switch. When set to any truthy value, the stage router
+# ignores the `STAGE_MODELS` cheap-tier overrides and falls every stage back
+# to the caller's base model. The hosted Modal worker sets this on every
+# invocation so users who pick Opus/GPT-5/etc. actually get that model on
+# metadata, math_detection, calibration, and contribution_extraction instead
+# of the glm-5.1 / kimi-k2.5 cheap tier. CLI users who want the original
+# per-stage cost savings leave it unset.
+_DISABLE_ENV_VAR = "COARSE_DISABLE_STAGE_ROUTING"
+
+
+def _stage_routing_disabled() -> bool:
+    """Return True if the env kill switch is set to a truthy value."""
+    raw = (os.environ.get(_DISABLE_ENV_VAR) or "").strip().lower()
+    return raw not in {"", "0", "false", "no", "off"}
+
 
 # LLM-consuming stages the router is responsible for. Mirrors the stages
 # in src/coarse/cost.py::build_cost_estimate that use the review model
@@ -128,7 +145,16 @@ class StageRouter:
             )
 
     def _resolve_model(self, stage: str) -> str:
-        """Return the effective model ID for a stage (override → base)."""
+        """Return the effective model ID for a stage (override → base).
+
+        When the ``COARSE_DISABLE_STAGE_ROUTING`` env kill switch is set,
+        the cheap-tier ``STAGE_MODELS`` defaults are ignored and every
+        stage falls through to ``self._base_model`` (still honoring any
+        explicit CLI ``--stage-override`` values, which are the caller's
+        deliberate choice and should win over the switch).
+        """
+        if _stage_routing_disabled():
+            return self._overrides.get(stage, self._base_model)
         return self._overrides.get(stage, STAGE_MODELS.get(stage, self._base_model))
 
     def client_for(self, stage: str) -> LLMClient:

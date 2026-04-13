@@ -166,7 +166,15 @@ def _sanitized_completion(*args, **kwargs):
     Streaming responses (CustomStreamWrapper) are not supported — the choices
     iteration silently no-ops on them.
     """
-    kwargs = _inject_openrouter_privacy(kwargs.get("model", ""), kwargs)
+    # Model is normally in kwargs because LLMClient calls instructor with
+    # `model=...` as a keyword. Fall back to args[0] as a safety net in case
+    # a future upstream (or a test double) passes it positionally — if the
+    # fallback isn't here, `_inject_openrouter_privacy` silently no-ops and
+    # every subsequent call hits OpenRouter with no Authorization header.
+    model_arg = kwargs.get("model")
+    if not model_arg and args:
+        model_arg = args[0] if isinstance(args[0], str) else ""
+    kwargs = _inject_openrouter_privacy(model_arg or "", kwargs)
     response = litellm.completion(*args, **kwargs)
     _check_degenerate_reasoning(response)
     for choice in getattr(response, "choices", []):
@@ -408,6 +416,16 @@ class LLMClient:
         self._provider_allowlist = provider_allowlist
         self._fallback_client = fallback_client
         self._default_extra_body: dict = dict(default_extra_body or {})
+        # Resolve the API key eagerly and stash it so every call can pass
+        # `api_key=self._api_key` explicitly. Historically we relied on
+        # `_inject_openrouter_privacy` running inside `_sanitized_completion`
+        # to read the OpenRouter key from the env at call time, but in
+        # production (Modal worker) that path has been landing with
+        # "Missing Authentication header" even when the env var is set at
+        # construction time. Resolving the key once, here, and forwarding
+        # it through call_kwargs removes every call-time read from the
+        # dependency chain and closes the race.
+        self._api_key: str | None = resolve_api_key(self._model, config)
 
     def _apply_provider_prefs(self, kwargs: dict) -> dict:
         """Merge per-client defaults + provider routing into extra_body."""
@@ -546,6 +564,10 @@ class LLMClient:
         call_kwargs = self._apply_provider_prefs(call_kwargs)
         if _is_openrouter_kimi_model(self._model):
             call_kwargs = _prepare_openrouter_kimi_structured_kwargs(call_kwargs)
+        # Forward the eagerly-resolved API key on every call so the litellm
+        # request boundary never has to reach for os.environ mid-flight.
+        if self._api_key and "api_key" not in call_kwargs:
+            call_kwargs["api_key"] = self._api_key
 
         try:
             response, completion = self._complete_with_client(
@@ -643,6 +665,11 @@ class LLMClient:
         """Inner complete_text() without fallback dispatch."""
         clamped = _clamp_max_tokens(self._model, max_tokens)
         call_kwargs = self._apply_provider_prefs(dict(kwargs))
+        # Forward the eagerly-resolved API key on every call (same rationale
+        # as _complete_primary — avoids the env-var-at-call-time race that
+        # was landing "Missing Authentication header" 401s in prod).
+        if self._api_key and "api_key" not in call_kwargs:
+            call_kwargs["api_key"] = self._api_key
         response = _sanitized_completion(
             model=self._model,
             messages=messages,
