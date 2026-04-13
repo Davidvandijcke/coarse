@@ -31,6 +31,28 @@ export async function POST(request: NextRequest) {
   const rateLimited = await checkRateLimit(supabaseAdmin, ip, "presign");
   if (rateLimited) return rateLimited;
 
+  // Kill switch: mirror the check in /api/submit so a pause blocks the
+  // whole flow, not just the final submit step. Without this, users
+  // during a pause could still create phantom `reviews` rows via
+  // presign and only hit the 503 at /api/submit — wasted round-trips
+  // and DB debris for the sweeper to clean up.
+  const { data: statusRow } = await supabaseAdmin
+    .from("system_status")
+    .select("accepting_reviews, banner_message")
+    .eq("id", 1)
+    .single();
+
+  if (statusRow && !statusRow.accepting_reviews) {
+    return NextResponse.json(
+      {
+        error:
+          statusRow.banner_message ||
+          "Submissions are temporarily paused. Please try again later or use the CLI: pip install coarse-ink",
+      },
+      { status: 503 },
+    );
+  }
+
   let filename = "";
   let turnstileToken = "";
   try {
