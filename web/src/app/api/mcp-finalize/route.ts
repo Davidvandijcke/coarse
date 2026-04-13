@@ -63,6 +63,11 @@ function scrubMarkdown(md: string): string {
   return md.replace(DANGEROUS_HTML, "").replace(EVENT_HANDLER_ATTR, "");
 }
 
+function getExtension(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot >= 0 ? filename.slice(dot).toLowerCase() : "";
+}
+
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
@@ -122,6 +127,24 @@ export async function POST(request: NextRequest) {
 
   const markdown = scrubMarkdown(markdownRaw);
   const paperMarkdown = paperMarkdownRaw ? scrubMarkdown(paperMarkdownRaw) : null;
+
+  // We may need the original upload filename after finalize succeeds so we
+  // can delete the source object from Storage immediately instead of waiting
+  // for the 24h cleanup cron. The rendered review persists the extracted
+  // markdown in `reviews.paper_markdown`, so the raw source file is no
+  // longer needed once the review is published.
+  const { data: reviewMeta, error: reviewMetaErr } = await supabase
+    .from("reviews")
+    .select("paper_filename")
+    .eq("id", paperId)
+    .maybeSingle();
+
+  if (reviewMetaErr) {
+    return NextResponse.json(
+      { error: `Review lookup failed: ${reviewMetaErr.message}` },
+      { status: 500 },
+    );
+  }
 
   // Step 1: validate the token. Must exist, not expired, not consumed,
   // and paper_id must match the body to prevent cross-paper replay.
@@ -203,6 +226,25 @@ export async function POST(request: NextRequest) {
       { error: `Failed to write review: ${upsertErr.message}` },
       { status: 500 },
     );
+  }
+
+  // Best-effort storage cleanup after a successful finalize. Remove both
+  // the original upload (`<paper_id>.<ext>`) and any extracted MCP state
+  // blob (`<paper_id>.mcp.json`). If deletion fails, the normal 24h cleanup
+  // cron can still sweep the stragglers.
+  const storageObjects = [`${paperId}.mcp.json`];
+  const sourceExt = getExtension(String(reviewMeta?.paper_filename ?? ""));
+  if (sourceExt) {
+    storageObjects.unshift(`${paperId}${sourceExt}`);
+  }
+  try {
+    await supabase.storage.from("papers").remove(storageObjects);
+  } catch (cleanupErr) {
+    console.error("[mcp-finalize] storage cleanup failed", {
+      paperId,
+      storageObjects,
+      cleanupErr,
+    });
   }
 
   // Derive the review URL the same way /api/mcp-handoff does so the dev

@@ -151,7 +151,7 @@ export function buildAgentPrompt(args: {
     `locate the artifacts. Do NOT do a broad filesystem search. ` +
     `Run \`rg '^  view:|^  local:' /tmp/coarse-review.log\`. ` +
     `The \`local:\` line is the exact markdown path written by ` +
-    `coarse-review`, even when uvx runs from a temporary directory. ` +
+    `coarse-review, even when uvx runs from a temporary directory. ` +
     `If \`local:\` is present, read that file directly. If \`view:\` is ` +
     `present, use that as the canonical web URL. Do NOT run global ` +
     `\`find\`, \`locate\`, \`lsof\`, or whole-computer searches trying to ` +

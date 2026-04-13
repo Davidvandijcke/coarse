@@ -12,7 +12,7 @@
 //     full bundle as JSON:
 //     {
 //       paper_id,
-//       signed_pdf_url,         // 15-min TTL, fresh on every fetch
+//       signed_pdf_url,         // 3-hour TTL, fresh on every fetch
 //       finalize_token,         // same as the URL token
 //       callback_url,           // /api/mcp-finalize on this site
 //       paper_title,            // from reviews.paper_filename
@@ -31,7 +31,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const maxDuration = 15;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PDF_SIGNED_URL_TTL_SECONDS = 15 * 60;
+const PDF_SIGNED_URL_TTL_SECONDS = 3 * 60 * 60;
 
 export async function GET(
   request: NextRequest,
@@ -104,7 +104,9 @@ export async function GET(
   }
   const storagePath = `${tokenRow.paper_id}${ext}`;
 
-// Step 3: mint a fresh signed download URL for the original source file. 15-min TTL.
+// Step 3: mint a fresh signed download URL for the original source file.
+// Fresh on every fetch, valid for 3 hours so slow/remote coding-agent
+// sessions can still finish after the handoff without racing a short TTL.
   const { data: signed, error: signedErr } = await supabase.storage
     .from("papers")
     .createSignedUrl(storagePath, PDF_SIGNED_URL_TTL_SECONDS);
@@ -216,7 +218,7 @@ function renderLandingPage(args: {
   </div>
 
   <footer>
-    Token valid for 60 minutes. Don't have one of the CLIs yet? Install
+    Token valid for 3 hours. Don't have one of the CLIs yet? Install
     <a href="https://claude.ai/download">Claude Code</a>,
     <a href="https://developers.openai.com/codex">Codex</a>, or
     <a href="https://github.com/google-gemini/gemini-cli">Gemini CLI</a>.

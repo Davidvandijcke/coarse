@@ -39,8 +39,9 @@ import { checkRateLimit } from "@/lib/rateLimit";
 
 export const maxDuration = 15;
 
-const STATE_TTL_SECONDS = 15 * 60; // 15 minutes
-const FINALIZE_TOKEN_TTL_MINUTES = 60;
+const HANDOFF_TTL_MINUTES = 180;
+const STATE_TTL_SECONDS = HANDOFF_TTL_MINUTES * 60; // 3 hours
+const FINALIZE_TOKEN_TTL_MINUTES = HANDOFF_TTL_MINUTES;
 
 function isValidUuid(v: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Step 3: mint the finalize_token. Single-use, 60-minute expiry.
+  // Step 3: mint the finalize_token. Single-use, 3-hour expiry.
   const expiresAt = new Date(
     Date.now() + FINALIZE_TOKEN_TTL_MINUTES * 60_000,
   ).toISOString();

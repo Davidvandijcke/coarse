@@ -5,7 +5,7 @@
 // — extraction happens locally on the user's machine when they run
 // `coarse-review --handoff <url>`. All we need to mint is:
 //
-//   1. A row in mcp_handoff_tokens (single-use finalize token, 60-min TTL) —
+//   1. A row in mcp_handoff_tokens (single-use finalize token, 3-hour TTL) —
 //      the same table the older MCP flow uses, since the finalize semantics
 //      are identical.
 //
@@ -21,8 +21,9 @@
 //   { token, handoff_url, paper_id }
 //
 // Security: same threat model as /api/mcp-handoff — a leaked token lets
-// an attacker (a) download the paper for 15 minutes and (b) write a
-// review to exactly one reviews row for 60 minutes.
+// an attacker (a) download the paper for the lifetime of the signed URL
+// minted by GET /h/<token> and (b) write a review to exactly one reviews
+// row for 3 hours.
 
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
@@ -30,7 +31,7 @@ import { checkRateLimit } from "@/lib/rateLimit";
 
 export const maxDuration = 15;
 
-const FINALIZE_TOKEN_TTL_MINUTES = 60;
+const FINALIZE_TOKEN_TTL_MINUTES = 180;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isValidUuid(v: string): boolean {
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Step 2: mint the finalize_token. Reuse the mcp_handoff_tokens table —
-  // the finalize semantics are identical (single-use, 60-min TTL, bound
+  // the finalize semantics are identical (single-use, 3-hour TTL, bound
   // to one paper_id, consumed on POST /api/mcp-finalize).
   const expiresAt = new Date(
     Date.now() + FINALIZE_TOKEN_TTL_MINUTES * 60_000,
