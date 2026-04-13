@@ -280,7 +280,7 @@ def _strip_fence_tags(text: str) -> str:
     variants.
     """
     if not text:
-        return text
+        return ""
     return _FENCE_TAG_RE.sub("", text)
 
 
@@ -480,9 +480,13 @@ def metadata_user(first_page: str, abstract: str, headings: str) -> str:
 # Domain calibration
 # ---------------------------------------------------------------------------
 
-CALIBRATION_SYSTEM = """\
+CALIBRATION_SYSTEM = (
+    """\
 You are an expert academic reviewer. Given a paper's title, domain, abstract, \
 and section structure, produce a domain-specific review calibration.
+"""
+    + _CONTENT_BOUNDARY_NOTICE
+    + """
 
 For each field, provide 3-5 concise items tailored to this paper's specific domain \
 and methodology:
@@ -491,17 +495,33 @@ and methodology:
 3. what_not_to_check: What is irrelevant for this paper type
 4. evaluation_standards: What a top-tier journal in this field expects
 """
+)
 
 
 def calibration_user(title: str, domain: str, abstract: str, section_titles: str) -> str:
     """User prompt for domain calibration."""
+    safe_title = _strip_fence_tags(title)
+    safe_domain = _strip_fence_tags(domain)
+    safe_abstract = _strip_fence_tags(abstract)
+    safe_sections = _strip_fence_tags(section_titles)
     return f"""\
 Produce a domain-specific review calibration for the following paper.
 
-**Title**: {title}
-**Domain**: {domain}
-**Abstract**: {abstract}
-**Sections**: {section_titles}
+**Paper Metadata**:
+<paper_content>
+**Title**: {safe_title}
+**Domain**: {safe_domain}
+</paper_content>
+
+**Abstract**:
+<paper_abstract>
+{safe_abstract}
+</paper_abstract>
+
+**Sections**:
+<paper_sections>
+{safe_sections}
+</paper_sections>
 """
 
 
@@ -932,31 +952,41 @@ def completeness_user(
     contribution_context: "ContributionContext | None" = None,
 ) -> str:
     """User prompt for completeness assessment."""
+    safe_title = _strip_fence_tags(title)
+    safe_abstract = _strip_fence_tags(abstract)
+    safe_sections = _strip_fence_tags(sections_text)
     cal_block = ""
     if calibration:
-        cal_block = "\n" + _format_calibration(calibration) + "\n"
+        cal_block = "\n" + _strip_fence_tags(_format_calibration(calibration)) + "\n"
 
     contrib_block = ""
     if contribution_context:
-        contrib_block = "\n" + _format_contribution_context(contribution_context) + "\n"
+        contrib_block = (
+            "\n" + _strip_fence_tags(_format_contribution_context(contribution_context)) + "\n"
+        )
 
-    overview_block = "\n".join(f"- **{issue.title}**: {issue.body}" for issue in overview.issues)
+    overview_block = "\n".join(
+        f"- **{_strip_fence_tags(issue.title)}**: {_strip_fence_tags(issue.body)}"
+        for issue in overview.issues
+    )
 
     return f"""\
 Assess the completeness of the following paper. Identify structural gaps — content \
 that is missing but needed for the paper to deliver on its claims.
 
-**Title**: {title}
+<paper_content>
+**Title**: {safe_title}
 
 **Abstract**:
-{abstract}
+{safe_abstract}
 {cal_block}{contrib_block}
-**Overview issues already identified** (do NOT repeat these — focus on what they miss):
-{overview_block}
-
-<paper_content>
-{sections_text}
+{safe_sections}
 </paper_content>
+
+**Overview issues already identified** (do NOT repeat these — focus on what they miss):
+<first_pass_review>
+{overview_block}
+</first_pass_review>
 
 Identify 0-4 structural gaps where the paper is missing content it needs to be a \
 complete, publishable contribution. Focus on missing demonstrations, examples, \
@@ -1542,22 +1572,30 @@ def cross_section_user(
     abstract: str = "",
 ) -> str:
     """User prompt for cross-section synthesis."""
+    safe_results_title = _strip_fence_tags(results_section.title)
+    safe_results_text = _strip_fence_tags(results_section.text)
+    safe_discussion_title = _strip_fence_tags(discussion_section.title)
+    safe_discussion_text = _strip_fence_tags(discussion_section.text)
     abstract_block = ""
-    if abstract:
-        abstract_block = f"\n**Paper Abstract**:\n{abstract[:2000]}\n"
+    if abstract and abstract.strip():
+        safe_abstract = _strip_fence_tags(abstract)
+        safe_abstract = safe_abstract[:2000]
+        abstract_block = (
+            f"\n**Paper Abstract**:\n<paper_abstract>\n{safe_abstract}\n</paper_abstract>\n"
+        )
 
     return f"""\
-Check whether the discussion/implications in "{paper_title}" are supported by \
+Check whether the discussion/implications in the provided paper are supported by \
 the formal results.
 {abstract_block}
-**Formal Results Section ({results_section.number}: {results_section.title})**:
+**Formal Results Section ({results_section.number}: {safe_results_title})**:
 <paper_content>
-{results_section.text}
+{safe_results_text}
 </paper_content>
 
-**Discussion/Implications Section ({discussion_section.number}: {discussion_section.title})**:
+**Discussion/Implications Section ({discussion_section.number}: {safe_discussion_title})**:
 <paper_content>
-{discussion_section.text}
+{safe_discussion_text}
 </paper_content>
 
 Identify 0-3 cases where the discussion claims something the formal results do \
@@ -1569,10 +1607,14 @@ not actually establish.
 # Math section detection (cheap LLM call during structure analysis)
 # ---------------------------------------------------------------------------
 
-MATH_DETECTION_SYSTEM = """\
+MATH_DETECTION_SYSTEM = (
+    """\
 You are an expert academic paper analyst. Given a list of paper sections with \
 brief text previews, identify which sections contain mathematical content that \
 requires formal verification during peer review.
+"""
+    + _CONTENT_BOUNDARY_NOTICE
+    + """
 
 A section needs mathematical verification if it contains ANY of:
 - Proofs (formal or informal), derivations, or proof sketches
@@ -1593,19 +1635,24 @@ Respond with only the structured output. Do not include any analysis, \
 reasoning, or explanation before the structured response — emit the \
 indices directly.\
 """
+)
 
 
 def math_detection_user(sections: "list[SectionInfo]") -> str:
     """User prompt for math section detection."""
     lines = []
     for i, s in enumerate(sections):
-        preview = s.text[:200].replace("\n", " ").strip()
+        safe_title = _strip_fence_tags(s.title)
+        preview = _strip_fence_tags(s.text.replace("\n", " ").strip())
+        preview = preview[:200]
         if len(s.text) > 200:
             preview += "..."
-        lines.append(f"[{i}] **{s.title}** ({s.section_type.value}): {preview}")
+        lines.append(f"[{i}] **{safe_title}** ({s.section_type.value}): {preview}")
     return (
         "Identify which sections contain mathematical content needing verification.\n\n"
+        + "<paper_sections>\n"
         + "\n".join(lines)
+        + "\n</paper_sections>"
     )
 
 
