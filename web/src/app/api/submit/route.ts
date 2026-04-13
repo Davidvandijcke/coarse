@@ -5,9 +5,45 @@ import { checkRateLimit } from "@/lib/rateLimit";
 import { isEmailCapacityReached } from "@/lib/emailCapacity";
 
 export const maxDuration = 30;
+const MODAL_TRIGGER_TIMEOUT_MS = 10_000;
+const MODAL_WEBHOOK_HOST_SUFFIX = "--coarse-review-run-review.modal.run";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function isLocalhost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
+}
+
+function getModalWebhookConfig(): { url: string; secret: string } | null {
+  const rawUrl = process.env.MODAL_FUNCTION_URL?.trim();
+  if (!rawUrl) return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("MODAL_FUNCTION_URL must be a valid absolute URL");
+  }
+
+  const secret = process.env.MODAL_WEBHOOK_SECRET?.trim() ?? "";
+  if (!secret) {
+    throw new Error("MODAL_WEBHOOK_SECRET must be set when MODAL_FUNCTION_URL is configured");
+  }
+
+  if (parsed.protocol === "https:") {
+    if (!parsed.hostname.endsWith(MODAL_WEBHOOK_HOST_SUFFIX)) {
+      throw new Error(`MODAL_FUNCTION_URL must target *${MODAL_WEBHOOK_HOST_SUFFIX}`);
+    }
+    return { url: parsed.toString(), secret };
+  }
+
+  if (parsed.protocol === "http:" && process.env.NODE_ENV !== "production" && isLocalhost(parsed.hostname)) {
+    return { url: parsed.toString(), secret };
+  }
+
+  throw new Error("MODAL_FUNCTION_URL must use https (except http://localhost in development)");
 }
 
 function getMailer() {
@@ -29,6 +65,14 @@ export async function POST(request: NextRequest) {
       { error: "Server not configured — set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_KEY in .env.local" },
       { status: 503 }
     );
+  }
+
+  let modalWebhookConfig: { url: string; secret: string } | null = null;
+  try {
+    modalWebhookConfig = getModalWebhookConfig();
+  } catch (error) {
+    console.error("Invalid Modal webhook configuration", error);
+    return NextResponse.json({ error: "Server not configured to start review workers" }, { status: 503 });
   }
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
@@ -186,14 +230,16 @@ export async function POST(request: NextRequest) {
   // Trigger Modal worker (fire-and-forget — the worker updates Supabase directly).
   // NOTE: user_api_key is intentionally NOT in the body. The worker resolves it
   // from review_secrets. This keeps the key out of Modal's spawn() payload.
-  const modalUrl = process.env.MODAL_FUNCTION_URL;
-  if (modalUrl) {
-    fetch(modalUrl, {
+  if (modalWebhookConfig) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), MODAL_TRIGGER_TIMEOUT_MS);
+    fetch(modalWebhookConfig.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.MODAL_WEBHOOK_SECRET ?? ""}`,
+        Authorization: `Bearer ${modalWebhookConfig.secret}`,
       },
+      signal: controller.signal,
       body: JSON.stringify({
         job_id: id,
         pdf_storage_path: storagePath,
@@ -223,6 +269,10 @@ export async function POST(request: NextRequest) {
         }
       })
       .catch(async (fetchErr) => {
+        if (fetchErr instanceof Error && fetchErr.name === "AbortError") {
+          console.warn(`[${id}] Modal webhook timed out after ${MODAL_TRIGGER_TIMEOUT_MS}ms; delivery status unknown`);
+          return;
+        }
         // Modal fetch itself rejected — same cleanup as the !res.ok branch.
         try {
           await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
@@ -236,6 +286,9 @@ export async function POST(request: NextRequest) {
             cleanupErr,
           });
         }
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
       });
   }
 

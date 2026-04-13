@@ -5,6 +5,7 @@
 ### Fixed
 
 - **Quote verification now corrects quotes before downstream review handoffs without dropping recall** — the pipeline now programmatically verifies or repairs quotes between section/proof/cross-section/editorial stages so later agents reason over grounded text, but intermediate handoffs use non-dropping verification (`[approximate]` fallback) to preserve review coverage when extraction is noisy. The final output gate remains strict. This review-driven cleanup also removes the dead assumption-checker path and normalizes the recently changed module test files to the `tests/test_{module}.py` convention.
+- **The web app now keeps OpenRouter OAuth keys in tab-only storage and validates Modal webhooks before sending secrets (#95)** — the browser now reads any legacy `localStorage` key once, migrates it into `sessionStorage`, and deletes the persistent copy so a reusable bearer credential is no longer left in local storage. The submit route also rejects invalid `MODAL_FUNCTION_URL` / empty `MODAL_WEBHOOK_SECRET` configurations up front, requires `https` for real deployments, and adds a timeout to the secret-bearing Modal trigger call.
 
 ## v1.2.2 — 2026-04-12
 
