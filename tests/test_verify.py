@@ -85,6 +85,25 @@ def test_proof_verify_agent_truncates_long_sections():
     assert len(section.text) == 600_000
 
 
+def test_proof_verify_agent_author_notes_prepend_to_user_message():
+    agent = _make_agent()
+
+    agent.run(
+        _make_section(),
+        "Test Paper",
+        [_make_comment(1)],
+        author_notes="focus on the identification proof in this section",
+    )
+
+    messages = agent.client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    user_content = [m for m in messages if m["role"] == "user"][0]["content"]
+
+    assert "focus on the identification proof in this section" not in system_content
+    assert "<author_notes>" in user_content
+    assert "focus on the identification proof in this section" in user_content
+
+
 def _make_noncaching_agent() -> ProofVerifyAgent:
     """Like _make_agent but with supports_prompt_caching=False so the
     system prompt lands as a plain string, not an Anthropic cache-control

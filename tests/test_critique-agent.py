@@ -1,4 +1,5 @@
 """Tests for agents/critique.py — CritiqueAgent."""
+
 from unittest.mock import MagicMock
 
 from coarse.agents.critique import CritiqueAgent, _RevisedComments
@@ -15,10 +16,7 @@ def _make_client() -> LLMClient:
 
 def _make_overview() -> OverviewFeedback:
     return OverviewFeedback(
-        issues=[
-            OverviewIssue(title=f"Issue {i}", body=f"Body of issue {i}.")
-            for i in range(1, 5)
-        ]
+        issues=[OverviewIssue(title=f"Issue {i}", body=f"Body of issue {i}.") for i in range(1, 5)]
     )
 
 
@@ -61,7 +59,7 @@ def test_critique_renumbers_sequentially():
 
 
 def test_critique_drops_comments():
-    """Mock LLM to return fewer comments than input; verify output length is smaller and no error occurs."""
+    """If the LLM drops comments, the returned list should just be shorter."""
     client = _make_client()
     client.complete.return_value = _make_revised([1, 2])
 
@@ -101,7 +99,7 @@ def test_critique_empty_input():
 
 
 def test_critique_uses_correct_prompts():
-    """Spy on client.complete to confirm CRITIQUE_SYSTEM is passed as system role and critique_user output appears in user message."""
+    """client.complete should receive the critique system and user prompts."""
     client = _make_client()
     client.complete.return_value = _make_revised([1])
 
@@ -146,3 +144,23 @@ def test_critique_prompt_caching():
     # User message is still a plain string
     user_msg = [m for m in messages if m["role"] == "user"][0]
     assert isinstance(user_msg["content"], str)
+
+
+def test_critique_author_notes_prepend_to_user_message():
+    client = _make_client()
+    client.complete.return_value = _make_revised([1])
+
+    agent = CritiqueAgent(client)
+    agent.run(
+        _make_overview(),
+        [_make_comment(1)],
+        author_notes="focus on the contribution claim if the evidence supports it",
+    )
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    user_content = [m for m in messages if m["role"] == "user"][0]["content"]
+
+    assert "focus on the contribution claim if the evidence supports it" not in system_content
+    assert "<author_notes>" in user_content
+    assert "focus on the contribution claim if the evidence supports it" in user_content

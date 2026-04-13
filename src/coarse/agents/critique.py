@@ -1,11 +1,12 @@
 """Critique agent — self-critique quality gate that evaluates and revises DetailedComments."""
+
 from __future__ import annotations
 
 from pydantic import BaseModel
 
 from coarse.agents.base import ReviewAgent
 from coarse.llm import LLMClient
-from coarse.prompts import CRITIQUE_SYSTEM, critique_system, critique_user
+from coarse.prompts import CRITIQUE_SYSTEM, author_notes_block, critique_system, critique_user
 from coarse.types import DetailedComment, OverviewFeedback
 
 _TEMPERATURE = 0.1
@@ -31,8 +32,11 @@ class CritiqueAgent(ReviewAgent):
         comment_target: int | str | None = None,
         title: str = "",
         abstract: str = "",
+        author_notes: str | None = None,
     ) -> list[DetailedComment]:
-        user_content = critique_user(overview, comments, title=title, abstract=abstract)
+        user_content = author_notes_block(author_notes) + critique_user(
+            overview, comments, title=title, abstract=abstract
+        )
         sys_prompt = critique_system(comment_target) if comment_target else CRITIQUE_SYSTEM
 
         messages = self._build_messages(sys_prompt, user_content)

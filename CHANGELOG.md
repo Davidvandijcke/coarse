@@ -6,6 +6,30 @@
 
 - **Compare page now includes GPT-5.4 benchmark results** — added `gpt54` as a first-class model on the side-by-side comparison page, loaded the April 12 GPT-5.4 review and Gemini judge files for all four benchmark papers, and exposed the new panel in both the selector and the score overview table. The overview table now derives its values from the checked-in quality reports rather than a duplicated hardcoded matrix, and the compare-data loader normalizes JSON-style `\uXXXX` escapes in review markdown so generated benchmark artifacts render correctly on the site.
 
+### Fixed
+
+- **Author steering notes now reach all downstream review passes** — `author_notes` is now forwarded beyond the original overview/section/editorial path into `completeness`, `proof_verify`, `cross_section`, and the legacy `crossref`/`critique` fallback so later passes cannot silently drop the requested focus. The shared `author_notes_block()` prompt wrapper was also strengthened to tell agents how to prioritize valid note-aligned comments, while still preserving the rubric, quote rules, and prompt-injection boundary.
+
+### Fixed
+
+- **Author steering notes now reach all output-shaping review passes** — `author_notes` is now forwarded beyond the original overview/section/editorial path into `CompletenessAgent`, `ProofVerifyAgent`, `CrossSectionAgent`, and the legacy `CrossrefAgent` / `CritiqueAgent` fallback so later review stages do not silently discard the user's requested focus. The shared `author_notes_block()` prompt frame in `src/coarse/prompts.py` was strengthened to treat notes as non-binding prioritization rather than override instructions, explicitly handle placeholder/draft sections, and clarify the boundary between trusted prompt logic and untrusted note content. Added unit and pipeline tests covering the new forwarding paths and note-prepending behavior across the affected agents.
+
+### Fixed
+
+- **Author steering notes now survive all review-shaping passes** — `author_notes` is no longer limited to the overview, section, and editorial agents. The pipeline now forwards the notes through completeness, proof verification, cross-section synthesis, and the legacy crossref/critique fallback path as well, so later passes cannot silently wash out the requested focus. The shared `author_notes_block()` prompt framing was also strengthened to make the notes an explicit prioritization signal, including placeholder/draft handling, while preserving the hard rule that they do not override the rubric or suppress concrete issues.
+
+### Fixed
+
+- **Author steering notes now reach every output-shaping review pass** — `author_notes` is now forwarded beyond the original overview/section/editorial path into `completeness`, `proof_verify`, `cross_section`, and the legacy `crossref`/`critique` fallback so later review passes cannot silently ignore the user's requested focus. The shared `author_notes_block()` prompt wrapper was also strengthened to treat notes as non-binding prioritization, explicitly handle placeholder/draft sections, and clarify that notes cannot override rubric or quote requirements. Added unit and pipeline coverage for the new forwarding paths and prompt semantics.
+
+### Fixed
+
+- **Author steering now reaches all output-shaping review passes** — `author_notes` is now forwarded beyond the original overview/section/editorial path into `CompletenessAgent`, `ProofVerifyAgent`, `CrossSectionAgent`, and the legacy `CrossrefAgent` / `CritiqueAgent` fallback, so later review passes cannot silently drop the user's requested focus. The shared `author_notes_block()` guidance is also stronger: it now treats notes as non-binding prioritization, explicitly handles placeholder/draft sections, and clarifies that notes can steer attention without overriding the review rubric or suppressing concrete issues. Tests now cover the expanded forwarding path plus the fallback route.
+
+### Fixed
+
+- **Author steering notes now reach every output-shaping review pass** — the follow-up to the original notes feature now forwards `author_notes` beyond just overview/section/editorial into `completeness`, `proof_verify`, `cross_section`, and the legacy `crossref`/`critique` fallback path, so later stages no longer drift away from the requested focus. The shared `author_notes_block()` wrapper was also strengthened: it still preserves the rubric and quote rules, but now explicitly tells agents to use the notes as non-binding prioritization, to prefer note-relevant comments when issues are otherwise similarly important, and to avoid spending comments on placeholder sections merely for being incomplete unless that incompleteness affects the paper's core claims or publishability. New tests pin the forwarding and prompt behavior across all affected agents and the pipeline fallback path.
+
 ## v1.2.1 — 2026-04-11
 
 Patch release. Single fix: the author-notes textarea added in v1.2.0 (#67) inherited a placeholder color (`var(--tray)` ≈ `#2A3138`) that is nearly identical to the textarea's own background color (`var(--board-surface)` ≈ `#242D33`), making the multi-line placeholder hint illegible on the submit page. Also adds an end-to-end validation of the v1.2.0 author-notes feature against a synthetic paper — see issue #54 for details.

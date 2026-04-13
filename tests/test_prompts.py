@@ -1127,6 +1127,8 @@ def test_author_notes_block_includes_steering_frame_instruction():
     # Must reference rubric non-override
     assert "rubric" in lower
     assert "override" in lower or "overrides" in lower
+    assert "prioritize" in lower or "prioritiz" in lower
+    assert "placeholder" in lower or "draft" in lower
 
 
 def test_fence_tag_re_matches_author_notes():
