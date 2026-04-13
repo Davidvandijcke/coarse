@@ -101,6 +101,22 @@ Then substitute `http://127.0.0.1:8765/mcp/` for
 local server uses an in-memory paper store, so state is lost when the
 process exits — which is fine for a single review session.
 
+If you want to test the more realistic topology of **local web app +
+remote MCP server**, use the helper in the repo root:
+
+```bash
+uv run python scripts/run_remote_mcp_dev.py \
+  --site-url https://your-public-tunnel.example \
+  --mcp-url https://your-org--coarse-mcp-asgi.modal.run/mcp/
+```
+
+That launches the local Next.js app with:
+
+- `NEXT_PUBLIC_SITE_URL` set to your tunnel URL so the remote MCP worker
+  can reach `/api/mcp-finalize`
+- `NEXT_PUBLIC_MCP_SERVER_URL` set to the remote MCP endpoint so the UI
+  and install snippets point at the deployed server instead of localhost
+
 ## What the host LLM does (and what it doesn't)
 
 The MCP server runs *only* these deterministic steps:

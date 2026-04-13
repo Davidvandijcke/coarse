@@ -175,6 +175,95 @@ subscription → Claude Code" (or any other provider), paste the
 clipboard prompt into your host, and watch the MCP server POST the
 rendered review back to `http://localhost:3000/api/mcp-finalize`.
 
+## Local web + remote MCP (recommended pre-prod test)
+
+This is the first topology that exercises the real boundary conditions:
+
+- the **web app stays local** so you can iterate quickly on the UI and
+  handoff routes
+- the **MCP server runs remotely** (Modal or equivalent), so callback
+  URLs, host-origin derivation, and signed-URL reachability are tested
+  the way production will use them
+
+### 1. Deploy or identify the remote MCP URL
+
+```bash
+cd /path/to/coarse
+uv run modal deploy deploy/mcp_server.py
+```
+
+Use the resulting public MCP URL, for example:
+
+```text
+https://your-org--coarse-mcp-asgi.modal.run/mcp/
+```
+
+### 2. Expose the local Next.js app through a public tunnel
+
+Any public HTTPS tunnel works. Examples:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:3000
+# or
+ngrok http 3000
+```
+
+Copy the public HTTPS site origin, for example:
+
+```text
+https://example-subdomain.trycloudflare.com
+```
+
+This matters because `/api/mcp-handoff` and `/api/cli-handoff` derive the
+callback / handoff origin from `NEXT_PUBLIC_SITE_URL` first. A remote MCP
+worker cannot call back to `http://localhost:3000`.
+
+### 3. Start local web dev with the remote-MCP helper
+
+```bash
+cd /path/to/coarse
+uv run python scripts/run_remote_mcp_dev.py \
+  --site-url https://example-subdomain.trycloudflare.com \
+  --mcp-url https://your-org--coarse-mcp-asgi.modal.run/mcp/
+```
+
+The helper:
+
+- validates that both URLs are public and HTTPS
+- probes the remote MCP endpoint before booting the web app
+- sets:
+  - `NEXT_PUBLIC_SITE_URL=<public tunnel URL>`
+  - `NEXT_PUBLIC_MCP_SERVER_URL=<remote MCP URL>`
+- starts `npm run dev` in `web/`
+- waits for the public tunnel URL to reach the local app
+
+If you only want the preflight checks / env preview:
+
+```bash
+uv run python scripts/run_remote_mcp_dev.py \
+  --site-url https://example-subdomain.trycloudflare.com \
+  --mcp-url https://your-org--coarse-mcp-asgi.modal.run/mcp/ \
+  --check-only
+```
+
+### 4. Run the end-to-end handoff
+
+1. Open the local site at `http://localhost:3000`
+2. Upload a paper
+3. Click "Review with my subscription"
+4. Paste the generated prompt into Codex / Claude Code / Gemini CLI
+5. Confirm the remote MCP server POSTs the finished review back to the
+   **public** tunnel URL's `/api/mcp-finalize`
+6. Confirm the review appears in the local web UI
+
+Failure modes worth testing here:
+
+- stale / expired handoff token
+- stale signed download URL
+- bad `NEXT_PUBLIC_SITE_URL` (localhost or wrong tunnel)
+- wrong `NEXT_PUBLIC_MCP_SERVER_URL`
+- remote MCP cannot reach `/api/mcp-finalize`
+
 ## Post-deploy verification
 
 1. Hit `https://<modal-url>/mcp` with the MCP Inspector and confirm
