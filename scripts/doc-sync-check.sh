@@ -66,6 +66,7 @@ base="${DOC_SYNC_BASE:-dev}"
 if git rev-parse --verify "$base" >/dev/null 2>&1; then
     diff_files=()
     while IFS= read -r file; do
+        [ -n "$file" ] || continue
         diff_files+=("$file")
     done <<EOF
 $(git diff --name-only "${base}...HEAD" 2>/dev/null \
@@ -94,14 +95,29 @@ else
 fi
 
 # 5) Current architecture docs must match runtime shape
-stale_hits=$(rg -n \
+doc_hits=$(rg -n \
     -e '3-judge overview panel' \
     -e 'overview panel +3-judge' \
     -e 'crossref \+ critique.*primary path' \
     -e 'ships the per-stage model routing feature' \
     -e 'crossref agent.*Deduplicate, validate quotes, consistency' \
     -e 'critique agent.*Self-critique quality gate' \
-    CLAUDE.md README.md CONTRIBUTING.md CHANGELOG.md 2>/dev/null || true)
+    CLAUDE.md README.md CONTRIBUTING.md 2>/dev/null || true)
+changelog_hits=""
+if git rev-parse --verify "$base" >/dev/null 2>&1; then
+    changelog_hits=$(git diff "${base}...HEAD" -- CHANGELOG.md 2>/dev/null \
+        | grep -E '^\+' \
+        | grep -v '^+++' \
+        | rg -n \
+            -e '3-judge overview panel' \
+            -e 'overview panel +3-judge' \
+            -e 'crossref \+ critique.*primary path' \
+            -e 'ships the per-stage model routing feature' \
+            -e 'crossref agent.*Deduplicate, validate quotes, consistency' \
+            -e 'critique agent.*Self-critique quality gate' \
+            || true)
+fi
+stale_hits=$(printf '%s\n%s\n' "$doc_hits" "$changelog_hits" | sed '/^$/d')
 if [ -n "$stale_hits" ]; then
     fail "stale architecture wording found in canonical docs:"
     echo "$stale_hits" | sed 's/^/       /' >&2
