@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".pdf", ".txt", ".md", ".tex", ".latex",
@@ -30,9 +31,11 @@ export async function POST(request: NextRequest) {
   if (rateLimited) return rateLimited;
 
   let filename = "";
+  let turnstileToken = "";
   try {
     const body = await request.json();
     filename = (body.filename ?? "").trim();
+    turnstileToken = (body.turnstile_token ?? "").trim();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -50,6 +53,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: `Unsupported format. Supported: ${[...SUPPORTED_EXTENSIONS].join(", ")}` },
       { status: 400 },
+    );
+  }
+
+  // Turnstile guards the entry point to the review pipeline. Fails open when
+  // TURNSTILE_SECRET_KEY is unset so local dev without a secret still works;
+  // in production set the env var on Vercel to enable enforcement.
+  const turnstileResult = await verifyTurnstileToken(turnstileToken, ip);
+  if (!turnstileResult.ok) {
+    return NextResponse.json(
+      { error: "Human check failed. Please refresh the page and try again." },
+      { status: 403 },
     );
   }
 
