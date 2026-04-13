@@ -113,6 +113,13 @@ export function buildAgentPrompt(args: {
   const { setupCmd, runCmd } = args;
   return (
     `Please review an academic paper for me using the coarse-review skill.\n\n` +
+    `STEP 0 — Check whether \`uvx\` is available. Run ` +
+    `\`command -v uvx || command -v uv\`. If neither command exists, ` +
+    `install uv first with \`curl -LsSf https://astral.sh/uv/install.sh | sh\`, ` +
+    `then run \`export PATH="$HOME/.local/bin:$PATH"\` in the current shell. ` +
+    `If \`uv\` exists but \`uvx\` does not, use \`uv tool run --from ...\` ` +
+    `wherever the steps below say \`uvx --from ...\`. Do NOT get stuck on ` +
+    `\`uvx: command not found\`.\n\n` +
     `STEP 1 — Refresh the coarse-review skill files. ` +
     `Run this command to copy the latest skill instructions from the ` +
     `feat/mcp-server branch into your Claude Code / Codex / Gemini CLI ` +

@@ -17,6 +17,14 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 
 ## Prerequisites
 
+- `uvx` preferred, `uv` acceptable. First run:
+  `command -v uvx || command -v uv`
+  - If neither exists, install uv:
+    `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  - Then refresh PATH for the current shell:
+    `export PATH="$HOME/.local/bin:$PATH"`
+  - If `uv` exists but `uvx` does not, replace `uvx --from ...` below with
+    `uv tool run --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
   `uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@feat/mcp-server' coarse install-skills --all --force`
 - **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key is NOT passed through the web handoff for security reasons.

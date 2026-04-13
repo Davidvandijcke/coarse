@@ -20,6 +20,9 @@ def test_bundled_skill_assets_use_ephemeral_uvx_flow() -> None:
 
     for rel_path in skill_paths:
         text = _read(rel_path)
+        assert "command -v uvx || command -v uv" in text
+        assert "curl -LsSf https://astral.sh/uv/install.sh | sh" in text
+        assert "uv tool run --from ..." in text
         assert "uvx --from 'coarse-ink[mcp] @" in text
         assert "coarse install-skills --all --force" in text
         assert "nohup uvx --from 'coarse-ink[mcp] @" in text
@@ -32,6 +35,9 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     handoff_page = _read("web/src/app/page.tsx")
     handoff_route = _read("web/src/app/h/[token]/route.ts")
 
+    assert "command -v uvx || command -v uv" in handoff_lib
+    assert "curl -LsSf https://astral.sh/uv/install.sh | sh" in handoff_lib
+    assert "uv tool run --from ..." in handoff_lib
     assert "const MCP_UVX_FROM =" in handoff_lib
     assert "uvx --from ${MCP_UVX_FROM} coarse install-skills --all --force" in handoff_lib
     assert "uvx --from ${MCP_UVX_FROM} coarse-review --handoff ${handoffUrl}" in handoff_lib
