@@ -47,38 +47,65 @@ Run an inline Python AST scan over `src/coarse/**/*.py`. Report:
 Use this exact shape:
 
 ```bash
-cd "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse" && python3 <<'PY'
+ROOT="$(git rev-parse --show-toplevel)" && cd "$ROOT" && python3 <<'PY'
 import ast
 from pathlib import Path
 
 root = Path("src/coarse")
+deploy_root = Path("deploy")
 agent_deny = {"pipeline", "cli", "synthesis", "extraction", "extraction_qa"}
 types_allow = {"models"}
 prompts_allow = {"models", "types"}
+pipeline_allow = {"cli", "__init__", "__main__"}
 
 graph: dict[str, set[str]] = {}
 sizes: dict[str, int] = {}
+
+def imported_targets(current_module: str, node: ast.AST) -> set[str]:
+    targets: set[str] = set()
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            if alias.name.startswith("coarse."):
+                targets.add(alias.name.removeprefix("coarse."))
+    elif isinstance(node, ast.ImportFrom):
+        if node.level:
+            base = current_module.split(".")[:-node.level]
+            if node.module:
+                targets.add(".".join([*base, node.module]))
+            else:
+                for alias in node.names:
+                    if alias.name != "*":
+                        targets.add(".".join([*base, alias.name]))
+        elif node.module == "coarse":
+            for alias in node.names:
+                if alias.name != "*":
+                    targets.add(alias.name)
+        elif node.module and node.module.startswith("coarse."):
+            base = node.module.removeprefix("coarse.")
+            targets.add(base)
+            for alias in node.names:
+                if alias.name != "*":
+                    targets.add(f"{base}.{alias.name}")
+    return {target for target in targets if target}
+
 for path in sorted(root.rglob("*.py")):
     module = path.relative_to(root).with_suffix("").as_posix().replace("/", ".")
     source = path.read_text()
-    sizes[module] = source.count("\\n") + 1
+    sizes[module] = source.count("\n") + 1
     tree = ast.parse(source)
     imports: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("coarse"):
-            imports.add(node.module.removeprefix("coarse.").split(".")[0] or "")
-        elif isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name.startswith("coarse."):
-                    imports.add(alias.name.removeprefix("coarse.").split(".")[0])
-    graph[module] = {name for name in imports if name}
+        imports.update(imported_targets(module, node))
+    graph[module] = imports
 
 def resolve(name: str) -> str | None:
-    if name in graph:
-        return name
-    for module in graph:
-        if module == name or module.endswith("." + name):
-            return module
+    candidate = name
+    while candidate:
+        if candidate in graph:
+            return candidate
+        if "." not in candidate:
+            break
+        candidate = candidate.rsplit(".", 1)[0]
     return None
 
 structural: list[str] = []
@@ -91,8 +118,11 @@ for module, imports in graph.items():
         smells.append(f"MEDIUM: types.py imports {sorted(imports - types_allow)}")
     if name == "prompts" and imports - prompts_allow:
         smells.append(f"MEDIUM: prompts.py imports {sorted(imports - prompts_allow)}")
-    if module.startswith("agents.") and imports & agent_deny:
-        structural.append(f"HIGH: {module} imports {sorted(imports & agent_deny)}")
+    denied = {target for target in imports if (resolve(target) or target) in agent_deny}
+    if module.startswith("agents.") and denied:
+        structural.append(f"HIGH: {module} imports {sorted(denied)}")
+    if module not in pipeline_allow and any(resolve(target) == "pipeline" for target in imports):
+        structural.append(f"HIGH: {module} imports pipeline")
 
 white, gray, black = 0, 1, 2
 color = {module: white for module in graph}
@@ -133,6 +163,16 @@ for imports in graph.values():
         if target:
             fan_in[target] += 1
 
+deploy_pipeline_importers: list[str] = []
+if deploy_root.exists():
+    for path in sorted(deploy_root.rglob("*.py")):
+        tree = ast.parse(path.read_text())
+        imports: set[str] = set()
+        for node in ast.walk(tree):
+            imports.update(imported_targets(path.stem, node))
+        if any(target == "pipeline" or target.startswith("pipeline.") for target in imports):
+            deploy_pipeline_importers.append(path.as_posix())
+
 oversized = [f"{module} ({lines} lines)" for module, lines in sizes.items() if lines > 800]
 leaders = sorted(fan_in.items(), key=lambda item: -item[1])[:3]
 
@@ -142,6 +182,7 @@ print(f"structural: {structural or 'none'}")
 print(f"smells: {smells or 'none'}")
 print(f"cycles: {cycles or 'none'}")
 print(f"fan-in leaders: {leaders}")
+print(f"deploy pipeline importers: {deploy_pipeline_importers or 'none'}")
 PY
 ```
 

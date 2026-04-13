@@ -11,7 +11,7 @@ This is the module-level counterpart to `/architecture-review`.
 `$ARGUMENTS`:
 - `/module-review --module src/coarse/synthesis.py` — review one module
 - `/module-review --changed` — review recently changed coarse modules
-- `/module-review --all` — review every `src/coarse/*.py` module in dependency order
+- `/module-review --all` — review every `src/coarse/*.py` module in lexicographic order
 - `/module-review --review-only` — report findings only, do not edit
 
 ## The 11-point bug checklist
@@ -30,8 +30,8 @@ Every module is reviewed against these rules. Record each result as either:
    pipeline code is a violation.
 5. **No `print()` in library code.** CLI output can use `rich`; internals use
    logging.
-6. **Every `.py` in `src/coarse/` has a matching test file.** Missing tests
-   are a HIGH finding.
+6. **Every `.py` in `src/coarse/` has at least one plausible test target.**
+   Missing coverage is a HIGH finding.
 7. **Context managers for resources.** `ThreadPoolExecutor`, file handles, and
    sessions must use `with`.
 8. **Cost tracking uses `LLMClient.cost_usd` / `add_cost()`.** No manual
@@ -52,7 +52,7 @@ If `$ARGUMENTS` contains `--module <path>`, target that file.
 If `$ARGUMENTS` contains `--changed`, prefer these sources in order:
 
 ```bash
-cd "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse" && \
+ROOT="$(git rev-parse --show-toplevel)" && cd "$ROOT" && \
 git diff --name-only origin/dev...HEAD -- 'src/coarse/*.py' 'src/coarse/**/*.py'
 ```
 
@@ -60,15 +60,15 @@ If that is empty because the current branch is `dev`, fall back to a recent
 window:
 
 ```bash
-cd "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse" && \
+ROOT="$(git rev-parse --show-toplevel)" && cd "$ROOT" && \
 git diff --name-only HEAD~20..HEAD -- 'src/coarse/*.py' 'src/coarse/**/*.py'
 ```
 
 If `$ARGUMENTS` contains `--all`, enumerate:
 
 ```bash
-cd "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse" && \
-find src/coarse -name '*.py' -not -name '__init__.py' -not -name '__main__.py' | sort
+ROOT="$(git rev-parse --show-toplevel)" && cd "$ROOT" && \
+find src/coarse -name '*.py' | sort
 ```
 
 When more than 3 modules are queued, show the queue to the user and confirm
@@ -90,15 +90,19 @@ Do not assume the test is always named `tests/test_<module>.py` in this repo.
 Resolve tests in this order:
 
 ```bash
-cd "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse" && \
-basename="<module-basename-without-.py>" && \
-rg --files tests | rg "test_(${basename}|${basename//_/-}|${basename//-/_})([-_].+)?\\.py$"
+ROOT="$(git rev-parse --show-toplevel)" && cd "$ROOT" && \
+module_path="src/coarse/<module>.py" && \
+basename="$(basename "${module_path%.py}")" && \
+parent="$(basename "$(dirname "$module_path")")" && \
+rg --files tests | rg "test_(${basename}|${basename//_/-}|${basename//-/_}|${basename}-agent|agent-${basename}|${parent}-${basename}|${basename}-${parent})([-_].+)?\\.py$"
 ```
 
 Examples:
 - `section.py` → `tests/test_section-agent.py`
 - `structure.py` → `tests/test_structure-analysis.py`
 - `cost.py` → `tests/test_cost-estimator.py`
+- `__main__.py` → `tests/test_cli.py`
+- `__init__.py` → `tests/test_cli.py`, `tests/test_readme-+-packaging.py`
 
 If no plausible test file exists, record a HIGH finding and continue.
 
@@ -122,7 +126,7 @@ subagent.
 #### 2d. Run module-specific tests
 
 ```bash
-cd "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse" && \
+ROOT="$(git rev-parse --show-toplevel)" && cd "$ROOT" && \
 uv run pytest <resolved-test-paths> -v
 ```
 
@@ -148,7 +152,7 @@ After each auto-fix, verify with:
 cd /private/tmp/coarse-<slug> && \
 uv run pytest <resolved-test-paths> -v && \
 uv run ruff check src/coarse/<module>.py && \
-python3 scripts/security_scanner.py --scope model-ids
+python3 scripts/security_scanner.py
 ```
 
 If a fix breaks verification, revert that fix only.
