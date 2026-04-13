@@ -36,6 +36,10 @@
 
 - **`pipeline.py` is back to being an orchestrator** — the section-review helpers, calibration/contribution extraction, and editorial fallback logic moved into `src/coarse/review_stages.py`, leaving `pipeline.py` responsible for stage ordering, fan-out, and final assembly instead of stage-local implementation details.
 
+### Changed
+
+- **Extraction internals are split by responsibility without changing the public API** — cache I/O moved to `extraction_cache.py`, format backends to `extraction_formats.py`, and OpenRouter transport/error handling to `extraction_openrouter.py`, while `extraction.py` now serves as the stable facade for `extract_text()` and `extract_file()`.
+
 ## v1.2.2 — 2026-04-12
 
 Patch release. Clears the false "system busy (N/20 slots in use)" banner that the landing page was showing even when Modal was idle, and bundles the unreleased `dev` work (GPT-5.4 compare-panel + author-steering fallthroughs) that had accumulated since v1.2.1.
