@@ -9,7 +9,7 @@ create table reviews (
   id uuid primary key default gen_random_uuid(),   -- serves as the unique access key
   paper_filename text not null,
   status text not null default 'queued'
-    check (status in ('queued', 'running', 'done', 'failed')),
+    check (status in ('queued', 'running', 'done', 'failed', 'cancelled')),
   paper_title text,
   model text,
   domain text,
@@ -22,12 +22,10 @@ create table reviews (
   completed_at timestamptz
 );
 
--- RLS: reads are open (UUID is unguessable, serves as access token).
--- All writes are done server-side via the service key, which bypasses RLS.
+-- RLS: deny anonymous reads and writes. Reviews are fetched through server-side
+-- API routes that validate the review-scoped access token and use the service
+-- role. The service role bypasses RLS; browser anon clients do not.
 alter table reviews enable row level security;
-
-create policy "Anyone can view reviews by id"
-  on reviews for select using (true);
 
 -- ============================================================================
 -- Review emails (PII separated from public review data)

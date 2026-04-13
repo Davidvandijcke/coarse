@@ -38,6 +38,19 @@ jobs:
           OPENAI_API_KEY: ""
           ANTHROPIC_API_KEY: ""
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web app
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
   version-check:
     runs-on: ubuntu-latest
     timeout-minutes: 2

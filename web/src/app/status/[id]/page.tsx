@@ -1,51 +1,88 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import type { Review } from "@/lib/types";
 import { CharcoalRule, PageMarks } from "@/components/charcoal";
+import { buildReviewKey, buildReviewUrl } from "@/lib/reviewAccess";
 
 export default function StatusPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [review, setReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const supabase = createClient();
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const token = searchParams.get("token")?.trim() ?? "";
 
   useEffect(() => {
+    if (!token) {
+      setAccessError("Missing review access token. Use the full review link or review key.");
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
     let interval: ReturnType<typeof setInterval>;
 
     async function fetchStatus() {
-      const { data } = await supabase
-        .from("reviews")
-        .select("id, status, error_message")
-        .eq("id", id)
-        .single();
+      const res = await fetch(`/api/review/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
 
-      if (data) {
-        setReview(data as Review);
+      if (cancelled) return;
+
+      if (res.status === 401) {
+        setAccessError("This review link is missing a valid access token.");
         setLoading(false);
-        if (data.status === "done") {
-          clearInterval(interval);
-          router.push(`/review/${id}`);
+        clearInterval(interval);
+        return;
+      }
+      if (res.status === 404) {
+        setNotFound(true);
+        setLoading(false);
+        clearInterval(interval);
+        return;
+      }
+      if (!res.ok) {
+        setAccessError("Failed to load the review status. Please try again.");
+        setLoading(false);
+        clearInterval(interval);
+        return;
+      }
+
+      const data = (await res.json()) as Review;
+      setReview(data);
+      setLoading(false);
+      setNotFound(false);
+      if (data.status === "done") {
+        clearInterval(interval);
+        if (!cancelled) {
+          router.push(`/review/${id}?token=${encodeURIComponent(token)}`);
         }
-      } else {
-        // Row was deleted (cancelled from another tab, etc.)
-        setLoading(false);
+      }
+      if (data.status === "cancelled") {
+          clearInterval(interval);
       }
     }
 
     fetchStatus();
     interval = setInterval(fetchStatus, 3000);
-    return () => clearInterval(interval);
-  }, [id, router]);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [id, router, token]);
 
   function copyLink() {
-    navigator.clipboard.writeText(`${window.location.origin}/review/${id}`);
+    navigator.clipboard.writeText(
+      buildReviewUrl(window.location.origin, "review", id, token),
+    );
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -55,11 +92,20 @@ export default function StatusPage() {
     try {
       const res = await fetch("/api/cancel", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ id }),
       });
       if (res.ok) {
-        router.push("/");
+        setShowCancelConfirm(false);
+        setCancelling(false);
+        setReview((prev) =>
+          prev
+            ? { ...prev, status: "cancelled", error_message: "Review cancelled by user" }
+            : prev,
+        );
       } else {
         setCancelling(false);
         setShowCancelConfirm(false);
@@ -71,8 +117,9 @@ export default function StatusPage() {
   }
 
   const isFailed = review?.status === "failed";
+  const isCancelled = review?.status === "cancelled";
   const isRunning = review?.status === "running";
-  const isActive = !isFailed && review;
+  const isActive = review && !isFailed && !isCancelled && review.status !== "done";
 
   if (loading) {
     return (
@@ -95,6 +142,88 @@ export default function StatusPage() {
         >
           Loading<span className="blink">_</span>
         </span>
+      </div>
+    );
+  }
+
+  if (accessError) {
+    return (
+      <div
+        style={{
+          background: "var(--paper)",
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "2rem",
+          textAlign: "center",
+        }}
+      >
+        <p
+          style={{
+            fontFamily: "var(--font-playfair), Georgia, serif",
+            fontSize: "2rem",
+            fontStyle: "italic",
+            fontWeight: 700,
+            color: "var(--ink)",
+            margin: "0 0 1rem",
+          }}
+        >
+          Access token required.
+        </p>
+        <p
+          style={{
+            fontFamily: "Georgia, serif",
+            fontStyle: "italic",
+            color: "var(--muted)",
+            fontSize: "1.05rem",
+            margin: 0,
+          }}
+        >
+          {accessError}
+        </p>
+      </div>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <div
+        style={{
+          background: "var(--paper)",
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "2rem",
+          textAlign: "center",
+        }}
+      >
+        <p
+          style={{
+            fontFamily: "var(--font-playfair), Georgia, serif",
+            fontSize: "2rem",
+            fontStyle: "italic",
+            fontWeight: 700,
+            color: "var(--ink)",
+            margin: "0 0 1rem",
+          }}
+        >
+          Review not found.
+        </p>
+        <p
+          style={{
+            fontFamily: "Georgia, serif",
+            fontStyle: "italic",
+            color: "var(--muted)",
+            fontSize: "1.05rem",
+            margin: 0,
+          }}
+        >
+          Check the review key and try again.
+        </p>
       </div>
     );
   }
@@ -241,7 +370,7 @@ export default function StatusPage() {
               color: "var(--muted)",
             }}
           >
-            {isFailed ? "failed" : isRunning ? "reviewing" : "queued"}
+            {isCancelled ? "cancelled" : isFailed ? "failed" : isRunning ? "reviewing" : "queued"}
           </span>
           <a
             href="https://github.com/Davidvandijcke/coarse"
@@ -271,7 +400,7 @@ export default function StatusPage() {
           padding: "5rem 2.5rem 6rem",
         }}
       >
-        {!isFailed ? (
+        {!isFailed && !isCancelled ? (
           <>
             <h1
               style={{
@@ -316,6 +445,36 @@ export default function StatusPage() {
               }}
             >
               We&apos;ll email you when it&apos;s done.
+            </p>
+          </>
+        ) : isCancelled ? (
+          <>
+            <h1
+              style={{
+                fontFamily: "var(--font-playfair), Georgia, serif",
+                fontSize: "clamp(2.5rem, 6vw, 4rem)",
+                fontStyle: "italic",
+                fontWeight: 700,
+                lineHeight: 1.1,
+                letterSpacing: "-0.02em",
+                margin: "0 0 2rem",
+                color: "var(--ink)",
+              }}
+            >
+              Review cancelled.
+            </h1>
+            <p
+              style={{
+                fontFamily: "Georgia, serif",
+                fontSize: "1rem",
+                lineHeight: 1.65,
+                color: "var(--muted)",
+                fontStyle: "italic",
+                margin: 0,
+              }}
+            >
+              The queued job was marked cancelled. If work had already started,
+              the worker may take a little time to wind down.
             </p>
           </>
         ) : (
@@ -407,7 +566,7 @@ export default function StatusPage() {
                 lineHeight: 1.5,
               }}
             >
-              {id}
+              {buildReviewKey(id, token)}
             </p>
             <button
               onClick={copyLink}

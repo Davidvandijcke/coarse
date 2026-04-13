@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { signReviewAccessToken } from "@/lib/reviewAuth";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 
 const SUPPORTED_EXTENSIONS = new Set([
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
 
   const id: string = reviewRow.id;
   const storagePath = `${id}${ext}`;
+  const accessToken = signReviewAccessToken(id);
 
   // Create a signed upload URL for direct client upload.
   // Supabase hardcodes 2-hour TTL; the token is single-use (consumed on upload).
@@ -97,5 +99,6 @@ export async function POST(request: NextRequest) {
     storagePath,
     signedUrl: uploadData.signedUrl,
     token: uploadData.token,
+    accessToken,
   });
 }

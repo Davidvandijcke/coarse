@@ -1,6 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
+import {
+  extractReviewAccessToken,
+  hasValidReviewAccessToken,
+} from "@/lib/reviewAuth";
 
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -27,17 +31,31 @@ export async function POST(request: NextRequest) {
   if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return NextResponse.json({ error: "Invalid review ID" }, { status: 400 });
   }
+  const accessToken = extractReviewAccessToken(request);
+  if (!hasValidReviewAccessToken(id, accessToken)) {
+    return NextResponse.json(
+      { error: "Missing or invalid review access token" },
+      { status: 401 },
+    );
+  }
 
   const { data: review, error: fetchError } = await supabaseAdmin
     .from("reviews")
-    .select("id")
+    .select("id, status")
     .eq("id", id)
     .single();
 
   if (fetchError || !review) {
     return NextResponse.json({ error: "Review not found" }, { status: 404 });
   }
+  if (review.status === "queued" || review.status === "running") {
+    return NextResponse.json(
+      { error: "Active reviews must be cancelled before deletion" },
+      { status: 409 },
+    );
+  }
 
+  await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
   await supabaseAdmin.from("review_emails").delete().eq("review_id", id);
   await supabaseAdmin.from("reviews").delete().eq("id", id);
 

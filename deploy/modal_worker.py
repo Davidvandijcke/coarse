@@ -20,6 +20,8 @@ Secrets: Create in Modal dashboard:
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import hmac
 import os
 import subprocess
@@ -210,6 +212,22 @@ def _send_email(to: str, subject: str, html: str) -> None:
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(user, password)
         server.send_message(msg)
+
+
+def _sign_review_access_token(review_id: str) -> str:
+    """Return the review-scoped access token used by the web frontend."""
+    secret = (os.environ.get("REVIEW_ACCESS_SECRET") or "").strip() or (
+        os.environ.get("SUPABASE_SERVICE_KEY") or ""
+    ).strip()
+    if not secret:
+        raise RuntimeError("Review access secret is not configured")
+
+    digest = hmac.new(
+        secret.encode("utf-8"),
+        f"review:{review_id}".encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
 def _strip_nul_bytes(text: str | None) -> str | None:
@@ -430,6 +448,21 @@ def _resolve_user_api_key(db, req: "ReviewRequest", job_id: str) -> str | None:
     return (req.user_api_key or "").strip() or None
 
 
+def _get_review_status(db, job_id: str) -> str | None:
+    """Read the current review status, returning None if the row is gone."""
+    try:
+        result = db.table("reviews").select("status").eq("id", job_id).maybe_single().execute()
+    except Exception as exc:
+        print(f"[{job_id}] status lookup failed: {_sanitize_error(str(exc))}")
+        return None
+
+    if result is None or not getattr(result, "data", None):
+        return None
+    if isinstance(result.data, dict):
+        return result.data.get("status")
+    return None
+
+
 @app.function(
     image=image,
     timeout=7200,
@@ -478,6 +511,9 @@ def do_review(req_dict: dict):
     db = create_client(supabase_url, supabase_key)
 
     site_url = os.environ.get("SITE_URL", "https://coarse.vercel.app")
+    if _get_review_status(db, job_id) == "cancelled":
+        print(f"[{job_id}] Job was cancelled before worker start; skipping pipeline")
+        return
 
     # Update status to running
     db.table("reviews").update({"status": "running"}).eq("id", job_id).execute()
@@ -524,6 +560,13 @@ def do_review(req_dict: dict):
         print(f"[{job_id}] Pipeline complete — {len(markdown)} chars")
 
         duration = int(time.time() - start)
+        current_status = _get_review_status(db, job_id)
+        if current_status == "cancelled":
+            print(f"[{job_id}] Job was cancelled during execution; skipping final write/email")
+            return
+        if current_status is None:
+            print(f"[{job_id}] Review row disappeared before completion; skipping final write")
+            return
 
         db.table("reviews").update(
             {
@@ -550,17 +593,23 @@ def do_review(req_dict: dict):
 
         # Send completion email
         if email:
-            _send_email(
-                to=email,
-                subject="Your paper review is ready",
-                html=(
-                    f"<p>Your review is ready.</p>"
-                    f'<p><a href="{site_url}/review/{job_id}">View your review →</a></p>'
-                    f"<p><strong>Review key:</strong> <code>{job_id}</code><br>"
-                    f"Save this key to return to your review later.</p>"
-                    f"<p>— coarse</p>"
-                ),
-            )
+            access_token = _sign_review_access_token(job_id)
+            review_url = f"{site_url}/review/{job_id}?token={access_token}"
+            review_key = f"{job_id}.{access_token}"
+            try:
+                _send_email(
+                    to=email,
+                    subject="Your paper review is ready",
+                    html=(
+                        f"<p>Your review is ready.</p>"
+                        f'<p><a href="{review_url}">View your review →</a></p>'
+                        f"<p><strong>Review key:</strong> <code>{review_key}</code><br>"
+                        f"Save this key to return to your review later.</p>"
+                        f"<p>— coarse</p>"
+                    ),
+                )
+            except Exception as exc:
+                print(f"[{job_id}] completion email failed: {_sanitize_error(str(exc))}")
 
     except BaseException as e:
         duration = int(time.time() - start)
@@ -570,13 +619,15 @@ def do_review(req_dict: dict):
             error_msg = "Review timed out"
         else:
             error_msg = _classify_api_error(e) or _sanitize_error(str(e))
-        db.table("reviews").update(
-            {
-                "status": "failed",
-                "error_message": _strip_nul_bytes(error_msg),
-                "duration_seconds": duration,
-            }
-        ).eq("id", job_id).execute()
+        current_status = _get_review_status(db, job_id)
+        if current_status not in (None, "cancelled"):
+            db.table("reviews").update(
+                {
+                    "status": "failed",
+                    "error_message": _strip_nul_bytes(error_msg),
+                    "duration_seconds": duration,
+                }
+            ).eq("id", job_id).execute()
         raise
     finally:
         # Restore original API key to prevent leaking user keys across container reuses.

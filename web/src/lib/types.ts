@@ -1,7 +1,7 @@
 export interface Review {
   id: string;
   paper_filename: string;
-  status: "queued" | "running" | "done" | "failed";
+  status: "queued" | "running" | "done" | "failed" | "cancelled";
   paper_title: string | null;
   model: string | null;
   domain: string | null;

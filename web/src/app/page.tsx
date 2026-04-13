@@ -8,6 +8,7 @@ import ModelPicker from "@/components/ModelPicker";
 import OpenRouterLoginButton from "@/components/OpenRouterLoginButton";
 import { estimateTokensFromPdf, estimateTokensFromText, estimateTokensFromDocx, estimateTokensFromEpub, getModelPricing, estimateReviewCost } from "@/lib/estimateCost";
 import { beginLogin, completeLogin, loadStoredKey, saveStoredKey, clearStoredKey } from "@/lib/openrouterAuth";
+import { buildReviewPath, parseReviewLocator } from "@/lib/reviewAccess";
 
 /* ── Turnstile window API type + helper ───────────────────── */
 type TurnstileApi = {
@@ -477,7 +478,7 @@ export default function Home() {
         const data = await presignResp.json();
         throw new Error(data.error || "Failed to prepare upload");
       }
-      const { id, storagePath, signedUrl, token } = await presignResp.json();
+      const { id, storagePath, signedUrl, token, accessToken } = await presignResp.json();
 
       // Step 2: Upload file directly to Supabase Storage (bypasses Vercel 4.5MB limit)
       const uploadResp = await fetch(signedUrl, {
@@ -495,7 +496,10 @@ export default function Home() {
       // Step 3: Submit metadata (no file — just JSON)
       const submitResp = await fetch("/api/submit", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           id,
           email,
@@ -509,7 +513,7 @@ export default function Home() {
         const data = await submitResp.json();
         throw new Error(data.error || "Submission failed");
       }
-      router.push(`/status/${id}`);
+      router.push(buildReviewPath("status", id, accessToken));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submission failed");
       setSubmitting(false);
@@ -1110,10 +1114,16 @@ export default function Home() {
               value={lookupKey}
               onChange={(e) => setLookupKey(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && lookupKey.trim())
-                  router.push(`/review/${lookupKey.trim()}`);
+                if (e.key === "Enter" && lookupKey.trim()) {
+                  const parsed = parseReviewLocator(lookupKey);
+                  if (parsed?.token) {
+                    router.push(buildReviewPath("review", parsed.id, parsed.token));
+                  } else if (parsed?.id) {
+                    router.push(`/review/${parsed.id}`);
+                  }
+                }
               }}
-              placeholder="Paste your review key..."
+              placeholder="Paste your review key or full review link..."
               aria-label="Review key"
               className="field-line-mono"
               style={{ maxWidth: "480px" }}
@@ -1121,8 +1131,12 @@ export default function Home() {
             <button
               type="button"
               onClick={() => {
-                const k = lookupKey.trim();
-                if (k) router.push(`/review/${k}`);
+                const parsed = parseReviewLocator(lookupKey);
+                if (parsed?.token) {
+                  router.push(buildReviewPath("review", parsed.id, parsed.token));
+                } else if (parsed?.id) {
+                  router.push(`/review/${parsed.id}`);
+                }
               }}
               disabled={!lookupKey.trim()}
               style={{
