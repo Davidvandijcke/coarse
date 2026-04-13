@@ -26,10 +26,12 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
     `curl -LsSf https://astral.sh/uv/install.sh | sh`
   - Then refresh PATH for the current shell:
     `export PATH="$HOME/.local/bin:$PATH"`
-  - If `uv` exists but `uvx` does not, replace `uvx --from ...` below with
-    `uv tool run --from ...`.
+  - coarse requires Python 3.12+. If needed, install it with:
+    `uv python install 3.12`
+  - If `uv` exists but `uvx` does not, replace `uvx --python 3.12 --from ...` below with
+    `uv tool run --python 3.12 --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
-  `uvx --from 'coarse-ink[mcp]==1.2.2' coarse install-skills --all --force`
+  `uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' coarse install-skills --all --force`
 - **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key is NOT passed through the web handoff for security reasons.
 
   Before running the review, check if `OPENROUTER_API_KEY` is set:
@@ -40,13 +42,13 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
 
   > I need an OpenRouter API key for the OCR extraction step (~$0.10 per paper). You have three options:
   >
-  > 1. **Get a key** at https://openrouter.ai/settings/keys (or via http://localhost:3000/setup) and **paste it to me** — I'll save it to a `.env` file in this directory for you.
+  > 1. **Get a key** at https://openrouter.ai/settings/keys (or via http://localhost:3000/setup) and **paste it to me** — I'll save it to `~/.coarse/config.toml` for you with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' coarse setup`.
   > 2. **Set it yourself**: `export OPENROUTER_API_KEY=sk-or-v1-...` then re-ask me.
-  > 3. **Add it to `.env`** yourself: `echo 'OPENROUTER_API_KEY=sk-or-v1-...' >> .env`
+  > 3. **If you explicitly prefer project-local storage**, add it to `.env` yourself: `echo 'OPENROUTER_API_KEY=sk-or-v1-...' >> .env`
   >
   > Which would you like?
 
-  If the user pastes a key, save it to `./.env` (create the file if missing, or **append** if it exists — never overwrite existing vars). Verify the key starts with `sk-or-` before saving.
+  If the user pastes a key, prefer saving it with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' coarse setup` so it lands in `~/.coarse/config.toml`. Only write `./.env` if the user explicitly asks for project-local storage. Verify the key starts with `sk-or-` before saving.
 - `claude` CLI logged in.
 
 ## How to run
@@ -58,11 +60,13 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
 **Launch in the background** — full review takes 10-25 minutes, which exceeds Claude Code's default 2-minute tool timeout. Always use `run_in_background: true` or redirect to a log file so it's not killed mid-run:
 
 ```bash
-nohup uvx --from 'coarse-ink[mcp]==1.2.2' \
-  coarse-review <paper_path> --host claude [--model claude-opus-4-6] [--effort high] \
-  > /tmp/coarse-review.log 2>&1 < /dev/null &
-echo "Review PID: $!"
+uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' \
+  coarse-review --detach --log-file /tmp/coarse-review.log \
+  <paper_path> --host claude [--model claude-opus-4-6] [--effort high]
 ```
+
+This returns immediately with the review PID and writes all output to
+`/tmp/coarse-review.log`.
 
 Then poll the log every 60-90 seconds with `tail -20 /tmp/coarse-review.log`. Do NOT kill the process because it looks stuck — it takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, it's done.
 
@@ -83,10 +87,9 @@ Available effort levels: `low`, `medium`, `high` (default), `max`.
 If the user came from the coarse web form, they'll have a handoff URL instead. Run:
 
 ```bash
-nohup uvx --from 'coarse-ink[mcp]==1.2.2' \
-  coarse-review --handoff coarse.vercel.app/h/<token> --host claude [--model ...] [--effort ...] \
-  > /tmp/coarse-review.log 2>&1 < /dev/null &
-echo "Review PID: $!"
+uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' \
+  coarse-review --detach --log-file /tmp/coarse-review.log \
+  --handoff coarse.vercel.app/h/<token> --host claude [--model ...] [--effort ...]
 ```
 
 This downloads the paper, runs the pipeline, and POSTs the final review back so it shows up at `coarse.vercel.app/review/<paper_id>`.
@@ -101,7 +104,8 @@ This downloads the paper, runs the pipeline, and POSTs the final review back so 
 
 ## Notes
 
-- `uvx --from ... coarse-review ...` runs coarse from a temporary environment, so the agent does not mutate the user's global tool install.
+- `uvx --python 3.12 --from ... coarse-review ...` runs coarse from a temporary environment, so the agent does not mutate the user's global tool install.
+- The review process runs locally using the user's own Claude Code login; coarse.ink only receives the finished markdown callback.
 - The driver monkey-patches `coarse.llm.LLMClient` → `coarse.headless_clients.ClaudeCodeClient`, which spawns `claude -p` subprocesses for every pipeline LLM call.
 - Host-CLI env vars (`CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, etc.) are stripped from the subprocess environment so nested sessions don't conflict with the parent.
 - If a single `claude -p` call exceeds 30 minutes, it's killed and the pipeline continues without that section's comments.

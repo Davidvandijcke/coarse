@@ -213,6 +213,10 @@ class _HeadlessCLIClient:
     def _build_cmd(self) -> list[str]:
         raise NotImplementedError
 
+    def _prepare_prompt(self, prompt: str) -> str:
+        """Allow subclasses to inject host-specific prompt hints."""
+        return prompt
+
     def _run(self, prompt: str, *, timeout: int | None = None) -> str:
         cmd = self._build_cmd()
         try:
@@ -258,7 +262,7 @@ class _HeadlessCLIClient:
         last_exc: Exception | None = None
         for attempt in range(3):
             try:
-                raw = self._run(prompt, timeout=timeout)
+                raw = self._run(self._prepare_prompt(prompt), timeout=timeout)
                 json_str = _extract_json(raw)
                 try:
                     data = json.loads(json_str)
@@ -289,7 +293,7 @@ class _HeadlessCLIClient:
     ) -> str:
         """Unstructured text completion."""
         prompt = _messages_to_prompt(messages)
-        return self._run(prompt, timeout=timeout).strip()
+        return self._run(self._prepare_prompt(prompt), timeout=timeout).strip()
 
 
 class ClaudeCodeClient(_HeadlessCLIClient):
@@ -314,6 +318,8 @@ class ClaudeCodeClient(_HeadlessCLIClient):
         self._effort = effort
 
     def _build_cmd(self) -> list[str]:
+        # Claude Code already exposes the same low/medium/high/max scale we
+        # want at the coarse layer, so pass it through unchanged.
         return [
             self._claude_bin,
             "-p",
@@ -337,11 +343,13 @@ class CodexClient(_HeadlessCLIClient):
 
     display_name = "codex exec"
 
-    # coarse-level effort name → codex model_reasoning_effort value
+    # coarse-level effort name → codex model_reasoning_effort value.
+    # Avoid "minimal" because current Codex builds reject web_search under
+    # that setting, which breaks nested codex exec calls inside coarse.
     _EFFORT_MAP = {
-        "low": "minimal",
-        "medium": "low",
-        "high": "medium",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
         "max": "high",
     }
 
@@ -375,10 +383,9 @@ class CodexClient(_HeadlessCLIClient):
 class GeminiClient(_HeadlessCLIClient):
     """LLMClient replacement backed by the ``gemini -p`` CLI.
 
-    ``effort`` maps to a thinking-budget token count Gemini supports
-    via the ``thinking_budget`` setting. We inject it into the prompt
-    as a system hint (Gemini CLI doesn't expose a dedicated flag) and
-    also via ``--config thinking_budget=<n>`` when supported.
+    Gemini CLI does not expose a native reasoning-effort flag. We still
+    honor coarse's low/medium/high/max selector by prepending an explicit
+    effort instruction with increasing advisory thinking budgets.
     """
 
     display_name = "gemini -p"
@@ -419,3 +426,18 @@ class GeminiClient(_HeadlessCLIClient):
         if self._gemini_model:
             cmd += ["--model", self._gemini_model]
         return cmd
+
+    def _prepare_prompt(self, prompt: str) -> str:
+        budget = self._EFFORT_BUDGET.get(self._effort, self._EFFORT_BUDGET["high"])
+        guidance = {
+            "low": "Keep internal reasoning short and answer directly.",
+            "medium": "Use a moderate amount of internal reasoning before answering.",
+            "high": "Use thorough internal reasoning before answering.",
+            "max": "Use your deepest available internal reasoning before answering.",
+        }.get(self._effort, "Use thorough internal reasoning before answering.")
+        return (
+            "[SYSTEM]\n"
+            f"Reasoning effort: {self._effort}. {guidance} "
+            f"Aim for roughly a {budget}-token thinking budget if supported.\n\n"
+            f"{prompt}"
+        )

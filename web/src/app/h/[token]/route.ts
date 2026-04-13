@@ -28,6 +28,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
+import { MCP_UVX_FROM } from "@/lib/mcpHandoff";
+
 export const maxDuration = 15;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -163,10 +165,10 @@ function renderLandingPage(args: {
   const safe = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-  const pinnedFrom = "coarse-ink[mcp]==1.2.2";
+  const pinnedFrom = MCP_UVX_FROM;
   const quotedFrom = `'${pinnedFrom}'`;
-  const setupCmd = `uvx --from ${quotedFrom} coarse install-skills --all --force`;
-  const runCmd = `nohup uvx --from ${quotedFrom} coarse-review --handoff ${handoffUrl} > /tmp/coarse-review.log 2>&1 < /dev/null &\necho "Review PID: $!"`;
+  const setupCmd = `uvx --python 3.12 --from ${quotedFrom} coarse install-skills --all --force`;
+  const runCmd = `uvx --python 3.12 --from ${quotedFrom} coarse-review --detach --log-file /tmp/coarse-review.log --handoff ${handoffUrl}`;
 
   return `<!doctype html>
 <html lang="en">
@@ -208,17 +210,18 @@ function renderLandingPage(args: {
   <div class="step">
     <h2>1. One-time setup</h2>
     <pre class="cmd" id="setup"><button class="copy" onclick="copy('setup')">copy</button>${safe(setupCmd)}</pre>
-    <p class="note">Refreshes the bundled coarse-review skill in your Claude Code / Codex / Gemini CLI skill folders via an ephemeral <code>uvx</code> environment. No permanent install required.</p>
+    <p class="note">Refreshes the bundled coarse-review skill in your Claude Code / Codex / Gemini CLI skill folders via an ephemeral <code>uvx</code> environment. No permanent install required. coarse needs Python 3.12+, so this command forces the correct interpreter.</p>
   </div>
 
   <div class="step">
     <h2>2. Run the review</h2>
     <pre class="cmd" id="run"><button class="copy" onclick="copy('run')">copy</button>${safe(runCmd)}</pre>
-    <p class="note">This runs the review in the background, writes logs to <code>/tmp/coarse-review.log</code>, and posts the finished review back here. Takes 10–25 minutes. Check progress with <code>tail -20 /tmp/coarse-review.log</code>. The review will appear at <a href="/" >coarse.vercel.app/review/…</a> when it's done.</p>
+    <p class="note">This starts a detached local review process, writes logs to <code>/tmp/coarse-review.log</code>, and posts the finished review back here. Takes 10–25 minutes. Check progress with <code>tail -20 /tmp/coarse-review.log</code>. The review will appear at <a href="/" >coarse.vercel.app/review/…</a> when it's done.</p>
     <p class="note"><strong>Options:</strong> edit the command before running to add <code>--host claude|codex|gemini</code> (default: first CLI found on PATH), <code>--model &lt;id&gt;</code>, and <code>--effort low|medium|high|max</code>.</p>
   </div>
 
   <footer>
+    Runs locally on your machine using your own Claude Code, Codex, or Gemini CLI account. coarse.ink does not receive or store your provider login, and your provider&apos;s terms, limits, and policies apply.<br>
     Token valid for 3 hours. Don't have one of the CLIs yet? Install
     <a href="https://claude.ai/download">Claude Code</a>,
     <a href="https://developers.openai.com/codex">Codex</a>, or

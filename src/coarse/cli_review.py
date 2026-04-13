@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -36,6 +38,8 @@ _DEFAULT_MODELS = {
     "codex": "gpt-5.4",
     "gemini": "gemini-3.1-pro-preview",
 }
+
+_DETACHED_ENV = "COARSE_REVIEW_DETACHED"
 
 
 def _detect_host() -> str:
@@ -232,7 +236,63 @@ def _print_completion_footer(
     print("REVIEW COMPLETE")
 
 
+def _ensure_openrouter_key_loaded(pre_extracted: Path | None) -> None:
+    """Load OPENROUTER_API_KEY from env/config/.env before extraction starts."""
+    if pre_extracted is not None:
+        return
+
+    from coarse.headless_review import _find_openrouter_key
+
+    key = _find_openrouter_key()
+    if key:
+        os.environ["OPENROUTER_API_KEY"] = key
+
+
+def _open_detached_log(log_path: Path):
+    """Open the detached log with owner-only permissions where supported."""
+    if os.name == "nt":
+        return open(log_path, "w", encoding="utf-8")
+
+    fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+    except OSError:
+        pass
+    return os.fdopen(fd, "w", encoding="utf-8")
+
+
+def _detach_review_process(argv: list[str], log_file: Path) -> int:
+    """Respawn this CLI in a detached child process and return immediately."""
+    log_path = log_file.expanduser().resolve()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    env = dict(os.environ)
+    env[_DETACHED_ENV] = "1"
+
+    cmd = [sys.executable, "-m", "coarse.cli_review", *argv]
+    popen_kwargs: dict[str, object] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": _open_detached_log(log_path),
+        "stderr": subprocess.STDOUT,
+        "cwd": str(Path.cwd()),
+        "env": env,
+        "close_fds": True,
+    }
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        )
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen(cmd, **popen_kwargs)
+    print(f"Review PID: {proc.pid}")
+    print(f"Log file:   {log_path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(
         prog="coarse-review",
         description="Run the full coarse review pipeline using a headless CLI.",
@@ -279,10 +339,24 @@ def main(argv: list[str] | None = None) -> int:
         help="Pre-extracted markdown file — skips Mistral OCR (useful when "
         "you already have the paper extracted from a previous run).",
     )
+    parser.add_argument(
+        "--detach",
+        action="store_true",
+        help="Start the review in a detached background process and return immediately.",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        default=Path("/tmp/coarse-review.log"),
+        help="Log path used with --detach (default: /tmp/coarse-review.log).",
+    )
     args = parser.parse_args(argv)
 
     if not args.handoff and not args.paper_path:
         parser.error("either paper_path or --handoff is required")
+
+    if args.detach and os.environ.get(_DETACHED_ENV) != "1":
+        return _detach_review_process(argv, args.log_file)
 
     logging.basicConfig(
         level=logging.INFO,
@@ -323,6 +397,8 @@ def main(argv: list[str] | None = None) -> int:
 
     out_dir = args.output_dir.expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    _ensure_openrouter_key_loaded(args.pre_extracted.expanduser() if args.pre_extracted else None)
 
     # Call the pipeline directly so we get the PaperText back in-process
     # (no sidecar file dance). run_headless_review handles all the

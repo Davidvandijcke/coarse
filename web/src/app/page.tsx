@@ -1259,6 +1259,22 @@ export default function Home() {
                 local Mistral OCR step (with your own OpenRouter key). Review
                 shows up on this page when done.
               </p>
+              <p
+                style={{
+                  fontFamily: "var(--font-chalk)",
+                  fontSize: "0.88rem",
+                  color: "var(--dust)",
+                  margin: "0.55rem 0 0",
+                  maxWidth: "620px",
+                  lineHeight: 1.5,
+                }}
+              >
+                Runs locally on your machine using your own Claude Code, Codex,
+                or Gemini CLI account. coarse.ink does not receive or store your
+                provider login, and your provider&apos;s terms, usage limits, and
+                organization policies apply. coarse.ink is not affiliated with
+                Anthropic, OpenAI, or Google.
+              </p>
 
               {handoffBundle && handoffState && (() => {
                 const host = handoffState.host;
@@ -1414,7 +1430,8 @@ export default function Home() {
                         >
                           The agent will refresh the coarse-review skill, ask
                           for your OpenRouter key if needed, and run the full review
-                          locally. Takes 10–25 minutes.
+                          locally. Takes 10–25 minutes. Your provider login stays
+                          local to your machine.
                         </p>
                       </div>
                     ) : (

@@ -108,7 +108,9 @@ def test_estimate_call_cost():
     assert abs(result - expected) < 1e-12
 
 
-def test_client_uses_config_model(mock_instructor_client):
+def test_client_uses_config_model(mock_instructor_client, monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     cfg = CoarseConfig(default_model="anthropic/claude-3-5-sonnet")
     client = LLMClient(config=cfg)
     assert client.model == "anthropic/claude-3-5-sonnet"

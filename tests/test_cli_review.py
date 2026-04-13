@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import patch
 
 from coarse.cli_review import _infer_handoff_extension, main
@@ -225,3 +226,143 @@ def test_main_local_mode_prints_absolute_local_footer(tmp_path, capsys) -> None:
     stdout = capsys.readouterr().out
     assert "REVIEW COMPLETE" in stdout
     assert f"  local:    {(out_dir / 'paper_review.md').resolve()}" in stdout
+
+
+def test_main_loads_openrouter_key_from_headless_helper(tmp_path, monkeypatch) -> None:
+    paper = tmp_path / "paper.md"
+    paper.write_text("# Paper\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    captured: dict[str, str | None] = {}
+
+    def fake_run_headless_review(*args, **kwargs):
+        captured["key"] = os.environ.get("OPENROUTER_API_KEY")
+        return _make_review(), "# Review\n", PaperText(full_markdown="# Paper\n", token_estimate=2)
+
+    with (
+        patch("coarse.headless_review._find_openrouter_key", return_value="sk-or-v1-dotenv"),
+        patch("coarse.headless_review.run_headless_review", side_effect=fake_run_headless_review),
+    ):
+        rc = main(
+            [
+                str(paper),
+                "--host",
+                "codex",
+                "--output-dir",
+                str(out_dir),
+            ]
+        )
+
+    assert rc == 0
+    assert captured["key"] == "sk-or-v1-dotenv"
+
+
+def test_main_skips_openrouter_lookup_when_pre_extracted(tmp_path, monkeypatch) -> None:
+    paper = tmp_path / "paper.pdf"
+    paper.write_text("%PDF", encoding="utf-8")
+    pre_extracted = tmp_path / "paper.md"
+    pre_extracted.write_text("# Paper\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+
+    with (
+        patch(
+            "coarse.headless_review._find_openrouter_key",
+            side_effect=AssertionError("unexpected"),
+        ),
+        patch(
+            "coarse.headless_review.run_headless_review",
+            return_value=(
+                _make_review(),
+                "# Review\n",
+                PaperText(full_markdown="# Paper\n", token_estimate=2),
+            ),
+        ),
+    ):
+        rc = main(
+            [
+                str(paper),
+                "--host",
+                "codex",
+                "--pre-extracted",
+                str(pre_extracted),
+                "--output-dir",
+                str(out_dir),
+            ]
+        )
+
+    assert rc == 0
+
+
+def test_main_detach_respawns_cli_with_log_file(tmp_path, capsys, monkeypatch) -> None:
+    paper = tmp_path / "paper.md"
+    paper.write_text("# Paper\n", encoding="utf-8")
+    log_path = tmp_path / "coarse-review.log"
+    popen_calls: dict[str, object] = {}
+
+    class _DummyProc:
+        pid = 4242
+
+    def fake_popen(cmd, **kwargs):
+        popen_calls["cmd"] = cmd
+        popen_calls["kwargs"] = kwargs
+        return _DummyProc()
+
+    monkeypatch.delenv("COARSE_REVIEW_DETACHED", raising=False)
+    monkeypatch.setattr("coarse.cli_review.subprocess.Popen", fake_popen)
+
+    rc = main(
+        [
+            str(paper),
+            "--host",
+            "codex",
+            "--detach",
+            "--log-file",
+            str(log_path),
+        ]
+    )
+
+    assert rc == 0
+    stdout = capsys.readouterr().out
+    assert "Review PID: 4242" in stdout
+    assert f"Log file:   {log_path.resolve()}" in stdout
+    assert popen_calls["cmd"][:3] == [popen_calls["cmd"][0], "-m", "coarse.cli_review"]
+    assert "--detach" in popen_calls["cmd"]
+    assert popen_calls["kwargs"]["env"]["COARSE_REVIEW_DETACHED"] == "1"
+    assert log_path.exists()
+    assert log_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_main_detached_child_runs_pipeline_without_respawning(tmp_path, monkeypatch) -> None:
+    paper = tmp_path / "paper.md"
+    paper.write_text("# Paper\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+    popen_called = False
+    captured: dict[str, object] = {}
+
+    def fake_popen(*args, **kwargs):
+        nonlocal popen_called
+        popen_called = True
+        raise AssertionError("unexpected respawn")
+
+    def fake_run_headless_review(*args, **kwargs):
+        captured["kwargs"] = kwargs
+        return _make_review(), "# Review\n", PaperText(full_markdown="# Paper\n", token_estimate=2)
+
+    monkeypatch.setenv("COARSE_REVIEW_DETACHED", "1")
+    monkeypatch.setattr("coarse.cli_review.subprocess.Popen", fake_popen)
+
+    with patch("coarse.headless_review.run_headless_review", side_effect=fake_run_headless_review):
+        rc = main(
+            [
+                str(paper),
+                "--host",
+                "codex",
+                "--detach",
+                "--output-dir",
+                str(out_dir),
+            ]
+        )
+
+    assert rc == 0
+    assert popen_called is False
+    assert captured["kwargs"]["host"] == "codex"

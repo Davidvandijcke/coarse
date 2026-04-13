@@ -10,8 +10,8 @@
 //      handoff URL of the form ``coarse.vercel.app/h/<token>``.
 //   4. A modal renders the two commands the user pastes into their
 //      terminal:
-//        - one-time skill refresh: `uvx --from ... coarse install-skills`
-//        - the review: `uvx --from ... coarse-review --handoff
+//        - one-time skill refresh: `uvx --python 3.12 --from ... coarse install-skills`
+//        - the review: `uvx --python 3.12 --from ... coarse-review --handoff
 //          <handoff-url> --host claude|codex|gemini [--model ...]
 //          [--effort ...]`
 //   5. The user's local `coarse-review` command:
@@ -67,7 +67,7 @@ export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
 const DEFAULT_MCP_UVX_FROM = "coarse-ink[mcp]==1.2.2";
 
-function resolvePinnedUvFrom(): string {
+export function resolvePinnedUvFrom(): string {
   const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();
   if (!raw) return DEFAULT_MCP_UVX_FROM;
   const exactVersion = /^coarse-ink\[mcp\]==[A-Za-z0-9.+-]+$/;
@@ -77,7 +77,7 @@ function resolvePinnedUvFrom(): string {
   return DEFAULT_MCP_UVX_FROM;
 }
 
-const MCP_UVX_FROM = resolvePinnedUvFrom();
+export const MCP_UVX_FROM = resolvePinnedUvFrom();
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -126,15 +126,18 @@ export function buildAgentPrompt(args: {
   runCmd: string;
 }): string {
   const { setupCmd, runCmd } = args;
+  const configCmd = setupCmd.replace("coarse install-skills --all --force", "coarse setup");
   return (
     `Please review an academic paper for me using the coarse-review skill.\n\n` +
     `STEP 0 — Check whether \`uvx\` is available. Run ` +
     `\`command -v uvx || command -v uv\`. If neither command exists, ` +
     `install uv first with \`curl -LsSf https://astral.sh/uv/install.sh | sh\`, ` +
     `then run \`export PATH="$HOME/.local/bin:$PATH"\` in the current shell. ` +
-    `If \`uv\` exists but \`uvx\` does not, use \`uv tool run --from ...\` ` +
-    `wherever the steps below say \`uvx --from ...\`. Do NOT get stuck on ` +
-    `\`uvx: command not found\`.\n\n` +
+    `coarse requires Python 3.12+, so if needed install it with ` +
+    `\`uv python install 3.12\`. If \`uv\` exists but \`uvx\` does not, ` +
+    `use \`uv tool run --python 3.12 --from ...\` ` +
+    `wherever the steps below say \`uvx --python 3.12 --from ...\`. Do NOT get stuck on ` +
+    `\`uvx: command not found\` or an older system Python.\n\n` +
     `STEP 1 — Refresh the coarse-review skill files. ` +
     `Run this command to copy the pinned coarse-review skill bundle into ` +
     `your Claude Code / Codex / Gemini CLI skill folder. This uses uvx, ` +
@@ -147,28 +150,26 @@ export function buildAgentPrompt(args: {
     `  "I need an OpenRouter API key for the Mistral OCR extraction step ` +
     `(~$0.10 per paper). You have three options:\n` +
     `   1. Get a key at https://openrouter.ai/settings/keys and paste it ` +
-    `here — I'll save it to a .env file for you.\n` +
+    `here — I'll save it to ~/.coarse/config.toml for you with:\n` +
+    `      ${configCmd}\n` +
     `   2. Set it yourself: export OPENROUTER_API_KEY=sk-or-v1-... in your ` +
     `shell, then re-ask me.\n` +
-    `   3. Add it to a .env file in your current directory: ` +
-    `OPENROUTER_API_KEY=sk-or-v1-...\n` +
+    `   3. If you explicitly prefer project-local storage, add it to a ` +
+    `.env file in your current directory: OPENROUTER_API_KEY=sk-or-v1-...\n` +
     `   Which would you like?"\n\n` +
-    `If I paste a key (it should start with sk-or-), save it to ./.env ` +
-    `by appending OPENROUTER_API_KEY=<key> to the file (create the file ` +
-    `if it doesn't exist; never overwrite existing variables).\n\n` +
-    `STEP 3 — Run the review IN THE BACKGROUND with logs redirected ` +
-    `to a file. The review takes 10-25 minutes, which exceeds most ` +
-    `agent tool timeouts (5 minutes default) — you MUST run it as a ` +
-    `background process, NOT a foreground command. Use this exact ` +
-    `pattern:\n\n` +
-    `  nohup ${runCmd} > /tmp/coarse-review.log 2>&1 < /dev/null &\n` +
-    `  echo "Review PID: $!"\n\n` +
+    `If I paste a key (it should start with sk-or-), save it to ` +
+    `~/.coarse/config.toml via \`${configCmd}\` unless I explicitly ask ` +
+    `for project-local .env storage.\n\n` +
+    `STEP 3 — Start the review with coarse-review's built-in detached ` +
+    `launcher. The review takes 10-25 minutes, which exceeds most agent ` +
+    `tool timeouts, so use this exact command:\n\n` +
+    `  ${runCmd}\n\n` +
+    `This command returns immediately with the Review PID and writes all ` +
+    `output to \`/tmp/coarse-review.log\`.\n\n` +
     `Then poll the log file every 60-90 seconds with ` +
     `\`tail -20 /tmp/coarse-review.log\` to check progress. Do NOT ` +
-    `run the command in the foreground — it will hit your tool ` +
-    `timeout and look like it crashed when it's actually still ` +
-    `running. Do NOT kill the process because you think it hung; ` +
-    `it takes a genuine 10-25 minutes.\n\n` +
+    `re-run the command in the foreground. Do NOT kill the process because ` +
+    `you think it hung; it takes a genuine 10-25 minutes.\n\n` +
     `STEP 4 — When the run finishes, use ONLY the final log lines to ` +
     `locate the artifacts. Do NOT do a broad filesystem search. ` +
     `Run \`rg '^  view:|^  local:' /tmp/coarse-review.log\`. ` +
@@ -181,6 +182,10 @@ export function buildAgentPrompt(args: {
     `Do NOT run global ` +
     `\`find\`, \`locate\`, \`lsof\`, or whole-computer searches trying to ` +
     `discover the review file.\n\n` +
+    `Note: this runs locally on my machine using my own Claude Code, ` +
+    `Codex, or Gemini CLI account. coarse.ink does not receive or store ` +
+    `my provider login, and my provider's terms, limits, and policies ` +
+    `apply.\n\n` +
     `When the log shows "PUBLISHED TO COARSE WEB" or "REVIEW ` +
     `COMPLETE", the review is done. Show me:\n` +
     `  - The review URL (search for 'view:' in the log)\n` +
@@ -264,9 +269,9 @@ export function buildCliCommands(args: {
   const { handoffUrl, host, model, effort } = args;
   const cliName = HOST_CLI_NAME[host];
   const quotedUvFrom = shellQuote(MCP_UVX_FROM);
-  const setupCmd = `uvx --from ${quotedUvFrom} coarse install-skills --all --force`;
+  const setupCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse install-skills --all --force`;
   const runCmd =
-    `uvx --from ${quotedUvFrom} coarse-review --handoff ${handoffUrl}` +
+    `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach --log-file /tmp/coarse-review.log --handoff ${handoffUrl}` +
     ` --host ${cliName}` +
     ` --model ${model}` +
     ` --effort ${effort}`;

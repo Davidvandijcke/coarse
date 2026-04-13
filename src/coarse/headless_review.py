@@ -46,7 +46,11 @@ def _find_openrouter_key() -> str | None:
         try:
             with open(config_path, "rb") as f:
                 data = tomllib.load(f)
-            stored = data.get("openrouter_api_key") or data.get("openrouter", {}).get("api_key")
+            stored = (
+                data.get("api_keys", {}).get("openrouter")
+                or data.get("openrouter_api_key")
+                or data.get("openrouter", {}).get("api_key")
+            )
             if stored:
                 return stored.strip()
         except Exception:
@@ -79,10 +83,11 @@ def _require_openrouter_key() -> str:
     print(
         "ERROR: OPENROUTER_API_KEY not found.\n\n"
         "Mistral OCR extraction requires an OpenRouter API key. Any of these work:\n"
-        "  1. export OPENROUTER_API_KEY=sk-or-v1-...\n"
-        "  2. Add OPENROUTER_API_KEY=sk-or-v1-... to a .env file in the\n"
-        "     current directory (or any parent directory, up to 3 levels).\n"
-        "  3. Run `coarse setup` to save it to ~/.coarse/config.toml\n\n"
+        "  1. Run `coarse setup` to save it to ~/.coarse/config.toml\n"
+        "  2. export OPENROUTER_API_KEY=sk-or-v1-...\n"
+        "  3. Add OPENROUTER_API_KEY=sk-or-v1-... to a .env file in the\n"
+        "     current directory (or any parent directory, up to 3 levels) if\n"
+        "     you explicitly prefer project-local storage.\n\n"
         "Alternatively, if you have a pre-extracted markdown file, pass it\n"
         "as the second argument to skip OCR:\n"
         "  python -m coarse.headless_review --host claude <paper.pdf> <paper.md>\n\n"
