@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+> ⚠️ **RELEASE BLOCKER — MUST RESOLVE BEFORE MERGING dev → main / CUTTING v1.3.0** ⚠️
+>
+> `web/src/lib/mcpHandoff.ts` currently pins `DEFAULT_MCP_UVX_FROM` to a
+> `git+https://github.com/Davidvandijcke/coarse@<sha>` commit ref instead
+> of a PyPI semver. This is a temporary workaround because the dev branch
+> added the `coarse install-skills` command and the whole MCP/headless
+> handoff stack, but PyPI's `coarse-ink==1.2.2` (the last release from
+> main) predates all of that — every coding-agent handoff triggered from
+> the web frontend hits "No such command 'install-skills'" in STEP 1 of
+> the agent prompt until a new version is published.
+>
+> **Before the release PR merges**, do all four:
+>   1. Bump `pyproject.toml` + `src/coarse/__init__.py` to `1.3.0`.
+>   2. Publish `v1.3.0` to PyPI via the release workflow (tag push on main).
+>   3. Revert `DEFAULT_MCP_UVX_FROM` in `web/src/lib/mcpHandoff.ts` to
+>      `"coarse-ink[mcp]==1.3.0"`.
+>   4. Update the three shipped skill manifests at
+>      `src/coarse/_skills/{claude_code,codex,gemini_cli}/SKILL.md` line
+>      34 to match (currently still hardcoded to `1.2.2`).
+>
+> Shipping the git-ref pin to production would make every user's clipboard
+> prompt contain a `git+https://` URL that re-clones on every uvx invocation,
+> requires git on PATH, and installs unpinned HEAD-of-dev with no semver
+> guarantees. Do NOT forget to revert.
+
 ### Changed
 
 - **Migrated transactional email from Gmail SMTP to Resend** — all three email-sending call sites now route through a verified `coarse.ink` Resend domain with `reviews@coarse.ink` as the sender. The web confirmation path (`web/src/app/api/submit/route.ts`) calls a new `sendReviewEmail` helper in `web/src/lib/email.ts` that wraps the `resend` npm client as a best-effort, never-throwing async function, replacing the inline `nodemailer` Gmail transport that killed production on 2026-04-13 when Gmail suspended the account and an uncaught `await mailer.sendMail(...)` crashed the route. The Modal worker (`deploy/modal_worker.py::_send_email`) now uses the `resend` Python client with the same no-op-on-missing-key contract, swallows every exception, and reads `RESEND_API_KEY` from a new `coarse-resend` Modal secret (the old `coarse-gmail` secret reference is gone from `@app.function(secrets=[...])`). The daily capacity monitor workflow (`.github/workflows/monitor.yml`) replaces the `dawidd6/action-send-mail@v3` Gmail step with a `curl` to `https://api.resend.com/emails` built via `jq` so multi-line alert bodies can't break the JSON envelope. The `EMAIL_DELIVERY_DISABLED` kill switch in `web/src/lib/emailCapacity.ts` is now `false` — Resend is live as the default path — but the flag stays as the one-line operational escape hatch for future outages. The frontend capacity gate bumps from 240 reviews/day (Gmail-calibrated) to 2500 reviews/day (Resend Pro-calibrated), and the monitor cron's warning threshold bumps from 200 to 5000. `.env.local.example`, `deploy/DEPLOY.md`, and `deploy/CAPACITY.md` all updated to document the Resend-based setup, key rotation across Vercel + Modal + GitHub secrets, and the new capacity math. `nodemailer` + `@types/nodemailer` removed from `web/package.json`; `resend>=2.0` added to `deploy/modal_worker.py` pip install. Five regression tests in `tests/test_modal_worker.py` cover: the happy path (resend client called with the exact `from`/`to`/`subject`/`html`), missing-key no-op (silent drop when `RESEND_API_KEY` is unset), exception swallowing (a raised error inside the Resend call never propagates to the caller), unknown-id tolerance (an empty `{}` response logs `id=unknown` instead of crashing), and secret scrubbing (a Resend error message containing a bearer token is run through `_sanitize_error` before reaching stdout).

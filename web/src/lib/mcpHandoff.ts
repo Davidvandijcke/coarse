@@ -65,7 +65,35 @@ export const HOST_DEFAULT_MODELS: Record<ChatHost, string[]> = {
 export const EFFORT_LEVELS = ["low", "medium", "high", "max"] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
-const DEFAULT_MCP_UVX_FROM = "coarse-ink[mcp]==1.2.2";
+// ⚠️ TEMPORARY — MUST REVERT BEFORE MERGING dev → main / CUTTING v1.3.0 ⚠️
+//
+// Pinned to a specific origin/dev commit while the dev-branch code (MCP
+// server, install-skills command, headless CLI review, subscription handoff,
+// extraction refactor) is unreleased. PyPI's published `coarse-ink==1.2.2`
+// is the last release from main and does NOT include `install-skills`, so
+// pointing uvx at it makes the web handoff flow fail in STEP 1 of the agent
+// prompt with "No such command 'install-skills'". Every coding-agent user
+// hits this the moment they click "Open Claude Code" / "Open Codex" /
+// "Open Gemini CLI" from coarse.ink.
+//
+// Pinning to the commit rather than `@dev` (mutable branch ref) is
+// deliberate: immutable, reproducible, and it's the only form
+// `resolvePinnedUvFrom()`'s allowlist regex accepts. Bump the hash
+// periodically if dev moves forward during testing.
+//
+// RELEASE-CUT CHECKLIST — do all four before the release PR merges:
+//   1. Bump `pyproject.toml` + `src/coarse/__init__.py` to 1.3.0.
+//   2. Publish v1.3.0 to PyPI via the release workflow (tag push on main).
+//   3. Revert this constant to `"coarse-ink[mcp]==1.3.0"`.
+//   4. Update `src/coarse/_skills/{claude_code,codex,gemini_cli}/SKILL.md`
+//      line 34 to match (currently still hardcoded to 1.2.2).
+//
+// Shipping this git-ref pin to production would make every user's clipboard
+// prompt contain a `git+https://` URL, which requires git on PATH, re-clones
+// on every uvx invocation (slow), and installs whatever is currently at that
+// commit (no semver guarantees). Do NOT forget to revert.
+const DEFAULT_MCP_UVX_FROM =
+  "coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@d5c0c77af347";
 
 export function resolvePinnedUvFrom(): string {
   const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();
