@@ -1,4 +1,5 @@
 """Tests for agents/crossref.py — CrossrefAgent."""
+
 from unittest.mock import MagicMock
 
 from coarse.agents.crossref import CrossrefAgent, _ConsolidatedComments
@@ -15,10 +16,7 @@ def _make_client() -> LLMClient:
 
 def _make_overview() -> OverviewFeedback:
     return OverviewFeedback(
-        issues=[
-            OverviewIssue(title=f"Issue {i}", body=f"Body of issue {i}.")
-            for i in range(1, 5)
-        ]
+        issues=[OverviewIssue(title=f"Issue {i}", body=f"Body of issue {i}.") for i in range(1, 5)]
     )
 
 
@@ -32,13 +30,11 @@ def _make_comment(number: int = 1) -> DetailedComment:
 
 
 def _make_consolidated(numbers: list[int]) -> _ConsolidatedComments:
-    return _ConsolidatedComments(
-        comments=[_make_comment(n) for n in numbers]
-    )
+    return _ConsolidatedComments(comments=[_make_comment(n) for n in numbers])
 
 
 def test_crossref_returns_detailed_comments():
-    """Mock LLMClient.complete to return _ConsolidatedComments with 3 comments; verify run returns list[DetailedComment] of length 3."""
+    """Mock LLMClient.complete and verify run() returns 3 DetailedComments."""
     client = _make_client()
     client.complete.return_value = _make_consolidated([1, 2, 3])
 
@@ -51,7 +47,7 @@ def test_crossref_returns_detailed_comments():
 
 
 def test_crossref_comments_renumbered_sequentially():
-    """Given comments with non-sequential numbers, verify the returned list has sequential numbers."""
+    """Non-sequential input numbering should come back as 1..N."""
     client = _make_client()
     client.complete.return_value = _make_consolidated([1, 2, 3])
 
@@ -146,3 +142,23 @@ def test_crossref_prompt_caching():
     # User message is still a plain string
     user_msg = [m for m in messages if m["role"] == "user"][0]
     assert isinstance(user_msg["content"], str)
+
+
+def test_crossref_author_notes_prepend_to_user_message():
+    client = _make_client()
+    client.complete.return_value = _make_consolidated([1])
+
+    agent = CrossrefAgent(client)
+    agent.run(
+        _make_overview(),
+        [_make_comment(1)],
+        author_notes="keep comments on the identification strategy if they are valid",
+    )
+
+    messages = client.complete.call_args[0][0]
+    system_content = [m for m in messages if m["role"] == "system"][0]["content"]
+    user_content = [m for m in messages if m["role"] == "user"][0]["content"]
+
+    assert "keep comments on the identification strategy if they are valid" not in system_content
+    assert "<author_notes>" in user_content
+    assert "keep comments on the identification strategy if they are valid" in user_content

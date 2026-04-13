@@ -9,7 +9,12 @@ from pydantic import BaseModel, Field
 from coarse.agents.base import ReviewAgent
 from coarse.agents.overview import _build_sections_text
 from coarse.llm import LLMClient
-from coarse.prompts import COMPLETENESS_SYSTEM, completeness_user, document_form_notice
+from coarse.prompts import (
+    COMPLETENESS_SYSTEM,
+    author_notes_block,
+    completeness_user,
+    document_form_notice,
+)
 from coarse.types import (
     ContributionContext,
     DomainCalibration,
@@ -49,6 +54,7 @@ class CompletenessAgent(ReviewAgent):
         overview: OverviewFeedback,
         calibration: DomainCalibration | None = None,
         contribution_context: ContributionContext | None = None,
+        author_notes: str | None = None,
     ) -> list[OverviewIssue]:
         # Short-circuit for document forms where "flag missing content" is
         # meaningless: outlines ARE missing content on purpose, notes aren't
@@ -63,7 +69,7 @@ class CompletenessAgent(ReviewAgent):
 
         sections_text = _build_sections_text(structure.sections)
 
-        user_text = completeness_user(
+        user_text = author_notes_block(author_notes) + completeness_user(
             structure.title,
             structure.abstract,
             sections_text,

@@ -3,13 +3,14 @@
 Quote verification is handled by the programmatic verify_quotes() step
 that runs after crossref in the pipeline.
 """
+
 from __future__ import annotations
 
 from pydantic import BaseModel
 
 from coarse.agents.base import ReviewAgent
 from coarse.llm import LLMClient
-from coarse.prompts import CROSSREF_SYSTEM, crossref_system, crossref_user
+from coarse.prompts import CROSSREF_SYSTEM, author_notes_block, crossref_system, crossref_user
 from coarse.types import DetailedComment, OverviewFeedback
 
 _TEMPERATURE = 0.1
@@ -35,8 +36,11 @@ class CrossrefAgent(ReviewAgent):
         comment_target: int | str | None = None,
         title: str = "",
         abstract: str = "",
+        author_notes: str | None = None,
     ) -> list[DetailedComment]:
-        user_content = crossref_user(overview, comments, title=title, abstract=abstract)
+        user_content = author_notes_block(author_notes) + crossref_user(
+            overview, comments, title=title, abstract=abstract
+        )
         sys_prompt = crossref_system(comment_target) if comment_target else CROSSREF_SYSTEM
 
         messages = self._build_messages(sys_prompt, user_content)

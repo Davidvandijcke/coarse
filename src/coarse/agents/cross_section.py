@@ -7,7 +7,12 @@ import logging
 from pydantic import BaseModel, Field
 
 from coarse.agents.base import ReviewAgent, truncate_section
-from coarse.prompts import CROSS_SECTION_SYSTEM, cross_section_user, document_form_notice
+from coarse.prompts import (
+    CROSS_SECTION_SYSTEM,
+    author_notes_block,
+    cross_section_user,
+    document_form_notice,
+)
 from coarse.types import DetailedComment, DocumentForm, SectionInfo
 
 logger = logging.getLogger(__name__)
@@ -29,11 +34,12 @@ class CrossSectionAgent(ReviewAgent):
         discussion_section: SectionInfo,
         abstract: str = "",
         document_form: DocumentForm = "manuscript",
+        author_notes: str | None = None,
     ) -> list[DetailedComment]:
         results_section = truncate_section(results_section)
         discussion_section = truncate_section(discussion_section)
 
-        user_text = cross_section_user(
+        user_text = author_notes_block(author_notes) + cross_section_user(
             paper_title,
             results_section,
             discussion_section,
