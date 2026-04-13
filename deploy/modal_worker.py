@@ -36,7 +36,7 @@ image = (
     .pip_install(
         # Install deps only (coarse source is baked into image below)
         "litellm>=1.60",
-        "instructor>=1.7",
+        "instructor>=1.15.1",
         "pydantic>=2.0",
         "typer>=0.12",
         "rich>=13.0",
@@ -50,7 +50,8 @@ image = (
         "mammoth>=1.6",
         "markdownify>=0.12",
         "ebooklib>=0.18",
-        "docling>=2.0",
+        "docling>=2.86.0",
+        "transformers>=5.4,<6",
     )
     .add_local_dir(_repo_root / "src" / "coarse", remote_path="/root/coarse")
 )
