@@ -7,6 +7,17 @@ on:
 
 permissions: read-all
 
+# Opt every JavaScript-based action in this workflow into Node.js 24.
+# GitHub is deprecating Node 20 for JavaScript actions (default flip on
+# 2026-06-02, hard removal on 2026-09-16); setting this env var at
+# workflow level forces `actions/checkout`, `actions/setup-*`,
+# `astral-sh/setup-uv`, etc. onto the Node 24 runner immediately. When
+# the flip becomes the default, this env var becomes a no-op and can be
+# removed. Keeping it here as the single bulk opt-in is cheaper than
+# chasing every action to its next major tag.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   test:
     runs-on: ubuntu-latest

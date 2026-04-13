@@ -35,6 +35,12 @@ on:
 permissions:
   contents: read
 
+# Opt JavaScript-based actions into Node.js 24 ahead of GitHub's
+# 2026-06-02 default flip / 2026-09-16 Node 20 removal. See the note
+# on `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` in ci.yml.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 # Serialize deploys: if two pushes land on main within seconds of each
 # other, deploy them in order rather than in parallel. `cancel-in-progress:
 # false` means a second push waits for the first to finish instead of
