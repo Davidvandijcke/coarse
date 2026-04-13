@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- **Quote verification now corrects quotes before downstream review handoffs without dropping recall** — the pipeline now programmatically verifies or repairs quotes between section/proof/cross-section/editorial stages so later agents reason over grounded text, but intermediate handoffs use non-dropping verification (`[approximate]` fallback) to preserve review coverage when extraction is noisy. The final output gate remains strict. This review-driven cleanup also removes the dead assumption-checker path and normalizes the recently changed module test files to the `tests/test_{module}.py` convention.
+
 - **Landing-page "system busy" banner no longer fires on abandoned presign rows** — `/api/presign` inserts a `reviews` row with `status='queued'` before the file is even uploaded, so any user who closes the tab or bails at the API-key prompt leaks a phantom `queued` row that no code path ever transitions. `/api/status` was counting all `queued`/`running` rows regardless of age, so the banner (which fires at 80% of the 20-slot capacity) tripped at 16 abandoned presigns even when Modal was idle. `/api/status` now only counts rows created within the last 2.5h (Modal's 2h review timeout plus a small cushion), and a new `.github/workflows/sweep_stale_reviews.yml` runs every 15 minutes to flip any `queued`/`running` row older than 3h to `status='failed'` with an "abandoned or worker crashed" message, so the `/review/<id>` page stays honest for users who actually did submit.
 
 ### Added

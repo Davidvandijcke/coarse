@@ -72,11 +72,14 @@ def _check_extraction_quality(structure: "PaperStructure") -> bool:
 def _verify_with_fallback(
     comments: list["DetailedComment"],
     paper_markdown: str,
+    *,
+    stage_name: str = "Quote verification",
+    drop_unverified: bool = True,
 ) -> list["DetailedComment"]:
     """Run quote verification, falling back to originals if all are dropped."""
-    verified = verify_quotes(comments, paper_markdown, drop_unverified=True)
+    verified = verify_quotes(comments, paper_markdown, drop_unverified=drop_unverified)
     if comments and not verified:
-        logger.warning("Quote verification dropped ALL comments — skipping verification")
+        logger.warning("%s dropped ALL comments — keeping original comments", stage_name)
         return comments
     return verified
 
@@ -145,6 +148,7 @@ def _review_section(
     section_agent: SectionAgent,
     verify_agent: ProofVerifyAgent,
     section: SectionInfo,
+    paper_markdown: str,
     paper_title: str,
     overview: OverviewFeedback | None,
     calibration: DomainCalibration | None,
@@ -169,6 +173,12 @@ def _review_section(
         document_form=document_form,
         author_notes=author_notes,
     )
+    comments = _verify_with_fallback(
+        comments,
+        paper_markdown,
+        stage_name=f"Section-agent quote verification for '{section.title}'",
+        drop_unverified=False,
+    )
     if focus == "proof" and comments and _section_needs_proof_verify(section):
         comments = verify_agent.run(
             section,
@@ -177,6 +187,12 @@ def _review_section(
             abstract=abstract,
             document_form=document_form,
             author_notes=author_notes,
+        )
+        comments = _verify_with_fallback(
+            comments,
+            paper_markdown,
+            stage_name=f"Proof-verify quote verification for '{section.title}'",
+            drop_unverified=False,
         )
     return comments
 
@@ -278,7 +294,7 @@ def review_paper(
     1. Extract file → PaperText (format-specific extraction)
     2. Cost gate (optional)
     3. Analyze structure via markdown parsing + cheap LLM metadata → PaperStructure
-    4. Phase 1: Overview agent + assumption checker (parallel, blocking)
+    4. Phase 1: Overview agent (blocking)
     5. Phase 2: Section agents (parallel, text-only with overview context)
     6. Cross-reference + quote verification + critique + quote re-verification
     7. Synthesis → markdown
@@ -408,6 +424,7 @@ def review_paper(
                     section_agent,
                     verify_agent,
                     section,
+                    paper_text.full_markdown,
                     structure.title,
                     overview,
                     calibration,
@@ -461,6 +478,12 @@ def review_paper(
             for future in cross_section_futures:
                 try:
                     cross_comments = future.result(timeout=900)
+                    cross_comments = _verify_with_fallback(
+                        cross_comments,
+                        paper_text.full_markdown,
+                        stage_name="Cross-section quote verification",
+                        drop_unverified=False,
+                    )
                     section_comments.extend(cross_comments)
                 except Exception:
                     logger.warning("Cross-section synthesis failed, skipping", exc_info=True)
@@ -478,6 +501,12 @@ def review_paper(
             document_form=structure.document_form,
             author_notes=author_notes,
         )
+        filtered_comments = _verify_with_fallback(
+            filtered_comments,
+            paper_text.full_markdown,
+            stage_name="Editorial quote verification",
+            drop_unverified=False,
+        )
     except Exception:
         # Fallback: use legacy crossref → critique pipeline if editorial agent fails
         logger.warning("Editorial agent failed, falling back to crossref+critique", exc_info=True)
@@ -491,6 +520,12 @@ def review_paper(
                 abstract=structure.abstract,
                 author_notes=author_notes,
             )
+            filtered_comments = _verify_with_fallback(
+                filtered_comments,
+                paper_text.full_markdown,
+                stage_name="Crossref quote verification",
+                drop_unverified=False,
+            )
         except Exception:
             logger.warning("Crossref fallback also failed", exc_info=True)
             filtered_comments = section_comments
@@ -501,6 +536,12 @@ def review_paper(
                 title=structure.title,
                 abstract=structure.abstract,
                 author_notes=author_notes,
+            )
+            filtered_comments = _verify_with_fallback(
+                filtered_comments,
+                paper_text.full_markdown,
+                stage_name="Critique quote verification",
+                drop_unverified=False,
             )
         except Exception:
             logger.warning("Critique fallback also failed", exc_info=True)
