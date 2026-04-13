@@ -41,6 +41,15 @@ const PAPER_LABELS: Record<PaperId, string> = {
   targeting_interventions: "Targeting Interventions",
 };
 
+const OVERVIEW_MODEL_ORDER = ["gpt5mini", "gpt54", "claude", "kimi"] as const;
+const OVERVIEW_REFERENCE_ORDER = ["stanford", "reviewer3", "refine"] as const;
+const OVERVIEW_PAPER_ORDER: PaperId[] = [
+  "cortical_circuits",
+  "coset_codes",
+  "population_genetics",
+  "targeting_interventions",
+];
+
 function textContent(node: React.ReactNode): string {
   if (typeof node === "string") return node;
   if (typeof node === "number") return String(node);
@@ -143,34 +152,30 @@ Verify quotes against the paper text. Assess coverage and depth against the pape
 NOTE: To mitigate positional bias, the judge runs twice with Review A and Review B swapped. Scores are inverted and averaged across both orderings.`;
 
 /* ── Scores overview table ────────────────────────────────── */
-// Source files in data/refine_examples/{paper}/:
-//   refine.ink: quality_{model}_{date}_vs_refine_gemini31pro_pdf.md
-//   Stanford & Reviewer 3 (2026-03-16): quality_{model}_20260316_vs_{ref}_gemini31pro_pdf.md
-// All scored by Gemini 3.1 Pro with PDF multimodal input.
-const SCORE_DATA = [
-  { paper: "van Vreeswijk & Sompolinsky (1998)", gpt5mini: 6.00, claude: 4.50, kimi: 6.00, refLabel: "Stanford" },
-  { paper: "van Vreeswijk & Sompolinsky (1998)", gpt5mini: 6.00, claude: 6.00, kimi: 6.00, refLabel: "Reviewer 3" },
-  { paper: "van Vreeswijk & Sompolinsky (1998)", gpt5mini: 5.50, claude: 5.33, kimi: 4.67, refLabel: "refine.ink" },
-  { paper: "Forney (1988)", gpt5mini: 4.83, claude: 6.00, kimi: 6.00, refLabel: "Stanford" },
-  { paper: "Forney (1988)", gpt5mini: 6.00, claude: 6.00, kimi: 6.00, refLabel: "Reviewer 3" },
-  { paper: "Forney (1988)", gpt5mini: 5.83, claude: 5.50, kimi: 4.17, refLabel: "refine.ink" },
-  { paper: "Stephens & Donnelly (2000)", gpt5mini: 5.83, claude: 6.00, kimi: 5.83, refLabel: "Stanford" },
-  { paper: "Stephens & Donnelly (2000)", gpt5mini: 6.00, claude: 6.00, kimi: 5.50, refLabel: "Reviewer 3" },
-  { paper: "Stephens & Donnelly (2000)", gpt5mini: 5.00, claude: 5.67, kimi: 4.17, refLabel: "refine.ink" },
-  { paper: "Galeotti, Golub & Goyal (2020)", gpt5mini: 5.00, claude: 6.00, kimi: 5.00, refLabel: "Stanford" },
-  { paper: "Galeotti, Golub & Goyal (2020)", gpt5mini: 6.00, claude: 6.00, kimi: 5.83, refLabel: "Reviewer 3" },
-  { paper: "Galeotti, Golub & Goyal (2020)", gpt5mini: 4.33, claude: 5.83, kimi: 5.67, refLabel: "refine.ink" },
-];
+function parseOverallScore(score: string): number | null {
+  const [raw] = score.split("/");
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
-const PAPERS_ORDER = [
-  "van Vreeswijk & Sompolinsky (1998)",
-  "Forney (1988)",
-  "Stephens & Donnelly (2000)",
-  "Galeotti, Golub & Goyal (2020)",
-];
-
-function ScoresOverviewTable() {
+function ScoresOverviewTable({ papers }: { papers: Record<PaperId, PaperData> }) {
   const [open, setOpen] = useState(false);
+  const rows = OVERVIEW_PAPER_ORDER.flatMap((paperId) => {
+    const paper = papers[paperId];
+    return OVERVIEW_REFERENCE_ORDER.map((comparisonId) => ({
+      key: `${paperId}-${comparisonId}`,
+      paperId,
+      paperLabel: paper.citation,
+      comparisonId,
+      refLabel: COMPARISON_LABELS[comparisonId],
+      scores: Object.fromEntries(
+        OVERVIEW_MODEL_ORDER.map((modelId) => [
+          modelId,
+          parseOverallScore(paper.models[modelId]?.scores[comparisonId]?.overall ?? "N/A"),
+        ]),
+      ) as Record<(typeof OVERVIEW_MODEL_ORDER)[number], number | null>,
+    }));
+  });
 
   const cellStyle: CSSProperties = {
     padding: "0.375rem 0.625rem",
@@ -236,23 +241,24 @@ function ScoresOverviewTable() {
                 <th style={{ ...headerStyle, textAlign: "left" }}>Paper</th>
                 <th style={{ ...headerStyle, textAlign: "left" }}>Reference</th>
                 <th style={headerStyle}>GPT-5 Mini</th>
+                <th style={headerStyle}>GPT-5.4</th>
                 <th style={headerStyle}>Sonnet 4.6</th>
                 <th style={headerStyle}>Kimi K2.5</th>
               </tr>
             </thead>
             <tbody>
-              {PAPERS_ORDER.map((paperName) => {
-                const rows = SCORE_DATA.filter((r) => r.paper === paperName);
-                return rows.map((row, i) => (
-                  <tr key={`${paperName}-${row.refLabel}`}>
+              {OVERVIEW_PAPER_ORDER.map((paperId) => {
+                const paperRows = rows.filter((r) => r.paperId === paperId);
+                return paperRows.map((row, i) => (
+                  <tr key={row.key}>
                     {i === 0 && (
-                      <td style={{ ...paperCellStyle, borderBottom: i < rows.length - 1 ? "none" : cellStyle.borderBottom }} rowSpan={rows.length}>
-                        {paperName}
+                      <td style={{ ...paperCellStyle, borderBottom: i < paperRows.length - 1 ? "none" : cellStyle.borderBottom }} rowSpan={paperRows.length}>
+                        {row.paperLabel}
                       </td>
                     )}
                     <td style={refCellStyle}>
                       <a
-                        href={row.refLabel === "Stanford" ? COMPARISON_URLS.stanford : row.refLabel === "Reviewer 3" ? COMPARISON_URLS.reviewer3 : COMPARISON_URLS.refine}
+                        href={COMPARISON_URLS[row.comparisonId]}
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{ color: "inherit", textDecoration: "underline", textUnderlineOffset: "2px" }}
@@ -260,16 +266,23 @@ function ScoresOverviewTable() {
                         {row.refLabel}
                       </a>
                     </td>
-                    {[row.gpt5mini, row.claude, row.kimi].map((score, j) => (
-                      <td key={j} style={{
-                        ...cellStyle,
-                        color: scoreColor(score),
-                        fontWeight: score >= 5.0 ? 600 : 400,
-                        background: score >= 5.0 ? "rgba(212, 168, 67, 0.12)" : "transparent",
-                      }}>
-                        {score.toFixed(2)}
-                      </td>
-                    ))}
+                    {OVERVIEW_MODEL_ORDER.map((modelId) => {
+                      const score = row.scores[modelId];
+                      const active = score !== null;
+                      return (
+                        <td
+                          key={modelId}
+                          style={{
+                            ...cellStyle,
+                            color: active ? scoreColor(score) : "var(--dust)",
+                            fontWeight: active && score >= 5.0 ? 600 : 400,
+                            background: active && score >= 5.0 ? "rgba(212, 168, 67, 0.12)" : "transparent",
+                          }}
+                        >
+                          {active ? score.toFixed(2) : "N/A"}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ));
               })}
@@ -552,7 +565,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
         </div>
       </section>
 
-      <ScoresOverviewTable />
+      <ScoresOverviewTable papers={papers} />
       <JudgePromptCollapsible />
 
       {/* Section jump */}
@@ -600,7 +613,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
           {/* Model selector */}
           <div style={{ display: "flex", gap: "1.25rem", padding: "0.5rem 1.5rem", flexShrink: 0, alignItems: "baseline" }}>
             <span style={{ fontFamily: "var(--font-serif)", fontSize: "1rem", color: "var(--dust)", letterSpacing: "0.02em" }}>&lsquo;coarse</span>
-            {(["claude", "kimi", "gpt5mini"] as const).map((mid) => {
+            {(["claude", "kimi", "gpt5mini", "gpt54"] as const).map((mid) => {
               const available = !!paper.models[mid];
               return (
                 <button

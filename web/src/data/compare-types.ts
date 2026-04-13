@@ -5,7 +5,7 @@ export type QualityScores = {
   depth: string;
 };
 
-export type ModelId = "claude" | "kimi" | "gpt5mini";
+export type ModelId = "claude" | "kimi" | "gpt5mini" | "gpt54";
 export type ComparisonId = "refine" | "stanford" | "reviewer3";
 export type PaperId = "cortical_circuits" | "coset_codes" | "population_genetics" | "targeting_interventions";
 
@@ -31,6 +31,7 @@ export const MODEL_LABELS: Record<ModelId, string> = {
   claude: "Claude Sonnet 4.6",
   kimi: "Kimi K2.5",
   gpt5mini: "GPT-5 Mini",
+  gpt54: "GPT-5.4",
 };
 
 export const COMPARISON_LABELS: Record<ComparisonId, string> = {

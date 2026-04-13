@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **Compare page now includes GPT-5.4 benchmark results** — added `gpt54` as a first-class model on the side-by-side comparison page, loaded the April 12 GPT-5.4 review and Gemini judge files for all four benchmark papers, and exposed the new panel in both the selector and the score overview table. The overview table now derives its values from the checked-in quality reports rather than a duplicated hardcoded matrix, and the compare-data loader normalizes JSON-style `\uXXXX` escapes in review markdown so generated benchmark artifacts render correctly on the site.
+
 ## v1.2.1 — 2026-04-11
 
 Patch release. Single fix: the author-notes textarea added in v1.2.0 (#67) inherited a placeholder color (`var(--tray)` ≈ `#2A3138`) that is nearly identical to the textarea's own background color (`var(--board-surface)` ≈ `#242D33`), making the multi-line placeholder hint illegible on the submit page. Also adds an end-to-end validation of the v1.2.0 author-notes feature against a synthetic paper — see issue #54 for details.
