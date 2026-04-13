@@ -158,6 +158,44 @@ def _sanitize_error(msg: str) -> str:
     return msg[:500]
 
 
+def _classify_hosted_key_error(api_key: str | None) -> str | None:
+    """Explain when coarse.ink receives a direct-provider key.
+
+    The hosted product always routes through OpenRouter, even when the chosen
+    model ID starts with `openai/`, `anthropic/`, and so on. A direct provider
+    key therefore fails later as a generic OpenRouter 401 unless we catch the
+    obvious prefixes here and tell the user what kind of key the site expects.
+
+    Keep this intentionally conservative: only classify well-known direct
+    provider prefixes so unknown future OpenRouter key formats are not rejected.
+    """
+    cleaned = (api_key or "").strip()
+    if not cleaned or cleaned.startswith("sk-or-v1-"):
+        return None
+
+    provider = None
+    if cleaned.startswith("sk-ant-"):
+        provider = "Anthropic"
+    elif cleaned.startswith("sk-"):
+        provider = "OpenAI"
+    elif cleaned.startswith("gsk_"):
+        provider = "Groq"
+    elif cleaned.startswith("pplx-"):
+        provider = "Perplexity"
+    elif cleaned.startswith("AIza"):
+        provider = "Google"
+
+    if provider is None:
+        return None
+
+    return (
+        "coarse.ink requires an OpenRouter API key (usually starts with "
+        f"sk-or-v1-), even when you pick a {provider} model. The key you "
+        f"pasted looks like a direct {provider} key. Get an OpenRouter key "
+        "at https://openrouter.ai/keys and resubmit."
+    )
+
+
 def _classify_api_error(exc: BaseException) -> str | None:
     """Return a clear, user-facing message for common API errors.
 
@@ -357,6 +395,15 @@ def do_review(req_dict: dict):
     # intentionally source-agnostic.
     original_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip() or None
     resolved_user_key = _resolve_user_api_key(db, req, job_id)
+    hosted_key_error = _classify_hosted_key_error(resolved_user_key)
+    if hosted_key_error is not None:
+        db.table("reviews").update(
+            {
+                "status": "failed",
+                "error_message": hosted_key_error,
+            }
+        ).eq("id", job_id).execute()
+        raise ValueError(hosted_key_error)
     if resolved_user_key:
         os.environ["OPENROUTER_API_KEY"] = resolved_user_key
 

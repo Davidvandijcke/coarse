@@ -226,6 +226,40 @@ def test_sanitize_error_instructor_envelope_keeps_secret_scrubbing(
 
 
 # ---------------------------------------------------------------------------
+# _classify_hosted_key_error — issue #106 wrong-key-type guidance
+# ---------------------------------------------------------------------------
+
+
+def test_classify_hosted_key_error_accepts_openrouter_key(modal_worker) -> None:
+    key = "sk-or-v1-abcdefghijklmnopqrstuvwxyz0123"  # security: ignore
+    assert modal_worker._classify_hosted_key_error(key) is None
+
+
+@pytest.mark.parametrize(
+    ("provider", "key"),
+    [
+        ("OpenAI", "sk-abcdefghijklmnopqrstuvwxyz0123"),  # security: ignore
+        ("Anthropic", "sk-ant-abcdefghijklmnopqrstuvwxyz0123"),  # security: ignore
+        ("Groq", "gsk_abcdefghijklmnopqrstuvwxyz0123"),  # security: ignore
+        ("Perplexity", "pplx-abcdefghijklmnopqrstuvwxyz"),  # security: ignore
+        ("Google", "AIzaSyabcdefghijklmnopqrstuvwxyz0123456789"),  # security: ignore
+    ],
+)
+def test_classify_hosted_key_error_flags_direct_provider_keys(
+    modal_worker, provider: str, key: str
+) -> None:
+    msg = modal_worker._classify_hosted_key_error(key)
+    assert msg is not None
+    assert provider in msg
+    assert "OpenRouter API key" in msg
+    assert "https://openrouter.ai/keys" in msg
+
+
+def test_classify_hosted_key_error_ignores_unknown_prefix(modal_worker) -> None:
+    assert modal_worker._classify_hosted_key_error("custom-key-format-123") is None
+
+
+# ---------------------------------------------------------------------------
 # _strip_nul_bytes — Postgres 22P05 defense (#62)
 # ---------------------------------------------------------------------------
 
