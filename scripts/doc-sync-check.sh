@@ -64,11 +64,14 @@ fi
 # 4) No new model-ID literals in the diff outside src/coarse/models.py
 base="${DOC_SYNC_BASE:-dev}"
 if git rev-parse --verify "$base" >/dev/null 2>&1; then
-    mapfile -t diff_files < <(
-        git diff --name-only "${base}...HEAD" 2>/dev/null \
-            | grep -E '^src/coarse/.*\.py$' \
-            | grep -v '^src/coarse/models\.py$' || true
-    )
+    diff_files=()
+    while IFS= read -r file; do
+        diff_files+=("$file")
+    done <<EOF
+$(git diff --name-only "${base}...HEAD" 2>/dev/null \
+    | grep -E '^src/coarse/.*\.py$' \
+    | grep -v '^src/coarse/models\.py$' || true)
+EOF
     if [ "${#diff_files[@]}" -gt 0 ]; then
         offenders=$(git diff "${base}...HEAD" -- "${diff_files[@]}" \
             | grep -E '^\+' \
