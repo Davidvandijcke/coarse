@@ -12,14 +12,6 @@
 
 ### Fixed
 
-- **Author steering notes now reach all output-shaping review passes** — `author_notes` is now forwarded beyond the original overview/section/editorial path into `CompletenessAgent`, `ProofVerifyAgent`, `CrossSectionAgent`, and the legacy `CrossrefAgent` / `CritiqueAgent` fallback so later review stages do not silently discard the user's requested focus. The shared `author_notes_block()` prompt frame in `src/coarse/prompts.py` was strengthened to treat notes as non-binding prioritization rather than override instructions, explicitly handle placeholder/draft sections, and clarify the boundary between trusted prompt logic and untrusted note content. Added unit and pipeline tests covering the new forwarding paths and note-prepending behavior across the affected agents.
-
-### Fixed
-
-- **Author steering notes now survive all review-shaping passes** — `author_notes` is no longer limited to the overview, section, and editorial agents. The pipeline now forwards the notes through completeness, proof verification, cross-section synthesis, and the legacy crossref/critique fallback path as well, so later passes cannot silently wash out the requested focus. The shared `author_notes_block()` prompt framing was also strengthened to make the notes an explicit prioritization signal, including placeholder/draft handling, while preserving the hard rule that they do not override the rubric or suppress concrete issues.
-
-### Fixed
-
 - **Author steering notes now reach every output-shaping review pass** — `author_notes` is now forwarded beyond the original overview/section/editorial path into `completeness`, `proof_verify`, `cross_section`, and the legacy `crossref`/`critique` fallback so later review passes cannot silently ignore the user's requested focus. The shared `author_notes_block()` prompt wrapper was also strengthened to treat notes as non-binding prioritization, explicitly handle placeholder/draft sections, and clarify that notes cannot override rubric or quote requirements. Added unit and pipeline coverage for the new forwarding paths and prompt semantics.
 
 ### Fixed
