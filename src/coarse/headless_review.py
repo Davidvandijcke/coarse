@@ -142,9 +142,8 @@ def _make_client_factory(host: str, model: str | None, effort: str):
 
 
 def _patch_llmclient(host: str, model: str | None, effort: str):
-    """Monkey-patch ``coarse.llm.LLMClient`` and ``StageRouter.client_for``."""
+    """Monkey-patch ``coarse.llm.LLMClient`` so the pipeline uses the headless host."""
     from coarse import llm as _llm_mod
-    from coarse import routing as _routing_mod
 
     # Save original LLMClient before patching — needed for Perplexity lit
     # search which must go through litellm/OpenRouter, not the headless CLI.
@@ -155,17 +154,16 @@ def _patch_llmclient(host: str, model: str | None, effort: str):
     # Replace the LLMClient class itself so any direct LLMClient(...) call
     # in the pipeline returns a headless client instead.
     _llm_mod.LLMClient = factory  # type: ignore[misc]
-    _routing_mod.LLMClient = factory  # type: ignore[misc]
+
+    # Also patch the name imported into pipeline.py (it did `from coarse.llm
+    # import LLMClient`, so the monkey-patch on the module isn't seen by
+    # already-imported references).
+    import coarse.pipeline as _pipe_mod
+
+    _pipe_mod.LLMClient = factory  # type: ignore[misc]
 
     # Stash original for later use by _patch_literature.
     _patch_llmclient._original = _OriginalLLMClient  # type: ignore[attr-defined]
-
-    def _patched_client_for(self, stage: str):
-        if stage not in self._clients:
-            self._clients[stage] = factory(stage)
-        return self._clients[stage]
-
-    _routing_mod.StageRouter.client_for = _patched_client_for  # type: ignore[assignment]
 
 
 def _patch_extraction(pre_extracted: Path) -> None:

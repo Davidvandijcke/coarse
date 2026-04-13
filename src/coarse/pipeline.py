@@ -24,7 +24,6 @@ from coarse.config import CoarseConfig, load_config
 from coarse.cost import run_cost_gate
 from coarse.extraction import extract_file
 from coarse.llm import LLMClient
-from coarse.models import STAGE_MODELS
 from coarse.prompts import (
     CALIBRATION_SYSTEM,
     CONTRIBUTION_EXTRACTION_SYSTEM,
@@ -32,7 +31,6 @@ from coarse.prompts import (
     contribution_extraction_user,
 )
 from coarse.quote_verify import QuoteVerificationDrop, verify_quotes, verify_quotes_detailed
-from coarse.routing import StageRouter
 from coarse.structure import analyze_structure
 from coarse.synthesis import render_review
 from coarse.types import (
@@ -426,7 +424,6 @@ def review_paper(
     skip_cost_gate: bool = False,
     config: CoarseConfig | None = None,
     author_notes: str | None = None,
-    stage_overrides: dict[str, str] | None = None,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
@@ -450,9 +447,6 @@ def review_paper(
             instructions that override the review rubric. Trimmed/truncated to
             2000 chars by ``author_notes_block`` in prompts.py. ``None`` or an
             empty/ whitespace-only string is a byte-identical no-op.
-        stage_overrides: Optional per-stage model overrides merged on top
-            of the default ``STAGE_MODELS`` map. Keys must be valid stage
-            names from ``coarse.routing.STAGE_NAMES``.
 
     Pipeline order:
     1. Extract file → PaperText (format-specific extraction)
@@ -471,13 +465,6 @@ def review_paper(
 
     resolved_model = model or config.default_model
     client = LLMClient(model=resolved_model, config=config)
-    assert client is not None
-    router = StageRouter(
-        base_model=resolved_model,
-        overrides={**STAGE_MODELS, **(stage_overrides or {})},
-        config=config,
-        client_factory=LLMClient,
-    )
 
     paper_text = extract_file(pdf_path)
 
@@ -520,25 +507,9 @@ def review_paper(
     if not skip_cost_gate:
         # Pass resolved_model so a `--model` CLI override is reflected in
         # the quote, not just in the downstream LLMClient.
-        run_cost_gate(
-            paper_text,
-            config,
-            is_pdf=is_pdf,
-            model=resolved_model,
-            stage_overrides=stage_overrides,
-        )
+        run_cost_gate(paper_text, config, is_pdf=is_pdf, model=resolved_model)
 
-    metadata_client = router.client_for("metadata")
-    try:
-        structure = analyze_structure(
-            paper_text,
-            metadata_client,
-            math_client=router.client_for("math_detection"),
-        )
-    except TypeError as exc:
-        if "math_client" not in str(exc):
-            raise
-        structure = analyze_structure(paper_text, metadata_client)
+    structure = analyze_structure(paper_text, client)
     if not _check_extraction_quality(structure):
         raise ExtractionError(
             "Extraction failed: no sections found in markdown. "
@@ -547,18 +518,9 @@ def review_paper(
 
     # Domain calibration + literature search + contribution extraction (parallel, all cheap)
     with ThreadPoolExecutor(max_workers=3) as executor:
-        cal_future = executor.submit(calibrate_domain, structure, router.client_for("calibration"))
-        lit_future = executor.submit(
-            search_literature,
-            structure.title,
-            structure.abstract,
-            router.client_for("overview"),
-        )
-        contrib_future = executor.submit(
-            extract_contribution,
-            structure,
-            router.client_for("contribution_extraction"),
-        )
+        cal_future = executor.submit(calibrate_domain, structure, client)
+        lit_future = executor.submit(search_literature, structure.title, structure.abstract, client)
+        contrib_future = executor.submit(extract_contribution, structure, client)
 
         calibration = cal_future.result(timeout=900)
         try:
@@ -568,10 +530,10 @@ def review_paper(
             literature_context = ""
         contribution_context = contrib_future.result(timeout=900)
 
-    overview_agent = OverviewAgent(router.client_for("overview"))
-    section_agent = SectionAgent(router.client_for("section"))
-    editorial_agent = EditorialAgent(router.client_for("editorial"))
-    quote_repair_agent = QuoteRepairAgent(router.client_for("editorial"))
+    overview_agent = OverviewAgent(client)
+    section_agent = SectionAgent(client)
+    editorial_agent = EditorialAgent(client)
+    quote_repair_agent = QuoteRepairAgent(client)
 
     reviewable_sections = [
         s
@@ -587,7 +549,7 @@ def review_paper(
     )
 
     # --- Phase 1b: Completeness assessment (runs after overview, before sections) ---
-    completeness_agent = CompletenessAgent(router.client_for("completeness"))
+    completeness_agent = CompletenessAgent(client)
     try:
         completeness_issues = completeness_agent.run(
             structure,
@@ -601,7 +563,7 @@ def review_paper(
         logger.warning("Completeness agent failed, skipping", exc_info=True)
 
     # --- Phase 2: Section agents (parallel, with verification for proof sections) ---
-    verify_agent = ProofVerifyAgent(router.client_for("verify"))
+    verify_agent = ProofVerifyAgent(client)
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         section_futures = []
@@ -656,7 +618,7 @@ def review_paper(
     discussion_sections = [s for s in structure.sections if s.section_type in _DISCUSSION_TYPES]
 
     if results_sections and discussion_sections:
-        cross_section_agent = CrossSectionAgent(router.client_for("cross_section"))
+        cross_section_agent = CrossSectionAgent(client)
         main_results = results_sections[0]
         cross_section_futures = []
         with ThreadPoolExecutor(max_workers=3) as executor:
@@ -707,8 +669,8 @@ def review_paper(
     except Exception:
         # Fallback: use legacy crossref → critique pipeline if editorial agent fails
         logger.warning("Editorial agent failed, falling back to crossref+critique", exc_info=True)
-        crossref_agent = CrossrefAgent(router.client_for("editorial"))
-        critique_agent = CritiqueAgent(router.client_for("editorial"))
+        crossref_agent = CrossrefAgent(client)
+        critique_agent = CritiqueAgent(client)
         try:
             filtered_comments = crossref_agent.run(
                 overview,

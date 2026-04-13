@@ -56,7 +56,6 @@ src/coarse/
 ├── structure.py             # PaperText → PaperStructure (heading parse + math detection + LLM metadata)
 ├── quote_verify.py          # Post-processing quote verification (stricter for math)
 ├── models.py                # Model manifest — single source of truth for all model IDs
-├── routing.py               # StageRouter + per-stage model overrides / cheap-stage routing
 ├── garble.py                # OCR garble detection and normalization
 ├── llm.py                   # litellm wrapper, model registry, cost tracking
 ├── prompts.py               # All prompt templates
