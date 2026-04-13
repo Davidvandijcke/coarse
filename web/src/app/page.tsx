@@ -9,6 +9,26 @@ import OpenRouterLoginButton from "@/components/OpenRouterLoginButton";
 import { estimateTokensFromPdf, estimateTokensFromText, estimateTokensFromDocx, estimateTokensFromEpub, getModelPricing, estimateReviewCost } from "@/lib/estimateCost";
 import { beginLogin, completeLogin, loadStoredKey, saveStoredKey, clearStoredKey } from "@/lib/openrouterAuth";
 
+/* ── Turnstile window API type + helper ───────────────────── */
+type TurnstileApi = {
+  render: (
+    el: HTMLElement,
+    opts: {
+      sitekey: string;
+      callback: (token: string) => void;
+      "error-callback"?: () => void;
+      "expired-callback"?: () => void;
+      theme?: "light" | "dark" | "auto";
+    },
+  ) => string;
+  reset: (widgetId?: string) => void;
+  remove: (widgetId?: string) => void;
+};
+function getTurnstileApi(): TurnstileApi | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (window as unknown as { turnstile?: TurnstileApi }).turnstile;
+}
+
 /* ── Split-flap AI name display ────────────────────────────── */
 const AI_NAMES = ["Claude,", "Gemini,", "Qwen,", "ChatGPT,", "DeepSeek,", "Kimi,", "Grok,", "MiniMax,", "Mistral,", "Llama,"];
 const CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -189,41 +209,36 @@ export default function Home() {
   // Render the Cloudflare Turnstile widget once its script has loaded. The
   // <Script strategy="afterInteractive"> tag in layout.tsx pulls the API
   // asynchronously, so window.turnstile may not exist yet on first effect
-  // run — retry with a small backoff until it shows up or the component
-  // unmounts. No-op entirely when NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset.
+  // run — retry with a small backoff until it shows up. Bounded at
+  // ~7.5s total so a failed CDN fetch doesn't poll forever. No-op
+  // entirely when NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset.
   useEffect(() => {
     if (!turnstileSiteKey) return;
     const container = turnstileContainerRef.current;
     if (!container) return;
 
-    type TurnstileApi = {
-      render: (
-        el: HTMLElement,
-        opts: {
-          sitekey: string;
-          callback: (token: string) => void;
-          "error-callback"?: () => void;
-          "expired-callback"?: () => void;
-          theme?: "light" | "dark" | "auto";
-        },
-      ) => string;
-      reset: (widgetId?: string) => void;
-      remove: (widgetId?: string) => void;
-    };
-    const getTurnstile = (): TurnstileApi | undefined =>
-      (window as unknown as { turnstile?: TurnstileApi }).turnstile;
-
     let cancelled = false;
     let retryTimer: number | undefined;
+    let retries = 0;
+    const MAX_RETRIES = 50; // 50 * 150ms = 7.5s
 
     const tryRender = () => {
       if (cancelled) return;
-      const api = getTurnstile();
+      const api = getTurnstileApi();
       if (!api) {
+        retries += 1;
+        if (retries >= MAX_RETRIES) {
+          console.error("Turnstile api.js failed to load within 7.5s");
+          return;
+        }
         retryTimer = window.setTimeout(tryRender, 150);
         return;
       }
       if (turnstileWidgetIdRef.current !== undefined) return;
+      // Clear the container defensively so a React-strict-mode mount→
+      // unmount→mount doesn't stack two widgets if the cleanup path's
+      // api.remove(widgetId) fails silently.
+      container.innerHTML = "";
       turnstileWidgetIdRef.current = api.render(container, {
         sitekey: turnstileSiteKey,
         callback: (token: string) => {
@@ -243,7 +258,7 @@ export default function Home() {
     return () => {
       cancelled = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
-      const api = getTurnstile();
+      const api = getTurnstileApi();
       const widgetId = turnstileWidgetIdRef.current;
       if (api && widgetId !== undefined) {
         try {
@@ -257,12 +272,15 @@ export default function Home() {
     };
   }, [turnstileSiteKey]);
 
-  // Reset the Turnstile widget so the next presign call gets a fresh,
-  // single-use token. Called after every presign attempt (success or
-  // failure). No-op when Turnstile is disabled.
+  // Reset the Turnstile widget so the next submission gets a fresh,
+  // single-use token. Always called from handleSubmit's finally block —
+  // the token is consumed server-side on every presign attempt (success
+  // or failure), so a retry always needs a fresh one. Turnstile
+  // auto-refreshes the widget after reset in managed mode, so the next
+  // token lands in the ref within ~1s. No-op when Turnstile is disabled.
   const resetTurnstile = useCallback(() => {
     turnstileTokenRef.current = "";
-    const api = (window as unknown as { turnstile?: { reset: (w?: string) => void } }).turnstile;
+    const api = getTurnstileApi();
     if (api) {
       try {
         api.reset(turnstileWidgetIdRef.current);
@@ -391,7 +409,6 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: file.name, turnstile_token: turnstileToken }),
       });
-      resetTurnstile();
       if (!presignResp.ok) {
         const data = await presignResp.json();
         throw new Error(data.error || "Failed to prepare upload");
@@ -432,6 +449,11 @@ export default function Home() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submission failed");
       setSubmitting(false);
+    } finally {
+      // Turnstile tokens are single-use per siteverify call, so reset
+      // after every attempt (success or failure). Placed in finally so
+      // it runs exactly once per submit regardless of which step threw.
+      resetTurnstile();
     }
   }
 

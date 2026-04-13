@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+
+- **Cloudflare Turnstile gate on the review submit flow** — `/api/presign` now verifies a Turnstile token via Cloudflare siteverify (5s timeout) before minting a review row or upload URL, so headless scripts can no longer drive the review pipeline. The widget is rendered above the landing-page submit button in managed mode, its token rides on the presign body, and the helper in `web/src/lib/turnstile.ts` fails open when `TURNSTILE_SECRET_KEY` is unset so local dev without a secret still works. Enforcement flips on automatically once `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are set on Vercel. `/api/submit` is already tightly bound to presign via the existing signed upload URL, so protecting presign alone covers the whole flow.
+
 ### Fixed
 
 - **Web UI now disables the email field and shows a banner while the coarse Gmail account is suspended** — added an `EMAIL_DELIVERY_DISABLED` kill switch in `web/src/lib/emailCapacity.ts` that forces `isEmailCapacityReached()` to return true and makes `/api/status` return `emailCapacityReached: true` plus a top-banner message ("Email delivery is temporarily down — save your review key when you submit and check back at coarse.ink/status/<your-key> in about an hour"). While the switch is on, the landing page disables the email input, accepts empty-email submissions, and prints the field-level note "Email delivery is temporarily down. Save your review key when you submit and check back in about an hour." The DB `system_status.banner_message` still overrides the hardcoded banner when an operator sets an incident-specific notice. This unblocks submissions while `/api/submit` was rejecting every request with an empty 500 body (browser surfaced as `Failed to execute 'json' on 'Response': Unexpected end of JSON input`) because `mailer.sendMail(...)` was throwing uncaught against the suspended Gmail account. Flip the constant back to `false` once email is healthy again.

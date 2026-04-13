@@ -1,10 +1,6 @@
 const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 const TURNSTILE_VERIFY_TIMEOUT_MS = 5_000;
 
-export function isTurnstileEnabled(): boolean {
-  return !!process.env.TURNSTILE_SECRET_KEY?.trim();
-}
-
 export async function verifyTurnstileToken(
   token: string,
   remoteIp: string,
@@ -40,7 +36,7 @@ export async function verifyTurnstileToken(
     if (!resp.ok) {
       return { ok: false, error: `Turnstile verify HTTP ${resp.status}` };
     }
-    const data = (await resp.json()) as { success?: boolean; "error-codes"?: string[] };
+    const data = (await resp.json()) as { success?: boolean };
     if (data.success === true) return { ok: true };
     return { ok: false, error: "Turnstile challenge failed" };
   } catch (err) {
