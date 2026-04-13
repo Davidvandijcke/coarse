@@ -1,6 +1,5 @@
 import { createClient, type PostgrestError } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import nodemailer from "nodemailer";
 import { checkRateLimit } from "@/lib/rateLimit";
 import {
   extractReviewAccessToken,
@@ -8,6 +7,7 @@ import {
 } from "@/lib/reviewAuth";
 import { buildReviewKey, buildReviewUrl } from "@/lib/reviewAccess";
 import { isEmailCapacityReached } from "@/lib/emailCapacity";
+import { sendReviewEmail } from "@/lib/email";
 import {
   getActiveReviewWindowStartIso,
   MAX_CONCURRENT_REVIEWS,
@@ -17,16 +17,6 @@ export const maxDuration = 30;
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-function getMailer() {
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-  if (!user || !pass) return null;
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass },
-  });
 }
 
 export async function POST(request: NextRequest) {
@@ -61,8 +51,6 @@ export async function POST(request: NextRequest) {
       { status: 503 },
     );
   }
-
-  const mailer = getMailer();
 
   // Parse JSON body (no file — file was uploaded directly to Supabase via presign)
   let id = "";
@@ -171,7 +159,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://coarse.vercel.app";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://coarse.ink";
   const statusUrl = buildReviewUrl(siteUrl, "status", id, accessToken);
   const reviewKey = buildReviewKey(id, accessToken);
 
@@ -287,25 +275,26 @@ export async function POST(request: NextRequest) {
   }
 
   // Send confirmation email (only when a real address was provided — the
-  // email-capacity gate lets users submit without one).
+  // email-capacity gate lets users submit without one). sendReviewEmail is
+  // best-effort by contract and never throws; no try/catch needed here. The
+  // Gmail outage that killed production last week was caused by an uncaught
+  // `await mailer.sendMail(...)` in this exact spot, so if a future refactor
+  // ever makes sendReviewEmail throw, that's a regression that needs to be
+  // fixed in the wrapper, not papered over at the call site.
   const paperFilename = reviewRow.paper_filename ?? "your paper";
-  if (mailer && email) {
-    try {
-      await mailer.sendMail({
-        from: `coarse <${process.env.GMAIL_USER}>`,
-        to: email,
-        subject: `Your paper "${escapeHtml(paperFilename)}" is being reviewed`,
-        html: [
-          `<p>Hi,</p>`,
-          `<p>Your paper <strong>${escapeHtml(paperFilename)}</strong> is being reviewed${model ? ` using <strong>${escapeHtml(model)}</strong>` : ""}. We'll email you when it's done (usually 30–60 minutes).</p>`,
-          `<p>Track progress: <a href="${statusUrl}">${statusUrl}</a></p>`,
-          `<p><strong>Save your review key:</strong> <code>${reviewKey}</code></p>`,
-          `<p>— coarse</p>`,
-        ].join(""),
-      });
-    } catch (err) {
-      console.error(`[${id}] confirmation email failed`, err);
-    }
+  if (email) {
+    await sendReviewEmail({
+      to: email,
+      subject: `Your paper "${paperFilename}" is being reviewed`,
+      reviewId: id,
+      html: [
+        `<p>Hi,</p>`,
+        `<p>Your paper <strong>${escapeHtml(paperFilename)}</strong> is being reviewed${model ? ` using <strong>${escapeHtml(model)}</strong>` : ""}. We'll email you when it's done (usually 30–60 minutes).</p>`,
+        `<p>Track progress: <a href="${statusUrl}">${statusUrl}</a></p>`,
+        `<p><strong>Save your review key:</strong> <code>${reviewKey}</code></p>`,
+        `<p>— coarse</p>`,
+      ].join(""),
+    });
   }
 
   return NextResponse.json({ id, accessToken });

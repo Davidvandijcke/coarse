@@ -842,3 +842,159 @@ def test_enforce_deploy_branch_import_time_short_circuits_under_pytest(modal_wor
     assert "pytest" in _sys.modules
     # Should not raise regardless of git / CI state.
     modal_worker._enforce_deploy_branch_at_import_time()
+
+
+# ---------------------------------------------------------------------------
+# _send_email — Resend migration (2026-04-13).
+#
+# The prior Gmail-SMTP implementation was best-effort-by-accident: it
+# was a no-op when credentials were missing, but a Gmail outage during
+# the ``with SMTP_SSL(...)`` block would bubble straight out of
+# ``_send_email`` and, via ``do_review``, crash the review mid-flight.
+# The Resend rewrite pins best-effort as a hard contract: missing key
+# is a silent no-op, any exception inside the Resend client is
+# swallowed and logged. These tests pin the contract against
+# regression.
+# ---------------------------------------------------------------------------
+
+
+class _FakeResendEmails:
+    """Captures calls to `resend.Emails.send(...)` for assertion."""
+
+    def __init__(self, response=None, raises: BaseException | None = None):
+        self.response = response if response is not None else {"id": "fake-email-id"}
+        self.raises = raises
+        self.calls: list[dict] = []
+
+    def send(self, params):
+        self.calls.append(params)
+        if self.raises is not None:
+            raise self.raises
+        return self.response
+
+
+def _install_fake_resend(
+    modal_worker,
+    monkeypatch,
+    *,
+    response=None,
+    raises: BaseException | None = None,
+) -> _FakeResendEmails:
+    """Install a fake `resend` module so `import resend` inside _send_email
+    resolves to the captured test double rather than the real package.
+    """
+    fake_emails = _FakeResendEmails(response=response, raises=raises)
+    resend_stub = types.ModuleType("resend")
+    resend_stub.api_key = None
+    resend_stub.Emails = fake_emails
+    monkeypatch.setitem(sys.modules, "resend", resend_stub)
+    return fake_emails
+
+
+def test_send_email_happy_path_calls_resend_with_from_to_subject_html(
+    modal_worker, monkeypatch, capsys
+):
+    """Happy path: API key present, resend client called with the exact
+    from/to/subject/html the caller passed."""
+    monkeypatch.setenv("RESEND_API_KEY", "re_testkey123")
+    fake = _install_fake_resend(modal_worker, monkeypatch)
+
+    modal_worker._send_email(
+        to="user@example.com",
+        subject="Your paper is being reviewed",
+        html="<p>Hi there</p>",
+    )
+
+    assert len(fake.calls) == 1
+    call = fake.calls[0]
+    assert call["from"] == modal_worker._RESEND_FROM_ADDRESS
+    assert call["to"] == "user@example.com"
+    assert call["subject"] == "Your paper is being reviewed"
+    assert call["html"] == "<p>Hi there</p>"
+    # Success log line includes the returned id for traceability
+    out = capsys.readouterr().out
+    assert "Resend send ok" in out
+    assert "fake-email-id" in out
+
+
+def test_send_email_missing_api_key_is_silent_noop(modal_worker, monkeypatch, capsys):
+    """When RESEND_API_KEY is unset, _send_email must return without
+    calling the Resend client at all — matching the old "Gmail creds
+    missing → no-op" contract that local dev relies on."""
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    fake = _install_fake_resend(modal_worker, monkeypatch)
+
+    # Should not raise.
+    modal_worker._send_email(
+        to="user@example.com",
+        subject="subj",
+        html="<p>body</p>",
+    )
+
+    assert fake.calls == []
+    out = capsys.readouterr().out
+    # No-op path logs a drop notice so the operator can see why no mail went out.
+    assert "RESEND_API_KEY missing" in out
+
+
+def test_send_email_swallows_exception_from_resend(modal_worker, monkeypatch, capsys):
+    """If `resend.Emails.send(...)` raises, _send_email MUST NOT propagate.
+    The original Gmail outage that motivated this migration was caused by
+    exactly this class of bug leaking out of the email path and crashing
+    do_review mid-review. Regression guard."""
+    monkeypatch.setenv("RESEND_API_KEY", "re_testkey123")
+    _install_fake_resend(
+        modal_worker,
+        monkeypatch,
+        raises=RuntimeError("resend server is down"),
+    )
+
+    # Must not raise.
+    modal_worker._send_email(
+        to="user@example.com",
+        subject="subj",
+        html="<p>body</p>",
+    )
+
+    out = capsys.readouterr().out
+    assert "Resend send failed" in out
+    # The error message content is sanitized via _sanitize_error, but the
+    # word "down" is a plain English token so it should pass through.
+    assert "down" in out
+
+
+def test_send_email_logs_unknown_id_when_resend_returns_empty_dict(
+    modal_worker, monkeypatch, capsys
+):
+    """A 200 response with no `id` field (unusual but possible if the
+    SDK surface shifts) should still log a success line with id=unknown
+    rather than crash — best-effort contract."""
+    monkeypatch.setenv("RESEND_API_KEY", "re_testkey123")
+    _install_fake_resend(modal_worker, monkeypatch, response={})
+
+    modal_worker._send_email(to="user@example.com", subject="s", html="h")
+
+    out = capsys.readouterr().out
+    assert "Resend send ok" in out
+    assert "unknown" in out
+
+
+def test_send_email_scrubs_secrets_from_error_message(modal_worker, monkeypatch, capsys):
+    """If the Resend client raises with a message containing a bearer
+    token or similar secret, the log line must go through _sanitize_error
+    before reaching stdout. This is the same contract enforced on the
+    Supabase error-log path above."""
+    monkeypatch.setenv("RESEND_API_KEY", "re_testkey123")
+    secret = "sk-or-v1-abcdefghijklmnopqrstuvwxyz0123"  # security: ignore
+    fake_leaky = f"upstream: Authorization: Bearer {secret}"
+    _install_fake_resend(
+        modal_worker,
+        monkeypatch,
+        raises=RuntimeError(fake_leaky),
+    )
+
+    modal_worker._send_email(to="user@example.com", subject="s", html="h")
+
+    out = capsys.readouterr().out
+    assert "sk-or-v1-abcdef" not in out
+    assert "[key]" in out

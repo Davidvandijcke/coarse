@@ -36,15 +36,18 @@ jobs:
           ALERT="none"
           BODY=""
 
-          # 200 reviews/day ≈ 400 emails, leaving 100-email headroom below
-          # Gmail's 500/day sender cap. The frontend email-capacity gate in
-          # web/src/lib/emailCapacity.ts kicks in harder at 240; this warning
-          # gives the maintainer time to react before the gate auto-disables
-          # the email input for users. Old threshold (40) was from the pre-
-          # launch era when volume was <1 review/day.
-          if [ "$DAILY" -gt 200 ] 2>/dev/null; then
+          # 5000 reviews/day ≈ 10000 emails. Resend's Pro tier is 50k/month
+          # (≈1666/day amortized), so 10000/day for one day is fine but
+          # sustained load at this level would burn through the monthly
+          # quota in under a week. This warning is a soft "watch the
+          # monthly quota" signal; the frontend hard cap in
+          # web/src/lib/emailCapacity.ts still kicks in at
+          # EMAIL_CAPACITY_REVIEW_THRESHOLD (2500) if daily volume spikes.
+          # Pre-migration threshold was 200 (Gmail 500/day cap); bumped
+          # 2026-04-13 on the Resend migration.
+          if [ "$DAILY" -gt 5000 ] 2>/dev/null; then
             ALERT="warning"
-            BODY="Daily reviews ($DAILY) approaching Gmail 500 emails/day limit.\n\n"
+            BODY="Daily reviews ($DAILY) high — monitor Resend monthly quota.\n\n"
           fi
 
           if [ "$MONTHLY" -gt 300 ] 2>/dev/null; then
@@ -79,22 +82,38 @@ jobs:
             -d '{"accepting_reviews": false, "banner_message": "Monthly capacity reached. Please use the CLI: pip install coarse-ink", "updated_at": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}'
           echo "Submissions auto-paused."
 
-      - name: Send alert email
+      - name: Send alert email via Resend
         if: steps.counts.outputs.alert != 'none'
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.GMAIL_USER }}
-          password: ${{ secrets.GMAIL_APP_PASSWORD }}
-          subject: "[coarse] Capacity ${{ steps.counts.outputs.alert }}: ${{ steps.counts.outputs.monthly }} reviews this month"
-          to: ${{ secrets.ALERT_EMAIL }}
-          from: coarse-monitor <${{ secrets.GMAIL_USER }}>
-          body: |
-            coarse capacity monitor
-
-            Monthly reviews (30d): ${{ steps.counts.outputs.monthly }}
-            Daily reviews (24h): ${{ steps.counts.outputs.daily }}
-
-            ${{ steps.counts.outputs.body }}
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          ALERT: ${{ steps.counts.outputs.alert }}
+          MONTHLY: ${{ steps.counts.outputs.monthly }}
+          DAILY: ${{ steps.counts.outputs.daily }}
+          BODY: ${{ steps.counts.outputs.body }}
+        run: |
+          if [ -z "$RESEND_API_KEY" ] || [ -z "$ALERT_EMAIL" ]; then
+            echo "RESEND_API_KEY or ALERT_EMAIL unset; skipping alert send."
+            exit 0
+          fi
+          SUBJECT="[coarse] Capacity ${ALERT}: ${MONTHLY} reviews this month"
+          # Build the JSON payload via jq so multi-line bodies, quotes,
+          # and any stray characters in $BODY can't break out of the
+          # JSON string or inject header fields.
+          PAYLOAD=$(jq -n \
+            --arg from "coarse-monitor <reviews@coarse.ink>" \
+            --arg to "$ALERT_EMAIL" \
+            --arg subject "$SUBJECT" \
+            --arg text "$(printf 'coarse capacity monitor\n\nMonthly reviews (30d): %s\nDaily reviews (24h): %s\n\n%s\n' "$MONTHLY" "$DAILY" "$BODY")" \
+            '{from: $from, to: [$to], subject: $subject, text: $text}')
+          HTTP_CODE=$(curl -sS -o /tmp/resend_resp.json -w "%{http_code}" \
+            -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer ${RESEND_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+          echo "Resend HTTP $HTTP_CODE"
+          cat /tmp/resend_resp.json
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "202" ]; then
+            echo "::error::Resend alert send failed with HTTP $HTTP_CODE"
+            exit 1
+          fi

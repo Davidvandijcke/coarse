@@ -81,19 +81,20 @@ UPDATE reviews SET paper_markdown = null WHERE completed_at < now() - interval '
 
 ---
 
-### Gmail (500 emails/day)
+### Resend (Free: 3k/month ≈ 100/day; Pro: 50k/month for $20)
 
-**Symptom**: Emails stop arriving. No visible errors on the user side (email is fire-and-forget).
+**Symptom**: Emails stop arriving. The `/api/submit` route and `deploy/modal_worker.py::_send_email` log the failure via the best-effort path in `web/src/lib/email.ts` / the Python wrapper — review submissions continue regardless.
 
-**Check**: Difficult to check programmatically. Each review sends 2 emails (confirmation + completion), so 250 reviews/day = 500 emails.
+**Check**: Resend dashboard > Emails. Each review sends up to 2 emails (submit confirmation + completion), so the practical ceiling is half the monthly quota: **1500/month on Free, 25k/month on Pro**. The daily burst ceiling is softer — Pro amortizes to ~1666/day but bursts of several thousand per day are fine as long as the monthly total holds.
 
-**Expand**: Replace Gmail with a transactional email service:
-- **Resend**: Free for 100 emails/day, $20/month for 5K/day. Minimal code change (swap `nodemailer` transport).
-- **AWS SES**: $0.10 per 1,000 emails. Requires domain verification.
+**Expand**:
+- **Stay on Free (3k/month)**: the CLI path (`pip install coarse-ink`) has no email dependency, so hitting the Free ceiling only affects the web UI.
+- **Upgrade to Pro ($20/month)**: 50k emails/month, higher send burst rate, dedicated IP available. Upgrade in the Resend dashboard — no code change.
+- **Alternatives**: AWS SES ($0.10 per 1000 emails) if Resend pricing stops scaling. Requires rewriting `web/src/lib/email.ts` and the Python wrapper against `boto3.client("ses")`.
 
-Change the transport config in `web/src/app/api/submit/route.ts` (`getMailer()`) and `deploy/modal_worker.py` (`_send_email()`).
+**Emergency kill switch**: flip `EMAIL_DELIVERY_DISABLED` to `true` in `web/src/lib/emailCapacity.ts` and redeploy. The landing page disables the email field, `/api/submit` accepts empty-email submissions, and the top banner tells users to bookmark their review key. This is the fastest escape hatch when Resend is down, the API key is revoked, or domain verification is lost. No env-var edit needed, no DB write — just a one-line flip + `vercel --prod`.
 
-**Emergency**: The app works fine without email. Users can check their review status via the review key on the homepage. To disable email, remove or blank the `GMAIL_USER` / `GMAIL_APP_PASSWORD` env vars in Vercel and Modal.
+**Key rotation**: The Resend API key lives in three places and all three must rotate together: `vercel env ...` for the web app, `modal secret create coarse-resend RESEND_API_KEY=...` for the worker, and `gh secret set RESEND_API_KEY` for the monitor workflow. See `deploy/DEPLOY.md`.
 
 ---
 
@@ -105,24 +106,28 @@ The daily monitoring cron (`.github/workflows/monitor.yml`) runs at 8 AM UTC and
 |-----------|--------|
 | Monthly reviews > 300 | Warning email — approaching Modal free tier |
 | Monthly reviews > 800 | Auto-pauses submissions + alert email |
-| Daily reviews > 200 | Warning email — approaching Gmail daily limit (see note below) |
+| Daily reviews > 5000 | Warning email — sustained Resend monthly quota pressure |
 
 Note on the daily threshold: each review sends up to 2 emails (confirm +
-complete), so 200 reviews/day ≈ 400 emails, leaving a ~100-email buffer
-below Gmail's free-tier 500/day sender cap. The frontend also has a hard
-cutoff at 240 reviews in `web/src/lib/emailCapacity.ts` that disables the
-email input in the submit form — this cron warns the maintainer first so
-there's time to react before the gate auto-fires.
+complete), so 5000 reviews/day ≈ 10000 emails/day. Resend Pro amortizes
+to ~1666 emails/day against its 50k/month cap, so 10k for one day is
+fine but sustained load at this level would burn the monthly quota in
+under a week. The frontend has a hard cutoff at
+`EMAIL_CAPACITY_REVIEW_THRESHOLD` (2500 reviews/24h) in
+`web/src/lib/emailCapacity.ts` that disables the email input in the
+submit form — this cron warns the maintainer first so there's time to
+react before that gate auto-fires.
 
-The cron uses these GitHub repo secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `ALERT_EMAIL`.
+The cron uses these GitHub repo secrets: `SUPABASE_URL`,
+`SUPABASE_SERVICE_KEY`, `RESEND_API_KEY`, `ALERT_EMAIL`.
 
 ---
 
 ## Cost Summary at Scale
 
-| Volume | Modal | Supabase | Vercel | Gmail | Total |
-|--------|-------|----------|--------|-------|-------|
-| 0–300/mo | Free | Free | Free | Free | **$0** |
-| 300–500/mo | ~$10–20 | Free | Free | Free | **$10–20** |
-| 500–1000/mo | ~$20–70 | $25 (Pro) | Free | Free | **$45–95** |
-| 1000+/mo | ~$70+ | $25 | $20 (Pro) | $20 (Resend) | **$135+** |
+| Volume | Modal | Supabase | Vercel | Resend | Total |
+|--------|-------|----------|--------|--------|-------|
+| 0–300/mo | Free | Free | Free | Free (3k/mo) | **$0** |
+| 300–1500/mo | ~$10–50 | Free | Free | Free (3k/mo) | **$10–50** |
+| 1500–3000/mo | ~$50–100 | $25 (Pro) | Free | $20 (Pro, 50k/mo) | **$95–145** |
+| 3000+/mo | $100+ | $25 | $20 (Pro) | $20 (Pro) | **$165+** |

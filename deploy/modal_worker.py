@@ -15,7 +15,7 @@ is set (emergency escape hatch only).
 Secrets: Create in Modal dashboard:
   coarse-supabase     SUPABASE_URL, SUPABASE_SERVICE_KEY
   coarse-webhook      MODAL_WEBHOOK_SECRET
-  coarse-gmail        GMAIL_USER, GMAIL_APP_PASSWORD
+  coarse-resend       RESEND_API_KEY  (sending-access key scoped to coarse.ink)
 """
 
 from __future__ import annotations
@@ -180,6 +180,7 @@ image = (
         "python-dotenv>=1.0",
         "supabase>=2.0",
         "requests>=2.31",
+        "resend>=2.0",
         "fastapi[standard]",
         # Multi-format support
         "mammoth>=1.6",
@@ -191,27 +192,41 @@ image = (
 )
 
 
-def _send_email(to: str, subject: str, html: str) -> None:
-    """Send email via Gmail SMTP. No-op if credentials are missing."""
-    import os
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
+_RESEND_FROM_ADDRESS = "coarse <reviews@coarse.ink>"
 
-    user = os.environ.get("GMAIL_USER")
-    password = os.environ.get("GMAIL_APP_PASSWORD")
-    if not user or not password:
+
+def _send_email(to: str, subject: str, html: str) -> None:
+    """Send a transactional email via Resend. Best-effort — never raises.
+
+    Contract matches the prior Gmail-SMTP implementation: no-op when the
+    API key is missing (so local dev without Resend credentials still
+    runs the pipeline end-to-end), swallow every exception so a provider
+    outage cannot crash ``do_review`` mid-flight. The original Gmail
+    outage that motivated this migration was triggered by exactly the
+    opposite class of bug: an unhandled ``sendMail`` rejection bubbling
+    out of the route handler, so this function must stay bulletproof.
+    """
+    api_key = os.environ.get("RESEND_API_KEY")
+    if not api_key:
+        print(f"[email] RESEND_API_KEY missing; dropping send to {to}")
         return
 
-    msg = MIMEMultipart("alternative")
-    msg["From"] = f"coarse <{user}>"
-    msg["To"] = to
-    msg["Subject"] = subject
-    msg.attach(MIMEText(html, "html"))
+    try:
+        import resend
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(user, password)
-        server.send_message(msg)
+        resend.api_key = api_key
+        result = resend.Emails.send(
+            {
+                "from": _RESEND_FROM_ADDRESS,
+                "to": to,
+                "subject": subject,
+                "html": html,
+            }
+        )
+        email_id = (result or {}).get("id") if isinstance(result, dict) else None
+        print(f"[email] Resend send ok to={to} id={email_id or 'unknown'}")
+    except Exception as exc:
+        print(f"[email] Resend send failed to={to}: {_sanitize_error(str(exc))}")
 
 
 def _sign_review_access_token(review_id: str) -> str:
@@ -480,7 +495,7 @@ def _get_review_status(db, job_id: str) -> str | None:
     secrets=[
         modal.Secret.from_name("coarse-supabase"),
         modal.Secret.from_name("coarse-webhook"),
-        modal.Secret.from_name("coarse-gmail"),
+        modal.Secret.from_name("coarse-resend"),
     ],
 )
 def do_review(req_dict: dict):
@@ -510,7 +525,7 @@ def do_review(req_dict: dict):
     supabase_key = os.environ["SUPABASE_SERVICE_KEY"]
     db = create_client(supabase_url, supabase_key)
 
-    site_url = os.environ.get("SITE_URL", "https://coarse.vercel.app")
+    site_url = os.environ.get("SITE_URL", "https://coarse.ink")
     if _get_review_status(db, job_id) == "cancelled":
         print(f"[{job_id}] Job was cancelled before worker start; skipping pipeline")
         return
