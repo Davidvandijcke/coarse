@@ -38,6 +38,16 @@ jobs:
           OPENAI_API_KEY: ""
           ANTHROPIC_API_KEY: ""
 
+      - name: Resolve optional docling stack
+        run: |
+          uv sync --extra dev --extra docling --locked
+          uv run python - <<'PY'
+          import instructor
+          import transformers
+          print("instructor", instructor.__version__)
+          print("transformers", transformers.__version__)
+          PY
+
   version-check:
     runs-on: ubuntu-latest
     timeout-minutes: 2
