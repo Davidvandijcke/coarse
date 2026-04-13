@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **Extraction now logs real OpenRouter denial details and falls back after paid OCR denials (#71)** — the PDF extractor no longer hard-fails immediately when the first `mistral-ocr` file-parser call comes back as a user-actionable OpenRouter denial. It now records a scrubbed one-line summary of the provider response body (status, message, code, metadata when present) so operators can distinguish `402 Payment Required` / spend-limit failures from `403 Forbidden` privacy-or-terms failures in Modal logs, and it allows the extraction chain to continue from paid `mistral-ocr` to free `pdf-text` / `cloudflare-ai` and then Docling for recoverable OpenRouter `402` / `403` denials. `401` auth failures still fail fast. New tests pin both production-shaped cases: `402` and `403` on the first extraction call now skip retries on that backend, log the scrubbed reason, and successfully fall through to the next extractor when available.
+
+## v1.2.2 — 2026-04-12
+
+Patch release. Clears the false "system busy (N/20 slots in use)" banner that the landing page was showing even when Modal was idle, and bundles the unreleased `dev` work (GPT-5.4 compare-panel + author-steering fallthroughs) that had accumulated since v1.2.1.
+
+### Fixed
+
 - **Landing-page "system busy" banner no longer fires on abandoned presign rows** — `/api/presign` inserts a `reviews` row with `status='queued'` before the file is even uploaded, so any user who closes the tab or bails at the API-key prompt leaks a phantom `queued` row that no code path ever transitions. `/api/status` was counting all `queued`/`running` rows regardless of age, so the banner (which fires at 80% of the 20-slot capacity) tripped at 16 abandoned presigns even when Modal was idle. `/api/status` now only counts rows created within the last 2.5h (Modal's 2h review timeout plus a small cushion), and a new `.github/workflows/sweep_stale_reviews.yml` runs every 15 minutes to flip any `queued`/`running` row older than 3h to `status='failed'` with an "abandoned or worker crashed" message, so the `/review/<id>` page stays honest for users who actually did submit.
 
 ### Added
@@ -11,8 +19,6 @@
 - **Compare page now includes GPT-5.4 benchmark results** — added `gpt54` as a first-class model on the side-by-side comparison page, loaded the April 12 GPT-5.4 review and Gemini judge files for all four benchmark papers, and exposed the new panel in both the selector and the score overview table. The overview table now derives its values from the checked-in quality reports rather than a duplicated hardcoded matrix, and the compare-data loader normalizes JSON-style `\uXXXX` escapes in review markdown so generated benchmark artifacts render correctly on the site.
 
 ### Fixed
-
-- **Extraction now logs real OpenRouter denial details and falls back after paid OCR denials (#71)** — the PDF extractor no longer hard-fails immediately when the first `mistral-ocr` file-parser call comes back as a user-actionable OpenRouter denial. It now records a scrubbed one-line summary of the provider response body (status, message, code, metadata when present) so operators can distinguish `402 Payment Required` / spend-limit failures from `403 Forbidden` privacy-or-terms failures in Modal logs, and it allows the extraction chain to continue from paid `mistral-ocr` to free `pdf-text` / `cloudflare-ai` and then Docling for recoverable OpenRouter `402` / `403` denials. `401` auth failures still fail fast. New tests pin both production-shaped cases: `402` and `403` on the first extraction call now skip retries on that backend, log the scrubbed reason, and successfully fall through to the next extractor when available.
 
 - **Author steering notes now reach all downstream review passes** — `author_notes` is now forwarded beyond the original overview/section/editorial path into `completeness`, `proof_verify`, `cross_section`, and the legacy `crossref`/`critique` fallback so later passes cannot silently drop the requested focus. The shared `author_notes_block()` prompt wrapper was also strengthened to tell agents how to prioritize valid note-aligned comments, while still preserving the rubric, quote rules, and prompt-injection boundary.
 
