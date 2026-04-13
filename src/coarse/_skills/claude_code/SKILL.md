@@ -67,7 +67,7 @@ rg '^  view:|^  local:' /tmp/coarse-review.log
 - `local:` is the exact markdown path that was written, even if `uvx` used a temporary working directory.
 - `view:` is the canonical coarse web URL in handoff mode.
 
-If `local:` is present, read that file directly. Do **not** run broad `find`, `locate`, `lsof`, or whole-computer searches trying to rediscover the output.
+If `view:` says `unavailable`, treat that as a callback failure and report only the local path. Do **not** try to discover another web URL, and do **not** run broad `find`, `locate`, `lsof`, or whole-computer searches trying to rediscover the output.
 
 Available models: `claude-opus-4-6` (default), `claude-sonnet-4-6`, `claude-haiku-4-5`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.

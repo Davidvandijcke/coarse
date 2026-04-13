@@ -98,3 +98,130 @@ def test_main_handoff_supports_markdown_source(tmp_path) -> None:
         "pre_extracted": None,
     }
     assert (out_dir / "paper_review.md").read_text(encoding="utf-8") == "# Review\n"
+
+
+def test_main_handoff_success_prints_absolute_local_and_view_lines(tmp_path, capsys) -> None:
+    source = tmp_path / "paper.md"
+    source.write_text("# Paper\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+    handoff_bundle = {
+        "paper_id": "12345678-1234-1234-1234-123456789abc",
+        "signed_download_url": "https://example.test/papers/123.md?token=abc",
+        "finalize_token": "tok-123",
+        "callback_url": "https://example.test/api/mcp-finalize",
+        "paper_title": "paper.md",
+        "domain": "",
+        "taxonomy": "",
+    }
+
+    with (
+        patch("coarse.cli_review._fetch_handoff", return_value=handoff_bundle),
+        patch("coarse.cli_review._download_handoff_source", return_value=source),
+        patch(
+            "coarse.headless_review.run_headless_review",
+            return_value=(
+                _make_review(),
+                "# Review\n",
+                PaperText(full_markdown="# Paper\n", token_estimate=2),
+            ),
+        ),
+        patch(
+            "coarse.cli_review._post_finalize",
+            return_value={"review_url": "https://example.test/review/123"},
+        ),
+    ):
+        rc = main(
+            [
+                "--handoff",
+                "https://example.test/h/token",
+                "--host",
+                "codex",
+                "--output-dir",
+                str(out_dir),
+            ]
+        )
+
+    assert rc == 0
+    stdout = capsys.readouterr().out
+    assert "PUBLISHED TO COARSE WEB" in stdout
+    assert "  view:     https://example.test/review/123" in stdout
+    assert f"  local:    {(out_dir / 'paper_review.md').resolve()}" in stdout
+    assert "REVIEW COMPLETE" in stdout
+
+
+def test_main_handoff_callback_failure_still_prints_local_footer(tmp_path, capsys) -> None:
+    source = tmp_path / "paper.md"
+    source.write_text("# Paper\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+    handoff_bundle = {
+        "paper_id": "12345678-1234-1234-1234-123456789abc",
+        "signed_download_url": "https://example.test/papers/123.md?token=abc",
+        "finalize_token": "tok-123",
+        "callback_url": "https://example.test/api/mcp-finalize",
+        "paper_title": "paper.md",
+        "domain": "",
+        "taxonomy": "",
+    }
+
+    with (
+        patch("coarse.cli_review._fetch_handoff", return_value=handoff_bundle),
+        patch("coarse.cli_review._download_handoff_source", return_value=source),
+        patch(
+            "coarse.headless_review.run_headless_review",
+            return_value=(
+                _make_review(),
+                "# Review\n",
+                PaperText(full_markdown="# Paper\n", token_estimate=2),
+            ),
+        ),
+        patch(
+            "coarse.cli_review._post_finalize",
+            side_effect=RuntimeError("Callback to https://example.test/api failed: HTTP 500"),
+        ),
+    ):
+        rc = main(
+            [
+                "--handoff",
+                "https://example.test/h/token",
+                "--host",
+                "codex",
+                "--output-dir",
+                str(out_dir),
+            ]
+        )
+
+    assert rc == 7
+    stdout = capsys.readouterr().out
+    assert "WEB CALLBACK FAILED" in stdout
+    assert "  view:     unavailable" in stdout
+    assert f"  local:    {(out_dir / 'paper_review.md').resolve()}" in stdout
+    assert "REVIEW COMPLETE" in stdout
+
+
+def test_main_local_mode_prints_absolute_local_footer(tmp_path, capsys) -> None:
+    paper = tmp_path / "paper.md"
+    paper.write_text("# Paper\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+
+    with patch(
+        "coarse.headless_review.run_headless_review",
+        return_value=(
+            _make_review(),
+            "# Review\n",
+            PaperText(full_markdown="# Paper\n", token_estimate=2),
+        ),
+    ):
+        rc = main(
+            [
+                str(paper),
+                "--host",
+                "codex",
+                "--output-dir",
+                str(out_dir),
+            ]
+        )
+
+    assert rc == 0
+    stdout = capsys.readouterr().out
+    assert "REVIEW COMPLETE" in stdout
+    assert f"  local:    {(out_dir / 'paper_review.md').resolve()}" in stdout

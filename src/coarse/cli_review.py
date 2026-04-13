@@ -206,6 +206,32 @@ def _post_finalize(
         return {}
 
 
+def _print_completion_footer(
+    *,
+    local_path: Path,
+    review_url: str | None = None,
+    callback_failed: bool = False,
+    callback_error: str | None = None,
+) -> None:
+    """Print a machine-parsable completion footer for coding agents.
+
+    The handoff prompts tell agents to parse `view:` / `local:` from the
+    log after the background job completes. Make those lines available in
+    every terminal outcome, including web-callback failures.
+    """
+    print()
+    if callback_failed:
+        print("WEB CALLBACK FAILED")
+        if callback_error:
+            print(f"  error:    {callback_error}")
+        print("  view:     unavailable")
+    elif review_url:
+        print("PUBLISHED TO COARSE WEB")
+        print(f"  view:     {review_url}")
+    print(f"  local:    {local_path.resolve()}")
+    print("REVIEW COMPLETE")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="coarse-review",
@@ -295,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR: paper not found: {paper_path}", file=sys.stderr)
             return 2
 
-    out_dir = args.output_dir.expanduser()
+    out_dir = args.output_dir.expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Call the pipeline directly so we get the PaperText back in-process
@@ -358,17 +384,20 @@ def main(argv: list[str] | None = None) -> int:
                 host_label=host,
             )
             review_url = resp.get("review_url", "")
-            print()
-            print("PUBLISHED TO COARSE WEB")
-            if review_url:
-                print(f"  view:     {review_url}")
-            print(f"  local:    {review_md_path}")
+            _print_completion_footer(
+                local_path=review_md_path,
+                review_url=review_url or None,
+            )
         except Exception as exc:
-            print()
-            print("WARNING: local review complete but web callback failed:")
-            print(f"  {exc}")
-            print(f"  Review is still available locally at: {review_md_path}")
+            _print_completion_footer(
+                local_path=review_md_path,
+                callback_failed=True,
+                callback_error=str(exc),
+            )
             return 7
+
+    if handoff_bundle is None:
+        _print_completion_footer(local_path=review_md_path)
 
     # Clean up temp source file if we downloaded one.
     if temp_source is not None and temp_source.exists():

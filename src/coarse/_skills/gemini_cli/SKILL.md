@@ -66,6 +66,7 @@ rg '^  view:|^  local:' /tmp/coarse-review.log
 ```
 
 If `local:` is present, read that exact file. If `view:` is present, use that URL. Do not run broad filesystem searches trying to rediscover the review file.
+If `view:` says `unavailable`, report the callback failure and use only the `local:` path.
 
 Available models: `gemini-3.1-pro-preview` (default), `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.

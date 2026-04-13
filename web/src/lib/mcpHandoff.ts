@@ -153,7 +153,10 @@ export function buildAgentPrompt(args: {
     `The \`local:\` line is the exact markdown path written by ` +
     `coarse-review, even when uvx runs from a temporary directory. ` +
     `If \`local:\` is present, read that file directly. If \`view:\` is ` +
-    `present, use that as the canonical web URL. Do NOT run global ` +
+    `present, use that as the canonical web URL. If the log says ` +
+    `\`view: unavailable\`, report that the web callback failed and use ` +
+    `only the \`local:\` path. Do NOT try to discover another web URL. ` +
+    `Do NOT run global ` +
     `\`find\`, \`locate\`, \`lsof\`, or whole-computer searches trying to ` +
     `discover the review file.\n\n` +
     `When the log shows "PUBLISHED TO COARSE WEB" or "REVIEW ` +
