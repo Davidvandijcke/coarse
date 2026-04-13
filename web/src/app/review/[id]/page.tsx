@@ -20,7 +20,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return { title: fallbackTitle, description };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    global: {
+      headers: { "x-review-id": id },
+    },
+  });
   const { data } = await supabase
     .from("reviews")
     .select("paper_title")

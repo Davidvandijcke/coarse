@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import type { Review } from "@/lib/types";
@@ -14,7 +14,7 @@ export default function StatusPage() {
   const [copied, setCopied] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(id), [id]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -42,7 +42,7 @@ export default function StatusPage() {
     fetchStatus();
     interval = setInterval(fetchStatus, 3000);
     return () => clearInterval(interval);
-  }, [id, router]);
+  }, [id, router, supabase]);
 
   function copyLink() {
     navigator.clipboard.writeText(`${window.location.origin}/review/${id}`);

@@ -7,43 +7,77 @@ import { PageMarks } from "@/components/charcoal";
 import { parseReview } from "@/lib/parseReview";
 import ReviewDisplay from "@/components/ReviewDisplay";
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export default function ReviewPageClient({ id }: { id: string }) {
   const [review, setReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(id), [id]);
 
   useEffect(() => {
+    // Reset UI state on id changes so stale data is never shown for a new review URL.
+    setReview(null);
+    setNotFound(false);
+    setLoading(true);
+
+    if (!UUID_REGEX.test(id)) {
+      setNotFound(true);
+      setLoading(false);
+      return;
+    }
+
+    let pollTimeout: ReturnType<typeof setTimeout>;
+    let isActive = true;
+
     async function load() {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("reviews")
         .select("*")
         .eq("id", id)
         .single();
 
-      if (!data) {
-        setNotFound(true);
-      } else {
-        setReview(data as Review);
+      if (!isActive) return;
+
+      if (error) {
+        // "No rows" should render not-found and stop polling.
+        if (error.code === "PGRST116") {
+          setNotFound(true);
+          setLoading(false);
+          return;
+        }
+        // Transient/network/RLS errors should retry.
+        setLoading(false);
+        pollTimeout = setTimeout(load, 3000);
+        return;
       }
+
+      if (!data) {
+        // Defensive fallback: keep polling instead of flipping to not-found.
+        setLoading(false);
+        pollTimeout = setTimeout(load, 3000);
+        return;
+      }
+
+      setNotFound(false);
+      setReview(data as Review);
+      if (data.status === "done" || data.status === "failed") {
+        setLoading(false);
+        return;
+      }
+
       setLoading(false);
+      pollTimeout = setTimeout(load, 3000);
     }
 
     load();
 
-    const channel = supabase
-      .channel(`review-${id}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "reviews", filter: `id=eq.${id}` },
-        (payload) => {
-          setReview((prev) => (prev ? { ...prev, ...payload.new } : null));
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [id]);
+    return () => {
+      isActive = false;
+      clearTimeout(pollTimeout);
+    };
+  }, [id, supabase]);
 
   const parsed = useMemo(
     () => (review?.result_markdown ? parseReview(review.result_markdown) : null),
@@ -131,7 +165,30 @@ export default function ReviewPageClient({ id }: { id: string }) {
     );
   }
 
-  if (!review) return null;
+  if (!review) {
+    return (
+      <div
+        style={{
+          background: "var(--board)",
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "Georgia, serif",
+            fontStyle: "italic",
+            color: "var(--dust)",
+            fontSize: "1.1rem",
+          }}
+        >
+          Reconnecting<span className="blink">_</span>
+        </span>
+      </div>
+    );
+  }
 
   const isDone = review.status === "done";
   const isPending = review.status === "queued" || review.status === "running";
