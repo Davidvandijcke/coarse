@@ -396,10 +396,10 @@ class LLMClient:
         self._model = _normalize_model(self._model, config)
         self._mode = _select_instructor_mode(self._model)
         self._client = instructor.from_litellm(_sanitized_completion, mode=self._mode)
-        self._fallback_mode = _select_fallback_instructor_mode(self._model, self._mode)
-        self._fallback_client = (
-            instructor.from_litellm(_sanitized_completion, mode=self._fallback_mode)
-            if self._fallback_mode is not None
+        self._structured_fallback_mode = _select_fallback_instructor_mode(self._model, self._mode)
+        self._structured_fallback_client = (
+            instructor.from_litellm(_sanitized_completion, mode=self._structured_fallback_mode)
+            if self._structured_fallback_mode is not None
             else None
         )
         self._cost_usd: float = 0.0
@@ -558,17 +558,17 @@ class LLMClient:
                 call_kwargs,
             )
         except Exception as exc:
-            if self._fallback_client is None or not _should_retry_with_md_json(exc):
+            if self._structured_fallback_client is None or not _should_retry_with_md_json(exc):
                 raise
             else:
                 logger.warning(
                     "Structured JSON mode rejected on %s (%s); retrying with %s",
                     self._model,
                     type(exc).__name__,
-                    self._fallback_mode,
+                    self._structured_fallback_mode,
                 )
                 response, completion = self._complete_with_client(
-                    self._fallback_client,
+                    self._structured_fallback_client,
                     messages,
                     response_model,
                     clamped,
