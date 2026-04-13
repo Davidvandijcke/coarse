@@ -5,7 +5,13 @@ The web endpoint accepts requests and immediately spawns a background worker via
 Modal's .spawn(), returning a fast 202 response. The background worker downloads
 the PDF, runs the review pipeline, and writes results back to Supabase.
 
-Deploy:  modal deploy deploy/modal_worker.py
+Deploy: DO NOT run `modal deploy` manually under normal circumstances.
+The Modal worker is auto-deployed from `main` by
+`.github/workflows/modal-deploy.yml` on every push to `main`. The local
+import-time guard in `_enforce_deploy_branch()` below refuses to deploy
+from any branch other than `main` unless `COARSE_MODAL_DEPLOY_FORCE=1`
+is set (emergency escape hatch only).
+
 Secrets: Create in Modal dashboard:
   coarse-supabase     SUPABASE_URL, SUPABASE_SERVICE_KEY
   coarse-webhook      MODAL_WEBHOOK_SECRET
@@ -15,11 +21,138 @@ Secrets: Create in Modal dashboard:
 from __future__ import annotations
 
 import hmac
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import modal
 from fastapi import HTTPException, Request
 from pydantic import BaseModel
+
+# ---------------------------------------------------------------------------
+# Deploy-branch guardrail (issue: cheap-tier routing regression, 2026-04-13).
+#
+# On 2026-04-13, production Modal was running a snapshot of `dev` that
+# contained the resurrected cheap-tier stage-routing code plus an
+# api-key-at-call-time race. Both bugs existed only on `dev`; `main` was
+# clean. The reason production was running `dev` at all was that there
+# was no guardrail: `modal deploy` just ships whatever `src/coarse/` is
+# on disk at the moment the command runs, and whoever deployed happened
+# to have `dev` checked out.
+#
+# This guard runs at module import time — the first thing Modal does
+# when you run `modal deploy deploy/modal_worker.py` — and refuses to
+# proceed unless the working tree is on `main`. CI (`.github/workflows/
+# modal-deploy.yml`) is the real enforcement; this function is the local
+# belt that catches accidental laptop deploys. GitHub Actions only
+# triggers on `push` to `main`, so `GITHUB_REF_NAME` is always `main`
+# there and the guard is a no-op in CI.
+#
+# The guard is skipped in three cases:
+#
+# 1. Inside a Modal container at review-serving time (`modal.is_local()`
+#    is False). The serverless functions re-import this file on every
+#    cold start — refusing based on branch would break every review.
+# 2. Inside a pytest session. `tests/test_modal_worker.py` loads this
+#    file via `importlib.util.spec_from_file_location`, and tests run
+#    on every branch (including feature branches).
+# 3. When the working tree isn't a git repo at all (e.g. PyPI install).
+#    Emergency escape hatch: set `COARSE_MODAL_DEPLOY_FORCE=1` to bypass
+#    when `main` is broken and you have to ship a hotfix from a
+#    branch. The warning is written to stderr so it's visible in a
+#    terminal scroll.
+# ---------------------------------------------------------------------------
+
+
+def _enforce_deploy_branch() -> None:
+    """Refuse to deploy the Modal worker from a non-main branch.
+
+    Inspects the CI env vars (GitHub Actions) first, then falls back to
+    `git rev-parse`. Raises `RuntimeError` if the current branch isn't
+    `main` unless `COARSE_MODAL_DEPLOY_FORCE=1` is set (in which case a
+    warning is emitted to stderr and the function returns normally).
+
+    Tests call this directly after monkeypatching the env and
+    subprocess. The module-level call at import time goes through
+    `_enforce_deploy_branch_at_import_time` which wraps this with the
+    test / serverless-container short-circuits.
+    """
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        branch = os.environ.get("GITHUB_REF_NAME", "")
+    else:
+        try:
+            branch = subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=Path(__file__).resolve().parent,
+                text=True,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            ).strip()
+        except (
+            subprocess.CalledProcessError,
+            FileNotFoundError,
+            OSError,
+            subprocess.TimeoutExpired,
+        ):
+            # Not inside a git repo (PyPI install, sdist tarball, etc.).
+            return
+
+    if branch == "main":
+        return
+
+    if os.environ.get("COARSE_MODAL_DEPLOY_FORCE") == "1":
+        print(
+            f"⚠️  WARNING: deploying Modal worker from non-main branch "
+            f"{branch!r} (COARSE_MODAL_DEPLOY_FORCE=1 is set).",
+            file=sys.stderr,
+        )
+        return
+
+    raise RuntimeError(
+        f"\n"
+        f"❌ Refusing to deploy Modal worker from branch {branch!r}.\n"
+        f"\n"
+        f"   Modal is auto-deployed from `main` via the\n"
+        f"   .github/workflows/modal-deploy.yml workflow on every push.\n"
+        f"\n"
+        f"   Normal path: land your change on `main` (via a release PR\n"
+        f"   from `dev`, or a cherry-picked hotfix) and let CI deploy.\n"
+        f"\n"
+        f"   Emergency manual deploy from a non-main branch:\n"
+        f"     COARSE_MODAL_DEPLOY_FORCE=1 modal deploy deploy/modal_worker.py\n"
+        f"\n"
+        f"   Incident context: a dev-branch Modal deploy on 2026-04-13\n"
+        f"   shipped a resurrected per-stage cheap-tier router plus an\n"
+        f"   api-key-at-call-time race, breaking every review for hours.\n"
+        f"   This guard exists so that cannot happen by accident again.\n"
+    )
+
+
+def _enforce_deploy_branch_at_import_time() -> None:
+    """Module-level entry point for the deploy-branch guard.
+
+    Wraps `_enforce_deploy_branch` with short-circuits for contexts
+    where the check shouldn't fire: pytest sessions (tests load this
+    file via importlib on feature branches) and Modal serverless
+    containers at review-serving time (cold-starts re-import the
+    file, and blocking by branch would break every review).
+
+    Tests call `_enforce_deploy_branch` directly to exercise the real
+    branch-check logic without having to defeat the short-circuit.
+    """
+    if "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ:
+        return
+    try:
+        if not modal.is_local():
+            return
+    except Exception:
+        pass
+    _enforce_deploy_branch()
+
+
+_enforce_deploy_branch_at_import_time()
+
 
 app = modal.App("coarse-review")
 

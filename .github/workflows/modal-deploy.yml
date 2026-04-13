@@ -1,0 +1,92 @@
+name: deploy-modal
+
+# Auto-deploy the Modal review worker from `main` on every push that could
+# affect the deployed image. This is the real enforcement that keeps
+# production Modal in lockstep with `main` — the import-time guard in
+# `deploy/modal_worker.py::_enforce_deploy_branch` is a second belt for
+# accidental local `modal deploy` runs from a dev branch.
+#
+# Incident context: on 2026-04-13, production Modal was running a snapshot
+# of `dev` that contained resurrected cheap-tier stage routing plus a race
+# in LLMClient's api-key resolution. Both bugs existed only on `dev`; main
+# was clean. The reason prod was on `dev` at all was the complete absence
+# of any Modal-deploy automation — `modal deploy` just ships whatever the
+# developer happens to have checked out locally. This workflow closes that
+# hole for the normal path.
+
+on:
+  push:
+    branches: [main]
+    # Paths filter: only redeploy when something that actually changes the
+    # shipped image has been touched. Docs and web frontend edits should
+    # not churn Modal. Extend this list carefully — a false negative
+    # (something changes behavior but isn't listed) leaves production
+    # drifted until the next legitimate deploy.
+    paths:
+      - 'src/coarse/**'
+      - 'deploy/modal_worker.py'
+      - 'pyproject.toml'
+      - '.github/workflows/modal-deploy.yml'
+  # Manual re-run from the Actions tab (for retries or to force a redeploy
+  # after fixing a transient failure).
+  workflow_dispatch: {}
+
+# Minimal permissions — this job only reads the repo and ships to Modal.
+permissions:
+  contents: read
+
+# Serialize deploys: if two pushes land on main within seconds of each
+# other, deploy them in order rather than in parallel. `cancel-in-progress:
+# false` means a second push waits for the first to finish instead of
+# aborting it mid-flight (a half-deployed Modal app is worse than a brief
+# queue).
+concurrency:
+  group: modal-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Modal reads these automatically. Added as repo secrets via
+      # `gh secret set MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET`. Until they
+      # exist, the "Validate Modal credentials" step below fails fast
+      # with a clear message so the first merge to main after this
+      # workflow lands doesn't silently do nothing.
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deploy-time dependencies
+        # Only the imports that `modal deploy` needs to LOAD the worker
+        # file locally. The image's own runtime deps (litellm, instructor,
+        # docling, etc.) are installed inside Modal's build, not here.
+        run: pip install 'modal>=0.68' 'fastapi>=0.115' 'pydantic>=2.0'
+
+      - name: Validate Modal credentials
+        run: |
+          if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
+            echo "::error::MODAL_TOKEN_ID and MODAL_TOKEN_SECRET must be set as repo secrets."
+            echo ""
+            echo "Create a Modal token with 'modal token new' locally, then:"
+            echo "  gh secret set MODAL_TOKEN_ID --body <id>"
+            echo "  gh secret set MODAL_TOKEN_SECRET --body <secret>"
+            exit 1
+          fi
+
+      - name: Deploy modal worker
+        # The `_enforce_deploy_branch` import-time guard in
+        # deploy/modal_worker.py sees GITHUB_ACTIONS=true and
+        # GITHUB_REF_NAME=main and short-circuits as a no-op, so the
+        # deploy proceeds normally from CI. If a future workflow change
+        # accidentally fires this job on a non-main ref, the guard
+        # raises and this step fails loudly.
+        run: modal deploy deploy/modal_worker.py

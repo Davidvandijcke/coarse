@@ -58,12 +58,37 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
 
    **No LLM provider secrets are mounted.** The user's OpenRouter key arrives with each review request and is set into the container's env for the duration of the run, then unset. See `modal_worker.py` for the pattern.
 
-3. Deploy:
+3. Deploy via CI, not manually. The Modal worker is auto-deployed from
+   `main` by `.github/workflows/modal-deploy.yml` on every push that
+   touches `src/coarse/**`, `deploy/modal_worker.py`, `pyproject.toml`,
+   or the workflow file itself. You should almost never run `modal
+   deploy` by hand.
+
+   First-time setup requires two GitHub Actions repo secrets: create a
+   Modal token locally with `modal token new`, then:
    ```bash
-   modal deploy deploy/modal_worker.py
+   gh secret set MODAL_TOKEN_ID --body <id>
+   gh secret set MODAL_TOKEN_SECRET --body <secret>
    ```
 
-4. Copy the webhook URL from the output. It looks like:
+   After that, every merge to `main` that changes a deploy-relevant
+   file will auto-redeploy. You can also trigger a manual re-run via
+   `gh workflow run modal-deploy.yml` or the GitHub Actions tab.
+
+   **Emergency manual deploy** (only when `main` is broken and you
+   need to ship a hotfix from a branch; use sparingly):
+   ```bash
+   COARSE_MODAL_DEPLOY_FORCE=1 modal deploy deploy/modal_worker.py
+   ```
+   Without the `COARSE_MODAL_DEPLOY_FORCE=1` env var, the import-time
+   guard in `deploy/modal_worker.py::_enforce_deploy_branch()` refuses
+   to deploy from any branch other than `main`. This guard exists
+   because on 2026-04-13 a `modal deploy` from a `dev` checkout
+   shipped resurrected cheap-tier stage routing plus an api-key race
+   to production, breaking every review for hours.
+
+4. Copy the webhook URL from the output (visible in the Actions run
+   logs, or on the Modal dashboard). It looks like:
    ```
    https://<your-org>--coarse-review-run-review.modal.run
    ```
@@ -212,7 +237,7 @@ The frontend works locally without Supabase/Modal — form submission will fail 
 
 **"Failed to create review record"**: Supabase project is paused or env vars are wrong. Check `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_KEY`.
 
-**"Failed to start review"**: Modal webhook URL is wrong or the worker isn't deployed. Run `modal deploy deploy/modal_worker.py` and verify with the health endpoint.
+**"Failed to start review"**: Modal webhook URL is wrong or the worker isn't deployed. Check the most recent `deploy-modal` workflow run in GitHub Actions and verify with the health endpoint. Do not `modal deploy` manually unless `main` is broken — see step 3.
 
 **Review stuck on "queued"**: Modal worker crashed or timed out. Check Modal logs at [modal.com/apps](https://modal.com/apps).
 
