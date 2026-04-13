@@ -41,6 +41,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { signReviewAccessToken } from "@/lib/reviewAuth";
+import { buildReviewUrl } from "@/lib/reviewAccess";
 
 export const maxDuration = 30;
 
@@ -257,14 +259,27 @@ export async function POST(request: NextRequest) {
   }
 
   // Derive the review URL the same way /api/mcp-handoff does so the dev
-  // loop (localhost:3000) and prod (coarse.vercel.app) both return URLs
-  // the caller can actually click.
+  // loop (localhost:3003) and prod (coarse.vercel.app) both return URLs
+  // the caller can actually click. The URL must carry a signed access
+  // token because /api/presign sets `access_token_required=true` on
+  // every review it creates — that flag is enforced in GET /api/review/
+  // [id] (line 49). Without this, an MCP-finalized review is completed
+  // correctly but clicking the `view:` link from the coarse-review log
+  // returns 401 "Access token required". Sign the token with the same
+  // key/format the web submit flow uses so the existing
+  // hasValidReviewAccessToken() check accepts it.
   const siteUrl =
     process.env.NEXT_PUBLIC_SITE_URL ??
     (process.env.NEXT_PUBLIC_VERCEL_URL
       ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
       : new URL(request.url).origin);
-  const reviewUrl = `${siteUrl.replace(/\/$/, "")}/review/${paperId}`;
+  const accessToken = signReviewAccessToken(paperId);
+  const reviewUrl = buildReviewUrl(
+    siteUrl.replace(/\/$/, ""),
+    "review",
+    paperId,
+    accessToken,
+  );
 
   return NextResponse.json({
     review_id: paperId,
