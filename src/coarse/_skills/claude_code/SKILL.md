@@ -58,6 +58,17 @@ echo "Review PID: $!"
 
 Then poll the log every 60-90 seconds with `tail -20 /tmp/coarse-review.log`. Do NOT kill the process because it looks stuck — it takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, it's done.
 
+**When the run finishes, do NOT hunt across the filesystem for the review file.** `coarse-review` prints the authoritative paths in the final log lines:
+
+```bash
+rg '^  view:|^  local:' /tmp/coarse-review.log
+```
+
+- `local:` is the exact markdown path that was written, even if `uvx` used a temporary working directory.
+- `view:` is the canonical coarse web URL in handoff mode.
+
+If `local:` is present, read that file directly. Do **not** run broad `find`, `locate`, `lsof`, or whole-computer searches trying to rediscover the output.
+
 Available models: `claude-opus-4-6` (default), `claude-sonnet-4-6`, `claude-haiku-4-5`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
 
@@ -75,10 +86,10 @@ This downloads the paper, runs the pipeline, and POSTs the final review back so 
 **When the script completes** (you'll be notified), read the output markdown and show the user:
 
 - Output path
+- Web URL from the `view:` line in handoff mode
 - Recommendation (accept / revise_and_resubmit / reject)
 - Top 2-3 macro issues from the overall feedback section
 - Total comment count
-- If handoff mode: the `coarse.vercel.app/review/<id>` URL
 
 ## Notes
 

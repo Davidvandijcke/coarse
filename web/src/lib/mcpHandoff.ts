@@ -147,9 +147,19 @@ export function buildAgentPrompt(args: {
     `timeout and look like it crashed when it's actually still ` +
     `running. Do NOT kill the process because you think it hung; ` +
     `it takes a genuine 10-25 minutes.\n\n` +
+    `STEP 4 — When the run finishes, use ONLY the final log lines to ` +
+    `locate the artifacts. Do NOT do a broad filesystem search. ` +
+    `Run \`rg '^  view:|^  local:' /tmp/coarse-review.log\`. ` +
+    `The \`local:\` line is the exact markdown path written by ` +
+    `coarse-review`, even when uvx runs from a temporary directory. ` +
+    `If \`local:\` is present, read that file directly. If \`view:\` is ` +
+    `present, use that as the canonical web URL. Do NOT run global ` +
+    `\`find\`, \`locate\`, \`lsof\`, or whole-computer searches trying to ` +
+    `discover the review file.\n\n` +
     `When the log shows "PUBLISHED TO COARSE WEB" or "REVIEW ` +
     `COMPLETE", the review is done. Show me:\n` +
     `  - The review URL (search for 'view:' in the log)\n` +
+    `  - The local markdown path (search for 'local:' in the log)\n` +
     `  - A summary of the recommendation (accept / revise / reject)\n` +
     `  - The top 3 macro issues from the overview section`
   );

@@ -23,6 +23,7 @@ def test_bundled_skill_assets_use_ephemeral_uvx_flow() -> None:
         assert "uvx --from 'coarse-ink[mcp] @" in text
         assert "coarse install-skills --all --force" in text
         assert "nohup uvx --from 'coarse-ink[mcp] @" in text
+        assert "rg '^  view:|^  local:' /tmp/coarse-review.log" in text
         assert "uv pip install --reinstall" not in text
 
 
@@ -35,6 +36,7 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     assert "uvx --from ${MCP_UVX_FROM} coarse install-skills --all --force" in handoff_lib
     assert "uvx --from ${MCP_UVX_FROM} coarse-review --handoff ${handoffUrl}" in handoff_lib
     assert "nohup ${runCmd} > /tmp/coarse-review.log 2>&1 < /dev/null &" in handoff_lib
+    assert "rg '^  view:|^  local:' /tmp/coarse-review.log" in handoff_lib
 
     assert "const fullPrompt = buildAgentPrompt({ setupCmd, runCmd });" in handoff_page
 

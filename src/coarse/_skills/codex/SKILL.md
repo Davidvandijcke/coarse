@@ -59,6 +59,14 @@ tail -20 /tmp/coarse-review.log
 
 Do NOT kill the process because you think it hung — the review takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, it's done.
 
+When the run finishes, use the final log lines as the authoritative artifact locations:
+
+```bash
+rg '^  view:|^  local:' /tmp/coarse-review.log
+```
+
+If `local:` is present, read that exact file. If `view:` is present, use that URL. Do not run broad filesystem searches trying to rediscover the review file.
+
 Available models: `gpt-5.4` (default), `gpt-5.3-codex`, `gpt-5.4-mini`, `gpt-5.4-pro`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
 
@@ -77,7 +85,7 @@ nohup uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse
 echo "Review PID: $!"
 ```
 
-**When complete**, show the user the output path, recommendation, top issues, and comment count.
+**When complete**, show the user the output path, web URL (if present), recommendation, top issues, and comment count.
 
 ## Notes
 

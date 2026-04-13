@@ -59,6 +59,14 @@ tail -20 /tmp/coarse-review.log
 
 Do NOT kill the process because you think it hung — it takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, the run is done.
 
+When the run finishes, use the final log lines as the authoritative artifact locations:
+
+```bash
+rg '^  view:|^  local:' /tmp/coarse-review.log
+```
+
+If `local:` is present, read that exact file. If `view:` is present, use that URL. Do not run broad filesystem searches trying to rediscover the review file.
+
 Available models: `gemini-3.1-pro-preview` (default), `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
 
@@ -71,7 +79,7 @@ nohup uvx --from 'coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse
 echo "Review PID: $!"
 ```
 
-**When complete**, show the user the output path, recommendation, top issues, and comment count.
+**When complete**, show the user the output path, web URL (if present), recommendation, top issues, and comment count.
 
 ## Notes
 
