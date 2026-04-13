@@ -12,6 +12,7 @@ import typer
 from rich.console import Console
 from rich.status import Status
 
+from coarse import __version__
 from coarse.config import (
     PROVIDER_ENV_VARS,
     CoarseConfig,
@@ -31,6 +32,13 @@ app = typer.Typer(
 )
 
 console = Console()
+
+
+def _version_callback(value: bool) -> None:
+    """Print version and exit before command parsing."""
+    if value:
+        console.print(__version__)
+        raise typer.Exit()
 
 
 def _pick_cheap_model(config: CoarseConfig) -> str | None:
@@ -82,6 +90,19 @@ def setup() -> None:
     """Interactive setup: configure default model and API keys."""
     config = load_config()
     _run_setup(config)
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show version and exit.",
+    ),
+) -> None:
+    """coarse command group."""
 
 
 @app.command()
@@ -178,7 +199,19 @@ def review(
 
     console.print(f"[bold]Reviewing[/bold] {pdf.name} with {resolved_model}")
 
-    with Status("Running review pipeline...", console=console):
+    # Keep the interactive cost prompt unobscured. The prompt currently lives
+    # inside review_paper(), so wrapping the whole call in a live Rich status
+    # makes the CLI look like it continued past confirmation when it is still
+    # waiting on stdin. The non-interactive `--yes` path keeps the spinner.
+    if yes:
+        with Status("Running review pipeline...", console=console):
+            review_obj, markdown, paper_text = review_paper(
+                pdf_path=pdf,
+                model=resolved_model,
+                skip_cost_gate=yes,
+                config=config,
+            )
+    else:
         review_obj, markdown, paper_text = review_paper(
             pdf_path=pdf,
             model=resolved_model,

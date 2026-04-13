@@ -1,7 +1,13 @@
 """Tests for coarse.quote_verify."""
+
 from __future__ import annotations
 
-from coarse.quote_verify import _is_math_heavy, _passage_garble_score, _trim_to_best_match, verify_quotes
+from coarse.quote_verify import (
+    _is_math_heavy,
+    _passage_garble_score,
+    _trim_to_best_match,
+    verify_quotes,
+)
 from coarse.types import DetailedComment
 
 

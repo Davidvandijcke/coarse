@@ -1,7 +1,6 @@
 """Tests for coarse.synthesis.render_review."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from coarse.synthesis import render_review
 from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
@@ -17,9 +16,7 @@ def _make_review(
     comments: list[DetailedComment] | None = None,
 ) -> Review:
     if issues is None:
-        issues = [
-            OverviewIssue(title=f"Issue {i}", body=f"Body {i}") for i in range(1, 5)
-        ]
+        issues = [OverviewIssue(title=f"Issue {i}", body=f"Body {i}") for i in range(1, 5)]
     if comments is None:
         comments = [
             DetailedComment(
@@ -89,7 +86,8 @@ def test_render_review_overall_feedback():
 def test_render_review_detailed_comments_count():
     comments = [
         DetailedComment(
-            number=i, title=f"C{i}",
+            number=i,
+            title=f"C{i}",
             quote=f"Verbatim quote text from section {i} of the paper.",
             feedback=f"f{i}",
         )
@@ -104,19 +102,25 @@ def test_render_review_no_severity_labels():
     """Severity labels like [CRITICAL] or [MINOR] must not appear in output."""
     comments = [
         DetailedComment(
-            number=1, title="A critical issue",
+            number=1,
+            title="A critical issue",
             quote="Verbatim quote text from section one of the paper.",
-            feedback="f1", severity="critical",
+            feedback="f1",
+            severity="critical",
         ),
         DetailedComment(
-            number=2, title="A minor issue",
+            number=2,
+            title="A minor issue",
             quote="Verbatim quote text from section two of the paper.",
-            feedback="f2", severity="minor",
+            feedback="f2",
+            severity="minor",
         ),
         DetailedComment(
-            number=3, title="A major issue",
+            number=3,
+            title="A major issue",
             quote="Verbatim quote text from section three of the paper.",
-            feedback="f3", severity="major",
+            feedback="f3",
+            severity="major",
         ),
     ]
     review = _make_review(comments=comments)
@@ -131,19 +135,25 @@ def test_render_review_pipeline_order_preserved():
     """Comments should appear in pipeline order, not sorted by severity."""
     comments = [
         DetailedComment(
-            number=1, title="Minor First",
+            number=1,
+            title="Minor First",
             quote="Verbatim quote from section one.",
-            feedback="f1", severity="minor",
+            feedback="f1",
+            severity="minor",
         ),
         DetailedComment(
-            number=2, title="Critical Second",
+            number=2,
+            title="Critical Second",
             quote="Verbatim quote from section two.",
-            feedback="f2", severity="critical",
+            feedback="f2",
+            severity="critical",
         ),
         DetailedComment(
-            number=3, title="Major Third",
+            number=3,
+            title="Major Third",
             quote="Verbatim quote from section three.",
-            feedback="f3", severity="major",
+            feedback="f3",
+            severity="major",
         ),
     ]
     review = _make_review(comments=comments)
@@ -166,7 +176,9 @@ def test_render_review_summary():
     review = _make_review(issues=issues)
     # Manually set summary
     review = Review(
-        title=review.title, domain=review.domain, taxonomy=review.taxonomy,
+        title=review.title,
+        domain=review.domain,
+        taxonomy=review.taxonomy,
         date=review.date,
         overall_feedback=overview,
         detailed_comments=review.detailed_comments,
@@ -225,7 +237,8 @@ def test_render_review_multiline_quote():
 def test_render_review_separator_count():
     comments = [
         DetailedComment(
-            number=i, title=f"C{i}",
+            number=i,
+            title=f"C{i}",
             quote=f"Verbatim quote text from section {i} of the paper.",
             feedback=f"f{i}",
         )
@@ -251,6 +264,7 @@ def test_render_review_empty_comments():
 
 # --- Recommendation rendering ---
 
+
 def test_render_review_recommendation_present():
     """When recommendation is non-empty, it renders as **Recommendation**: ..."""
     issues = [OverviewIssue(title=f"I{i}", body=f"b{i}") for i in range(1, 5)]
@@ -259,12 +273,15 @@ def test_render_review_recommendation_present():
         recommendation="Major revision. The core identification strategy needs strengthening.",
     )
     review = Review(
-        title="Test Paper", domain="social_sciences/economics",
-        taxonomy="academic/research_paper", date="3/3/2026, 11:23:50 AM",
+        title="Test Paper",
+        domain="social_sciences/economics",
+        taxonomy="academic/research_paper",
+        date="3/3/2026, 11:23:50 AM",
         overall_feedback=overview,
         detailed_comments=[
             DetailedComment(
-                number=1, title="C1",
+                number=1,
+                title="C1",
                 quote="Verbatim quote text from section one of the paper.",
                 feedback="f1",
             )
@@ -287,6 +304,7 @@ def test_render_review_recommendation_empty():
 
 # --- Revision targets rendering ---
 
+
 def test_render_review_revision_targets_present():
     """When revision_targets is non-empty, they render as numbered list."""
     issues = [OverviewIssue(title=f"I{i}", body=f"b{i}") for i in range(1, 5)]
@@ -300,12 +318,15 @@ def test_render_review_revision_targets_present():
         ],
     )
     review = Review(
-        title="Test Paper", domain="social_sciences/economics",
-        taxonomy="academic/research_paper", date="3/3/2026, 11:23:50 AM",
+        title="Test Paper",
+        domain="social_sciences/economics",
+        taxonomy="academic/research_paper",
+        date="3/3/2026, 11:23:50 AM",
         overall_feedback=overview,
         detailed_comments=[
             DetailedComment(
-                number=1, title="C1",
+                number=1,
+                title="C1",
                 quote="Verbatim quote text from section one of the paper.",
                 feedback="f1",
             )

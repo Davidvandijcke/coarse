@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
+import coarse
 from coarse.cli import app
 from coarse.config import CoarseConfig
 from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
@@ -234,6 +235,13 @@ def test_main_module_entrypoint():
     assert "coarse" in result.output.lower() or "review" in result.output.lower()
 
 
+def test_version_flag_prints_version():
+    """Global --version prints package version and exits cleanly."""
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert coarse.__version__ in result.output
+
+
 # ---------------------------------------------------------------------------
 # test_init_exports
 # ---------------------------------------------------------------------------
@@ -261,6 +269,66 @@ def test_review_nonexistent_pdf():
     """Invoking review with a nonexistent PDF exits with non-zero code."""
     result = runner.invoke(app, ["review", "/nonexistent/path/paper.pdf"])
     assert result.exit_code != 0
+
+
+def test_review_interactive_path_does_not_enter_status(tmp_path):
+    """Interactive runs leave the cost prompt unobscured by Rich Status."""
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+
+    entered: list[bool] = []
+
+    class _FakeStatus:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            entered.append(True)
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    with (
+        patch("coarse.cli.Status", _FakeStatus),
+        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.review_paper", _fake_review_paper),
+    ):
+        result = runner.invoke(app, ["review", str(pdf)])
+
+    assert result.exit_code == 0, result.output
+    assert entered == []
+
+
+def test_review_yes_path_enters_status(tmp_path):
+    """Non-interactive --yes runs keep the Rich status spinner."""
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+
+    entered: list[bool] = []
+
+    class _FakeStatus:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            entered.append(True)
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    with (
+        patch("coarse.cli.Status", _FakeStatus),
+        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.review_paper", _fake_review_paper),
+    ):
+        result = runner.invoke(app, ["review", str(pdf), "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert entered == [True]
 
 
 # ---------------------------------------------------------------------------

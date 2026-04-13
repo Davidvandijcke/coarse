@@ -1,14 +1,20 @@
 """Tests for coarse.quality — evaluate_review and QualityReport."""
+
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from coarse.llm import LLMClient
 from coarse.models import QUALITY_MODEL
-from coarse.quality import DimensionScore, QualityReport, _JudgeOutput, evaluate_review, save_quality_report
+from coarse.quality import (
+    DimensionScore,
+    QualityReport,
+    _JudgeOutput,
+    evaluate_review,
+    save_quality_report,
+)
 from coarse.synthesis import render_review
 from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
 
@@ -139,7 +145,7 @@ def test_evaluate_review_creates_default_client():
 
 
 def test_dimension_scores_in_valid_range():
-    """After mocked evaluate_review, assert all DimensionScore.score values in [1,6] and overall_score in [1.0, 6.0]."""
+    """After mocked evaluate_review, scores stay in the expected bounds."""
     scores = [2, 3, 4, 5]
     client = _make_mock_client(scores)
 
@@ -154,10 +160,6 @@ def test_dimension_scores_in_valid_range():
 
     assert 1.0 <= result.overall_score <= 6.0
 
-
-# ---------------------------------------------------------------------------
-# test_save_quality_report_creates_file
-# ---------------------------------------------------------------------------
 
 def test_save_quality_report_creates_file(tmp_path):
     """save_quality_report writes a markdown file with expected metadata fields."""
