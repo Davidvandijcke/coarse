@@ -77,10 +77,18 @@ def test_review_section_chains_verify_for_proof_sections():
         math_content=True,
     )
 
+    # A paper_markdown that contains the mock comments' quote verbatim so
+    # the internal `_verify_with_fallback` calls in `_review_section` find
+    # the quote and don't stamp an `[approximate]` prefix on it. The mock
+    # `_comment()` returns a DetailedComment whose .quote is the literal
+    # string below, so placing it inside paper_markdown is enough.
+    paper_markdown = "Preface.\n\nThis is a sufficiently long quote from the paper.\n\nTrailer."
+
     result = _review_section(
         section_agent,
         verify_agent,
         section,
+        paper_markdown,
         "Paper",
         _overview(),
         None,
@@ -96,6 +104,14 @@ def test_review_section_chains_verify_for_proof_sections():
 
 
 def test_run_editorial_pass_falls_back_to_crossref_and_critique():
+    # `run_editorial_pass` finishes each agent pass with
+    # `_verify_with_fallback`, which runs the real `verify_quotes` on the
+    # paper markdown and stamps `[approximate]` on any quote it can't find.
+    # The mock `_comment()` returns a DetailedComment whose `.quote` is
+    # the literal string below, so the paper text must contain it to get
+    # clean equality with the `crossref_comments` / `critique_comments`
+    # lists this test asserts against.
+    paper_text = "This is a sufficiently long quote from the paper."
     with (
         patch("coarse.review_stages.EditorialAgent") as MockEditorial,
         patch("coarse.review_stages.CrossrefAgent") as MockCrossref,
@@ -109,7 +125,7 @@ def test_run_editorial_pass_falls_back_to_crossref_and_critique():
 
         result = run_editorial_pass(
             Mock(),
-            "paper text",
+            paper_text,
             _overview(),
             [_comment(1)],
             title="Paper",
@@ -140,9 +156,12 @@ def test_run_editorial_pass_returns_editorial_output_without_fallback():
         def __init__(self, client):
             raise AssertionError("critique fallback should not run")
 
+    # paper_text must contain the mock quote so `_verify_with_fallback`
+    # leaves it untouched — see the note in
+    # test_run_editorial_pass_falls_back_to_crossref_and_critique.
     result = run_editorial_pass(
         Mock(),
-        "paper text",
+        "This is a sufficiently long quote from the paper.",
         _overview(),
         [_comment(1)],
         editorial_agent_cls=EditorialStub,
@@ -177,9 +196,10 @@ def test_run_editorial_pass_returns_crossref_comments_when_critique_fails():
         def run(self, *args, **kwargs):
             raise RuntimeError("boom")
 
+    # paper_text must contain the mock quote — see note above.
     result = run_editorial_pass(
         Mock(),
-        "paper text",
+        "This is a sufficiently long quote from the paper.",
         _overview(),
         [_comment(1)],
         editorial_agent_cls=EditorialStub,

@@ -402,9 +402,9 @@ def _run_extraction(file_path: Path) -> tuple[Any, Any]:
     paying litellm's import cost when callers only want to probe tool
     metadata (e.g. MCP Inspector discovery).
     """
+    from coarse import extract_and_structure
     from coarse.config import CoarseConfig
     from coarse.llm import LLMClient
-    from coarse.pipeline import extract_and_structure
 
     # Force extraction QA off on the MCP path for now — it needs GEMINI_API_KEY,
     # which we don't ask the user for. The auto-trigger on high garble ratio
@@ -1854,9 +1854,9 @@ try:
         start = time.time()
         try:
             print(f"[{job_id}] importing coarse modules", flush=True)
+            from coarse import extract_and_structure
             from coarse.config import CoarseConfig
             from coarse.llm import LLMClient
-            from coarse.pipeline import extract_and_structure
 
             config = CoarseConfig(extraction_qa=False)
             client = LLMClient(config=config)

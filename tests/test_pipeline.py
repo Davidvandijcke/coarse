@@ -623,17 +623,24 @@ def test_review_paper_verifies_section_quotes_before_editorial_handoff():
         editorial_received.extend(comments)
         return comments
 
+    # Patch targets live on `coarse.review_stages` after the pipeline
+    # refactor (#87) — EditorialAgent, _review_section, calibrate_domain,
+    # extract_contribution, and verify_quotes all resolved in that module's
+    # namespace at import time, and pipeline.py just re-imports the
+    # helpers. Patching `coarse.pipeline.X` for these would no-op against
+    # the call sites inside review_stages.
     with (
         patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
         patch("coarse.pipeline.analyze_structure", return_value=structure),
-        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.review_stages.calibrate_domain", return_value=None),
         patch("coarse.pipeline.search_literature", return_value=""),
-        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.review_stages.extract_contribution", return_value=None),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.review_stages.verify_quotes", side_effect=fake_verify),
         patch("coarse.pipeline.verify_quotes", side_effect=fake_verify),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -819,7 +826,11 @@ def test_review_section_verifies_quotes_before_verify_and_on_return():
         prefix = f"verified-{call_count['n']}"
         return [c.model_copy(update={"quote": f"{prefix}: {c.quote}"}) for c in comments]
 
-    with patch("coarse.pipeline.verify_quotes", side_effect=fake_verify):
+    # _review_section lives in coarse.review_stages after the pipeline
+    # refactor (#87), and that's where `verify_quotes` is imported at
+    # module load time. Patching `coarse.pipeline.verify_quotes` no-ops
+    # against the helper's actual lookup.
+    with patch("coarse.review_stages.verify_quotes", side_effect=fake_verify):
         result = _review_section(
             section_agent,
             verify_agent,
@@ -856,7 +867,7 @@ def test_review_section_marks_approximate_quotes_instead_of_dropping_them():
         assert drop_unverified is False
         return [approximate]
 
-    with patch("coarse.pipeline.verify_quotes", side_effect=fake_verify):
+    with patch("coarse.review_stages.verify_quotes", side_effect=fake_verify):
         result = _review_section(
             section_agent,
             verify_agent,

@@ -23,6 +23,19 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
+      # tests/test_pipeline_spec.py shells out to
+      # `node --experimental-strip-types` to run `web/src/lib/estimateCost.ts`
+      # directly for the Python↔TS cost-gate parity check. The
+      # `--experimental-strip-types` flag landed in Node 22.6, and the GitHub
+      # `ubuntu-latest` runner currently defaults to Node 20 LTS, which exits
+      # with code 9 ("bad option") on that flag. Pinning Node 22 here keeps
+      # the parity test green without forcing every contributor to upgrade
+      # their local Node too.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install dependencies
         run: uv sync --extra dev
 
