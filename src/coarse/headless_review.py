@@ -111,9 +111,16 @@ def _make_client_factory(host: str, model: str | None, effort: str):
     host = host.lower()
     resolved_model = model or _DEFAULT_MODELS[host]
 
+    # The factory replaces coarse.llm.LLMClient at monkey-patch time, so it
+    # gets called with whatever kwargs the pipeline passes to LLMClient:
+    # `stage` from ReviewAgent.build_client(), but also `model=...` /
+    # `config=...` from pipeline.py's direct `LLMClient(model=..., config=...)`
+    # calls. Accept any call shape and ignore the extras — the headless
+    # client uses the closure's already-resolved `resolved_model`/`effort`,
+    # so pipeline-level model/config arguments are redundant here.
     if host == "claude":
 
-        def _factory(stage: str = ""):
+        def _factory(stage: str = "", *_args, **_kwargs):
             return hc.ClaudeCodeClient(
                 claude_model=resolved_model,
                 effort=effort,
@@ -122,7 +129,7 @@ def _make_client_factory(host: str, model: str | None, effort: str):
         return _factory
     if host == "codex":
 
-        def _factory(stage: str = ""):
+        def _factory(stage: str = "", *_args, **_kwargs):
             return hc.CodexClient(
                 codex_model=resolved_model,
                 effort=effort,
@@ -131,7 +138,7 @@ def _make_client_factory(host: str, model: str | None, effort: str):
         return _factory
     if host == "gemini":
 
-        def _factory(stage: str = ""):
+        def _factory(stage: str = "", *_args, **_kwargs):
             return hc.GeminiClient(
                 gemini_model=resolved_model,
                 effort=effort,
