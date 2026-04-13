@@ -73,8 +73,8 @@ paper.pdf (or .txt, .md, .tex, .docx, .html, .epub)
   -> cross_section.py     Results vs discussion synthesis (conditional)
   -> editorial.py         Primary dedup/consistency/quality filter
   -> crossref agent       Legacy fallback if editorial fails
-  -> quote_verify.py     Programmatic fuzzy-match quotes against text
   -> critique agent      Legacy fallback if editorial fails
+  -> quote_verify.py      Programmatic fuzzy-match quotes against text
   -> synthesis.py        Deterministic render -> paper_review.md
 ```
 

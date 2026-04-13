@@ -64,11 +64,13 @@ fi
 # 4) No new model-ID literals in the diff outside src/coarse/models.py
 base="${DOC_SYNC_BASE:-dev}"
 if git rev-parse --verify "$base" >/dev/null 2>&1; then
-    diff_files=$(git diff --name-only "${base}...HEAD" 2>/dev/null \
-        | grep -E '^src/coarse/.*\.py$' \
-        | grep -v '^src/coarse/models\.py$' || true)
-    if [ -n "$diff_files" ]; then
-        offenders=$(git diff "${base}...HEAD" -- $diff_files \
+    mapfile -t diff_files < <(
+        git diff --name-only "${base}...HEAD" 2>/dev/null \
+            | grep -E '^src/coarse/.*\.py$' \
+            | grep -v '^src/coarse/models\.py$' || true
+    )
+    if [ "${#diff_files[@]}" -gt 0 ]; then
+        offenders=$(git diff "${base}...HEAD" -- "${diff_files[@]}" \
             | grep -E '^\+' \
             | grep -v '^+++' \
             | grep -Ev '^\+ *#|^\+ *"""|^\+ *\x27\x27\x27' \
@@ -92,11 +94,11 @@ fi
 stale_hits=$(rg -n \
     -e '3-judge overview panel' \
     -e 'overview panel +3-judge' \
+    -e 'crossref \+ critique.*primary path' \
+    -e 'ships the per-stage model routing feature' \
     -e 'crossref agent.*Deduplicate, validate quotes, consistency' \
     -e 'critique agent.*Self-critique quality gate' \
-    -e 'StageRouter' \
-    -e 'STAGE_MODELS' \
-    CLAUDE.md README.md CONTRIBUTING.md 2>/dev/null || true)
+    CLAUDE.md README.md CONTRIBUTING.md CHANGELOG.md 2>/dev/null || true)
 if [ -n "$stale_hits" ]; then
     fail "stale architecture wording found in canonical docs:"
     echo "$stale_hits" | sed 's/^/       /' >&2
