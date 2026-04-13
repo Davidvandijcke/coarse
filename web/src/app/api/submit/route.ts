@@ -8,6 +8,10 @@ import {
 } from "@/lib/reviewAuth";
 import { buildReviewKey, buildReviewUrl } from "@/lib/reviewAccess";
 import { isEmailCapacityReached } from "@/lib/emailCapacity";
+import {
+  getActiveReviewWindowStartIso,
+  MAX_CONCURRENT_REVIEWS,
+} from "@/lib/reviewCapacity";
 
 export const maxDuration = 30;
 
@@ -143,6 +147,28 @@ export async function POST(request: NextRequest) {
 
   if (fetchError || !reviewRow) {
     return NextResponse.json({ error: "Review not found — presign first" }, { status: 404 });
+  }
+
+  const activeCountSince = getActiveReviewWindowStartIso();
+  const { data: activeReviewCount, error: activeCountError } = await supabaseAdmin.rpc(
+    "count_active_submitted_reviews",
+    { since: activeCountSince },
+  );
+  if (activeCountError) {
+    console.error("[submit] active review count failed", activeCountError);
+    return NextResponse.json(
+      { error: "Capacity check unavailable. Please try again in a moment." },
+      { status: 503 },
+    );
+  }
+  if (Number(activeReviewCount ?? 0) >= MAX_CONCURRENT_REVIEWS) {
+    return NextResponse.json(
+      {
+        error:
+          "We're seeing high traffic right now. Please try again in a few minutes.",
+      },
+      { status: 503 },
+    );
   }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://coarse.vercel.app";

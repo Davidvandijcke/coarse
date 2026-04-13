@@ -60,6 +60,7 @@ create table review_secrets (
 alter table review_secrets enable row level security;
 
 create index idx_review_secrets_created_at on review_secrets (created_at);
+create index idx_reviews_status_created_at on reviews (status, created_at);
 
 -- ============================================================================
 -- Storage buckets
@@ -167,4 +168,20 @@ alter publication supabase_realtime add table system_status;
 create or replace function count_reviews_since(since timestamptz)
 returns bigint language sql security definer as $$
   select count(*) from reviews where created_at >= since;
+$$;
+
+-- Count reviews that were actually submitted (review_emails row exists) and
+-- are still within the active worker window. This excludes abandoned presign
+-- rows from capacity checks.
+create or replace function count_active_submitted_reviews(since timestamptz)
+returns bigint language sql security definer as $$
+  select count(*)
+  from reviews r
+  where r.created_at >= since
+    and r.status in ('queued', 'running', 'extracting', 'extracted')
+    and exists (
+      select 1
+      from review_emails e
+      where e.review_id = r.id
+    );
 $$;
