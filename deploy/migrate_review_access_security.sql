@@ -26,4 +26,12 @@ alter table reviews
 
 alter table reviews
   add constraint reviews_status_check
-  check (status in ('queued', 'running', 'done', 'failed', 'cancelled'));
+  check (status in (
+    'queued',
+    'running',
+    'extracting',
+    'extracted',
+    'done',
+    'failed',
+    'cancelled'
+  ));
