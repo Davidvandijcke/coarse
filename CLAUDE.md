@@ -54,6 +54,9 @@ src/coarse/
 ├── cost.py                  # Cost estimation + user approval gate
 ├── pipeline_spec.py         # Shared stage manifest for runtime + cost estimators
 ├── extraction.py            # PDF/TXT/MD/TeX/DOCX/HTML/EPUB → PaperText
+├── extraction_cache.py      # Extraction cache paths and cache read/write helpers
+├── extraction_formats.py    # Non-OpenRouter format-specific extraction backends
+├── extraction_openrouter.py # OpenRouter OCR/file-parser transport and response parsing
 ├── extraction_qa.py         # Post-extraction QA via vision LLM (Gemini Flash)
 ├── headless_clients.py      # Claude/Codex/Gemini CLI-backed LLMClient replacements
 ├── headless_review.py       # Shared entrypoint for headless CLI review runs
