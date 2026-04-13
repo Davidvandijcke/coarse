@@ -771,3 +771,121 @@ def test_do_review_skips_environ_write_when_no_key_resolved(modal_worker, monkey
 
     # Env var was NOT set to "" — it stays unset.
     assert captured["env"] == "<unset>"
+
+
+# ---------------------------------------------------------------------------
+# Deploy-branch guard — incident 2026-04-13.
+#
+# Production was running a stale `dev` snapshot because there was no
+# guardrail against `modal deploy` from a non-main branch. These tests
+# pin the guard's behavior across every code path:
+#
+#   - CI context (GITHUB_ACTIONS=true) with GITHUB_REF_NAME=main → pass.
+#   - CI context with GITHUB_REF_NAME=dev → raise.
+#   - Local context with git branch=main → pass.
+#   - Local context with git branch=dev (no force env) → raise.
+#   - Local context with git branch=dev and COARSE_MODAL_DEPLOY_FORCE=1
+#     → warn to stderr and pass.
+#   - Local context with git unavailable (PyPI install, sdist tarball)
+#     → silent no-op (don't block a legitimate import).
+#   - Import-time wrapper short-circuits when pytest is loaded (this is
+#     how test_modal_worker.py is allowed to import the file at all).
+#
+# The tests call `_enforce_deploy_branch` directly, which skips the
+# pytest and serverless-container short-circuits in
+# `_enforce_deploy_branch_at_import_time`. Every local-branch case is
+# mocked via `subprocess.check_output` — we never touch the real git
+# state and therefore never risk breaking these tests based on what
+# branch the contributor happens to be on.
+# ---------------------------------------------------------------------------
+
+
+def test_enforce_deploy_branch_ci_main_passes(modal_worker, monkeypatch):
+    """In GitHub Actions on main, the guard is a no-op."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_REF_NAME", "main")
+    monkeypatch.delenv("COARSE_MODAL_DEPLOY_FORCE", raising=False)
+
+    # Should not raise.
+    modal_worker._enforce_deploy_branch()
+
+
+def test_enforce_deploy_branch_ci_non_main_raises(modal_worker, monkeypatch):
+    """In GitHub Actions on a non-main ref, the guard refuses to deploy."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_REF_NAME", "dev")
+    monkeypatch.delenv("COARSE_MODAL_DEPLOY_FORCE", raising=False)
+
+    with pytest.raises(RuntimeError, match="Refusing to deploy Modal worker from branch 'dev'"):
+        modal_worker._enforce_deploy_branch()
+
+
+def test_enforce_deploy_branch_local_main_passes(modal_worker, monkeypatch):
+    """On a local checkout pointing at main, the guard is a no-op."""
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("COARSE_MODAL_DEPLOY_FORCE", raising=False)
+    monkeypatch.setattr("subprocess.check_output", lambda *a, **kw: "main\n")
+
+    modal_worker._enforce_deploy_branch()
+
+
+def test_enforce_deploy_branch_local_dev_raises(modal_worker, monkeypatch):
+    """On a local dev branch (no force env), the guard refuses."""
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("COARSE_MODAL_DEPLOY_FORCE", raising=False)
+    monkeypatch.setattr("subprocess.check_output", lambda *a, **kw: "feat/my-branch\n")
+
+    with pytest.raises(
+        RuntimeError,
+        match="Refusing to deploy Modal worker from branch 'feat/my-branch'",
+    ):
+        modal_worker._enforce_deploy_branch()
+
+
+def test_enforce_deploy_branch_local_dev_force_warns(modal_worker, monkeypatch, capsys):
+    """COARSE_MODAL_DEPLOY_FORCE=1 downgrades refusal to a stderr warning."""
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("COARSE_MODAL_DEPLOY_FORCE", "1")
+    monkeypatch.setattr("subprocess.check_output", lambda *a, **kw: "hotfix/emergency\n")
+
+    modal_worker._enforce_deploy_branch()
+
+    err = capsys.readouterr().err
+    assert "hotfix/emergency" in err
+    assert "COARSE_MODAL_DEPLOY_FORCE=1" in err
+
+
+def test_enforce_deploy_branch_local_detached_falls_through(modal_worker, monkeypatch):
+    """Git failures (detached HEAD, not-a-repo, missing git binary) are silent.
+
+    The guard intentionally does NOT block on git errors — a PyPI
+    install or sdist tarball has no git history, and refusing to import
+    the module in that case would break every downstream consumer.
+    """
+    import subprocess as _sub
+
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("COARSE_MODAL_DEPLOY_FORCE", raising=False)
+
+    def _boom(*_a, **_kw):
+        raise _sub.CalledProcessError(128, "git")
+
+    monkeypatch.setattr("subprocess.check_output", _boom)
+
+    # Should not raise.
+    modal_worker._enforce_deploy_branch()
+
+
+def test_enforce_deploy_branch_import_time_short_circuits_under_pytest(modal_worker):
+    """`_enforce_deploy_branch_at_import_time` is a no-op when pytest is loaded.
+
+    This is the contract that lets `_load_modal_worker()` at the top of
+    this test file import the worker at all on a non-main branch. If
+    it ever broke, no test in this file would run — so this test is a
+    documentation anchor for the short-circuit guarantee.
+    """
+    import sys as _sys
+
+    assert "pytest" in _sys.modules
+    # Should not raise regardless of git / CI state.
+    modal_worker._enforce_deploy_branch_at_import_time()
