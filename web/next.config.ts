@@ -10,6 +10,10 @@ const scriptSrc = [
   isDev ? "'unsafe-eval'" : null,
   "https://www.googletagmanager.com",
   "https://cdnjs.cloudflare.com",
+  // Cloudflare Turnstile api.js. Without this, the CSP silently
+  // blocks the widget from loading and every user hits the "please
+  // complete the human check" dead-end (#111).
+  "https://challenges.cloudflare.com",
 ]
   .filter(Boolean)
   .join(" ");
@@ -19,8 +23,17 @@ const cspDirectives = [
   scriptSrc,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
+  // pdf.js (loaded from cdnjs for client-side PDF token estimation in
+  // estimateCost.ts) spawns a web worker from a blob: URL. Without an
+  // explicit worker-src the CSP falls back to script-src, which has no
+  // blob: entry, so cost estimation silently errors on strict browsers.
+  "worker-src 'self' blob:",
   "font-src 'self'",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://www.google-analytics.com https://analytics.google.com",
+  // Turnstile renders its challenge UI inside an iframe served from
+  // challenges.cloudflare.com; default-src 'self' would otherwise
+  // block it, leaving a blank box in the form.
+  "frame-src 'self' https://challenges.cloudflare.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

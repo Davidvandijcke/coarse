@@ -196,6 +196,17 @@ export default function Home() {
   const turnstileTokenRef = useRef<string>("");
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetIdRef = useRef<string | undefined>(undefined);
+  // 'loading' while the Cloudflare script is fetching or the widget
+  // hasn't fired its success callback yet. 'ready' once a token has
+  // been captured. 'failed' when the script 404s, Cloudflare reports
+  // a widget error, or the widget never produces a token within its
+  // initial budget — typically because a browser privacy extension
+  // (Brave Shields, uBlock Origin with certain lists, Firefox ETP
+  // strict) is blocking challenges.cloudflare.com. Drives whether
+  // the submit button is enabled and what message we show.
+  const [turnstileStatus, setTurnstileStatus] = useState<"loading" | "ready" | "failed">(
+    turnstileSiteKey ? "loading" : "ready",
+  );
   const [systemStatus, setSystemStatus] = useState<{
     accepting: boolean; banner: string | null; activeReviews: number; capacity: number;
     emailCapacityReached?: boolean;
@@ -209,9 +220,14 @@ export default function Home() {
   // Render the Cloudflare Turnstile widget once its script has loaded. The
   // <Script strategy="afterInteractive"> tag in layout.tsx pulls the API
   // asynchronously, so window.turnstile may not exist yet on first effect
-  // run — retry with a small backoff until it shows up. Bounded at
-  // ~7.5s total so a failed CDN fetch doesn't poll forever. No-op
-  // entirely when NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset.
+  // run — retry with a small backoff until it shows up. Bounded at ~7.5s
+  // so a failed CDN fetch doesn't poll forever. Also runs a 12s watchdog
+  // after the widget renders: if no token callback fires in that window
+  // the widget is almost certainly being blocked by a browser privacy
+  // extension (Brave Shields, uBlock, ETP strict) — flip to 'failed' so
+  // we can show the user a clear explanation + CLI fallback instead of
+  // leaving them staring at an empty box. No-op entirely when
+  // NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset.
   useEffect(() => {
     if (!turnstileSiteKey) return;
     const container = turnstileContainerRef.current;
@@ -219,8 +235,16 @@ export default function Home() {
 
     let cancelled = false;
     let retryTimer: number | undefined;
+    let watchdogTimer: number | undefined;
     let retries = 0;
     const MAX_RETRIES = 50; // 50 * 150ms = 7.5s
+
+    const markFailed = (reason: string) => {
+      if (cancelled) return;
+      console.error(`Turnstile: ${reason}`);
+      turnstileTokenRef.current = "";
+      setTurnstileStatus("failed");
+    };
 
     const tryRender = () => {
       if (cancelled) return;
@@ -228,7 +252,7 @@ export default function Home() {
       if (!api) {
         retries += 1;
         if (retries >= MAX_RETRIES) {
-          console.error("Turnstile api.js failed to load within 7.5s");
+          markFailed("api.js failed to load within 7.5s");
           return;
         }
         retryTimer = window.setTimeout(tryRender, 150);
@@ -239,25 +263,50 @@ export default function Home() {
       // unmount→mount doesn't stack two widgets if the cleanup path's
       // api.remove(widgetId) fails silently.
       container.innerHTML = "";
-      turnstileWidgetIdRef.current = api.render(container, {
-        sitekey: turnstileSiteKey,
-        callback: (token: string) => {
-          turnstileTokenRef.current = token;
-        },
-        "error-callback": () => {
-          turnstileTokenRef.current = "";
-        },
-        "expired-callback": () => {
-          turnstileTokenRef.current = "";
-        },
-        theme: "dark",
-      });
+      try {
+        turnstileWidgetIdRef.current = api.render(container, {
+          sitekey: turnstileSiteKey,
+          callback: (token: string) => {
+            if (cancelled) return;
+            turnstileTokenRef.current = token;
+            setTurnstileStatus("ready");
+            if (watchdogTimer !== undefined) {
+              window.clearTimeout(watchdogTimer);
+              watchdogTimer = undefined;
+            }
+          },
+          "error-callback": () => {
+            markFailed("widget error-callback fired (likely hostname mismatch or blocked iframe)");
+          },
+          "expired-callback": () => {
+            // Token expired — back to loading while Cloudflare auto-
+            // refreshes. Don't flip to 'failed'; this is a normal
+            // lifecycle event after ~5 minutes of widget idle time.
+            if (cancelled) return;
+            turnstileTokenRef.current = "";
+            setTurnstileStatus("loading");
+          },
+          theme: "dark",
+        });
+      } catch (err) {
+        markFailed(`render threw: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+      // Watchdog: if the widget doesn't deliver a token within 12s,
+      // treat it as failed. Covers the case where Cloudflare's iframe
+      // is blocked from loading but api.render itself didn't throw.
+      watchdogTimer = window.setTimeout(() => {
+        if (turnstileTokenRef.current === "") {
+          markFailed("no token after 12s — widget likely blocked by a browser extension");
+        }
+      }, 12_000);
     };
     tryRender();
 
     return () => {
       cancelled = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      if (watchdogTimer !== undefined) window.clearTimeout(watchdogTimer);
       const api = getTurnstileApi();
       const widgetId = turnstileWidgetIdRef.current;
       if (api && widgetId !== undefined) {
@@ -277,9 +326,14 @@ export default function Home() {
   // the token is consumed server-side on every presign attempt (success
   // or failure), so a retry always needs a fresh one. Turnstile
   // auto-refreshes the widget after reset in managed mode, so the next
-  // token lands in the ref within ~1s. No-op when Turnstile is disabled.
+  // token lands in the ref within ~1s. While it's refreshing, flip the
+  // status back to 'loading' so the submit button stays disabled until
+  // the new token is captured (prevents the user spam-clicking against
+  // an empty ref). Preserves 'failed' — resetting a broken widget
+  // doesn't make it un-broken. No-op when Turnstile is disabled.
   const resetTurnstile = useCallback(() => {
     turnstileTokenRef.current = "";
+    setTurnstileStatus((prev) => (prev === "failed" ? "failed" : "loading"));
     const api = getTurnstileApi();
     if (api) {
       try {
@@ -402,7 +456,17 @@ export default function Home() {
       // Step 1: Get a presigned upload URL (small JSON request — no file)
       const turnstileToken = turnstileTokenRef.current;
       if (turnstileSiteKey && !turnstileToken) {
-        throw new Error("Please complete the human check before submitting.");
+        if (turnstileStatus === "failed") {
+          throw new Error(
+            "Our human-check widget couldn't load — a browser extension " +
+              "(Brave Shields, uBlock Origin, Firefox ETP strict) is most " +
+              "likely blocking challenges.cloudflare.com. Try disabling it " +
+              "for coarse.ink, or run coarse locally: uvx coarse-ink review paper.pdf",
+          );
+        }
+        throw new Error(
+          "Still waiting for the human check to load — give it a second and try again.",
+        );
       }
       const presignResp = await fetch("/api/presign", {
         method: "POST",
@@ -459,8 +523,18 @@ export default function Home() {
 
   const accepting = systemStatus?.accepting !== false;
   const emailDisabled = systemStatus?.emailCapacityReached === true;
+  // When Turnstile is enabled, require a ready widget before we enable
+  // submit so the user isn't clicking against a form that's guaranteed
+  // to throw. In the 'failed' branch the submit button stays disabled
+  // and the widget slot shows a clear explanation + CLI fallback.
+  const turnstileReadyForSubmit = !turnstileSiteKey || turnstileStatus === "ready";
   const canSubmit =
-    !!file && !!apiKey && !submitting && accepting && (emailDisabled || !!email);
+    !!file &&
+    !!apiKey &&
+    !submitting &&
+    accepting &&
+    (emailDisabled || !!email) &&
+    turnstileReadyForSubmit;
 
   return (
     <div style={{ background: "var(--board)", minHeight: "100vh" }}>
@@ -921,10 +995,51 @@ export default function Home() {
             )}
 
             {turnstileSiteKey && (
-              <div
-                ref={turnstileContainerRef}
-                style={{ minHeight: "65px" }}
-              />
+              <div>
+                <div
+                  ref={turnstileContainerRef}
+                  style={{
+                    minHeight: "65px",
+                    display: turnstileStatus === "failed" ? "none" : "block",
+                  }}
+                />
+                {turnstileStatus === "failed" && (
+                  <div
+                    style={{
+                      borderLeft: "3px solid var(--yellow-chalk)",
+                      paddingLeft: "1rem",
+                      color: "var(--chalk)",
+                      fontFamily: "Georgia, serif",
+                      fontSize: "1.05rem",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    <p style={{ margin: "0 0 0.6rem" }}>
+                      Our human check couldn&apos;t load. A browser privacy
+                      extension is most likely blocking{" "}
+                      <code style={{ fontFamily: "var(--font-space-mono), monospace" }}>
+                        challenges.cloudflare.com
+                      </code>{" "}
+                      — common with Brave Shields, uBlock Origin on some filter
+                      lists, or Firefox ETP strict mode.
+                    </p>
+                    <p style={{ margin: "0 0 0.6rem" }}>
+                      Try disabling the extension for{" "}
+                      <code style={{ fontFamily: "var(--font-space-mono), monospace" }}>
+                        coarse.ink
+                      </code>{" "}
+                      and refreshing, or use a different browser.
+                    </p>
+                    <p style={{ margin: 0 }}>
+                      Or run coarse locally with your own OpenRouter key:{" "}
+                      <code style={{ fontFamily: "var(--font-space-mono), monospace" }}>
+                        uvx coarse-ink review paper.pdf
+                      </code>
+                      .
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
 
             {error && (
