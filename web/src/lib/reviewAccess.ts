@@ -14,16 +14,19 @@ export function buildReviewKey(reviewId: string, accessToken: string): string {
 export function buildReviewPath(
   kind: "review" | "status",
   reviewId: string,
-  accessToken: string,
+  accessToken?: string | null,
 ): string {
-  return `/${kind}/${reviewId}?token=${encodeURIComponent(accessToken)}`;
+  const token = accessToken?.trim() ?? "";
+  return token
+    ? `/${kind}/${reviewId}?token=${encodeURIComponent(token)}`
+    : `/${kind}/${reviewId}`;
 }
 
 export function buildReviewUrl(
   origin: string,
   kind: "review" | "status",
   reviewId: string,
-  accessToken: string,
+  accessToken?: string | null,
 ): string {
   return `${origin}${buildReviewPath(kind, reviewId, accessToken)}`;
 }

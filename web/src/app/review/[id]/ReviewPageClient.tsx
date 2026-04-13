@@ -16,25 +16,19 @@ export default function ReviewPageClient({ id }: { id: string }) {
   const token = searchParams.get("token")?.trim() ?? "";
 
   useEffect(() => {
-    if (!token) {
-      setAccessError("Missing review access token. Use the full review link or review key.");
-      setLoading(false);
-      return;
-    }
-
     let cancelled = false;
     let interval: ReturnType<typeof setInterval> | undefined;
 
     async function load() {
       const res = await fetch(`/api/review/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         cache: "no-store",
       });
 
       if (cancelled) return;
 
       if (res.status === 401) {
-        setAccessError("This review link is missing a valid access token.");
+        setAccessError("This review needs the full secure review link or review key.");
         setLoading(false);
         return;
       }

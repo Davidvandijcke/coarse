@@ -19,7 +19,11 @@ create table reviews (
   duration_seconds int,
   error_message text,
   created_at timestamptz default now(),
-  completed_at timestamptz
+  completed_at timestamptz,
+  -- Legacy reviews created before token hardening remain retrievable by bare
+  -- UUID links; new reviews set this true at creation and require the signed
+  -- review access token for web reads.
+  access_token_required boolean not null default false
 );
 
 -- RLS: deny anonymous reads and writes. Reviews are fetched through server-side

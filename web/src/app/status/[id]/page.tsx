@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import type { Review } from "@/lib/types";
 import { CharcoalRule, PageMarks } from "@/components/charcoal";
-import { buildReviewKey, buildReviewUrl } from "@/lib/reviewAccess";
+import { buildReviewKey, buildReviewPath, buildReviewUrl } from "@/lib/reviewAccess";
 
 export default function StatusPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,27 +18,22 @@ export default function StatusPage() {
   const [cancelling, setCancelling] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
   const token = searchParams.get("token")?.trim() ?? "";
+  const hasSecureAccess = token.length > 0;
 
   useEffect(() => {
-    if (!token) {
-      setAccessError("Missing review access token. Use the full review link or review key.");
-      setLoading(false);
-      return;
-    }
-
     let cancelled = false;
     let interval: ReturnType<typeof setInterval>;
 
     async function fetchStatus() {
       const res = await fetch(`/api/review/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         cache: "no-store",
       });
 
       if (cancelled) return;
 
       if (res.status === 401) {
-        setAccessError("This review link is missing a valid access token.");
+        setAccessError("This review needs the full secure review link or review key.");
         setLoading(false);
         clearInterval(interval);
         return;
@@ -60,10 +55,11 @@ export default function StatusPage() {
       setReview(data);
       setLoading(false);
       setNotFound(false);
+      setAccessError(null);
       if (data.status === "done") {
         clearInterval(interval);
         if (!cancelled) {
-          router.push(`/review/${id}?token=${encodeURIComponent(token)}`);
+          router.push(buildReviewPath("review", id, token));
         }
       }
       if (data.status === "cancelled") {
@@ -554,7 +550,7 @@ export default function StatusPage() {
                 margin: "0 0 0.625rem",
               }}
             >
-              Your review key — save this
+              {hasSecureAccess ? "Your review key — save this" : "Legacy review link"}
             </p>
             <p
               style={{
@@ -566,7 +562,7 @@ export default function StatusPage() {
                 lineHeight: 1.5,
               }}
             >
-              {buildReviewKey(id, token)}
+              {hasSecureAccess ? buildReviewKey(id, token) : id}
             </p>
             <button
               onClick={copyLink}
@@ -600,7 +596,7 @@ export default function StatusPage() {
         </div>
 
         {/* Cancel review — only show for active (non-failed) reviews */}
-        {isActive && (
+        {isActive && hasSecureAccess && (
           <div style={{ marginTop: "2.5rem" }}>
             <button
               onClick={() => setShowCancelConfirm(true)}

@@ -1123,7 +1123,7 @@ export default function Home() {
                   }
                 }
               }}
-              placeholder="Paste your review key or full review link..."
+              placeholder="Paste your review key, full review link, or legacy review ID..."
               aria-label="Review key"
               className="field-line-mono"
               style={{ maxWidth: "480px" }}

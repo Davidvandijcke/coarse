@@ -15,14 +15,6 @@ export async function GET(
     return NextResponse.json({ error: "Invalid review ID" }, { status: 400 });
   }
 
-  const token = extractReviewAccessToken(request);
-  if (!hasValidReviewAccessToken(id, token)) {
-    return NextResponse.json(
-      { error: "Missing or invalid review access token" },
-      { status: 401 },
-    );
-  }
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
   if (!supabaseUrl || !supabaseKey) {
@@ -32,7 +24,9 @@ export async function GET(
   const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
   const { data, error } = await supabaseAdmin
     .from("reviews")
-    .select("*")
+    .select(
+      "id, paper_filename, status, paper_title, model, domain, result_markdown, paper_markdown, cost_usd, duration_seconds, error_message, created_at, completed_at, access_token_required",
+    )
     .eq("id", id)
     .single();
 
@@ -40,5 +34,14 @@ export async function GET(
     return NextResponse.json({ error: "Review not found" }, { status: 404 });
   }
 
-  return NextResponse.json(data);
+  const token = extractReviewAccessToken(request);
+  if (data.access_token_required && !hasValidReviewAccessToken(id, token)) {
+    return NextResponse.json(
+      { error: "Missing or invalid review access token" },
+      { status: 401 },
+    );
+  }
+
+  const { access_token_required: _ignored, ...review } = data;
+  return NextResponse.json(review);
 }
