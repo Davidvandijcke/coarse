@@ -1,12 +1,8 @@
 """Cost estimation and user approval gate for coarse.
 
 No LLM calls here — purely heuristic token budgets + pricing lookup.
-
-The stage list in `build_cost_estimate()` is a best-effort mirror of
-`review_paper()` in `pipeline.py`. It is NOT automatically kept in sync —
-when an agent is added, removed, or its `max_tokens` budget changes, the
-matching stage here has to be updated by hand. Audit this file against
-`pipeline.py` and `src/coarse/agents/*.py` on every pipeline refactor.
+Stage heuristics are sourced from `coarse.pipeline_spec`, which is also used
+to generate the web estimator's shared constants.
 """
 
 from __future__ import annotations
@@ -18,69 +14,26 @@ from rich.table import Table
 from coarse.config import CoarseConfig, has_provider_key
 from coarse.llm import estimate_call_cost, estimate_reasoning_overhead_tokens
 from coarse.models import LITERATURE_SEARCH_MODEL, OCR_MODEL, is_reasoning_model
+from coarse.pipeline_spec import (
+    AVG_COMMENTS_PER_SECTION,
+    COST_BUFFER,
+    EDITORIAL_OVERHEAD,
+    EXTRACTION_QA_IMAGE_OVERHEAD,
+    FIXED_STAGE_INPUT_TOKENS,
+    LITERATURE_FLAT_COST,
+    OCR_COST_PER_PAGE,
+    OVERVIEW_CONTEXT_OVERHEAD,
+    OVERVIEW_INPUT_OVERHEAD,
+    SECTION_PROMPT_OVERHEAD,
+    STAGE_OUTPUT_TOKENS,
+    TOKENS_PER_COMMENT,
+    TOKENS_PER_PAGE,
+    clamp_section_count,
+    estimate_cross_section_count,
+    estimate_math_section_count,
+    estimate_section_count,
+)
 from coarse.types import CostEstimate, CostStage, PaperText
-
-# ---------------------------------------------------------------------------
-# Heuristic pricing constants (verified 2026-04-11, aligned with pipeline.py
-# and src/coarse/agents/*.py). Constants are sized to match the real
-# `max_tokens` each agent passes — not a guess at average visible output.
-# Instructor retries, long outputs, and conditional stages that didn't fire
-# are absorbed by `_COST_BUFFER`.
-# ---------------------------------------------------------------------------
-
-# Section sizing. `_MAX_REVIEWABLE_SECTIONS` mirrors the `reviewable_sections[:25]`
-# slice in `pipeline.py::review_paper()` — both must match.
-_TOKENS_PER_SECTION = 1200
-_MAX_REVIEWABLE_SECTIONS = 25
-_MIN_SECTIONS = 4
-
-# Per-section prompt overhead: system + overview + calibration + notation
-# + abstract + (sometimes lit context). Measured on a typical run, not the
-# ~5k the previous version assumed.
-_SECTION_PROMPT_OVERHEAD = 8000
-
-# PDF extraction (Mistral OCR via OpenRouter file-parser, $2 / 1000 pages)
-_TOKENS_PER_PAGE = 250
-_OCR_COST_PER_PAGE = 0.002
-
-# Conditional-stage heuristics — the cost gate runs before structure
-# analysis so we don't yet know how many math sections exist or whether
-# the results/discussion split justifies cross-section synthesis. Math-
-# heavy papers will under-estimate relative to these defaults; the 1.30x
-# buffer has to carry the slack.
-_MATH_SECTION_FRACTION = 0.2  # fraction of sections assumed to have math content
-_CROSS_SECTION_MIN_SECTIONS = 6  # below this, assume no cross-section synthesis
-_EXPECTED_CROSS_SECTION_CALLS = 1  # expected-value midpoint; up to 3 fire in practice
-
-# Editorial agent (single merged pass that replaced the legacy
-# crossref+critique chain — see src/coarse/agents/editorial.py). The
-# agent also reads the full paper text for quote/absence verification,
-# which dominates the input budget on long papers.
-_AVG_COMMENTS_PER_SECTION = 3
-_TOKENS_PER_COMMENT = 350
-_EDITORIAL_OVERHEAD = 5000  # system + overview + contribution context
-
-# Overview context that proof_verify, completeness, and cross_section all
-# receive as part of their user prompt. ~5000 tokens on a typical run
-# (overview issues + calibration + abstract + title).
-_OVERVIEW_CONTEXT_OVERHEAD = 5000
-
-# Flat-fee stages
-_LITERATURE_FLAT_COST = 0.03  # Perplexity Sonar Pro via OpenRouter
-
-# Conservative multiplier applied to the final total. Covers instructor
-# retries, occasional long outputs, and the gap between heuristic
-# defaults and actual math/cross-section counts. Bumped from 1.15 after
-# a systematic under-count audit in April 2026.
-_COST_BUFFER = 1.30
-
-
-def _estimate_section_count(total_tokens: int) -> int:
-    """Estimate number of reviewable sections from paper token count."""
-    return max(
-        _MIN_SECTIONS,
-        min(_MAX_REVIEWABLE_SECTIONS, total_tokens // _TOKENS_PER_SECTION),
-    )
 
 
 def _append_model_stage(
@@ -126,7 +79,7 @@ def build_cost_estimate(
         paper_text: Extracted paper content; only `token_estimate` is read.
         config: Review config (default model, vision model, extraction_qa flag).
         section_count: Override for estimated reviewable sections. Defaults to
-            a heuristic based on paper length, capped at `_MAX_REVIEWABLE_SECTIONS`.
+            a heuristic based on paper length, capped at the runtime section limit.
             Values < 1 are clamped to 1 to prevent divide-by-zero.
         is_pdf: Whether the input is a PDF. The pipeline only runs
             extraction QA on PDFs (see pipeline.py:226), so non-PDFs skip
@@ -140,20 +93,16 @@ def build_cost_estimate(
     model = model or config.default_model
     total_tokens = max(0, paper_text.token_estimate)
     if section_count is None:
-        section_count = _estimate_section_count(total_tokens)
+        section_count = estimate_section_count(total_tokens)
     # Clamp defensively: section_count=0 would crash the divisions below.
-    # Callers may pass smaller values than the heuristic min (e.g. for
-    # very short papers in tests) — clamp to >= 1, not >= _MIN_SECTIONS.
-    section_count = max(1, section_count)
+    section_count = clamp_section_count(section_count)
     # Both derivations depend on section_count after clamping.
-    math_section_count = max(0, round(section_count * _MATH_SECTION_FRACTION))
-    cross_section_count = (
-        _EXPECTED_CROSS_SECTION_CALLS if section_count >= _CROSS_SECTION_MIN_SECTIONS else 0
-    )
+    math_section_count = estimate_math_section_count(section_count)
+    cross_section_count = estimate_cross_section_count(section_count)
 
     section_text_tokens = max(1, total_tokens // section_count)
-    section_input = section_text_tokens + _SECTION_PROMPT_OVERHEAD
-    est_pages = max(1, total_tokens // _TOKENS_PER_PAGE)
+    section_input = section_text_tokens + SECTION_PROMPT_OVERHEAD
+    est_pages = max(1, total_tokens // TOKENS_PER_PAGE)
 
     # Editorial agent reads all downstream comments plus the full paper for
     # quote/absence verification. Downstream comments include section,
@@ -161,12 +110,12 @@ def build_cost_estimate(
     # the raw section agent count — so this is the sum across all stages
     # that feed editorial.
     n_editorial_comments = (
-        section_count * _AVG_COMMENTS_PER_SECTION  # section agents
-        + _AVG_COMMENTS_PER_SECTION  # completeness (1 agent run)
-        + math_section_count * _AVG_COMMENTS_PER_SECTION  # proof_verify
+        section_count * AVG_COMMENTS_PER_SECTION  # section agents
+        + AVG_COMMENTS_PER_SECTION  # completeness (1 agent run)
+        + math_section_count * AVG_COMMENTS_PER_SECTION  # proof_verify
         + cross_section_count * 2  # cross-section synthesis comments
     )
-    editorial_in = n_editorial_comments * _TOKENS_PER_COMMENT + _EDITORIAL_OVERHEAD + total_tokens
+    editorial_in = n_editorial_comments * TOKENS_PER_COMMENT + EDITORIAL_OVERHEAD + total_tokens
 
     stages: list[CostStage] = []
 
@@ -178,7 +127,7 @@ def build_cost_estimate(
             model=OCR_MODEL,
             estimated_tokens_in=0,
             estimated_tokens_out=0,
-            estimated_cost_usd=est_pages * _OCR_COST_PER_PAGE,
+            estimated_cost_usd=est_pages * OCR_COST_PER_PAGE,
         )
     )
 
@@ -188,23 +137,41 @@ def build_cost_estimate(
     # that model, not the review default.
     if config.extraction_qa and is_pdf:
         # Input: full markdown + ~10 rendered page images encoded as
-        # multimodal tokens. Output: max_tokens=4096 in extraction_qa.py.
+        # multimodal tokens. Output budget comes from pipeline_spec.
         _append_model_stage(
             stages,
             "extraction_qa",
             config.vision_model,
-            total_tokens + 5000,
-            4096,
+            total_tokens + EXTRACTION_QA_IMAGE_OVERHEAD,
+            STAGE_OUTPUT_TOKENS["extraction_qa"],
         )
 
     # Structure analysis (metadata + math detection) — both cheap.
-    _append_model_stage(stages, "metadata", model, 500, 256)
-    _append_model_stage(stages, "math_detection", model, 2000, 1024)
+    _append_model_stage(
+        stages,
+        "metadata",
+        model,
+        FIXED_STAGE_INPUT_TOKENS["metadata"],
+        STAGE_OUTPUT_TOKENS["metadata"],
+    )
+    _append_model_stage(
+        stages,
+        "math_detection",
+        model,
+        FIXED_STAGE_INPUT_TOKENS["math_detection"],
+        STAGE_OUTPUT_TOKENS["math_detection"],
+    )
 
     # Parallel trio: calibration, literature search, contribution
     # extraction. All use the default model except Perplexity literature
     # search, which is flat-fee.
-    _append_model_stage(stages, "calibration", model, 1500, 2048)
+    _append_model_stage(
+        stages,
+        "calibration",
+        model,
+        FIXED_STAGE_INPUT_TOKENS["calibration"],
+        STAGE_OUTPUT_TOKENS["calibration"],
+    )
 
     if has_provider_key("openrouter", config):
         stages.append(
@@ -213,21 +180,45 @@ def build_cost_estimate(
                 model=LITERATURE_SEARCH_MODEL,
                 estimated_tokens_in=0,
                 estimated_tokens_out=0,
-                estimated_cost_usd=_LITERATURE_FLAT_COST,
+                estimated_cost_usd=LITERATURE_FLAT_COST,
             )
         )
     else:
         # arXiv fallback: query-gen (512 out) + ranking (2048 out) —
         # two LLM calls on the default model.
-        _append_model_stage(stages, "literature_query_gen", model, 1500, 512)
-        _append_model_stage(stages, "literature_ranking", model, 4000, 2048)
+        _append_model_stage(
+            stages,
+            "literature_query_gen",
+            model,
+            FIXED_STAGE_INPUT_TOKENS["literature_query_gen"],
+            STAGE_OUTPUT_TOKENS["literature_query_gen"],
+        )
+        _append_model_stage(
+            stages,
+            "literature_ranking",
+            model,
+            FIXED_STAGE_INPUT_TOKENS["literature_ranking"],
+            STAGE_OUTPUT_TOKENS["literature_ranking"],
+        )
 
-    _append_model_stage(stages, "contribution_extraction", model, 3000, 2048)
+    _append_model_stage(
+        stages,
+        "contribution_extraction",
+        model,
+        FIXED_STAGE_INPUT_TOKENS["contribution_extraction"],
+        STAGE_OUTPUT_TOKENS["contribution_extraction"],
+    )
 
     # Overview: a single agent call. There is NO 3-judge panel — the
     # `OverviewAgent.run()` at src/coarse/agents/overview.py:80 makes
     # one `client.complete(..., max_tokens=8192)` call and returns.
-    _append_model_stage(stages, "overview", model, total_tokens + 3000, 8192)
+    _append_model_stage(
+        stages,
+        "overview",
+        model,
+        total_tokens + OVERVIEW_INPUT_OVERHEAD,
+        STAGE_OUTPUT_TOKENS["overview"],
+    )
 
     # Completeness agent. Reads the full paper via `_build_sections_text`
     # plus overview + contribution context — so input is `total_tokens`,
@@ -236,15 +227,21 @@ def build_cost_estimate(
         stages,
         "completeness",
         model,
-        total_tokens + _OVERVIEW_CONTEXT_OVERHEAD,
-        4096,
+        total_tokens + OVERVIEW_CONTEXT_OVERHEAD,
+        STAGE_OUTPUT_TOKENS["completeness"],
     )
 
     # Section agents (parallel, one per reviewable section). max_tokens=
     # 16384 but most runs use 8–12k; budget at 10k and let the buffer
     # cover the tail.
     for i in range(section_count):
-        _append_model_stage(stages, f"section_{i + 1}", model, section_input, 10000)
+        _append_model_stage(
+            stages,
+            f"section_{i + 1}",
+            model,
+            section_input,
+            STAGE_OUTPUT_TOKENS["section"],
+        )
 
     # Proof verify (chained after section agents for math sections only).
     # max_tokens=16384. Input = section text + section's own comments +
@@ -254,8 +251,8 @@ def build_cost_estimate(
             stages,
             f"proof_verify_{i + 1}",
             model,
-            section_input + _OVERVIEW_CONTEXT_OVERHEAD,
-            16384,
+            section_input + OVERVIEW_CONTEXT_OVERHEAD,
+            STAGE_OUTPUT_TOKENS["proof_verify"],
         )
 
     # Cross-section synthesis (up to 3 calls — main results × top-3
@@ -266,17 +263,17 @@ def build_cost_estimate(
             stages,
             f"cross_section_{i + 1}",
             model,
-            section_text_tokens * 2 + _OVERVIEW_CONTEXT_OVERHEAD,
-            8192,
+            section_text_tokens * 2 + OVERVIEW_CONTEXT_OVERHEAD,
+            STAGE_OUTPUT_TOKENS["cross_section"],
         )
 
     # Editorial pass (single merged dedup+contradiction+quality+ordering
     # agent). Reads all downstream comments plus the full paper markdown
     # for quote verification. max_tokens=32768 but most runs use 20–25k;
     # budget at 24k.
-    _append_model_stage(stages, "editorial", model, editorial_in, 24000)
+    _append_model_stage(stages, "editorial", model, editorial_in, STAGE_OUTPUT_TOKENS["editorial"])
 
-    total = sum(s.estimated_cost_usd for s in stages) * _COST_BUFFER
+    total = sum(s.estimated_cost_usd for s in stages) * COST_BUFFER
     return CostEstimate(stages=stages, total_cost_usd=total)
 
 

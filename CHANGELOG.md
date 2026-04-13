@@ -24,6 +24,10 @@
 
 - **Architecture drift tests now enforce package boundaries** — new regression tests statically scan `src/coarse/` to block import cycles, keep `models.py` dependency-free, keep `types.py` / `prompts.py` within their allowed layers, and prevent new non-whitelisted imports of `pipeline.py`.
 
+### Changed
+
+- **Pipeline cost heuristics now come from a shared stage manifest** — the review section cap, stage output budgets, math/cross-section heuristics, and web cost-estimator constants now live in `src/coarse/pipeline_spec.py`, with a generated JSON export consumed by the frontend. This removes the hand-maintained drift between `pipeline.py`, `cost.py`, and `web/src/lib/estimateCost.ts`.
+
 ## v1.2.2 — 2026-04-12
 
 Patch release. Clears the false "system busy (N/20 slots in use)" banner that the landing page was showing even when Modal was idle, and bundles the unreleased `dev` work (GPT-5.4 compare-panel + author-steering fallthroughs) that had accumulated since v1.2.1.
