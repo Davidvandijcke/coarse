@@ -1,4 +1,5 @@
 """Tests for recall.py — recall-based evaluation against ground-truth reviews."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -7,8 +8,6 @@ from coarse.recall import (
     GroundTruthComment,
     MatchPair,
     RecallReport,
-    _jaccard,
-    _tokenize,
     compute_recall,
     location_match,
     parse_plain_review,
@@ -16,6 +15,7 @@ from coarse.recall import (
     parse_review_auto,
     save_recall_report,
 )
+from coarse.review_utils import jaccard_similarity, tokenize_text
 from coarse.types import DetailedComment  # noqa: I001
 
 # ---------------------------------------------------------------------------
@@ -136,9 +136,13 @@ def test_parse_review_auto_plain():
 # Matching tests
 # ---------------------------------------------------------------------------
 
+
 def _gt(index: int, quote: str = "", feedback: str = "feedback") -> GroundTruthComment:
     return GroundTruthComment(
-        index=index, title=f"GT {index}", quote=quote, feedback_text=feedback,
+        index=index,
+        title=f"GT {index}",
+        quote=quote,
+        feedback_text=feedback,
     )
 
 
@@ -148,33 +152,34 @@ def _pred(
     feedback: str = "some generic test feedback content",
 ) -> DetailedComment:
     return DetailedComment(
-        number=number, title=f"Pred {number}",
+        number=number,
+        title=f"Pred {number}",
         quote=quote,
         feedback=feedback,
     )
 
 
 def test_tokenize():
-    tokens = _tokenize("Hello world! This is a test.")
+    tokens = tokenize_text("Hello world! This is a test.")
     assert "hello" in tokens
     assert "world" in tokens
 
 
 def test_jaccard_identical():
     s = {"a", "b", "c"}
-    assert _jaccard(s, s) == 1.0
+    assert jaccard_similarity(s, s) == 1.0
 
 
 def test_jaccard_disjoint():
-    assert _jaccard({"a", "b"}, {"c", "d"}) == 0.0
+    assert jaccard_similarity({"a", "b"}, {"c", "d"}) == 0.0
 
 
 def test_jaccard_partial():
-    assert 0.0 < _jaccard({"a", "b", "c"}, {"b", "c", "d"}) < 1.0
+    assert 0.0 < jaccard_similarity({"a", "b", "c"}, {"b", "c", "d"}) < 1.0
 
 
 def test_jaccard_empty():
-    assert _jaccard(set(), {"a"}) == 0.0
+    assert jaccard_similarity(set(), {"a"}) == 0.0
 
 
 def test_location_match_same_quote():
@@ -211,6 +216,7 @@ def test_location_match_no_quote_uses_feedback():
 # Recall computation tests
 # ---------------------------------------------------------------------------
 
+
 def test_compute_recall_perfect():
     """All ground-truth comments matched."""
     gt = [
@@ -230,16 +236,20 @@ def test_compute_recall_perfect():
 
 def test_compute_recall_none():
     """No matches."""
-    gt = [_gt(
-        1,
-        quote="convergence rate of the maximum likelihood estimator",
-        feedback="the proof of theorem three has a fundamental gap",
-    )]
-    gen = [_pred(
-        1,
-        quote="the table entries for experiment seven are inconsistent",
-        feedback="numerical values in table seven do not match equation twelve",
-    )]
+    gt = [
+        _gt(
+            1,
+            quote="convergence rate of the maximum likelihood estimator",
+            feedback="the proof of theorem three has a fundamental gap",
+        )
+    ]
+    gen = [
+        _pred(
+            1,
+            quote="the table entries for experiment seven are inconsistent",
+            feedback="numerical values in table seven do not match equation twelve",
+        )
+    ]
 
     # Mock client that always says NO
     mock_client = MagicMock()
@@ -270,12 +280,18 @@ def test_compute_recall_from_markdown():
 # Report persistence tests
 # ---------------------------------------------------------------------------
 
+
 def test_save_recall_report(tmp_path):
     report = RecallReport(
-        location_recall=0.5, semantic_recall=0.75, precision=0.6, f1=0.667,
-        n_ground_truth=4, n_generated=5,
+        location_recall=0.5,
+        semantic_recall=0.75,
+        precision=0.6,
+        f1=0.667,
+        n_ground_truth=4,
+        n_generated=5,
         matched_pairs=[MatchPair(gt_index=1, pred_number=1, match_type="location")],
-        unmatched_gt=[2, 3], unmatched_pred=[4, 5],
+        unmatched_gt=[2, 3],
+        unmatched_pred=[4, 5],
     )
     out = tmp_path / "recall.md"
     save_recall_report(report, out, "ref.md", "gen.md")
@@ -289,6 +305,7 @@ def test_save_recall_report(tmp_path):
 # Model tests
 # ---------------------------------------------------------------------------
 
+
 def test_ground_truth_comment_model():
     c = GroundTruthComment(index=1, feedback_text="test")
     assert c.index == 1
@@ -298,8 +315,14 @@ def test_ground_truth_comment_model():
 
 def test_recall_report_model():
     r = RecallReport(
-        location_recall=0.5, semantic_recall=0.5, precision=0.5, f1=0.5,
-        n_ground_truth=2, n_generated=2,
-        matched_pairs=[], unmatched_gt=[], unmatched_pred=[],
+        location_recall=0.5,
+        semantic_recall=0.5,
+        precision=0.5,
+        f1=0.5,
+        n_ground_truth=2,
+        n_generated=2,
+        matched_pairs=[],
+        unmatched_gt=[],
+        unmatched_pred=[],
     )
     assert r.f1 == 0.5

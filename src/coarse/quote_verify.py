@@ -13,6 +13,7 @@ import logging
 import re
 
 from coarse.garble import garble_ratio as _passage_garble_score
+from coarse.review_utils import jaccard_similarity, tokenize_text
 from coarse.types import DetailedComment
 
 logger = logging.getLogger(__name__)
@@ -130,18 +131,6 @@ _MIN_WINDOW_SIZE = 50
 _JACCARD_TOP_K = 5  # number of candidate chunks to refine with SequenceMatcher
 
 
-def _tokenize(text: str) -> set[str]:
-    """Split lowercased text into word-level tokens for Jaccard similarity."""
-    return set(text.lower().split())
-
-
-def _jaccard(a: set[str], b: set[str]) -> float:
-    """Jaccard similarity between two token sets."""
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
-
-
 def _find_nearest_passage(
     quote: str, paper_text: str, window_factor: float = 1.5
 ) -> tuple[str, float]:
@@ -160,7 +149,7 @@ def _find_nearest_passage(
     window_size = max(int(quote_len * window_factor), _MIN_WINDOW_SIZE)
     step = max(1, quote_len // 4)
 
-    quote_tokens = _tokenize(quote)
+    quote_tokens = tokenize_text(quote)
 
     # Phase 1: Jaccard pre-filter — score all chunks cheaply. Stop the range
     # at len(paper_text) - window_size + 1 so every chunk is a full window;
@@ -169,7 +158,7 @@ def _find_nearest_passage(
     candidates: list[tuple[float, int]] = []
     for i in range(0, stop, step):
         chunk = paper_text[i : i + window_size]
-        score = _jaccard(quote_tokens, _tokenize(chunk))
+        score = jaccard_similarity(quote_tokens, tokenize_text(chunk))
         candidates.append((score, i))
 
     # Take top-k by Jaccard score

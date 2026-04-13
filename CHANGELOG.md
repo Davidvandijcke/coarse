@@ -6,6 +6,10 @@
 
 - **Extraction now logs real OpenRouter denial details and falls back after paid OCR denials (#71)** — the PDF extractor no longer hard-fails immediately when the first `mistral-ocr` file-parser call comes back as a user-actionable OpenRouter denial. It now records a scrubbed one-line summary of the provider response body (status, message, code, metadata when present) so operators can distinguish `402 Payment Required` / spend-limit failures from `403 Forbidden` privacy-or-terms failures in Modal logs, and it allows the extraction chain to continue from paid `mistral-ocr` to free `pdf-text` / `cloudflare-ai` and then Docling for recoverable OpenRouter `402` / `403` denials. `401` auth failures still fail fast. New tests pin both production-shaped cases: `402` and `403` on the first extraction call now skip retries on that backend, log the scrubbed reason, and successfully fall through to the next extractor when available.
 
+### Changed
+
+- **Shared text helpers no longer live behind private cross-module imports** — section-text assembly and Jaccard/tokenization helpers moved into `src/coarse/review_utils.py`, so `CompletenessAgent`, `OverviewAgent`, `quote_verify.py`, and `recall.py` can share them directly without importing another module's underscore-prefixed internals.
+
 ## v1.2.2 — 2026-04-12
 
 Patch release. Clears the false "system busy (N/20 slots in use)" banner that the landing page was showing even when Modal was idle, and bundles the unreleased `dev` work (GPT-5.4 compare-panel + author-steering fallthroughs) that had accumulated since v1.2.1.

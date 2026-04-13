@@ -7,7 +7,6 @@ import logging
 from pydantic import BaseModel, Field
 
 from coarse.agents.base import ReviewAgent
-from coarse.agents.overview import _build_sections_text
 from coarse.llm import LLMClient
 from coarse.prompts import (
     COMPLETENESS_SYSTEM,
@@ -15,6 +14,7 @@ from coarse.prompts import (
     completeness_user,
     document_form_notice,
 )
+from coarse.review_utils import build_sections_text
 from coarse.types import (
     ContributionContext,
     DomainCalibration,
@@ -67,7 +67,7 @@ class CompletenessAgent(ReviewAgent):
             )
             return []
 
-        sections_text = _build_sections_text(structure.sections)
+        sections_text = build_sections_text(structure.sections)
 
         user_text = author_notes_block(author_notes) + completeness_user(
             structure.title,

@@ -2,9 +2,10 @@
 
 from unittest.mock import MagicMock
 
-from coarse.agents.overview import OverviewAgent, _build_sections_text, merge_overview
+from coarse.agents.overview import OverviewAgent, merge_overview
 from coarse.llm import LLMClient
 from coarse.prompts import OVERVIEW_SYSTEM
+from coarse.review_utils import build_sections_text
 from coarse.types import (
     OverviewFeedback,
     OverviewIssue,
@@ -117,7 +118,7 @@ def test_build_sections_text_includes_all_sections():
             claims=["Claim D", "Claim E"],
         ),
     ]
-    result = _build_sections_text(sections)
+    result = build_sections_text(sections)
 
     for sec in sections:
         assert sec.title in result
@@ -134,7 +135,7 @@ def test_build_sections_text_no_truncation():
             section_type=SectionType.INTRODUCTION,
         ),
     ]
-    result = _build_sections_text(sections)
+    result = build_sections_text(sections)
     assert long_text in result
     assert "[...truncated]" not in result
 
@@ -144,7 +145,7 @@ def test_build_sections_text_empty_text():
     sections = [
         SectionInfo(number=1, title="Empty", text="", section_type=SectionType.OTHER),
     ]
-    result = _build_sections_text(sections)
+    result = build_sections_text(sections)
     assert "(empty)" in result
 
 

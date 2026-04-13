@@ -15,29 +15,18 @@ from coarse.prompts import (
     overview_paper_context,
     overview_user,
 )
+from coarse.review_utils import build_sections_text, jaccard_similarity
 from coarse.types import (
     DomainCalibration,
     OverviewFeedback,
     OverviewIssue,
     PaperStructure,
-    SectionInfo,
     SectionType,
 )
 
 logger = logging.getLogger(__name__)
 
 _OVERVIEW_TEMPERATURE = 0.5
-
-
-def _build_sections_text(sections: list[SectionInfo]) -> str:
-    """Convert sections list to a text block with full, untruncated text."""
-    parts: list[str] = []
-    for sec in sections:
-        if not sec.text:
-            parts.append(f"## {sec.number}. {sec.title} ({sec.section_type.value})\n(empty)")
-            continue
-        parts.append(f"## {sec.number}. {sec.title} ({sec.section_type.value})\n{sec.text}")
-    return "\n\n".join(parts)
 
 
 class OverviewAgent(ReviewAgent):
@@ -53,7 +42,7 @@ class OverviewAgent(ReviewAgent):
         literature_context: str = "",
         author_notes: str | None = None,
     ) -> OverviewFeedback:
-        sections_text = _build_sections_text(structure.sections)
+        sections_text = build_sections_text(structure.sections)
 
         # Append the document-form addendum to the system prompt. Empty string
         # for manuscripts/preprints so that path is unchanged; a tailored block
@@ -209,6 +198,4 @@ def _normalize_title(title: str) -> str:
 
 def _title_overlap(a: str, b: str) -> float:
     """Word-level Jaccard similarity between two normalized titles."""
-    from coarse.quote_verify import _jaccard
-
-    return _jaccard(set(a.split()), set(b.split()))
+    return jaccard_similarity(set(a.split()), set(b.split()))
