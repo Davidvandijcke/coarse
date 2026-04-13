@@ -92,6 +92,7 @@ export async function POST(request: NextRequest) {
     .from("review_handoff_secrets")
     .upsert({ review_id: id, secret_hash: hashHandoffSecret(handoffSecret) });
   if (secretError) {
+    console.error("[presign] review_handoff_secrets upsert failed", secretError);
     await supabaseAdmin.from("reviews").delete().eq("id", id);
     return NextResponse.json({ error: "Failed to prepare handoff secret" }, { status: 500 });
   }

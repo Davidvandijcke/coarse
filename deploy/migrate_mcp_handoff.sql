@@ -5,9 +5,14 @@
 -- chat host (Claude.ai, ChatGPT, Claude Code, Gemini CLI), the Next.js
 -- backend mints:
 --
---   1. A 15-minute signed download URL for the stored PDF
---      (via supabase.storage.createSignedUrl, bound to one object path)
---   2. A row in this table (single-use finalize token, 60-minute expiry)
+--   1. A single-use finalize token (row in this table, 3-hour TTL —
+--      see FINALIZE_TOKEN_TTL_MINUTES in web/src/app/api/mcp-handoff/
+--      route.ts and web/src/app/api/cli-handoff/route.ts).
+--   2. A 3-hour signed download URL for the stored PDF, re-signed fresh
+--      on every fetch of /h/<token> — see PDF_SIGNED_URL_TTL_SECONDS in
+--      web/src/app/h/[token]/route.ts. The URL rolls forward on each
+--      access as long as the finalize token is still valid, so long-
+--      running agent sessions don't race a short download TTL.
 --
 -- Both capabilities travel in the clipboard prompt the user pastes into
 -- their chat host. The MCP server uses the signed URL to fetch the PDF
@@ -17,10 +22,14 @@
 -- be reused.
 --
 -- Threat model: if the clipboard prompt leaks to a third party, the
--- attacker can (a) download the paper for the next 15 minutes and
--- (b) write a review into exactly one reviews row for the next 60
--- minutes. No cross-user data, no schema-wide writes, no secrets.
+-- attacker can (a) download the paper for the next 3 hours and
+-- (b) write a review into exactly one reviews row for the next 3
+-- hours. No cross-user data, no schema-wide writes, no secrets.
 -- The MCP server holds zero persistent credentials.
+--
+-- TTL source of truth: the actual durations live in TypeScript constants
+-- in the route files above, not in this migration. Update those to
+-- change the lifetimes; this SQL just defines the storage.
 --
 -- Run this in the Supabase SQL editor after pulling this branch.
 
