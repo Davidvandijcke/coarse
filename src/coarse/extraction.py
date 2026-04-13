@@ -123,6 +123,81 @@ def _classify_api_error(exc: Exception) -> str | None:
     return None
 
 
+def _describe_api_error(exc: Exception) -> str | None:
+    """Return a scrubbed one-line summary of the provider response, if any."""
+    resp = getattr(exc, "response", None)
+    if resp is None:
+        return None
+
+    parts: list[str] = []
+    status = getattr(resp, "status_code", None)
+    if isinstance(status, int):
+        parts.append(f"status={status}")
+
+    try:
+        body = resp.json()
+    except Exception:
+        body = None
+
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            message = err.get("message")
+            code = err.get("code")
+            metadata = err.get("metadata")
+            if message:
+                parts.append(f"message={message}")
+            if code is not None:
+                parts.append(f"code={code}")
+            if metadata:
+                parts.append(f"metadata={metadata}")
+        elif err is not None:
+            parts.append(f"error={err}")
+        elif body:
+            parts.append(f"body={body}")
+    elif body is not None:
+        parts.append(f"body={body}")
+    else:
+        text = getattr(resp, "text", None)
+        if text:
+            parts.append(f"body={text}")
+
+    if not parts:
+        return None
+    return _scrub_secrets("; ".join(str(part) for part in parts))[:500]
+
+
+def _can_fall_through_api_error(
+    extractor_name: str,
+    exc: Exception,
+    api_msg: str | None = None,
+) -> bool:
+    """Return True when a user-actionable API error should still try fallback.
+
+    Extraction has a meaningful fallback chain: a paid/provider-specific
+    OpenRouter failure on one PDF engine can still succeed on a cheaper or
+    fully offline backend. Keep 401 as fail-fast, but let 402/403 on
+    OpenRouter extraction engines fall through.
+    """
+    if "OpenRouter" not in extractor_name:
+        return False
+
+    status = _get_api_error_status(exc)
+    if status in {402, 403}:
+        return True
+
+    return api_msg in {
+        "API key spend limit reached. Add credits or raise your limit in your provider dashboard.",
+        (
+            "OpenRouter denied the PDF extraction request (HTTP 403). This usually means "
+            "your OpenRouter account has no credits, your privacy settings block the "
+            "provider we use for extraction, or you haven't accepted that provider's "
+            "terms. Add credits at https://openrouter.ai/credits and review your privacy "
+            "settings at https://openrouter.ai/settings/privacy, then start a new review."
+        ),
+    }
+
+
 SUPPORTED_EXTENSIONS = frozenset(
     {
         ".pdf",
@@ -685,16 +760,33 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
     ]
     full_markdown = None
     errors: list[str] = []
-    for name, fn in extractors:
+    for idx, (name, fn) in enumerate(extractors):
         try:
             full_markdown = fn(path)
             logger.info("Extracted via %s (%d chars)", name, len(full_markdown))
             break
         except Exception as exc:
-            # Surface user-actionable API errors immediately — don't mask
-            # them by falling through to the next backend.
             api_msg = _classify_api_error(exc)
             if api_msg:
+                summary = _describe_api_error(exc)
+                has_fallback = idx < len(extractors) - 1
+                if has_fallback and _can_fall_through_api_error(name, exc, api_msg):
+                    errors.append(f"{name}: {api_msg}")
+                    if summary:
+                        logger.warning(
+                            "%s returned a recoverable API denial; trying fallback backend. %s",
+                            name,
+                            summary,
+                        )
+                    else:
+                        logger.warning(
+                            "%s returned a recoverable API denial; trying fallback backend: %s",
+                            name,
+                            api_msg,
+                        )
+                    continue
+                if summary:
+                    logger.warning("%s failed with API error: %s", name, summary)
                 raise ExtractionError(api_msg) from exc
             scrubbed = _scrub_secrets(str(exc))
             errors.append(f"{name}: {scrubbed}")

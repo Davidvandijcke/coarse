@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -457,8 +458,11 @@ def test_openrouter_ocr_retries_on_200_with_body_error_502(
 def test_openrouter_ocr_does_not_retry_on_200_with_body_error_402(
     minimal_pdf: Path,
 ) -> None:
-    """Non-retryable body codes (402 spend limit, 401 auth) should fail fast —
-    no point wasting retries on a billing problem."""
+    """Non-retryable 402 body codes should not retry the same backend.
+
+    We still allow the extractor chain to try the next backend, but each
+    OpenRouter engine should only be attempted once for a hard billing error.
+    """
     spend_limit = _mock_error_response(
         200,
         {
@@ -475,8 +479,60 @@ def test_openrouter_ocr_does_not_retry_on_200_with_body_error_402(
                 ):
                     with pytest.raises(ExtractionError):
                         extract_text(minimal_pdf, use_cache=False)
-    # Exactly one call — no retry on 402
-    assert post_mock.call_count == 1
+    # Exactly one call per OpenRouter backend — no retries on 402.
+    assert post_mock.call_count == 2
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (
+            402,
+            {"error": {"message": "Insufficient credits", "code": 402}},
+        ),
+        (
+            403,
+            {
+                "error": {
+                    "message": "Provider blocked by privacy settings",
+                    "code": "provider_forbidden",
+                    "metadata": {"provider": "mistral"},
+                }
+            },
+        ),
+    ],
+)
+def test_openrouter_ocr_falls_back_after_mistral_api_denial(
+    minimal_pdf: Path,
+    mock_ocr_pages,
+    caplog,
+    status: int,
+    body: dict,
+) -> None:
+    """402/403 on paid Mistral OCR should still try cheaper/offline fallback."""
+    first = _mock_error_response(status, body)
+    second = _mock_ocr_response(mock_ocr_pages)
+    posted_engines: list[str] = []
+
+    def spy_post(url, headers, json, timeout):  # noqa: A002
+        plugins = json.get("plugins") or []
+        engine = plugins[0].get("pdf", {}).get("engine") if plugins else None
+        posted_engines.append(engine)
+        return [first, second][len(posted_engines) - 1]
+
+    with caplog.at_level(logging.WARNING):
+        with patch("requests.post", side_effect=spy_post):
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-test"}):
+                result = extract_text(minimal_pdf, use_cache=False)
+
+    assert "# Test Paper" in result.full_markdown
+    assert posted_engines == ["mistral-ocr", "pdf-text"]
+    assert "recoverable API denial" in caplog.text
+    if status == 402:
+        assert "Insufficient credits" in caplog.text
+    else:
+        assert "Provider blocked by privacy settings" in caplog.text
+        assert "provider_forbidden" in caplog.text
 
 
 def test_openrouter_ocr_retries_on_200_body_504_then_gives_up(

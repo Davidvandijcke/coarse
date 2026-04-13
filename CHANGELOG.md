@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- **Extraction now logs real OpenRouter denial details and falls back after paid OCR denials (#71)** — the PDF extractor no longer hard-fails immediately when the first `mistral-ocr` file-parser call comes back as a user-actionable OpenRouter denial. It now records a scrubbed one-line summary of the provider response body (status, message, code, metadata when present) so operators can distinguish `402 Payment Required` / spend-limit failures from `403 Forbidden` privacy-or-terms failures in Modal logs, and it allows the extraction chain to continue from paid `mistral-ocr` to free `pdf-text` / `cloudflare-ai` and then Docling for recoverable OpenRouter `402` / `403` denials. `401` auth failures still fail fast. New tests pin both production-shaped cases: `402` and `403` on the first extraction call now skip retries on that backend, log the scrubbed reason, and successfully fall through to the next extractor when available.
+
 - **Author steering notes now reach all downstream review passes** — `author_notes` is now forwarded beyond the original overview/section/editorial path into `completeness`, `proof_verify`, `cross_section`, and the legacy `crossref`/`critique` fallback so later passes cannot silently drop the requested focus. The shared `author_notes_block()` prompt wrapper was also strengthened to tell agents how to prioritize valid note-aligned comments, while still preserving the rubric, quote rules, and prompt-injection boundary.
 
 ### Fixed
