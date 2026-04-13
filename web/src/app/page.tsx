@@ -684,7 +684,7 @@ export default function Home() {
                   }}
                 >
                   {emailDisabled
-                    ? "Daily email cap hit — save your review key to retrieve it."
+                    ? "Email delivery is temporarily down. Save your review key when you submit and check back in about an hour."
                     : <>We&apos;ll email you when it&apos;s done.</>}
                 </p>
               </div>

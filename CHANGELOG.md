@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Web UI now disables the email field and shows a banner while the coarse Gmail account is suspended** — added an `EMAIL_DELIVERY_DISABLED` kill switch in `web/src/lib/emailCapacity.ts` that forces `isEmailCapacityReached()` to return true and makes `/api/status` return `emailCapacityReached: true` plus a top-banner message ("Email delivery is temporarily down — save your review key when you submit and check back at coarse.ink/status/<your-key> in about an hour"). While the switch is on, the landing page disables the email input, accepts empty-email submissions, and prints the field-level note "Email delivery is temporarily down. Save your review key when you submit and check back in about an hour." The DB `system_status.banner_message` still overrides the hardcoded banner when an operator sets an incident-specific notice. This unblocks submissions while `/api/submit` was rejecting every request with an empty 500 body (browser surfaced as `Failed to execute 'json' on 'Response': Unexpected end of JSON input`) because `mailer.sendMail(...)` was throwing uncaught against the suspended Gmail account. Flip the constant back to `false` once email is healthy again.
+
 ## v1.2.2 — 2026-04-12
 
 Patch release. Clears the false "system busy (N/20 slots in use)" banner that the landing page was showing even when Modal was idle, and bundles the unreleased `dev` work (GPT-5.4 compare-panel + author-steering fallthroughs) that had accumulated since v1.2.1.
