@@ -124,9 +124,11 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
         "Runs locally on your machine using your own Claude Code, Codex, or Gemini CLI account."
         in handoff_route
     )
-    # Temporary git-ref pin — MUST flip back to a semver in the release PR.
-    # See the RELEASE BLOCKER note at the top of CHANGELOG.md ## Unreleased.
-    assert "coarse-ink @ git+https://github.com/Davidvandijcke/coarse@" in handoff_lib
+    # Stable PyPI semver pin — flipped from the pre-1.3.0 git-ref pin
+    # as part of the release cut. The release-blocker coupling test
+    # in `test_release_blocker_pin_is_coupled_to_unreleased_version`
+    # enforces that this pin matches `__version__`.
+    assert '"coarse-ink==1.3.0"' in handoff_lib
     assert "@feat/mcp-server" not in handoff_lib
     assert "@feat/mcp-server" not in handoff_route
 

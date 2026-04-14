@@ -1,33 +1,15 @@
 # Changelog
 
-## Unreleased
+## v1.3.0 — 2026-04-14
 
-> ⚠️ **RELEASE BLOCKER — MUST RESOLVE BEFORE MERGING dev → main / CUTTING v1.3.0** ⚠️
->
-> `web/src/lib/mcpHandoff.ts` currently pins `DEFAULT_MCP_UVX_FROM` to a
-> `git+https://github.com/Davidvandijcke/coarse@<sha>` commit ref instead
-> of a PyPI semver. This is a temporary workaround because the dev branch
-> added the `coarse install-skills` command and the whole MCP/headless
-> handoff stack, but PyPI's `coarse-ink==1.2.2` (the last release from
-> main) predates all of that — every coding-agent handoff triggered from
-> the web frontend hits "No such command 'install-skills'" in STEP 1 of
-> the agent prompt until a new version is published.
->
-> **Before the release PR merges**, do all four:
->   1. Bump `pyproject.toml` + `src/coarse/__init__.py` to `1.3.0`.
->   2. Publish `v1.3.0` to PyPI via the release workflow (tag push on main).
->   3. Revert `DEFAULT_MCP_UVX_FROM` in `web/src/lib/mcpHandoff.ts` to
->      `"coarse-ink==1.3.0"` (the `[mcp]` extra was dropped — the CLI
->      handoff flow does not need fastmcp or pymupdf4llm; see the
->      block comment on `DEFAULT_MCP_UVX_FROM`).
->   4. Update the three shipped skill manifests at
->      `src/coarse/_skills/{claude_code,codex,gemini_cli}/SKILL.md` to
->      match (`coarse-ink==1.3.0`, no `[mcp]`).
->
-> Shipping the git-ref pin to production would make every user's clipboard
-> prompt contain a `git+https://` URL that re-clones on every uvx invocation,
-> requires git on PATH, and installs unpinned HEAD-of-dev with no semver
-> guarantees. Do NOT forget to revert.
+**Major release. The big ticket items**:
+
+- **Subscription handoff flow** — new `coarse-review --handoff <url>` command + `coarse install-skills` CLI + bundled Claude Code / Codex / Gemini CLI skill templates. Users paste one command into their coding agent and it runs the full review pipeline against their own Claude Code / Codex / Gemini CLI subscription, paying zero LLM API cost (only ~$0.15 OpenRouter extraction). Signal-driven `--attach` watcher replaces the legacy poll-based flow. Preview-first deploy workflow with Tier 0 + Tier 1 isolation docs.
+- **MCP server** — new `deploy/mcp_server.py` exposes the coarse pipeline as an MCP server on Modal (`coarse-mcp` app) so Claude Desktop / Claude.ai connectors can review papers directly. Single-container session store for now (low-volume production); scaling path documented in `deploy/DEPLOY_MCP.md`.
+- **Web hardening** — migrated transactional email from Gmail SMTP to Resend, Cloudflare Turnstile gate on the submit flow, fail-closed submission kill switch, session-scoped OpenRouter OAuth key storage, fenced prompt boundaries on all untrusted paper content paths, Modal webhook validation, preview-first release workflow with environment-scoped Vercel Authentication + middleware Basic Auth fallback.
+- **Pipeline refactor** — extraction split by responsibility, stage helpers moved out of orchestrator, canonical pipeline stage spec, architecture anti-drift regression tests that statically scan import graphs for cycles / layer violations / oversized files.
+
+Total: **87 commits** from 131 PRs + direct-to-dev fixes, **~21k insertions / ~2.4k deletions** across 119 files. Every line of the subscription-handoff flow is covered by the handoff-polish chain (#121-#131) documented below.
 
 ### Changed
 
