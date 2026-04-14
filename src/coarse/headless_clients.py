@@ -57,11 +57,58 @@ _HOST_ENV_VARS = (
     "GEMINI_CLI_INTERNAL",
 )
 
+# Provider API keys that redirect a host CLI from subscription billing
+# to pay-per-token API billing. The subscription-handoff flow exists
+# SPECIFICALLY so users can run reviews on their Claude Code / Codex
+# / Gemini CLI subscription — if any of these vars is set in the
+# launching shell, the CLI's documented behavior is to bill the key
+# holder instead, which silently charges the user's API account for
+# every call in the pipeline. We strip them inside the subprocess env
+# ONLY (the parent shell is unchanged) so the host CLI falls back to
+# its subscription OAuth credential. The parent Python process still
+# has `OPENROUTER_API_KEY` available via `os.environ` for its own
+# OpenRouter-backed extraction and literature-search paths, which
+# aren't part of the subprocess env.
+#
+# See "Claude Code → Authentication" docs: "If ANTHROPIC_API_KEY is
+# set, Claude Code uses it instead of your subscription."
+_SUBSCRIPTION_BILLING_KEYS = (
+    # Claude Code → Anthropic subscription
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    # Codex CLI → ChatGPT / OpenAI subscription
+    "OPENAI_API_KEY",
+    # Gemini CLI → Google AI subscription
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+)
+
 
 def _clean_subprocess_env() -> dict[str, str]:
-    """Return a copy of os.environ with all known host-CLI vars stripped."""
+    """Return a copy of os.environ with host-CLI session markers AND
+    provider API keys stripped.
+
+    Two classes of variable get removed:
+
+    1. ``_HOST_ENV_VARS`` — session/entrypoint markers Claude Code,
+       Codex, and Gemini set for their own internal use. Stripping
+       keeps nested sessions from inheriting shared state.
+    2. ``_SUBSCRIPTION_BILLING_KEYS`` — provider API keys that would
+       redirect the host CLI from subscription billing to API-key
+       billing. Critical for the subscription-handoff flow: if the
+       launching shell has ``ANTHROPIC_API_KEY`` set, Claude Code
+       bills the API key for every call in the pipeline instead of
+       the user's Claude Code subscription. Stripping inside the
+       subprocess env forces OAuth/subscription auth. Parent shell
+       is unchanged, and ``OPENROUTER_API_KEY`` (used by the parent
+       Python process for extraction + literature search) is
+       deliberately preserved — it's never inherited by the host CLI
+       subprocess anyway.
+    """
     env = dict(os.environ)
     for var in _HOST_ENV_VARS:
+        env.pop(var, None)
+    for var in _SUBSCRIPTION_BILLING_KEYS:
         env.pop(var, None)
     return env
 
