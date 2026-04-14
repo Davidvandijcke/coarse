@@ -3,9 +3,23 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
 from unittest.mock import patch
 
-from coarse.cli_review import _infer_handoff_extension, main
+import pytest
+
+from coarse import cli_review
+from coarse.cli_review import (
+    _infer_handoff_extension,
+    _pidfile_for_log,
+    _read_pidfile,
+    _run_attach,
+    _write_pidfile,
+    main,
+)
 from coarse.types import OverviewFeedback, OverviewIssue, PaperText, Review
 
 
@@ -366,3 +380,281 @@ def test_main_detached_child_runs_pipeline_without_respawning(tmp_path, monkeypa
     assert rc == 0
     assert popen_called is False
     assert captured["kwargs"]["host"] == "codex"
+
+
+# ---------------------------------------------------------------------------
+# --attach signal-driven wait mode.
+# ---------------------------------------------------------------------------
+#
+# These tests pin the one-Bash-call wait flow that replaces the
+# per-poll tail loop coding agents were running during a handoff
+# wait. The design constraints are spelled out in the _run_attach
+# docstring in src/coarse/cli_review.py — the tests here are the
+# canary for them.
+#
+# To keep the whole group under two seconds we monkeypatch the three
+# timing knobs (heartbeat interval, PID-poll cadence, pidfile grace
+# window) down to milliseconds. The production defaults (30s / 5s /
+# 5s) would make these tests wall-clock-bound in a way that gates
+# CI on sleep().
+
+
+@pytest.fixture()
+def _fast_attach(monkeypatch):
+    """Collapse attach timing knobs so tests run in milliseconds.
+
+    Production values (30s heartbeat, 5s pid poll, 5s grace) produce
+    the real-world behavior; these values just shrink the same loop
+    to fit in a pytest run without changing any semantics.
+    """
+    monkeypatch.setattr(cli_review, "_ATTACH_HEARTBEAT_SECONDS", 0.05)
+    monkeypatch.setattr(cli_review, "_ATTACH_PID_POLL_SECONDS", 0.02)
+    monkeypatch.setattr(cli_review, "_ATTACH_PIDFILE_GRACE_SECONDS", 0.5)
+    yield
+
+
+def _spawn_fake_review(
+    log_path: Path,
+    *,
+    script: str,
+) -> subprocess.Popen:
+    """Spawn a short-lived Python subprocess that behaves like a
+    detached coarse-review worker for the purposes of --attach tests.
+
+    ``script`` is inlined Python source that writes to the log file
+    via sys.argv[1]. The subprocess is a real OS process so
+    ``os.kill(pid, 0)`` behaves correctly (faking the PID check would
+    defeat the whole point of the watcher).
+    """
+    return subprocess.Popen(
+        [sys.executable, "-c", script, str(log_path)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def test_pidfile_path_is_sibling_of_log(tmp_path: Path) -> None:
+    """Regression: ``_pidfile_for_log`` returns ``<log>.pid``.
+
+    The watcher and the launcher both derive the pidfile from the
+    log path — they must agree on the exact suffix scheme or a race
+    between the two sites leaves stale files behind.
+    """
+    log = tmp_path / "coarse-review-abc.log"
+    assert _pidfile_for_log(log) == tmp_path / "coarse-review-abc.log.pid"
+
+
+def test_write_pidfile_is_atomic_and_owner_readable(tmp_path: Path) -> None:
+    """``_write_pidfile`` writes via rename and tightens perms to 0600.
+
+    Atomic-via-rename is the property that lets a racing ``--attach``
+    read the pidfile safely. The mode check is best-effort (Windows
+    skips it) so the test only asserts 0600 on POSIX.
+    """
+    log = tmp_path / "review.log"
+    pidfile = _pidfile_for_log(log)
+    _write_pidfile(pidfile, 12345)
+    assert pidfile.exists()
+    assert _read_pidfile(pidfile) == 12345
+    if os.name != "nt":
+        mode = pidfile.stat().st_mode & 0o777
+        assert mode == 0o600, f"expected 0600, got 0o{mode:o}"
+
+
+def test_attach_missing_pidfile_exits_3(tmp_path, _fast_attach, capsys) -> None:
+    """Regression: ``--attach`` bails cleanly when the pidfile never
+    appears within the grace window.
+
+    This is the "user pointed --attach at the wrong log path" case.
+    Before the grace loop existed, the watcher would hang forever.
+    The grace window is monkeypatched to 0.5s so the test finishes
+    fast.
+    """
+    log = tmp_path / "ghost.log"
+    rc = _run_attach(log, timeout_seconds=5)
+    assert rc == 3
+    err = capsys.readouterr().err
+    assert "pidfile" in err and "did not appear" in err
+
+
+def test_attach_empty_pidfile_exits_3(tmp_path, _fast_attach, capsys) -> None:
+    """Malformed pidfile (empty string) should exit 3, not crash."""
+    log = tmp_path / "broken.log"
+    _pidfile_for_log(log).write_text("", encoding="utf-8")
+    log.write_text("", encoding="utf-8")
+    rc = _run_attach(log, timeout_seconds=5)
+    assert rc == 3
+    err = capsys.readouterr().err
+    assert "empty or malformed" in err
+
+
+def test_attach_happy_path_streams_and_exits_zero(tmp_path, _fast_attach, capsys) -> None:
+    """End-to-end happy path: real subprocess writes log lines, emits
+    a completion marker, exits — watcher drains the log, prints it
+    all, and returns exit code 0.
+    """
+    log = tmp_path / "review.log"
+    script = textwrap.dedent(
+        """
+        import sys, time
+        log = open(sys.argv[1], 'w')
+        log.write('starting extraction...\\n'); log.flush()
+        time.sleep(0.05)
+        log.write('section 1 done\\n'); log.flush()
+        time.sleep(0.05)
+        log.write('REVIEW COMPLETE\\n'); log.flush()
+        log.close()
+        """
+    )
+    proc = _spawn_fake_review(log, script=script)
+    try:
+        _write_pidfile(_pidfile_for_log(log), proc.pid)
+        rc = _run_attach(log, timeout_seconds=10)
+    finally:
+        proc.wait(timeout=5)
+    out = capsys.readouterr().out
+    assert rc == 0, f"expected clean exit, got {rc}; stdout={out!r}"
+    assert "starting extraction" in out
+    assert "section 1 done" in out
+    assert "REVIEW COMPLETE" in out
+    # Watcher cleaned up the pidfile on exit.
+    assert not _pidfile_for_log(log).exists()
+
+
+def test_attach_returns_one_on_failure_marker(tmp_path, _fast_attach, capsys) -> None:
+    """Failure marker in the log → exit 1.
+
+    Failure wins over success if both markers appear (fail-loud).
+    """
+    log = tmp_path / "review.log"
+    script = textwrap.dedent(
+        """
+        import sys
+        log = open(sys.argv[1], 'w')
+        log.write('ERROR: pipeline failed — something broke\\n')
+        log.close()
+        """
+    )
+    proc = _spawn_fake_review(log, script=script)
+    try:
+        _write_pidfile(_pidfile_for_log(log), proc.pid)
+        rc = _run_attach(log, timeout_seconds=10)
+    finally:
+        proc.wait(timeout=5)
+    out = capsys.readouterr().out
+    assert rc == 1, f"expected failure exit, got {rc}; stdout={out!r}"
+    assert "ERROR: pipeline failed" in out
+
+
+def test_attach_returns_two_when_pid_dies_without_marker(tmp_path, _fast_attach, capsys) -> None:
+    """Silent crash → exit 2 (ambiguous, probably failed).
+
+    The log has no success marker and no failure marker. The watcher
+    reports uncertainty instead of falsely claiming success.
+    """
+    log = tmp_path / "review.log"
+    script = textwrap.dedent(
+        """
+        import sys
+        log = open(sys.argv[1], 'w')
+        log.write('processing...\\n')
+        log.close()
+        """
+    )
+    proc = _spawn_fake_review(log, script=script)
+    try:
+        _write_pidfile(_pidfile_for_log(log), proc.pid)
+        rc = _run_attach(log, timeout_seconds=10)
+    finally:
+        proc.wait(timeout=5)
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "without a completion marker" in err
+
+
+def test_attach_emits_heartbeat_when_log_is_idle(tmp_path, _fast_attach, capsys) -> None:
+    """Regression: ``--attach`` prints heartbeat lines when the log
+    goes quiet, so Claude Code's Bash tool sees activity during the
+    10-25 min wait.
+
+    Uses a fake subprocess that sleeps ~0.3s without writing anything
+    before finishing. The heartbeat interval is monkeypatched to 0.05s
+    so multiple heartbeat lines should fire in that window.
+    """
+    log = tmp_path / "review.log"
+    script = textwrap.dedent(
+        """
+        import sys, time
+        log = open(sys.argv[1], 'w')
+        log.write('init\\n'); log.flush()
+        time.sleep(0.3)
+        log.write('REVIEW COMPLETE\\n'); log.flush()
+        log.close()
+        """
+    )
+    proc = _spawn_fake_review(log, script=script)
+    try:
+        _write_pidfile(_pidfile_for_log(log), proc.pid)
+        rc = _run_attach(log, timeout_seconds=10)
+    finally:
+        proc.wait(timeout=5)
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "[attach] pid=" in out
+    # "waiting…" substring is ASCII-safe on the heartbeat line so we
+    # can grep for it in CI stdout without encoding gotchas.
+    assert "waiting" in out
+
+
+def test_attach_mutually_exclusive_with_detach(tmp_path, monkeypatch) -> None:
+    """Regression: ``main`` rejects ``--attach`` combined with launch-mode flags.
+
+    --attach is watch-only and must not be combined with anything
+    that would start a new review. Argparse-level guard, so SystemExit
+    with a specific error message.
+    """
+    log = tmp_path / "review.log"
+    log.write_text("", encoding="utf-8")
+    _write_pidfile(_pidfile_for_log(log), os.getpid())
+
+    for extra in (
+        ["--detach"],
+        ["--handoff", "https://example.test/h/abc"],
+        [str(tmp_path / "paper.pdf")],
+    ):
+        with pytest.raises(SystemExit) as excinfo:
+            main(["--attach", str(log), *extra])
+        # argparse error() exits with code 2
+        assert excinfo.value.code == 2
+
+
+def test_detach_writes_pidfile_with_correct_pid(tmp_path, monkeypatch) -> None:
+    """Regression: ``_detach_review_process`` writes ``<log>.pid``
+    next to the log containing the subprocess PID.
+
+    Faked subprocess.Popen so the test doesn't actually spawn a
+    second Python interpreter. The point is that the pidfile is
+    written with the PID the launcher got back from Popen — that's
+    the contract ``--attach`` relies on.
+    """
+    log = tmp_path / "detached.log"
+    paper = tmp_path / "paper.pdf"
+    paper.write_bytes(b"not-a-real-pdf")
+
+    class _FakePopen:
+        def __init__(self, *args, **kwargs):
+            self.pid = 424242
+
+    monkeypatch.setattr(cli_review.subprocess, "Popen", _FakePopen)
+
+    rc = cli_review._detach_review_process(
+        [str(paper), "--host", "claude", "--detach", "--log-file", str(log)],
+        log,
+    )
+    assert rc == 0
+    pidfile = _pidfile_for_log(log)
+    assert pidfile.exists(), f"pidfile not written at {pidfile}"
+    assert _read_pidfile(pidfile) == 424242
+    if os.name != "nt":
+        assert (pidfile.stat().st_mode & 0o777) == 0o600

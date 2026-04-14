@@ -26,7 +26,15 @@ MAX_SOURCE_LINES = 800
 # estimation helpers). Splitting it cleanly requires a design pass that is
 # out of scope for this check — the known-oversized list exists for exactly
 # this "tracked for future refactor" state.
-KNOWN_OVERSIZED = {"extraction", "prompts", "llm"}
+#
+# `cli_review` carries the launcher (local + handoff modes), the detach
+# respawn, and the new signal-driven `--attach` watcher (pidfile r/w,
+# PID liveness, log tail loop with heartbeats, completion markers,
+# exit-code resolution). The attach half is self-contained and wants
+# to move into its own `cli_attach` module in a follow-up refactor;
+# allowlisted here until that split lands. TODO: extract
+# `_run_attach` + its helpers into `src/coarse/cli_attach.py`.
+KNOWN_OVERSIZED = {"extraction", "prompts", "llm", "cli_review"}
 
 
 def _module_name(path: Path) -> str:
