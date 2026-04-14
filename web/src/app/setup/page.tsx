@@ -864,9 +864,9 @@ function SubscriptionTab() {
         >
           Runs locally on your machine using your own Claude Code, Codex,
           or Gemini CLI account. coarse.ink does not receive or store your
-          provider login, and your provider&apos;s terms, usage limits, and
-          organization policies apply. coarse.ink is not affiliated with
-          Anthropic, OpenAI, or Google.
+          provider login. Your provider&apos;s terms and usage limits still
+          apply. coarse.ink is not affiliated with Anthropic, OpenAI, or
+          Google.
         </p>
       </section>
 
@@ -1000,11 +1000,11 @@ function SubscriptionTab() {
               margin: "0 0 0.75rem",
             }}
           >
-            The modal shows three pre-filled commands: <strong>setup</strong>{" "}
-            (refreshes the skill bundle, ~10s), <strong>launch</strong>{" "}
-            (starts the review in background, returns in 2s), and{" "}
-            <strong>wait</strong> (blocks until done, 10&ndash;25 min).
-            Paste each into your CLI in order. When wait exits, it prints a{" "}
+            The modal shows three pre-filled commands. Paste{" "}
+            <strong>setup</strong> (~10s), then <strong>launch</strong>{" "}
+            (returns in 2s). The <strong>wait</strong> command blocks
+            until the review finishes, 10&ndash;25 min. When it exits, it
+            prints a{" "}
             <code
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
