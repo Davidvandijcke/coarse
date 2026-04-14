@@ -62,9 +62,13 @@ jobs:
           if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
             echo "::error::PREVIEW_MODAL_TOKEN_ID and PREVIEW_MODAL_TOKEN_SECRET must be set as GitHub Environment secrets on preview-modal."
             echo ""
-            echo "Use a dedicated Modal service user for preview CI."
+            echo "Set them with:"
+            echo "  gh secret set PREVIEW_MODAL_TOKEN_ID --env preview-modal --repo Davidvandijcke/coarse"
+            echo "  gh secret set PREVIEW_MODAL_TOKEN_SECRET --env preview-modal --repo Davidvandijcke/coarse"
+            echo ""
+            echo "Use a dedicated Modal service user for preview CI when possible."
             echo "If Modal RBAC is enabled, restrict it to the preview environment only."
-            echo "Then add the token as environment secrets on the preview-modal environment."
+            echo "See deploy/PREVIEW_ENVIRONMENTS.md for the full preview setup runbook."
             exit 1
           fi
 

@@ -1659,6 +1659,11 @@ try:
     )
 
     modal_app = modal.App("coarse-mcp")
+    # `modal deploy deploy/mcp_server.py` looks for a top-level `app`
+    # attribute by default. Keep the explicit `modal_app` name for code
+    # clarity, but export the canonical alias so local deploys and GitHub
+    # Actions both hit the same entrypoint without a wrapper module.
+    app = modal_app
 
     # ----- ASGI MCP server (zero ambient credentials) -----
 

@@ -153,6 +153,14 @@ https://<your-org>--coarse-mcp-run-extract.modal.run
 
 For an isolated preview setup, see [deploy/PREVIEW_ENVIRONMENTS.md](PREVIEW_ENVIRONMENTS.md).
 
+Local operator credentials belong in the gitignored root `.env`. For
+Supabase, the most useful programmatic-control values are
+`PROD_SUPABASE_DB_URL` and `PREVIEW_SUPABASE_DB_URL`; direct Postgres
+access is enough to apply SQL and inspect schema/data without relying
+on the Supabase Management API. See the preview runbook for the full
+list of recommended preview env vars and the GitHub `preview-modal`
+environment-secret setup.
+
 Default rollout for substantial changes:
 
 1. Merge the change into `dev`
@@ -189,6 +197,14 @@ Preview website signoff checklist:
 6. Verify `coarse-review` and `coarse-mcp` invocations appear only in
    the Modal `preview` environment
 7. Verify new rows land only in preview Supabase
+
+GitHub checks to watch:
+
+- `Vercel` = frontend preview deployment for the commit
+- `deploy-modal-preview` = preview Modal backend deploy from `dev`
+
+Those are independent. A fresh Vercel preview does not imply fresh
+preview Modal workers unless `deploy-modal-preview` also passes.
 
 ---
 

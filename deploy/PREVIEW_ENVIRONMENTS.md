@@ -322,6 +322,43 @@ hostnames yet, remove `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and
 `TURNSTILE_SECRET_KEY` from the Vercel Preview environment so preview
 fails open while production stays protected.
 
+### Step 1.7a — Store local admin secrets in `.env`
+
+The repo already gitignores the root `.env` file. Use that for local
+operator-only credentials:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+Recommended entries:
+
+```bash
+PROD_SUPABASE_DB_URL=postgresql://postgres:...@db.dgibkmnyiusglhdgzffk.supabase.co:5432/postgres
+PREVIEW_SUPABASE_DB_URL=postgresql://postgres:...@db.<preview-ref>.supabase.co:5432/postgres
+PREVIEW_SUPABASE_URL=https://<preview-ref>.supabase.co
+PREVIEW_SUPABASE_ANON_KEY=...
+PREVIEW_SUPABASE_SERVICE_KEY=...
+PREVIEW_MODAL_FUNCTION_URL=https://<workspace>-preview--coarse-review-run-review.modal.run
+PREVIEW_MODAL_EXTRACT_URL=https://<workspace>-preview--coarse-mcp-run-extract.modal.run
+PREVIEW_MODAL_WEBHOOK_SECRET=...
+```
+
+This is enough for practical programmatic control:
+
+- `*_SUPABASE_DB_URL` lets you apply arbitrary SQL, inspect data, and
+  verify migrations directly against production or preview.
+- `PREVIEW_SUPABASE_*` lets you mirror the Vercel Preview environment
+  locally when reproducing web issues.
+- the preview Modal URLs + webhook secret let you exercise the preview
+  worker paths outside Vercel if needed.
+
+Supabase Management API tokens are optional. They are useful only if
+you want to create/list projects programmatically. They are **not**
+required for the main operational tasks in this repo, because DB URLs
+already cover migrations and schema inspection.
+
 ### Step 1.8 — Verify both web routes point only at Modal preview endpoints
 
 There are two web→Modal paths that must be isolated:
@@ -396,6 +433,15 @@ Treat the preview website as the pre-prod signoff surface. If a change
 touches schema, web API routes, Modal workers, auth, or env wiring, it
 is not ready for `main` until it passes on the preview site first.
 
+GitHub/Vercel check mapping:
+
+- the GitHub status named `Vercel` is the frontend preview deployment
+  for the commit. If it is green, Vercel did redeploy.
+- the GitHub Actions workflow `deploy-modal-preview` is separate and
+  only refreshes the preview Modal backends.
+- if `Vercel` is green but `deploy-modal-preview` is red, the website
+  preview may be fresh while the preview Modal workers are stale.
+
 Preview-site usage rules:
 
 1. Open the preview deployment from the latest `dev` commit. Do not use
@@ -409,6 +455,30 @@ Preview-site usage rules:
    `/h/<token>` and final review URL also stay on the preview hostname.
 5. Only after both paths pass on preview should the change move toward
    `main`.
+
+### Step 1.9a — Fix the common `preview-modal` GitHub Actions failure
+
+If `.github/workflows/modal-preview-deploy.yml` fails with:
+
+> `PREVIEW_MODAL_TOKEN_ID and PREVIEW_MODAL_TOKEN_SECRET must be set`
+
+that is a GitHub Environment configuration issue, not a code issue.
+
+Set the secrets on the `preview-modal` environment:
+
+```bash
+gh secret set PREVIEW_MODAL_TOKEN_ID --env preview-modal --repo Davidvandijcke/coarse
+gh secret set PREVIEW_MODAL_TOKEN_SECRET --env preview-modal --repo Davidvandijcke/coarse
+```
+
+Then rerun the workflow:
+
+```bash
+gh workflow run modal-preview-deploy.yml --ref dev
+```
+
+The workflow only affects preview Modal. It does **not** control the
+Vercel frontend preview deployment.
 
 ### Step 1.10 — Document + commit
 
