@@ -96,9 +96,9 @@ rg --files tests | rg "test_(${basename}|${basename//_/-}|${basename//-/_})([-_]
 ```
 
 Examples:
-- `section.py` → `tests/test_section-agent.py`
-- `structure.py` → `tests/test_structure-analysis.py`
-- `cost.py` → `tests/test_cost-estimator.py`
+- `section.py` → `tests/test_section.py`
+- `structure.py` → `tests/test_structure.py`
+- `cost.py` → `tests/test_cost.py`
 
 If no plausible test file exists, record a HIGH finding and continue.
 
