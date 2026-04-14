@@ -852,6 +852,22 @@ function SubscriptionTab() {
           The review runs on your subscription and bills there. You only
           pay OpenRouter ~$0.15 for the OCR pass.
         </p>
+        <p
+          style={{
+            marginTop: "1rem",
+            fontFamily: "var(--font-chalk)",
+            fontSize: "0.95rem",
+            color: "var(--dust)",
+            lineHeight: 1.55,
+            maxWidth: "620px",
+          }}
+        >
+          Runs locally on your machine using your own Claude Code, Codex,
+          or Gemini CLI account. coarse.ink does not receive or store your
+          provider login, and your provider&apos;s terms, usage limits, and
+          organization policies apply. coarse.ink is not affiliated with
+          Anthropic, OpenAI, or Google.
+        </p>
       </section>
 
       <CharcoalRule />

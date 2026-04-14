@@ -127,7 +127,7 @@ function CodeBlock({ text, maxHeight }: { text: string; maxHeight?: string }) {
           border: "none",
           borderRadius: "2px",
           padding: "0.2rem 0.55rem",
-          fontSize: "0.75rem",
+          fontSize: "0.92rem",
           fontFamily: "var(--font-chalk)",
           cursor: "pointer",
           transition: "background 0.15s, color 0.15s",
@@ -144,7 +144,7 @@ function CodeBlock({ text, maxHeight }: { text: string; maxHeight?: string }) {
           padding: "0.65rem 0.85rem",
           paddingRight: "4.5rem",
           fontFamily: "var(--font-space-mono), monospace",
-          fontSize: "0.82rem",
+          fontSize: "0.9rem",
           color: "var(--chalk-bright)",
           lineHeight: 1.5,
           maxHeight: maxHeight ?? undefined,
@@ -1597,7 +1597,7 @@ export default function Home() {
               <p
                 style={{
                   fontFamily: "var(--font-chalk)",
-                  fontSize: "0.88rem",
+                  fontSize: "0.95rem",
                   color: "var(--dust)",
                   margin: "0.55rem 0 0",
                   maxWidth: "620px",
@@ -1651,7 +1651,7 @@ export default function Home() {
                         <select
                           value={selectedModel}
                           onChange={(e) => setSelectedModel(e.target.value)}
-                          style={{ marginLeft: "0.25rem", padding: "0.25rem 0.5rem", background: "var(--board)", color: "var(--chalk)", border: "1px solid var(--tray)", borderRadius: "2px", fontFamily: "monospace", fontSize: "0.85rem" }}
+                          style={{ marginLeft: "0.25rem", padding: "0.25rem 0.5rem", background: "var(--board)", color: "var(--chalk)", border: "1px solid var(--tray)", borderRadius: "2px", fontFamily: "monospace", fontSize: "0.92rem" }}
                         >
                           {HOST_DEFAULT_MODELS[host].map((m) => (<option key={m} value={m}>{m}</option>))}
                         </select>
@@ -1661,7 +1661,7 @@ export default function Home() {
                         <select
                           value={selectedEffort}
                           onChange={(e) => setSelectedEffort(e.target.value as EffortLevel)}
-                          style={{ marginLeft: "0.25rem", padding: "0.25rem 0.5rem", background: "var(--board)", color: "var(--chalk)", border: "1px solid var(--tray)", borderRadius: "2px", fontFamily: "monospace", fontSize: "0.85rem" }}
+                          style={{ marginLeft: "0.25rem", padding: "0.25rem 0.5rem", background: "var(--board)", color: "var(--chalk)", border: "1px solid var(--tray)", borderRadius: "2px", fontFamily: "monospace", fontSize: "0.92rem" }}
                         >
                           {EFFORT_LEVELS.map((e) => (<option key={e} value={e}>{e}</option>))}
                         </select>
@@ -1758,7 +1758,7 @@ export default function Home() {
                         <p
                           style={{
                             fontFamily: "var(--font-chalk)",
-                            fontSize: "0.85rem",
+                            fontSize: "0.92rem",
                             color: "var(--dust)",
                             margin: "0.5rem 0 0",
                             lineHeight: 1.5,
@@ -1803,7 +1803,7 @@ export default function Home() {
                     <p
                       style={{
                         fontFamily: "var(--font-chalk)",
-                        fontSize: "0.85rem",
+                        fontSize: "0.92rem",
                         color: "var(--dust)",
                         margin: "1rem 0 0",
                       }}
