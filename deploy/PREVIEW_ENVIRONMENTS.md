@@ -114,10 +114,34 @@ Verify: open an incognito window, hit the preview URL from step 0.1.
 You should hit a Vercel login page. Log in with your Vercel team
 account → you should see the preview deployment.
 
-**At this point Tier 0 is done.** You have private preview URLs.
-But they still talk to production Supabase + Modal. Don't stop here
-for anything that would mutate DB or spawn workers — that's what
-Tier 1 fixes.
+### Step 0.3 — Enable Protection Bypass for Automation (required for CLI handoff)
+
+**Vercel dashboard → coarse project → Settings → Deployment Protection → Protection Bypass for Automation**
+
+Click **Generate Secret**. Vercel writes the value into the preview
+environment as `VERCEL_AUTOMATION_BYPASS_SECRET` automatically; you
+don't need to copy it anywhere.
+
+Why this step is required: the CLI / Codex-cloud handoff flow has a
+detached local worker fetch `GET /h/<token>` to pull the paper bundle.
+Without a bypass secret, that fetch hits the Step 0.2 login wall and
+gets **HTTP 401** before it ever reaches the Next.js route — the
+detached worker crashes immediately, no pidfile gets written, and
+`coarse-review --attach …` exits with code 3. `/api/cli-handoff`
+automatically appends
+`?x-vercel-protection-bypass=$SECRET&x-vercel-set-bypass-cookie=true`
+to the handoff URL when `VERCEL_ENV === "preview"` and the secret is
+set, so once you've generated it the flow just works. If the secret
+is missing the response includes a `warning` field naming exactly
+this step; the `src/coarse/cli_review.py` error hint also points here.
+
+Production URLs stay clean because the secret is only defined on the
+preview environment.
+
+**At this point Tier 0 is done.** You have private preview URLs
+that the CLI handoff can still reach. They still talk to production
+Supabase + Modal. Don't stop here for anything that would mutate DB
+or spawn workers — that's what Tier 1 fixes.
 
 ## Tier 1 — Isolated preview infra (~2 hours)
 
