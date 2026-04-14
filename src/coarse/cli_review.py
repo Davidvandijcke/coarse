@@ -671,6 +671,7 @@ def main(argv: list[str] | None = None) -> int:
         # Call the pipeline directly so we get the PaperText back in-process
         # (no sidecar file dance). run_headless_review handles all the
         # monkey-patching for the chosen host.
+        from coarse.extraction_openrouter import signed_url_ctx
         from coarse.headless_review import run_headless_review
 
         logger.info(
@@ -680,6 +681,24 @@ def main(argv: list[str] | None = None) -> int:
             effort,
         )
 
+        # Hand OpenRouter the signed Supabase URL directly when one is
+        # available instead of base64-encoding the full PDF into the
+        # request body. OpenRouter's inline base64 path has an
+        # effective ~8-16 MB limit on the request body — a 20 MB paper
+        # base64-encodes to ~27 MB of JSON and gets rejected with a
+        # generic HTTP 400 well before Mistral OCR ever sees it. The
+        # URL path bypasses that entirely (OpenRouter fetches the PDF
+        # server-side) and scales to Mistral's real 50 MB / 1000-page
+        # ceiling. The local download in ``_download_handoff_source``
+        # still happens because ``extraction_qa.py`` needs the PDF on
+        # disk for the vision LLM page-render check — we only skip
+        # the base64 blob in the OpenRouter request, not the download.
+        handoff_signed_url: str | None = None
+        if handoff_bundle is not None:
+            raw_signed_url = handoff_bundle.get("signed_download_url")
+            if isinstance(raw_signed_url, str) and raw_signed_url.startswith("https://"):
+                handoff_signed_url = raw_signed_url
+        signed_url_token = signed_url_ctx.set(handoff_signed_url)
         try:
             review, md_text, paper_text = run_headless_review(
                 paper_path,
@@ -694,6 +713,8 @@ def main(argv: list[str] | None = None) -> int:
             # is the last line of defense before the detached log file.
             print(f"ERROR: pipeline failed — {_scrub_url(str(exc))}", file=sys.stderr)
             return 6
+        finally:
+            signed_url_ctx.reset(signed_url_token)
 
         # Save the review markdown locally regardless of mode. Explicit
         # utf-8 because review markdown contains non-ASCII content (math

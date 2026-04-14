@@ -620,11 +620,34 @@ def do_review(req_dict: dict):
         f.write(pdf_bytes)
         pdf_path = f.name
 
+    # Mint a short-lived Supabase signed URL for the same storage path
+    # so we can hand it to OpenRouter's file-parser plugin directly
+    # instead of base64-encoding the file into the request body. This
+    # bypasses OpenRouter's inline request-body limit (effective
+    # ~8-16 MB), which 400'd on any paper larger than ~12-15 MB before
+    # Mistral OCR ever saw it. 15 minutes of TTL is plenty of headroom
+    # for the retry loop in extraction_openrouter (~5-10 min max wall
+    # clock with exponential backoff) while keeping the URL short-
+    # lived enough that its leaking into logs isn't worth worrying
+    # about. Best-effort: if signed-URL minting fails for any reason
+    # we fall back to the base64 path by leaving the contextvar unset,
+    # matching the pre-v1.3.0 behaviour exactly.
+    openrouter_signed_url: str | None = None
+    try:
+        signed = db.storage.from_("papers").create_signed_url(pdf_storage_path, 900)
+        if isinstance(signed, dict):
+            candidate = signed.get("signedURL") or signed.get("signed_url")
+            if isinstance(candidate, str) and candidate.startswith("http"):
+                openrouter_signed_url = candidate
+    except Exception as signed_exc:
+        print(f"[{job_id}] signed URL mint failed ({signed_exc!r}) — falling back to base64")
+
     start = time.time()
     try:
         print(f"[{job_id}] Importing coarse...")
         from coarse import review_paper
         from coarse.config import CoarseConfig
+        from coarse.extraction_openrouter import signed_url_ctx
 
         # Read os.environ directly — the previous version inferred from local
         # variables, which could lie about the actual state reaching litellm
@@ -638,13 +661,17 @@ def do_review(req_dict: dict):
         print(f"[{job_id}] Starting pipeline")
 
         config = CoarseConfig(extraction_qa=True)
-        review, markdown, paper_text = review_paper(
-            pdf_path,
-            model=model,
-            skip_cost_gate=True,
-            config=config,
-            author_notes=author_notes,
-        )
+        signed_url_token = signed_url_ctx.set(openrouter_signed_url)
+        try:
+            review, markdown, paper_text = review_paper(
+                pdf_path,
+                model=model,
+                skip_cost_gate=True,
+                config=config,
+                author_notes=author_notes,
+            )
+        finally:
+            signed_url_ctx.reset(signed_url_token)
         print(f"[{job_id}] Pipeline complete — {len(markdown)} chars")
 
         duration = int(time.time() - start)

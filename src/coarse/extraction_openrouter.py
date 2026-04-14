@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import re
 from pathlib import Path
@@ -12,6 +13,27 @@ logger = logging.getLogger(__name__)
 
 PAGE_BREAK = "\n\n<!-- PAGE BREAK -->\n\n"
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+
+# Context var carrying a fetchable HTTPS URL for the paper being
+# extracted. When set, ``_extract_openrouter_file_parser`` hands the
+# URL to OpenRouter's file-parser plugin directly instead of inlining
+# the PDF as base64. Kept as a contextvar (not a thread-local) so it
+# propagates correctly through ``asyncio.run`` and
+# ``ThreadPoolExecutor.submit`` — the extraction cascade is synchronous
+# today, but the pipeline wraps it in various concurrency primitives
+# downstream and we want clean inheritance semantics.
+#
+# Set via ``signed_url_ctx.set(url)`` from the handoff entry point in
+# ``cli_review.py`` and the Modal worker in ``deploy/modal_worker.py``
+# — both reset the token in a ``finally`` block so the override never
+# leaks past the extraction call. Default ``None`` means "use the
+# inline base64 path", which is what the standalone ``coarse-review
+# paper.pdf`` CLI and any third-party caller get. See the docstring on
+# ``_extract_openrouter_file_parser`` for the full story.
+signed_url_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "coarse_openrouter_signed_url",
+    default=None,
+)
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"Bearer\s+\S+", re.IGNORECASE), "Bearer [key]"),
@@ -331,7 +353,34 @@ def _parse_openrouter_ocr_response(resp: "requests.Response") -> str:  # noqa: F
 
 
 def _extract_openrouter_file_parser(path: Path, engine: str) -> str:
-    """Extract PDF text via OpenRouter's file-parser plugin."""
+    """Extract PDF text via OpenRouter's file-parser plugin.
+
+    By default sends the file inline as a base64 ``data:`` URI. When a
+    caller has set ``signed_url_ctx`` to a fetchable HTTPS URL (the
+    handoff flow and the Modal worker both do this), sends the URL
+    instead so OpenRouter fetches the PDF server-side and hands it to
+    the backend engine without ever materialising the base64 blob in
+    the request body.
+
+    **Why**: OpenRouter's inline base64 path has an effective request-
+    body size limit (reported ~8-16 MB depending on their Cloudflare
+    Workers configuration). A 20 MB PDF base64-encodes to ~27 MB of
+    JSON which gets rejected with a generic HTTP 400 before Mistral
+    OCR ever sees the file. Mistral OCR's own limits are 50 MB and
+    ~1000 pages, far higher than what fits through inline base64.
+    Passing a signed URL bypasses the request-body limit entirely and
+    scales up to Mistral's real ceiling.
+
+    The signed URL must stay valid for the entire retry window of
+    ``_post_openrouter_ocr`` (~5-10 minutes wall-clock at 9 attempts
+    with exponential backoff). Handoff signed URLs live 3 hours and
+    Modal-minted URLs are 15 minutes below, so both cover the window
+    with plenty of headroom.
+
+    The base64 fallback stays for the standalone CLI path (local PDF
+    with no public URL) and for any call site that simply doesn't set
+    the contextvar.
+    """
     import base64
 
     from coarse.config import resolve_api_key
@@ -349,8 +398,17 @@ def _extract_openrouter_file_parser(path: Path, engine: str) -> str:
             f"Maximum supported size is {MAX_FILE_SIZE / 1024 / 1024:.0f} MB."
         )
 
-    with open(path, "rb") as f:
-        pdf_b64 = base64.b64encode(f.read()).decode()
+    signed_url = signed_url_ctx.get()
+    if signed_url:
+        # URL mode: hand OpenRouter a direct fetchable URL and let its
+        # server side pull the bytes. No base64 blob in the request body.
+        file_data = signed_url
+    else:
+        # Fallback: inline base64 (subject to OpenRouter's request-body
+        # size limit — ~8-16 MB effective cap in practice).
+        with open(path, "rb") as f:
+            pdf_b64 = base64.b64encode(f.read()).decode()
+        file_data = f"data:application/pdf;base64,{pdf_b64}"
 
     resp = _post_openrouter_ocr(
         url="https://openrouter.ai/api/v1/chat/completions",
@@ -369,7 +427,7 @@ def _extract_openrouter_file_parser(path: Path, engine: str) -> str:
                             "type": "file",
                             "file": {
                                 "filename": path.name,
-                                "file_data": f"data:application/pdf;base64,{pdf_b64}",
+                                "file_data": file_data,
                             },
                         },
                     ],
