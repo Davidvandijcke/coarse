@@ -84,14 +84,34 @@ def save_config(config: CoarseConfig) -> None:
     """Serialize config to ~/.coarse/config.toml, creating the directory if needed."""
     path = get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.parent.chmod(0o700)
+    except OSError:
+        pass
     data = config.model_dump()
     # Strip None api_key values
     data["api_keys"] = {k: v for k, v in data["api_keys"].items() if v is not None}
-    with open(path, "wb") as f:
-        f.write(tomli_w.dumps(data).encode())
-    # Restrict permissions: only owner can read/write API keys
-    path.chmod(0o600)
-    path.parent.chmod(0o700)
+    payload = tomli_w.dumps(data).encode()
+    # Create the file with 0o600 from the start so API keys never exist on
+    # disk under the umask-default mode — closes a TOCTOU window where a
+    # co-tenant UID could open the new file for reading before chmod lands.
+    # On Windows, os.open ignores the permission bits; fall back to the
+    # chmod-after-write pattern which is the best the OS will give us.
+    if os.name == "nt":
+        with open(path, "wb") as f:
+            f.write(payload)
+    else:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+        except OSError:
+            pass
+        with os.fdopen(fd, "wb") as f:
+            f.write(payload)
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def _normalize_provider(provider: str) -> str:

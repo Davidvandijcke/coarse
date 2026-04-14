@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 
 from coarse.types import PaperText
@@ -40,12 +41,25 @@ def _save_cache(pdf_path: Path, paper_text: PaperText) -> None:
     if cache.is_symlink():
         logger.warning("Cache path %s is a symlink, refusing to write", cache)
         return
+    payload = paper_text.model_dump_json(indent=None).encode("utf-8")
     try:
-        cache.write_text(
-            paper_text.model_dump_json(indent=None),
-            encoding="utf-8",
-        )
-        cache.chmod(0o600)
+        # Create with 0o600 from the start so the file never exists on disk
+        # under umask-default permissions. Windows ignores the mode bits, so
+        # fall back to a plain write there (no POSIX ACL to worry about).
+        if os.name == "nt":
+            cache.write_bytes(payload)
+        else:
+            fd = os.open(cache, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.fchmod(fd, 0o600)
+            except OSError:
+                pass
+            with os.fdopen(fd, "wb") as f:
+                f.write(payload)
+            try:
+                cache.chmod(0o600)
+            except OSError:
+                pass
         size_kb = cache.stat().st_size / 1024
         logger.info("Saved extraction cache (%.1f KB) to %s", size_kb, cache.name)
     except Exception:
