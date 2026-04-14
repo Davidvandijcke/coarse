@@ -143,6 +143,56 @@ that the CLI handoff can still reach. They still talk to production
 Supabase + Modal. Don't stop here for anything that would mutate DB
 or spawn workers — that's what Tier 1 fixes.
 
+## Cutting a production release (dev -> main)
+
+Every preview-specific config path is **environment-scoped**: the
+repo-owned Basic Auth middleware, the Vercel Deployment Protection
+bypass secret, the preview Supabase URL, and the preview Modal
+environment all check `VERCEL_ENV === "preview"` (web) or live in a
+Modal "preview" environment (worker) before activating. Production
+cold-starts never see any of it.
+
+So "cutting a production release" is just a branch merge plus a
+dashboard audit. There is no code you need to remove, no flag to flip,
+no env var to unset on the repo side.
+
+### Run the release audit
+
+```bash
+make release-audit
+```
+
+This runs `scripts/release_audit.py`, which:
+
+1. **Repo-local check**: greps `web/src` for any `process.env.<VAR>`
+   read of `PREVIEW_BASIC_AUTH_PASSWORD`, `PREVIEW_BASIC_AUTH_USERNAME`,
+   or `VERCEL_AUTOMATION_BYPASS_SECRET` that isn't within 10 lines of
+   a `VERCEL_ENV === "preview"` (or the
+   `warnIfPreviewVarsLeakedIntoProduction` helper) guard. Fails exit 1
+   if a new code path reads a preview-only var without gating. A
+   pytest regression in `tests/test_release_audit.py` pins the same
+   check at CI time so this cannot silently regress between releases.
+2. **Manual checklist**: prints the Vercel / Modal / Supabase
+   dashboard verification steps the operator still needs to run by
+   hand (the script has no credentials for those services). The
+   checklist is the single source of truth for "what has to be true
+   on production before tagging vX.Y.Z".
+
+### Runtime safety net
+
+`web/src/middleware.ts::warnIfPreviewVarsLeakedIntoProduction()`
+runs once per Vercel cold start. If `VERCEL_ENV === "production"` and
+any of the three preview-only vars is set, it logs a loud
+`[release-audit]` `console.error` line to Vercel runtime logs naming
+the leaked var(s). The preview code paths themselves still no-op on
+production (every consumer gates on `VERCEL_ENV === "preview"` first),
+but the warning makes a dashboard misconfiguration visible instead of
+silent. Watch Vercel runtime logs for `[release-audit]` after the
+first production deploy of each release; if the line appears, go
+unset the leaked var in
+**Vercel → Project → Settings → Environment Variables → Production**
+and redeploy.
+
 ## Tier 1 — Isolated preview infra (~2 hours)
 
 ### Step 1.1 — Create the preview Supabase project

@@ -2,7 +2,41 @@ import { NextRequest, NextResponse } from "next/server";
 
 const PREVIEW_BASIC_AUTH_REALM = 'Basic realm="coarse preview", charset="UTF-8"';
 
+// Fires once per cold start, not once per request — `previewBasicAuthConfig`
+// runs inside the middleware hot path, so the guard is cached at module
+// scope to keep request latency unaffected.
+let previewVarsLeakedIntoProdWarned = false;
+
+function warnIfPreviewVarsLeakedIntoProduction(): void {
+  if (previewVarsLeakedIntoProdWarned) return;
+  previewVarsLeakedIntoProdWarned = true;
+  if (process.env.VERCEL_ENV !== "production") return;
+  const leaked: string[] = [];
+  if (process.env.PREVIEW_BASIC_AUTH_PASSWORD?.trim()) {
+    leaked.push("PREVIEW_BASIC_AUTH_PASSWORD");
+  }
+  if (process.env.PREVIEW_BASIC_AUTH_USERNAME?.trim()) {
+    leaked.push("PREVIEW_BASIC_AUTH_USERNAME");
+  }
+  if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim()) {
+    leaked.push("VERCEL_AUTOMATION_BYPASS_SECRET");
+  }
+  if (leaked.length === 0) return;
+  // Loud marker so a release deploy with leaked preview config is
+  // obvious in Vercel runtime logs. These vars are no-ops on
+  // production (every consumer checks `VERCEL_ENV === "preview"`
+  // first), but their presence is a misconfiguration worth alerting
+  // on — they almost always mean a Vercel "Apply to all environments"
+  // toggle got clicked by accident. See deploy/RELEASE_AUDIT.md.
+  console.error(
+    `[release-audit] Preview-only environment variables are set on the production deployment: ${leaked.join(", ")}. ` +
+      `These are no-ops in production code paths but indicate a dashboard misconfiguration. ` +
+      `Audit in Vercel → Project → Settings → Environment Variables and unset them for the Production environment.`,
+  );
+}
+
 function previewBasicAuthConfig() {
+  warnIfPreviewVarsLeakedIntoProduction();
   const password = process.env.PREVIEW_BASIC_AUTH_PASSWORD?.trim();
   if (!password || process.env.VERCEL_ENV !== "preview") {
     return null;
