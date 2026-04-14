@@ -48,8 +48,8 @@ src/coarse/
 ├── __init__.py              # __version__, review_paper()
 ├── __main__.py              # python -m coarse
 ├── cli.py                   # Typer CLI, progress display (rich)
+├── cli_attach.py            # --attach signal-driven wait mode (pidfile + log tail + heartbeat watcher)
 ├── cli_review.py            # Standalone coarse-review CLI for headless local/handoff runs
-├── cli_attach.py            # --attach signal-driven watcher extracted from cli_review
 ├── claude_code_client.py    # Back-compat re-export for headless Claude client helpers
 ├── config.py                # ~/.coarse/config.toml, API key management
 ├── cost.py                  # Cost estimation + user approval gate
@@ -191,7 +191,41 @@ Skipping step 3 leaves PyPI stale no matter how much code lands on `main`. Doing
 
 **Changes outside `src/coarse/`** (web, deploy, .github/workflows, data, output) ship through their own paths and do **not** require a PyPI release. Don't cut a new tag for web-only or deploy-only work; check `git diff vX.Y.Z..main -- src/coarse/` first to see if the package itself actually changed.
 
-See `AGENTS.md` for the parallel preview-environment rules that govern deploy-affecting changes (Vercel preview + Modal preview environment + preview Supabase).
+## Default Deploy Workflow
+
+For any substantial deploy-affecting change, the default path is:
+
+1. Feature branch into `dev`
+2. Preview validation on isolated infra
+3. Release PR `dev` -> `main`
+4. Production deploy from `main`
+
+Concretely:
+
+- Vercel creates preview deployments for non-`main` pushes.
+- `.github/workflows/modal-preview-deploy.yml` deploys both Modal apps
+  from `dev` into the Modal `preview` environment when the change
+  touches deploy-relevant paths; otherwise rerun it manually on `dev`
+  if you need a fresh preview Modal deploy.
+- Preview Vercel env vars point at preview Supabase plus preview Modal
+  URLs (`MODAL_FUNCTION_URL` and `MODAL_EXTRACT_URL`), as documented in
+  `deploy/PREVIEW_ENVIRONMENTS.md`.
+- `.github/workflows/modal-deploy.yml` deploys both Modal apps from
+  `main` to production.
+
+Hard deploy rules:
+
+- Big changes must soak on preview first. This includes schema
+  migrations, worker changes, web API route changes, auth/env changes,
+  and changes under `src/coarse/`, `deploy/`, or `web/src/app/api/`.
+- Do not validate deploy-affecting changes locally against production
+  Supabase when preview exists.
+- Do not manually deploy production Modal from a non-`main` branch.
+- Preview is not green unless both `/api/submit` and `/api/mcp-extract`
+  route to preview Modal, not production.
+- This is a required human release workflow, not a fully repo-enforced
+  gate. The smoke test and backend-isolation check still need to be
+  performed by the operator.
 
 ## Development Rules
 

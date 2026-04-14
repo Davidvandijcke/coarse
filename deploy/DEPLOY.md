@@ -58,22 +58,40 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
 
    **No LLM provider secrets are mounted.** The user's OpenRouter key arrives with each review request and is set into the container's env for the duration of the run, then unset. See `modal_worker.py` for the pattern.
 
-3. Deploy via CI, not manually. The Modal worker is auto-deployed from
-   `main` by `.github/workflows/modal-deploy.yml` on every push that
-   touches `src/coarse/**`, `deploy/modal_worker.py`, `pyproject.toml`,
-   or the workflow file itself. You should almost never run `modal
-   deploy` by hand.
+3. Deploy via CI, not manually. Production Modal deploys are handled by
+   `.github/workflows/modal-deploy.yml` on every push to `main` that
+   touches `src/coarse/**`, `deploy/modal_worker.py`,
+   `deploy/mcp_server.py`, `pyproject.toml`, or the workflow file
+   itself. Preview Modal deploys are handled by
+   `.github/workflows/modal-preview-deploy.yml` on deploy-relevant
+   pushes to `dev` (`src/coarse/**`, the two Modal entrypoints,
+   `pyproject.toml`, or the preview workflow itself). You should almost
+   never run `modal deploy` by hand.
 
-   First-time setup requires two GitHub Actions repo secrets: create a
-   Modal token locally with `modal token new`, then:
-   ```bash
-   gh secret set MODAL_TOKEN_ID --body <id>
-   gh secret set MODAL_TOKEN_SECRET --body <secret>
-   ```
+   First-time production setup requires two GitHub Actions repo
+   secrets: create a Modal token locally, then store `MODAL_TOKEN_ID`
+   and `MODAL_TOKEN_SECRET` in **GitHub → Settings → Secrets and
+   variables → Actions**.
+
+   For preview CI, use a dedicated GitHub Environment named
+   `preview-modal`, not plain repo secrets. Add
+   `PREVIEW_MODAL_TOKEN_ID` and `PREVIEW_MODAL_TOKEN_SECRET` as
+   **environment secrets** there, and protect that environment with
+   whatever reviewers / branch rules you want for preview deploys.
+   The safest setup is a dedicated Modal service user for preview CI;
+   if Modal RBAC is enabled in the workspace, restrict that service
+   user to the Modal `preview` environment only. If you do not have
+   environment-restricted Modal credentials, treat preview CI as
+   convenience automation, not a hard isolation boundary.
 
    After that, every merge to `main` that changes a deploy-relevant
-   file will auto-redeploy. You can also trigger a manual re-run via
-   `gh workflow run modal-deploy.yml` or the GitHub Actions tab.
+   file will auto-redeploy production, and every deploy-relevant push
+   to `dev` will auto-redeploy preview. Web-only or docs-only pushes to
+   `dev` do not redeploy Modal preview unless you manually re-run the
+   workflow. Manual re-runs:
+   - `gh workflow run modal-deploy.yml --ref main`
+   - `gh workflow run modal-preview-deploy.yml --ref dev`
+   - or use the GitHub Actions tab
 
    **Emergency manual deploy** (only when `main` is broken and you
    need to ship a hotfix from a branch; use sparingly):
@@ -81,11 +99,12 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
    COARSE_MODAL_DEPLOY_FORCE=1 modal deploy deploy/modal_worker.py
    ```
    Without the `COARSE_MODAL_DEPLOY_FORCE=1` env var, the import-time
-   guard in `deploy/modal_worker.py::_enforce_deploy_branch()` refuses
-   to deploy from any branch other than `main`. This guard exists
-   because on 2026-04-13 a `modal deploy` from a `dev` checkout
-   shipped resurrected cheap-tier stage routing plus an api-key race
-   to production, breaking every review for hours.
+   guard in `deploy/modal_worker.py::_enforce_deploy_branch()` and
+   `deploy/mcp_server.py::_enforce_deploy_branch()` refuses to deploy
+   from any branch other than `main`. This guard exists because on
+   2026-04-13 a `modal deploy` from a `dev` checkout shipped
+   resurrected cheap-tier stage routing plus an api-key race to
+   production, breaking every review for hours.
 
 4. Copy the webhook URL from the output (visible in the Actions run
    logs, or on the Modal dashboard). It looks like:
@@ -132,7 +151,34 @@ https://<your-org>--coarse-mcp-run-extract.modal.run
 
 3. Deploy. The site will be live at `https://coarse.ink` (or your Vercel preview URL during development).
 
-For an isolated preview setup, see [deploy/PREVIEW_ENVIRONMENTS.md](/Users/davidvandijcke/University%20of%20Michigan%20Dropbox/David%20Van%20Dijcke/coarse/deploy/PREVIEW_ENVIRONMENTS.md).
+For an isolated preview setup, see [deploy/PREVIEW_ENVIRONMENTS.md](PREVIEW_ENVIRONMENTS.md).
+
+Default rollout for substantial changes:
+
+1. Merge the change into `dev`
+2. Open the Vercel preview deployment for the latest `dev` commit
+3. On the preview website, run both user flows:
+   - upload a small paper and click `Submit`
+   - upload a small paper and click `Review with my subscription`
+4. Confirm preview Supabase + preview Modal are the only backends
+   touched
+5. Merge `dev` into `main`
+6. Let production CI deploy from `main`
+
+Preview website signoff checklist:
+
+1. Wait for Vercel preview creation for the latest `dev` commit
+2. If the change touched `src/coarse/**`, `deploy/modal_worker.py`,
+   `deploy/mcp_server.py`, `pyproject.toml`, or the preview workflow,
+   also wait for `.github/workflows/modal-preview-deploy.yml` to finish
+   or manually re-run it with `gh workflow run modal-preview-deploy.yml --ref dev`
+3. Open the preview URL from the `dev` commit / PR checks
+4. Log in through Vercel Authentication if prompted
+5. Verify the upload succeeds, the status page loads, and the MCP
+   handoff UI still works
+6. Verify `coarse-review` and `coarse-mcp` invocations appear only in
+   the Modal `preview` environment
+7. Verify new rows land only in preview Supabase
 
 ---
 

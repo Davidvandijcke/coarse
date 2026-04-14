@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import base64
 import json
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -195,6 +196,75 @@ def test_scoped_openrouter_key_serializes_concurrent_calls(monkeypatch):
 
     assert seen == [("worker_one", "key-1"), ("worker_two", "key-2")]
     assert "OPENROUTER_API_KEY" not in __import__("os").environ
+
+
+# ---------------------------------------------------------------------------
+# Deploy-branch guard
+# ---------------------------------------------------------------------------
+
+
+def test_enforce_deploy_branch_ci_main_passes(monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_REF_NAME", "main")
+    monkeypatch.delenv("COARSE_MODAL_DEPLOY_FORCE", raising=False)
+
+    mcp_server._enforce_deploy_branch()
+
+
+def test_enforce_deploy_branch_ci_non_main_raises(monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_REF_NAME", "dev")
+    monkeypatch.delenv("COARSE_MODAL_DEPLOY_FORCE", raising=False)
+
+    with pytest.raises(RuntimeError, match="Refusing to deploy Modal MCP server from branch 'dev'"):
+        mcp_server._enforce_deploy_branch()
+
+
+def test_enforce_deploy_branch_local_main_passes(monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("COARSE_MODAL_DEPLOY_FORCE", raising=False)
+    monkeypatch.setattr("subprocess.check_output", lambda *a, **kw: "main\n")
+
+    mcp_server._enforce_deploy_branch()
+
+
+def test_enforce_deploy_branch_local_non_main_raises(monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("COARSE_MODAL_DEPLOY_FORCE", raising=False)
+    monkeypatch.setattr("subprocess.check_output", lambda *a, **kw: "feat/preview\n")
+
+    with pytest.raises(
+        RuntimeError,
+        match="Refusing to deploy Modal MCP server from branch 'feat/preview'",
+    ):
+        mcp_server._enforce_deploy_branch()
+
+
+def test_enforce_deploy_branch_local_non_main_force_warns(monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("COARSE_MODAL_DEPLOY_FORCE", "1")
+    monkeypatch.setattr("subprocess.check_output", lambda *a, **kw: "dev\n")
+
+    mcp_server._enforce_deploy_branch()
+
+    assert "COARSE_MODAL_DEPLOY_FORCE=1" in capsys.readouterr().err
+
+
+def test_enforce_deploy_branch_git_failure_falls_through(monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("COARSE_MODAL_DEPLOY_FORCE", raising=False)
+
+    def _boom(*_a, **_kw):
+        raise subprocess.CalledProcessError(128, "git")
+
+    monkeypatch.setattr("subprocess.check_output", _boom)
+
+    mcp_server._enforce_deploy_branch()
+
+
+def test_enforce_deploy_branch_import_time_short_circuits_under_pytest():
+    assert "pytest" in sys.modules
+    mcp_server._enforce_deploy_branch_at_import_time()
 
 
 # ---------------------------------------------------------------------------

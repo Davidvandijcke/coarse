@@ -1,6 +1,8 @@
 # Preview environment setup — Tier 0 + Tier 1
 
-**Status:** planned, not yet implemented. Pick up in a fresh Claude Code session using this file as the brief.
+**Status:** repo-side automation/docs are in place; the external Vercel,
+Supabase, Modal, and GitHub environment setup still needs to be done by
+an operator. Use this file as the runbook.
 
 **Goal:** test `dev`-branch changes against a **fully isolated** preview
 stack (Vercel preview deployment + preview Supabase + preview Modal
@@ -11,7 +13,7 @@ locally against production Supabase, running `migrate_mcp_handoff.sql`
 against the real prod DB because there was no preview to test it on —
 should no longer happen.
 
-## Why this exists (context for the next session)
+## Why this exists
 
 During the 2026-04-13 session where `dev` was brought up to date with
 `main` (Resend migration, Cloudflare Turnstile, the web hardening
@@ -33,10 +35,9 @@ commits) we discovered that:
    flow, and only then roll to prod.
 
 Tier 0 + Tier 1 closes this gap. After this lands, the workflow for
-any future schema change becomes: push to a branch → Vercel auto-deploys
-a preview → the preview env vars point at the preview Supabase →
-migrations run on preview first → verify → *then* apply to prod as
-part of the release PR.
+any future schema change becomes: merge to `dev` → validate against the
+preview deployment for the latest `dev` commit → *then* roll to
+production as part of the release PR.
 
 ## The three tiers recap
 
@@ -77,10 +78,11 @@ You'll need (or need to create):
 - [ ] A second Resend API key (optional — you can also just leave
   `RESEND_API_KEY` unset in Preview so emails silently no-op, which
   matches the dev-loop behavior).
-- [ ] GitHub repo admin access to add a new `secrets` → `MODAL_TOKEN_ID_PREVIEW`
-  and `MODAL_TOKEN_SECRET_PREVIEW` pair (if you want the preview Modal
-  environment deployed via CI; see step 1.5 below for the alternative of
-  deploying from a local checkout).
+- [ ] GitHub repo admin access to create a protected GitHub Environment
+  named `preview-modal` and add `PREVIEW_MODAL_TOKEN_ID` plus
+  `PREVIEW_MODAL_TOKEN_SECRET` as environment secrets. The
+  `.github/workflows/modal-preview-deploy.yml` workflow uses them to
+  deploy preview Modal from `dev`.
 - [ ] An extra ~2 hours of focused time. Most of the work is dashboard
   navigation and env-var management; there's very little code.
 
@@ -173,7 +175,7 @@ point.
 Verify in **Storage → Buckets** that `papers` exists and is private.
 If it doesn't, run the line manually.
 
-### Step 1.4 — Create the preview Modal environment and deploy both apps
+### Step 1.4 — Create the preview Modal environment
 
 Open a terminal in the main `coarse` checkout.
 
@@ -184,23 +186,7 @@ git pull
 
 # One-time: create a non-default Modal environment named "preview"
 # in the Modal dashboard or CLI.
-
-# Deploy the OpenRouter review worker into the preview environment.
-COARSE_MODAL_DEPLOY_FORCE=1 modal deploy -e preview deploy/modal_worker.py
-
-# Deploy the MCP server + extract worker into the same preview environment.
-modal deploy -e preview deploy/mcp_server.py
-
-# Save these two URLs from the deploy output (or Modal dashboard):
-#   https://<workspace>-preview--coarse-review-run-review.modal.run
-#   https://<workspace>-preview--coarse-mcp-run-extract.modal.run
 ```
-
-**Important:** the `_enforce_deploy_branch` guard in
-`deploy/modal_worker.py` refuses to deploy from a non-`main` branch
-unless `COARSE_MODAL_DEPLOY_FORCE=1` is set. For preview review-worker
-deploys, set that env var on every local deploy, since you WILL be
-deploying dev-branch code.
 
 Why Modal **environment** instead of preview-named apps:
 
@@ -213,8 +199,10 @@ Why Modal **environment** instead of preview-named apps:
   `--coarse-mcp-run-extract.modal.run`), so Modal's environment prefix
   (`<workspace>-preview--...`) works without any preview-specific
   special case.
+- The repo automation maps cleanly onto it: `dev` -> preview
+  environment, `main` -> production/default environment.
 
-### Step 1.5 — Create the preview Modal secrets
+### Step 1.5 — Create the preview Modal + GitHub preview-deploy secrets
 
 The production Modal apps already use these secret names:
 
@@ -237,12 +225,51 @@ should use the **same names** with **preview values**.
    silently no-op emails, which is usually fine)
    - `RESEND_API_KEY` → create a separate Resend key scoped to a
      preview sending domain, or skip entirely
+   - `SITE_URL` → the preview website URL users should land on if a
+     preview email link is clicked
+
+**GitHub → Settings → Environments → `preview-modal`**
+
+- Restrict deployments to the `dev` branch.
+- Add environment secrets:
+  - `PREVIEW_MODAL_TOKEN_ID`
+  - `PREVIEW_MODAL_TOKEN_SECRET`
+- Prefer a dedicated Modal service user for these credentials. If
+  Modal RBAC is enabled in the workspace, restrict that service user to
+  the Modal `preview` environment only. Without environment-restricted
+  Modal credentials, preview CI is still useful but is not a hard
+  production-isolation boundary.
 
 Important: `coarse-mcp`'s `run_extract` function also uses
 `coarse-supabase` + `coarse-webhook`. Preview is not isolated unless
 both the review worker and the MCP extract worker see preview secrets.
 
-### Step 1.6 — Scope Vercel env vars to Preview
+### Step 1.6 — Deploy both preview Modal apps
+
+If the preview workflow is configured correctly, you should almost never
+need to run these commands manually after initial setup; deploy-relevant
+pushes to `dev` will refresh preview automatically. For web-only,
+docs-only, or env-only changes, rerun the workflow manually with
+`gh workflow run modal-preview-deploy.yml --ref dev` if you need a fresh
+preview Modal deploy.
+
+```bash
+# Deploy the OpenRouter review worker into the preview environment.
+COARSE_MODAL_DEPLOY_FORCE=1 modal deploy -e preview deploy/modal_worker.py
+
+# Deploy the MCP server + extract worker into the same preview environment.
+COARSE_MODAL_DEPLOY_FORCE=1 modal deploy -e preview deploy/mcp_server.py
+
+# Save these two URLs from the deploy output (or Modal dashboard):
+#   https://<workspace>-preview--coarse-review-run-review.modal.run
+#   https://<workspace>-preview--coarse-mcp-run-extract.modal.run
+```
+
+Both `deploy/modal_worker.py` and `deploy/mcp_server.py` now refuse
+local non-`main` deploys unless `COARSE_MODAL_DEPLOY_FORCE=1` is set.
+Preview deploys are the intended non-`main` exception.
+
+### Step 1.7 — Scope Vercel env vars to Preview
 
 **Vercel dashboard → coarse → Settings → Environment Variables**
 
@@ -250,15 +277,15 @@ For each env var below, click **Add** (or Edit the existing var) and
 set **Environment** to `Preview` only, leaving `Production` with the
 current value untouched. If Vercel's branch-specific preview vars are
 available in the UI, scope these to the `dev` branch instead of all
-preview branches. Use the preview values from steps 1.1–1.5:
+preview branches. Use the preview values from steps 1.1–1.6:
 
 | Variable                        | Preview value                                        |
 |---------------------------------|------------------------------------------------------|
 | `NEXT_PUBLIC_SUPABASE_URL`      | preview Supabase URL                                 |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | preview Supabase anon key                            |
 | `SUPABASE_SERVICE_KEY`          | preview Supabase service key                         |
-| `MODAL_FUNCTION_URL`            | preview Modal function URL from step 1.4             |
-| `MODAL_EXTRACT_URL`             | preview MCP extract URL from step 1.4                |
+| `MODAL_FUNCTION_URL`            | preview Modal function URL from step 1.6             |
+| `MODAL_EXTRACT_URL`             | preview MCP extract URL from step 1.6                |
 | `MODAL_WEBHOOK_SECRET`          | preview webhook secret from `coarse-webhook`         |
 | `NEXT_PUBLIC_SITE_URL`          | `https://coarse-git-dev-<team>.vercel.app` (or the stable alias after Tier 2) |
 | `NEXT_PUBLIC_MCP_SERVER_URL`    | preview MCP URL (`https://<workspace>-preview--coarse-mcp-asgi.modal.run/mcp/`) |
@@ -287,7 +314,7 @@ verify the build picks up the new values. In the Vercel deployment
 logs, look for the `Environments: .env.local` line and confirm no
 build errors from missing env vars.
 
-### Step 1.7 — Verify both web routes point only at Modal preview endpoints
+### Step 1.8 — Verify both web routes point only at Modal preview endpoints
 
 There are two web→Modal paths that must be isolated:
 
@@ -305,7 +332,7 @@ pass without needing preview-specific app names.
 Before you smoke-test preview, confirm the deployed `dev` branch
 includes those validations.
 
-### Step 1.8 — End-to-end smoke test on preview
+### Step 1.9 — End-to-end smoke test on preview
 
 With everything wired up, open the preview deployment URL in a
 browser. It should ask for Vercel login (from Tier 0). After login:
@@ -324,18 +351,53 @@ browser. It should ask for Vercel login (from Tier 0). After login:
    show zero new invocations.
 
 If any of the above lights up production infra, stop and
-re-check the env-var scoping in step 1.6. This is the scenario
+re-check the env-var scoping in step 1.7. This is the scenario
 Tier 1 exists to prevent.
 
-### Step 1.9 — Document + commit
+## Using the preview website
+
+Once Tier 1 is set up, this is the default human workflow for validating
+big changes before they touch production:
+
+1. Merge the change into `dev`.
+2. Wait for:
+   - Vercel to create a fresh preview deployment for the latest `dev`
+     commit
+   - `.github/workflows/modal-preview-deploy.yml` to finish if the
+     change touched `src/coarse/**`, `deploy/modal_worker.py`,
+     `deploy/mcp_server.py`, `pyproject.toml`, or the preview workflow
+     itself
+3. Open the Vercel preview URL for that `dev` commit from the GitHub
+   commit / PR checks.
+4. Log in through Vercel Authentication if prompted.
+5. On the site, run both user flows:
+   - **OpenRouter flow**: upload a small paper and click **Submit**
+   - **Subscription flow**: upload a small paper and click
+     **Review with my subscription**
+6. Confirm the visible behavior is correct:
+   - upload succeeds
+   - status page loads
+   - no obvious frontend/runtime errors
+   - MCP handoff modal / buttons still work
+7. Confirm the backend isolation is correct:
+   - rows land in preview Supabase, not production
+   - `coarse-review` invocations land in preview Modal, not production
+   - `coarse-mcp` extraction invocations land in preview Modal, not production
+
+Treat the preview website as the pre-prod signoff surface. If a change
+touches schema, web API routes, Modal workers, auth, or env wiring, it
+is not ready for `main` until it passes on the preview site first.
+
+### Step 1.10 — Document + commit
 
 Add a short section to `deploy/DEPLOY.md` pointing at this file and
 explaining the preview flow. Update `CHANGELOG.md` under
 `## Unreleased` → `### Added`:
 
 > **Preview deployment environment** — `dev`-branch pushes now
-> auto-deploy to a Vercel preview URL backed by an isolated Supabase
-> project (`coarse-preview`) and a preview Modal environment containing
+> auto-create a Vercel preview URL, and deploy-relevant `dev` pushes now
+> refresh the preview Modal apps backed by an isolated Supabase project
+> (`coarse-preview`) plus a preview Modal environment containing
 > `coarse-review` + `coarse-mcp`. Migrations can be validated on preview
 > before rolling to production. See `deploy/PREVIEW_ENVIRONMENTS.md`
 > for the setup contract.
@@ -346,8 +408,7 @@ Commit as `chore(deploy): set up Tier 0 + Tier 1 preview environment`.
 
 You're done with Tier 0 + Tier 1 when all of the following are true:
 
-- [ ] A fresh push to any non-main branch auto-creates a Vercel preview
-  URL.
+- [ ] A fresh push to `dev` auto-creates a Vercel preview URL.
 - [ ] That URL requires a Vercel login to view (Tier 0).
 - [ ] A submission on the preview URL creates rows in the preview
   Supabase project, not production.
@@ -375,7 +436,7 @@ If anything breaks production during Tier 1 setup:
    deploy/modal_worker.py` from a clean checkout. If you also touched
    `deploy/mcp_server.py`, redeploy that too. The
    `.github/workflows/modal-deploy.yml` auto-deploy from main will also
-   recover `coarse-review` on the next push to main.
+   recover both apps on the next deploy-relevant push to main.
 3. **Schema migration applied to wrong DB** — the migrations in
    `deploy/*.sql` are all idempotent additive changes. No rollback
    path is usually needed; they don't drop tables or columns. If
@@ -401,15 +462,16 @@ without touching `coarse.ink`.
 - **Automated migration runner** for preview. For now, schema changes
   to preview Supabase are applied manually via the SQL editor. A
   future improvement is a GitHub Action that runs `deploy/*.sql`
-  files against the preview project on every push to dev.
+  files against the preview project on every deploy-relevant push to
+  `dev`.
 - **Per-PR ephemeral Supabase projects.** Supabase Branching (Pro plan)
   does this automatically. Not doing it manually — Tier 1's single
   long-lived preview project is good enough.
 
-## Notes for the next Claude Code session
+## Operator notes
 
-- **You're picking up a plan, not an in-progress implementation.**
-  Nothing has been started. Read this file, then start at step 0.1.
+- **Repo-side pieces are already in place.** What remains is the
+  dashboard/secret/environment setup described above.
 - **The user's `.env.local` currently points at production Supabase.**
   After Tier 1 you might want to also swap local dev to preview by
   editing `web/.env.local` — but that's optional and outside this
@@ -420,12 +482,12 @@ without touching `coarse.ink`.
   to `coarse-ink[mcp]==1.3.0` on the next release). Tier 0 + Tier 1
   does not touch those; the two are independent.
 - **Every `deploy/modal_worker.py` deploy from a non-main branch
-  requires `COARSE_MODAL_DEPLOY_FORCE=1`** to bypass
-  `_enforce_deploy_branch`. You will be deploying dev-branch code to
-  the preview Modal environment, so this env var is needed on every
-  local preview review-worker deploy.
+  and `deploy/mcp_server.py` deploy from a non-main branch requires
+  `COARSE_MODAL_DEPLOY_FORCE=1`** to bypass `_enforce_deploy_branch`.
+  You will be deploying dev-branch code to the preview Modal
+  environment, so this env var is needed on every local preview deploy.
 - **Do not run any `coarse-review` CLI flow against the preview
-  infrastructure until step 1.8.** The CLI writes to real Supabase via
+  infrastructure until after step 1.7.** The CLI writes to real Supabase via
   the configured env vars; make sure those env vars are scoped first.
 - **When in doubt, verify in the Supabase dashboard.** The production
   project ID is `dgibkmnyiusglhdgzffk`. Any sign that preview traffic

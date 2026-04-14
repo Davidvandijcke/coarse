@@ -96,9 +96,8 @@ jobs:
           if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
             echo "::error::MODAL_TOKEN_ID and MODAL_TOKEN_SECRET must be set as repo secrets."
             echo ""
-            echo "Create a Modal token with 'modal token new' locally, then:"
-            echo "  gh secret set MODAL_TOKEN_ID --body <id>"
-            echo "  gh secret set MODAL_TOKEN_SECRET --body <secret>"
+            echo "Create a Modal token locally, then add both values in"
+            echo "GitHub -> Settings -> Secrets and variables -> Actions."
             exit 1
           fi
 

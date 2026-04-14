@@ -1,0 +1,77 @@
+name: deploy-modal-preview
+
+# Auto-deploy both Modal apps into the dedicated preview environment on
+# deploy-relevant `dev` pushes. This keeps the `dev` preview frontend
+# wired to matching preview `coarse-review` + `coarse-mcp` backends
+# instead of production Modal.
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/coarse/**'
+      - 'deploy/modal_worker.py'
+      - 'deploy/mcp_server.py'
+      - 'pyproject.toml'
+      - '.github/workflows/modal-preview-deploy.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: modal-preview-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/dev'
+    environment: preview-modal
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.PREVIEW_MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.PREVIEW_MODAL_TOKEN_SECRET }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: coarse-review
+            path: deploy/modal_worker.py
+            needs_force: true
+          - label: coarse-mcp
+            path: deploy/mcp_server.py
+            needs_force: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deploy-time dependencies
+        run: pip install 'modal>=0.68' 'fastapi[standard]>=0.115' 'pydantic>=2.0' 'fastmcp>=2.10'
+
+      - name: Validate preview Modal credentials
+        run: |
+          if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
+            echo "::error::PREVIEW_MODAL_TOKEN_ID and PREVIEW_MODAL_TOKEN_SECRET must be set as GitHub Environment secrets on preview-modal."
+            echo ""
+            echo "Use a dedicated Modal service user for preview CI."
+            echo "If Modal RBAC is enabled, restrict it to the preview environment only."
+            echo "Then add the token as environment secrets on the preview-modal environment."
+            exit 1
+          fi
+
+      - name: Deploy ${{ matrix.label }} to preview
+        run: |
+          if [ "${{ matrix.needs_force }}" = "true" ]; then
+            COARSE_MODAL_DEPLOY_FORCE=1 modal deploy -e preview "${{ matrix.path }}"
+          else
+            modal deploy -e preview "${{ matrix.path }}"
+          fi

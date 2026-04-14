@@ -72,6 +72,8 @@ import json
 import logging
 import os
 import re
+import subprocess
+import sys
 import tempfile
 import threading
 import uuid
@@ -82,6 +84,81 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# ---------------------------------------------------------------------------
+# Deploy-branch guardrail (mirror of deploy/modal_worker.py, but with a
+# local-dev short-circuit because this file is also the supported
+# `uv run python deploy/mcp_server.py` entrypoint).
+#
+# Production MCP deploys must come from `main` via CI, not from an
+# arbitrary local checkout. Preview deploys are the only supported
+# non-main exception and must set COARSE_MODAL_DEPLOY_FORCE=1.
+# ---------------------------------------------------------------------------
+
+
+def _enforce_deploy_branch() -> None:
+    """Refuse to deploy the Modal MCP server from a non-main branch."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        branch = os.environ.get("GITHUB_REF_NAME", "")
+    else:
+        try:
+            branch = subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=Path(__file__).resolve().parent,
+                text=True,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            ).strip()
+        except (
+            subprocess.CalledProcessError,
+            FileNotFoundError,
+            OSError,
+            subprocess.TimeoutExpired,
+        ):
+            return
+
+    if branch == "main":
+        return
+
+    if os.environ.get("COARSE_MODAL_DEPLOY_FORCE") == "1":
+        print(
+            f"⚠️  WARNING: deploying Modal MCP server from non-main branch "
+            f"{branch!r} (COARSE_MODAL_DEPLOY_FORCE=1 is set).",
+            file=sys.stderr,
+        )
+        return
+
+    raise RuntimeError(
+        f"\n"
+        f"❌ Refusing to deploy Modal MCP server from branch {branch!r}.\n"
+        f"\n"
+        f"   Modal is auto-deployed from `main` via the\n"
+        f"   .github/workflows/modal-deploy.yml workflow on every push.\n"
+        f"\n"
+        f"   Normal path: land your change on `main` (via a release PR\n"
+        f"   from `dev`, or a cherry-picked hotfix) and let CI deploy.\n"
+        f"\n"
+        f"   Preview/manual non-main deploy:\n"
+        f"     COARSE_MODAL_DEPLOY_FORCE=1 modal deploy -e preview "
+        f"deploy/mcp_server.py\n"
+    )
+
+
+def _enforce_deploy_branch_at_import_time() -> None:
+    """Run the deploy guard only in deploy/import contexts."""
+    if __name__ == "__main__":
+        return
+    if "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ:
+        return
+    try:
+        if not modal.is_local():
+            return
+    except Exception:
+        pass
+    _enforce_deploy_branch()
+
+
+_enforce_deploy_branch_at_import_time()
 
 
 # ---------------------------------------------------------------------------

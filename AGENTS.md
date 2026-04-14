@@ -6,10 +6,12 @@ production branch.
 For any substantial deploy-affecting change, the default workflow is:
 
 1. Land the change on a feature branch into `dev`.
-2. Let Vercel create a preview deployment for that branch.
+2. Use the Vercel preview deployment for the latest `dev` commit as the
+   signoff site.
 3. Let `.github/workflows/modal-preview-deploy.yml` deploy both Modal
    apps (`deploy/modal_worker.py` and `deploy/mcp_server.py`) into the
-   Modal `preview` environment from `dev`.
+   Modal `preview` environment from `dev` when the change touches
+   deploy-relevant paths, or rerun it manually on `dev` if needed.
 4. Validate the change against preview Vercel + preview Supabase +
    preview Modal before touching `main`.
 5. Merge `dev` to `main` only after preview passes.
@@ -24,6 +26,8 @@ Hard rules:
 - Treat preview as the mandatory soak environment for any big update
   that touches `src/coarse/`, `deploy/`, web API routes, database
   schema, or deployment config.
+- Treat this as a required human release discipline. The repo does not
+  currently auto-prove that the preview smoke test happened.
 
 ## PyPI publishing is tag-driven, NOT main-merge-driven
 
@@ -63,6 +67,6 @@ itself actually changed.
 
 Primary operator docs:
 
-- [deploy/PREVIEW_ENVIRONMENTS.md](/Users/davidvandijcke/University%20of%20Michigan%20Dropbox/David%20Van%20Dijcke/coarse/deploy/PREVIEW_ENVIRONMENTS.md)
-- [deploy/DEPLOY.md](/Users/davidvandijcke/University%20of%20Michigan%20Dropbox/David%20Van%20Dijcke/coarse/deploy/DEPLOY.md)
-- [CLAUDE.md](/Users/davidvandijcke/University%20of%20Michigan%20Dropbox/David%20Van%20Dijcke/coarse/CLAUDE.md) — full project overview, pipeline, package structure, git workflow
+- [deploy/PREVIEW_ENVIRONMENTS.md](deploy/PREVIEW_ENVIRONMENTS.md)
+- [deploy/DEPLOY.md](deploy/DEPLOY.md)
+- [CLAUDE.md](CLAUDE.md) — full project overview, pipeline, package structure, git workflow
