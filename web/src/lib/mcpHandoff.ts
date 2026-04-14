@@ -158,13 +158,22 @@ export const HOST_LAUNCH_HINT: Record<ChatHost, string> = {
  * the same terminal don't clobber each other and so the agent can
  * correlate a tail/rg invocation to a specific review. Derived from
  * the paper UUID by buildCliCommands.
+ *
+ * ``attachCmd`` is the new signal-driven wait command (``coarse-review
+ * --attach <logFile>``) that replaces the old per-60s-tail polling
+ * loop. It blocks in a single Bash invocation until the detached
+ * review exits, streaming the log and emitting heartbeats every 30s
+ * so Claude Code's Bash tool sees stdout activity. One agent-visible
+ * Bash call covers the full 10-25min wait instead of 10-25 separate
+ * per-poll approval prompts.
  */
 export function buildAgentPrompt(args: {
   setupCmd: string;
   runCmd: string;
+  attachCmd: string;
   logFile: string;
 }): string {
-  const { setupCmd, runCmd, logFile } = args;
+  const { setupCmd, runCmd, attachCmd, logFile } = args;
   const configCmd = setupCmd.replace("coarse install-skills --all --force", "coarse setup");
   return (
     `Please review an academic paper for me using the coarse-review skill. ` +
@@ -206,43 +215,64 @@ export function buildAgentPrompt(args: {
     `If I paste a key (it should start with sk-or-), save it to ` +
     `~/.coarse/config.toml via \`${configCmd}\` unless I explicitly ask ` +
     `for project-local .env storage.\n\n` +
-    `STEP 3 — Run the EXACT command below, verbatim, in the background. ` +
-    `Do not substitute, rewrite, or interpret any argument. Every piece ` +
-    `of this command is already filled in — there is no placeholder for ` +
-    `you to resolve. The \`--handoff\` URL is the paper source; ` +
-    `coarse-review downloads the PDF from that URL over the network at ` +
-    `the start of the pipeline. You do NOT need to, and MUST NOT, search ` +
-    `the filesystem (no \`find\`, no \`glob\`, no \`ls /tmp\`, no ` +
-    `\`FindFiles\`) for the paper before running it. You do NOT need to ` +
-    `ask me for a paper path — everything needed is already in the command.\n\n` +
-    `The review takes 10-25 minutes, which exceeds most agent tool ` +
-    `timeouts, so coarse-review's built-in \`--detach\` flag backgrounds ` +
-    `it and returns immediately with the Review PID. Run this:\n\n` +
+    `STEP 3 — Launch the detached review. Run the EXACT command below, ` +
+    `verbatim. Do not substitute, rewrite, or interpret any argument — ` +
+    `every piece is already filled in. The \`--handoff\` URL is the ` +
+    `paper source; coarse-review downloads the paper from that URL ` +
+    `over the network at the start of the pipeline. You do NOT need ` +
+    `to, and MUST NOT, search the filesystem (no \`find\`, no ` +
+    `\`glob\`, no \`ls /tmp\`, no \`FindFiles\`) for a local paper, ` +
+    `and you do NOT need to ask me for a paper path. This command ` +
+    `returns immediately (within 2 seconds) after printing ` +
+    `\`Review PID: <N>\` and \`Log file: ${logFile}\`. Run it:\n\n` +
     `  ${runCmd}\n\n` +
-    `The command writes all output to \`${logFile}\` — a per-review ` +
-    `unique path so parallel reviews in the same shell don't clobber ` +
-    `each other's logs. Poll that exact path every 60-90 seconds with ` +
-    `\`tail -20 ${logFile}\` to check progress. Do NOT re-run the ` +
-    `command in the foreground. Do NOT kill the process because you ` +
-    `think it hung — the review takes a genuine 10-25 minutes end-to-end.\n\n` +
-    `STEP 4 — When the run finishes, use ONLY the final log lines to ` +
-    `locate the artifacts. Do NOT do a broad filesystem search. Run ` +
-    `\`rg '^  view:|^  local:' ${logFile}\`. The \`local:\` line is ` +
-    `the exact markdown path written by coarse-review, even when uvx ` +
-    `runs from a temporary directory. If \`local:\` is present, read ` +
-    `that file directly. If \`view:\` is present, use that as the ` +
-    `canonical web URL (it already includes the signed access token). ` +
-    `If the log says \`view: unavailable\`, report that the web ` +
-    `callback failed and use only the \`local:\` path. Do NOT try to ` +
-    `discover another web URL. Do NOT run global \`find\`, \`locate\`, ` +
-    `\`lsof\`, or whole-computer searches trying to discover the ` +
-    `review file.\n\n` +
+    `STEP 4 — Wait for the review to finish with a single blocking ` +
+    `bash call. The review takes 10-25 minutes end-to-end. Instead of ` +
+    `polling \`tail\` every 60 seconds (which generates one permission ` +
+    `prompt per poll), use coarse-review's built-in \`--attach\` ` +
+    `watcher, which blocks in a single command until the worker ` +
+    `exits:\n\n` +
+    `  ${attachCmd}\n\n` +
+    `The attach command streams the log to stdout as it's written and ` +
+    `prints a \`[attach] pid=<N> elapsed=<mm:ss> — waiting…\` heartbeat ` +
+    `every 30 seconds of log idleness so the bash tool sees stdout ` +
+    `activity and doesn't think the command is hung. It exits ` +
+    `automatically when the review process exits. IMPORTANT: run it ` +
+    `with a long bash-tool timeout — at least 1800000 ms (30 min) in ` +
+    `Claude Code's \`Bash\` tool via the \`timeout\` parameter, ` +
+    `\`--timeout 1800\` in Codex, or the equivalent in Gemini CLI. Do ` +
+    `NOT re-run the \`--detach\` command from STEP 3 if the attach ` +
+    `call returns early — that would spawn a second worker against ` +
+    `the same handoff URL. If attach exits because the bash tool ` +
+    `timed out (not because the review finished), just re-run the ` +
+    `EXACT same attach command again — it's idempotent and will ` +
+    `re-attach to the same running worker.\n\n` +
+    `Attach exit codes tell you what happened:\n` +
+    `  - 0 — review completed successfully, \`view:\` + \`local:\` ` +
+    `lines are in the log\n` +
+    `  - 1 — review reported a failure marker; show me the error from ` +
+    `the log\n` +
+    `  - 2 — review process died without a completion marker (silent ` +
+    `crash); show me the last 50 log lines so I can diagnose\n` +
+    `  - 3 — pidfile missing (launcher never started); re-run STEP 3\n` +
+    `  - 124 — attach's own 30-min timeout tripped (very unusual); ` +
+    `re-run the attach command to continue waiting\n\n` +
+    `STEP 5 — When attach exits with code 0, read the completion ` +
+    `footer from the log. Run \`rg '^  view:|^  local:' ${logFile}\`. ` +
+    `The \`local:\` line is the exact markdown path written by ` +
+    `coarse-review. If \`view:\` is present, it's the canonical web ` +
+    `URL and already includes the signed access token — use it ` +
+    `as-is. If the log says \`view: unavailable\`, report that the ` +
+    `web callback failed and use only the \`local:\` path. Do NOT ` +
+    `try to discover another web URL, and do NOT run broad ` +
+    `\`find\`, \`locate\`, or \`lsof\` searches trying to rediscover ` +
+    `the review file.\n\n` +
     `Note: this runs locally on my machine using my own Claude Code, ` +
     `Codex, or Gemini CLI account. coarse.ink does not receive or ` +
     `store my provider login, and my provider's terms, limits, and ` +
     `policies apply.\n\n` +
-    `When the log shows "PUBLISHED TO COARSE WEB" or "REVIEW ` +
-    `COMPLETE", the review is done. Show me:\n` +
+    `When attach has exited cleanly (code 0) and you've read the ` +
+    `completion footer, show me:\n` +
     `  - The review URL (the \`view:\` line)\n` +
     `  - The local markdown path (the \`local:\` line)\n` +
     `  - A summary of the recommendation (accept / revise / reject)\n` +
@@ -254,10 +284,11 @@ export function buildLaunchUrl(args: {
   host: ChatHost;
   runCmd: string;
   setupCmd: string;
+  attachCmd: string;
   logFile: string;
 }): string {
-  const { host, runCmd, setupCmd, logFile } = args;
-  const prompt = buildAgentPrompt({ setupCmd, runCmd, logFile });
+  const { host, runCmd, setupCmd, attachCmd, logFile } = args;
+  const prompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile });
 
   if (host === "codex") {
     // Codex supports codex://new?prompt=<text> deep links that pre-fill
@@ -329,7 +360,7 @@ export function buildCliCommands(args: {
   model: string;
   effort: EffortLevel;
   paperId: string;
-}): { setupCmd: string; runCmd: string; logFile: string } {
+}): { setupCmd: string; runCmd: string; attachCmd: string; logFile: string } {
   const { handoffUrl, host, model, effort, paperId } = args;
   const cliName = HOST_CLI_NAME[host];
   const quotedUvFrom = shellQuote(MCP_UVX_FROM);
@@ -340,5 +371,10 @@ export function buildCliCommands(args: {
     ` --host ${cliName}` +
     ` --model ${model}` +
     ` --effort ${effort}`;
-  return { setupCmd, runCmd, logFile };
+  // Single blocking watch command that replaces the legacy per-60s
+  // tail polling loop. See buildAgentPrompt STEP 4 and the
+  // _run_attach docstring in src/coarse/cli_review.py for the full
+  // contract (heartbeats, pidfile discovery, exit codes 0/1/2/3/124/130).
+  const attachCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --attach ${logFile}`;
+  return { setupCmd, runCmd, attachCmd, logFile };
 }

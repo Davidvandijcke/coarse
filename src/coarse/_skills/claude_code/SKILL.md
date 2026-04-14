@@ -60,23 +60,27 @@ This is the **same pipeline** that powers coarse.ink — only the LLM backend is
 
 **If they already have a pre-extracted markdown** (from a previous coarse run), pass it with `--pre-extracted` to skip OCR.
 
-**Launch in the background** — full review takes 10-25 minutes, which exceeds Claude Code's default 2-minute tool timeout. Always use `run_in_background: true` or redirect to a log file so it's not killed mid-run. Use a **per-review unique log file** so parallel runs in the same shell don't clobber each other's output:
+**Launch in the background, then wait with `--attach` — two Bash calls, one approval per call.** A full review takes 10-25 minutes, which exceeds Claude Code's default 2-minute tool timeout, so you can't just run coarse-review in the foreground. Instead, split the run into two steps: `--detach` starts a background worker and returns in ~2 seconds; `--attach` blocks on the worker's PID and streams the log until completion, emitting a heartbeat every 30 seconds of log idleness so the Bash tool sees activity.
+
+Use a **per-review unique log file** so parallel runs in the same shell don't clobber each other's output:
 
 ```bash
 # Pick a unique suffix — use the paper filename stem or `$(date +%s)`:
 LOG=/tmp/coarse-review-$(basename <paper_path> .pdf).log
 
+# STEP 2a — launch (returns within 2 seconds with Review PID + Log file)
 uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
   coarse-review --detach --log-file "$LOG" \
   <paper_path> --host claude [--model claude-opus-4-6] [--effort high]
+
+# STEP 2b — wait (one blocking call, ~10-25 min, emits heartbeats)
+uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+  coarse-review --attach "$LOG"
 ```
 
-This returns immediately with the review PID and writes all output to
-the log file you chose.
+Run the attach call with a long Bash-tool timeout: in Claude Code, pass `timeout: 1800000` (30 minutes) on the `Bash` tool invocation so the tool doesn't kill the blocking command. Do NOT re-run the `--detach` command from STEP 2a if the attach call returns early — that would spawn a second worker. Safe to Ctrl+C the attach: the watcher detaches but the worker keeps running, and you can re-attach with the same command. Attach exit codes: `0` complete, `1` failure marker, `2` silent crash, `3` missing pidfile, `124` attach's own 30-min timeout, `130` user interrupt.
 
-Then poll the log every 60-90 seconds with `tail -20 "$LOG"`. Do NOT kill the process because it looks stuck — it takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, it's done.
-
-**When the run finishes, do NOT hunt across the filesystem for the review file.** `coarse-review` prints the authoritative paths in the final log lines:
+**When attach exits with code 0, do NOT hunt across the filesystem for the review file.** `coarse-review` prints the authoritative paths in the final log lines:
 
 ```bash
 rg '^  view:|^  local:' "$LOG"
@@ -90,14 +94,19 @@ If `view:` says `unavailable`, treat that as a callback failure and report only 
 Available models: `claude-opus-4-6` (default), `claude-sonnet-4-6`, `claude-haiku-4-5`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
 
-If the user came from the coarse web form, they'll paste a handoff URL instead of a local file path. The paper is a REMOTE resource at that URL — do NOT search for a local PDF and do NOT ask the user for a file path. Just run:
+If the user came from the coarse web form, they'll paste a handoff URL instead of a local file path. The paper is a REMOTE resource at that URL — do NOT search for a local PDF and do NOT ask the user for a file path. Same two-step launch+attach pattern:
 
 ```bash
 LOG=/tmp/coarse-review-$(date +%s).log
 
+# STEP 2a — launch
 uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
   coarse-review --detach --log-file "$LOG" \
   --handoff https://coarse.ink/h/<token> --host claude [--model ...] [--effort ...]
+
+# STEP 2b — wait (same long-timeout discipline as local mode)
+uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+  coarse-review --attach "$LOG"
 ```
 
 This downloads the paper from the handoff URL, runs the pipeline, and POSTs the final review back so it shows up at `https://coarse.ink/review/<paper_id>?token=<access_token>`. The `view:` line in the log will already include the signed access token — use that URL as-is.

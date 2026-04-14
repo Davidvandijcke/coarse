@@ -175,6 +175,10 @@ function renderLandingPage(args: {
   const logFile = `/tmp/coarse-review-${paperId}.log`;
   const setupCmd = `uvx --python 3.12 --from ${quotedFrom} coarse install-skills --all --force`;
   const runCmd = `uvx --python 3.12 --from ${quotedFrom} coarse-review --detach --log-file ${logFile} --handoff ${handoffUrl}`;
+  // Single blocking watch command — replaces the legacy per-60s tail
+  // polling loop. See _run_attach in src/coarse/cli_review.py for the
+  // contract (heartbeats every 30s, exit codes 0/1/2/3/124/130).
+  const attachCmd = `uvx --python 3.12 --from ${quotedFrom} coarse-review --attach ${logFile}`;
 
   return `<!doctype html>
 <html lang="en">
@@ -220,10 +224,17 @@ function renderLandingPage(args: {
   </div>
 
   <div class="step">
-    <h2>2. Run the review</h2>
+    <h2>2. Launch the review (detached)</h2>
     <pre class="cmd" id="run"><button class="copy" onclick="copy('run')">copy</button>${safe(runCmd)}</pre>
-    <p class="note">This starts a detached local review process, writes logs to <code>${safe(logFile)}</code>, and posts the finished review back here. Takes 10–25 minutes. Check progress with <code>tail -20 ${safe(logFile)}</code>. The review will appear at <code>coarse.ink/review/${safe(paperId)}?token=…</code> when it's done — the <code>view:</code> line in the log has the full tokened URL.</p>
+    <p class="note">Starts a detached local review worker, writes its PID to <code>${safe(logFile)}.pid</code>, streams all output to <code>${safe(logFile)}</code>, and returns within 2 seconds. The review will appear at <code>coarse.ink/review/${safe(paperId)}?token=…</code> when it's done — the <code>view:</code> line in the log has the full tokened URL.</p>
     <p class="note"><strong>Options:</strong> edit the command before running to add <code>--host claude|codex|gemini</code> (default: first CLI found on PATH), <code>--model &lt;id&gt;</code>, and <code>--effort low|medium|high|max</code>.</p>
+  </div>
+
+  <div class="step">
+    <h2>3. Wait for it to finish (one blocking command)</h2>
+    <pre class="cmd" id="attach"><button class="copy" onclick="copy('attach')">copy</button>${safe(attachCmd)}</pre>
+    <p class="note">Blocks until the detached worker exits. Streams the log as it's written and prints a <code>[attach] pid=&lt;N&gt; elapsed=&lt;mm:ss&gt; — waiting…</code> heartbeat every 30 seconds of log idleness. Takes 10–25 minutes — run this inside a terminal that can hold an open command, or paste it into your coding agent with a ≥30-minute tool timeout. Safe to Ctrl+C: the watcher detaches but the review keeps running, and you can re-attach with the same command.</p>
+    <p class="note">Exit codes: <code>0</code> complete, <code>1</code> failure marker, <code>2</code> silent crash, <code>3</code> missing pidfile, <code>124</code> attach's own 30-min timeout.</p>
   </div>
 
   <footer>

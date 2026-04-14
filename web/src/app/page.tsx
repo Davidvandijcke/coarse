@@ -728,7 +728,7 @@ export default function Home() {
   async function handleLaunch() {
     if (!handoffBundle || !handoffState) return;
     const host = handoffState.host;
-    const { setupCmd, runCmd, logFile } = buildCliCommands({
+    const { setupCmd, runCmd, attachCmd, logFile } = buildCliCommands({
       handoffUrl: handoffBundle.handoff_url,
       host,
       model: selectedModel,
@@ -738,7 +738,7 @@ export default function Home() {
 
     // Copy the full prompt to clipboard (fallback for hosts that can't
     // receive prompts via URL scheme — currently Claude Code and Gemini).
-    const fullPrompt = buildAgentPrompt({ setupCmd, runCmd, logFile });
+    const fullPrompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile });
     try {
       await navigator.clipboard.writeText(fullPrompt);
     } catch (err) {
@@ -749,7 +749,7 @@ export default function Home() {
     // Codex gets codex://new?prompt=<text> (pre-fills composer).
     // Claude Code gets claude:// (opens app, clipboard fallback).
     // Gemini CLI has no app to open — show manual commands instead.
-    const launchUrl = buildLaunchUrl({ host, runCmd, setupCmd, logFile });
+    const launchUrl = buildLaunchUrl({ host, runCmd, setupCmd, attachCmd, logFile });
     if (launchUrl) {
       window.location.href = launchUrl;
       if (host === "codex") {
@@ -1519,7 +1519,7 @@ export default function Home() {
 
               {handoffBundle && handoffState && (() => {
                 const host = handoffState.host;
-                const { setupCmd, runCmd, logFile } = buildCliCommands({
+                const { setupCmd, runCmd, attachCmd, logFile } = buildCliCommands({
                   handoffUrl: handoffBundle.handoff_url,
                   host,
                   model: selectedModel,
@@ -1658,7 +1658,7 @@ export default function Home() {
                           :
                         </div>
                         <CodeBlock
-                          text={buildAgentPrompt({ setupCmd, runCmd, logFile })}
+                          text={buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile })}
                           maxHeight="160px"
                         />
                         <p
@@ -1700,7 +1700,7 @@ export default function Home() {
                             <div style={{ fontFamily: "var(--font-chalk)", fontSize: "0.9rem", color: "var(--dust)", marginBottom: "0.35rem" }}>
                               paste this into Codex if the launch button didn&apos;t work:
                             </div>
-                            <CodeBlock text={buildAgentPrompt({ setupCmd, runCmd, logFile })} maxHeight="160px" />
+                            <CodeBlock text={buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile })} maxHeight="160px" />
                           </div>
                         )}
                       </div>

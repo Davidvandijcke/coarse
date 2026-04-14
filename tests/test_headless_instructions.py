@@ -38,11 +38,18 @@ def test_bundled_skill_assets_use_ephemeral_uvx_flow() -> None:
         # shell don't clobber each other's logs.
         assert "LOG=/tmp/coarse-review-" in text
         assert '--detach --log-file "$LOG"' in text
+        # Signal-driven wait mode: each SKILL.md must show the
+        # `coarse-review --attach "$LOG"` follow-up command so agents
+        # replace the old per-poll tail loop with one blocking call.
+        assert 'coarse-review --attach "$LOG"' in text
         assert "rg '^  view:|^  local:' \"$LOG\"" in text
         assert "uv pip install --reinstall" not in text
         assert "@feat/mcp-server" not in text
         # Old stale URL must not reappear — canonical host is coarse.ink.
         assert "coarse.vercel.app" not in text
+        # The old per-60s polling guidance must not creep back in —
+        # the point of --attach is to replace exactly this loop.
+        assert "every 60-90 seconds" not in text
 
 
 def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
@@ -70,16 +77,26 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
         "uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach "
         "--log-file ${logFile} --handoff ${handoffUrl}" in handoff_lib
     )
+    # Signal-driven wait: buildCliCommands must emit the matching
+    # `--attach ${logFile}` command so the prompt can reference it.
+    # This replaces the legacy per-60s tail polling loop.
+    assert (
+        "uvx --python 3.12 --from ${quotedUvFrom} coarse-review --attach ${logFile}" in handoff_lib
+    )
+    assert "attachCmd: string;" in handoff_lib
     assert "rg '^  view:|^  local:' ${logFile}" in handoff_lib
 
-    # page.tsx must pass logFile through to buildAgentPrompt on every
-    # call site (handleLaunch + the collapsible manual-commands UI).
-    assert "const fullPrompt = buildAgentPrompt({ setupCmd, runCmd, logFile });" in handoff_page
+    # page.tsx must pass logFile + attachCmd through to buildAgentPrompt
+    # on every call site (handleLaunch + the collapsible manual-commands UI).
+    assert (
+        "const fullPrompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile });"
+        in handoff_page
+    )
     assert "coarse.ink does not receive or store your" in handoff_page
 
     # The /h/<token> landing-page HTML renderer has its OWN runCmd
     # builder (it can't share buildCliCommands because it emits HTML,
-    # not a React prop). It must also thread paperId → logFile through.
+    # not a React prop). It must also thread paperId → logFile + attachCmd through.
     assert 'import { MCP_UVX_FROM } from "@/lib/mcpHandoff";' in handoff_route
     assert "const pinnedFrom = MCP_UVX_FROM;" in handoff_route
     assert "const quotedFrom = `'${pinnedFrom}'`;" in handoff_route
@@ -91,6 +108,9 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     assert (
         "uvx --python 3.12 --from ${quotedFrom} coarse-review --detach "
         "--log-file ${logFile} --handoff ${handoffUrl}" in handoff_route
+    )
+    assert (
+        "uvx --python 3.12 --from ${quotedFrom} coarse-review --attach ${logFile}" in handoff_route
     )
     assert (
         "Runs locally on your machine using your own Claude Code, Codex, or Gemini CLI account."

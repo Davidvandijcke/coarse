@@ -52,30 +52,26 @@ Runs the **full coarse review pipeline** on a paper using the local `gemini -p` 
 
 **CRITICAL — if the user gives you a handoff URL, the paper is REMOTE.** Do NOT run `FindFiles`, `glob`, `find`, `ls`, or any filesystem search looking for a local PDF. Do NOT interpret the handoff URL or any paper ID as a local filename. Do NOT ask the user for a file path — the `--handoff` URL IS the paper source and coarse-review downloads it over the network itself. Run the command verbatim and let coarse-review handle the fetch.
 
-**Run the command as a background process, not in the foreground.** A full review takes 10-25 minutes, which exceeds Gemini CLI's default 5-minute tool timeout. If you run it in the foreground, the tool will kill it mid-review and report a false crash.
+**Two-step launch-and-wait, not foreground.** A full review takes 10-25 minutes, which exceeds Gemini CLI's default 5-minute tool timeout. Step 1 detaches the worker and returns in ~2 seconds. Step 2 uses `--attach` to block on the worker's PID file and stream the log, emitting a heartbeat every 30 seconds of idleness so Gemini's shell tool sees activity.
 
 Use a **per-review unique log file** so parallel runs don't clobber each other's output:
 
 ```bash
 LOG=/tmp/coarse-review-$(date +%s).log
 
+# STEP 2a — launch (returns in ~2s with Review PID + Log file)
 uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
   coarse-review --detach --log-file "$LOG" \
   <paper_path_or_handoff_url> --host gemini [--model gemini-3.1-pro-preview] [--effort high]
+
+# STEP 2b — wait (one blocking call, ~10-25 min, emits heartbeats)
+uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+  coarse-review --attach "$LOG"
 ```
 
-This returns immediately with the review PID and writes all output to
-the log file you chose.
+Run the attach call with a long tool timeout (≥30 minutes) so Gemini CLI doesn't kill the blocking command prematurely. Do NOT re-run the `--detach` command if attach returns early (that would spawn a second worker). Safe to Ctrl+C the attach: the watcher detaches but the worker keeps running. Attach exit codes: `0` complete, `1` failure marker, `2` silent crash, `3` missing pidfile, `124` attach's own 30-min timeout, `130` user interrupt.
 
-Then poll the log file every 60-90 seconds:
-
-```bash
-tail -20 "$LOG"
-```
-
-Do NOT kill the process because you think it hung — it takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, the run is done.
-
-When the run finishes, use the final log lines as the authoritative artifact locations:
+When attach exits cleanly, use the final log lines as the authoritative artifact locations:
 
 ```bash
 rg '^  view:|^  local:' "$LOG"
@@ -87,14 +83,19 @@ If `view:` says `unavailable`, report the callback failure and use only the `loc
 Available models: `gemini-3.1-pro-preview` (default), `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
 
-**Handoff mode** (when the user came from the coarse web form): the paper is a REMOTE resource at the handoff URL. Do NOT search for a local PDF. Run the command with `--handoff` as shown — coarse-review fetches the paper over the network:
+**Handoff mode** (when the user came from the coarse web form): the paper is a REMOTE resource at the handoff URL. Do NOT search for a local PDF. Same two-step launch+attach pattern — coarse-review fetches the paper over the network:
 
 ```bash
 LOG=/tmp/coarse-review-$(date +%s).log
 
+# STEP 2a — launch
 uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
   coarse-review --detach --log-file "$LOG" \
   --handoff https://coarse.ink/h/<token> --host gemini
+
+# STEP 2b — wait
+uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+  coarse-review --attach "$LOG"
 ```
 
 **When complete**, show the user the output path, web URL (if present), recommendation, top issues, and comment count.
