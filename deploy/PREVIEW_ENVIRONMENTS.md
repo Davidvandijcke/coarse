@@ -143,25 +143,25 @@ After the project is ready, collect three strings from
 
 **Supabase dashboard → SQL Editor**
 
-Run, in this order:
+Run, in this order. As of 2026-04-13, a fresh preview mirror needs all
+of these SQL files:
 
-1. `deploy/supabase_schema.sql` — the baseline schema. Creates the
-   `reviews`, `review_emails`, `review_secrets`, `review_handoff_secrets`,
-   `system_status`, `rate_limit_log`, `mcp_handoff_tokens` tables,
-   plus RLS policies and the `papers` storage bucket.
-2. `deploy/migrate_mcp_handoff.sql` — even though the baseline
-   schema.sql already has `review_handoff_secrets` + `mcp_handoff_tokens`,
-   this migration also widens `reviews_status_check` to allow
-   `extracting` / `extracted` statuses and adds `reviews.taxonomy`.
-   Idempotent (`alter table ... if not exists`) so safe on the fresh
-   DB.
-3. `deploy/migrate_review_access_security.sql` — adds
-   `reviews.access_token_required boolean` + MCP review statuses
-   to access migration. Also idempotent.
-4. `deploy/migrate_active_review_capacity.sql` — adds the
-   `count_active_submitted_reviews` RPC used by the capacity gate.
-5. Any other `deploy/migrate_*.sql` files that exist by the time
-   you run this — check the directory for files newer than this doc.
+1. `deploy/supabase_schema.sql` — baseline schema + storage bucket.
+2. `deploy/migrate_review_secrets.sql` — review secret escrow table /
+   policies expected by the current presign + submit flow.
+3. `deploy/migrate_rate_limit.sql` — `check_rate_limit` RPC and related
+   indexes used by the web API routes.
+4. `deploy/migrate_email_phase1.sql` — first half of the Resend-backed
+   email persistence flow.
+5. `deploy/migrate_email_phase2.sql` — second half of the Resend
+   rollout. Safe on a fresh preview DB after phase 1.
+6. `deploy/migrate_mcp_handoff.sql` — MCP handoff tables, widened
+   review status check, `reviews.taxonomy`, cleanup RPCs.
+7. `deploy/migrate_review_access_security.sql` — signed review access
+   tokens / access gating columns.
+8. `deploy/migrate_active_review_capacity.sql` — the
+   `count_active_submitted_reviews` RPC used by `/api/status` and
+   `/api/submit`.
 
 After each migration, run `select * from reviews limit 0;` in the
 SQL editor to confirm the table exists with the expected columns.
@@ -287,7 +287,7 @@ preview branches. Use the preview values from steps 1.1–1.6:
 | `MODAL_FUNCTION_URL`            | preview Modal function URL from step 1.6             |
 | `MODAL_EXTRACT_URL`             | preview MCP extract URL from step 1.6                |
 | `MODAL_WEBHOOK_SECRET`          | preview webhook secret from `coarse-webhook`         |
-| `NEXT_PUBLIC_SITE_URL`          | `https://coarse-git-dev-<team>.vercel.app` (or the stable alias after Tier 2) |
+| `NEXT_PUBLIC_SITE_URL`          | Optional. On Vercel preview deployments the app now prefers the actual request host, so leaving this unset is safest unless you have a stable preview alias such as `https://dev.coarse.ink`. |
 | `NEXT_PUBLIC_MCP_SERVER_URL`    | preview MCP URL (`https://<workspace>-preview--coarse-mcp-asgi.modal.run/mcp/`) |
 | `RESEND_API_KEY`                | *(leave unset in Preview — emails will no-op)*       |
 | `TURNSTILE_SECRET_KEY`          | *(leave unset in Preview — Turnstile fails open)*    |
@@ -313,6 +313,14 @@ After all preview env vars are set, trigger a fresh preview deployment
 verify the build picks up the new values. In the Vercel deployment
 logs, look for the `Environments: .env.local` line and confirm no
 build errors from missing env vars.
+
+If Turnstile should stay enabled on preview, also add the preview
+hostname in **Cloudflare Turnstile → Widget → Hostname management**.
+If you skip that step, the widget will fail closed on preview even
+though production still works. If you do not want to manage preview
+hostnames yet, remove `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and
+`TURNSTILE_SECRET_KEY` from the Vercel Preview environment so preview
+fails open while production stays protected.
 
 ### Step 1.8 — Verify both web routes point only at Modal preview endpoints
 
@@ -387,6 +395,20 @@ big changes before they touch production:
 Treat the preview website as the pre-prod signoff surface. If a change
 touches schema, web API routes, Modal workers, auth, or env wiring, it
 is not ready for `main` until it passes on the preview site first.
+
+Preview-site usage rules:
+
+1. Open the preview deployment from the latest `dev` commit. Do not use
+   production for first-pass validation.
+2. If the landing page shows `Service temporarily unavailable.`, stop.
+   Check preview Vercel logs for missing Supabase env vars or a missing
+   `count_active_submitted_reviews` RPC in preview Supabase.
+3. Run the OpenRouter flow and confirm the status/review URLs stay on
+   the preview hostname.
+4. Run the subscription / CLI handoff flow and confirm the generated
+   `/h/<token>` and final review URL also stay on the preview hostname.
+5. Only after both paths pass on preview should the change move toward
+   `main`.
 
 ### Step 1.10 — Document + commit
 

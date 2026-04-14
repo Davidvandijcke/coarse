@@ -160,10 +160,20 @@ Default rollout for substantial changes:
 3. On the preview website, run both user flows:
    - upload a small paper and click `Submit`
    - upload a small paper and click `Review with my subscription`
-4. Confirm preview Supabase + preview Modal are the only backends
+4. If the preview site shows `Service temporarily unavailable`, stop and
+   fix preview infra before merging:
+   - preview Vercel must have `NEXT_PUBLIC_SUPABASE_URL`,
+     `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`,
+     `MODAL_FUNCTION_URL`, `MODAL_EXTRACT_URL`, and
+     `MODAL_WEBHOOK_SECRET`
+   - preview Supabase must have every SQL file listed in
+     [deploy/PREVIEW_ENVIRONMENTS.md](PREVIEW_ENVIRONMENTS.md)
+   - if Turnstile is enabled on preview, its hostname allowlist must
+     include the preview URL
+5. Confirm preview Supabase + preview Modal are the only backends
    touched
-5. Merge `dev` into `main`
-6. Let production CI deploy from `main`
+6. Merge `dev` into `main`
+7. Let production CI deploy from `main`
 
 Preview website signoff checklist:
 

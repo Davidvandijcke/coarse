@@ -37,6 +37,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { consumeReviewHandoffSecret } from "@/lib/routeHandoffAuth";
+import { getSiteOriginForRequest } from "@/lib/siteOrigin";
 
 export const maxDuration = 15;
 
@@ -166,11 +167,7 @@ export async function POST(request: NextRequest) {
   // review to. NEXT_PUBLIC_SITE_URL → NEXT_PUBLIC_VERCEL_URL → request origin,
   // in that order, so dev (localhost:3000) and prod (coarse.vercel.app) both
   // return a URL the MCP server can reach over the public internet.
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    (process.env.NEXT_PUBLIC_VERCEL_URL
-      ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-      : new URL(request.url).origin);
+  const siteUrl = getSiteOriginForRequest(request.url);
   const callbackUrl = `${siteUrl.replace(/\/$/, "")}/api/mcp-finalize`;
 
   return NextResponse.json({

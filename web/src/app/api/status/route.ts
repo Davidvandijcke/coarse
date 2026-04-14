@@ -13,7 +13,7 @@ import { DEFAULT_SUBMISSIONS_UNAVAILABLE_MESSAGE } from "@/lib/systemStatus";
 // `system_status.banner_message` still overrides it when an operator sets
 // an incident-specific notice.
 const EMAIL_DISABLED_BANNER =
-  "Email delivery is temporarily down — save your review key when you submit and check back at coarse.ink/status/<your-key> in about an hour.";
+  "Email delivery is temporarily down — save your review key when you submit and check back at /status/<your-key> in about an hour.";
 
 export const revalidate = 10; // ISR: revalidate every 10 seconds
 
@@ -22,6 +22,11 @@ export async function GET() {
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
+    console.error("[status] missing Supabase configuration", {
+      hasSupabaseUrl: Boolean(supabaseUrl),
+      hasSupabaseServiceKey: Boolean(supabaseKey),
+      vercelEnv: process.env.VERCEL_ENV ?? null,
+    });
     return NextResponse.json(
       {
         accepting: false,
@@ -49,6 +54,12 @@ export async function GET() {
   const statusUnavailable = Boolean(statusResult.error || !statusResult.data);
   const serviceUnavailable = statusUnavailable || Boolean(activeCountError);
   const statusRow = statusResult.data;
+  if (activeCountError) {
+    console.error("[status] count_active_submitted_reviews failed", activeCountError);
+  }
+  if (statusResult.error) {
+    console.error("[status] system_status lookup failed", statusResult.error);
+  }
   const accepting = serviceUnavailable
     ? false
     : (statusRow?.accepting_reviews ?? false);

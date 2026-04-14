@@ -26,6 +26,7 @@ import {
   buildAgentPrompt,
 } from "@/lib/mcpHandoff";
 import { buildReviewPath, parseReviewLocator } from "@/lib/reviewAccess";
+import { getVisibleSiteHost } from "@/lib/siteOrigin";
 
 /* ── Turnstile window API type + helper ───────────────────── */
 type TurnstileApi = {
@@ -269,6 +270,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 /* ── Page ──────────────────────────────────────────────────── */
 export default function Home() {
   const router = useRouter();
+  const siteHost = getVisibleSiteHost();
   const [file, setFile] = useState<File | null>(null);
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -607,7 +609,7 @@ export default function Home() {
             "Our human-check widget couldn't load — a browser extension " +
               "(Brave Shields, uBlock Origin, Firefox ETP strict) is most " +
               "likely blocking challenges.cloudflare.com. Try disabling it " +
-              "for coarse.ink, or run coarse locally: uvx coarse-ink review paper.pdf",
+              `for ${siteHost}, or run coarse locally: uvx coarse-ink review paper.pdf`,
           );
         }
         throw new Error(
@@ -1319,7 +1321,8 @@ export default function Home() {
                   >
                     <p style={{ margin: "0 0 0.6rem" }}>
                       Our human check couldn&apos;t load. A browser privacy
-                      extension is most likely blocking{" "}
+                      extension or a Turnstile hostname mismatch is most
+                      likely blocking{" "}
                       <code style={{ fontFamily: "var(--font-space-mono), monospace" }}>
                         challenges.cloudflare.com
                       </code>{" "}
@@ -1329,9 +1332,12 @@ export default function Home() {
                     <p style={{ margin: "0 0 0.6rem" }}>
                       Try disabling the extension for{" "}
                       <code style={{ fontFamily: "var(--font-space-mono), monospace" }}>
-                        coarse.ink
+                        {siteHost}
                       </code>{" "}
-                      and refreshing, or use a different browser.
+                      and refreshing, or use a different browser. If
+                      you&apos;re on a preview URL, the deployment may also need
+                      that hostname added to the Cloudflare Turnstile widget
+                      allowlist.
                     </p>
                     <p style={{ margin: 0 }}>
                       Or run coarse locally with your own OpenRouter key:{" "}

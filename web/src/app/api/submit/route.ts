@@ -18,6 +18,7 @@ import {
   MAX_CONCURRENT_REVIEWS,
 } from "@/lib/reviewCapacity";
 import { getSubmissionPauseResponse } from "@/lib/systemStatus";
+import { getSiteOriginForRequest } from "@/lib/siteOrigin";
 
 export const maxDuration = 30;
 const MODAL_TRIGGER_TIMEOUT_MS = 10_000;
@@ -222,7 +223,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://coarse.ink";
+  const siteUrl = getSiteOriginForRequest(request.url);
   const statusUrl = buildReviewUrl(siteUrl, "status", id, accessToken);
   const reviewKey = buildReviewKey(id, accessToken);
 

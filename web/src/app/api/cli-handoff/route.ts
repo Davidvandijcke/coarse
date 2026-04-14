@@ -30,6 +30,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { consumeReviewHandoffSecret } from "@/lib/routeHandoffAuth";
 import { getSubmissionPauseResponse } from "@/lib/systemStatus";
+import { getSiteOriginForRequest } from "@/lib/siteOrigin";
 
 export const maxDuration = 15;
 
@@ -128,11 +129,7 @@ export async function POST(request: NextRequest) {
   // runs on the same machine but breaks if it runs in a remote sandbox
   // (e.g. Codex cloud). For local dev with remote CLIs, set
   // NEXT_PUBLIC_SITE_URL in .env.local to a tunnel URL.
-  let siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    (process.env.NEXT_PUBLIC_VERCEL_URL
-      ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-      : new URL(request.url).origin);
+  let siteUrl = getSiteOriginForRequest(request.url);
 
   // If the origin is localhost, try to use the machine's LAN IP so
   // local CLI tools (even those spawned by desktop apps that resolve
