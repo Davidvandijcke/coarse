@@ -365,7 +365,23 @@ Behavior:
 - active only when `VERCEL_ENV=preview`
 - inactive on production
 - inactive in local development unless you explicitly mimic preview envs
-- applies to both pages and same-origin API routes
+- applies to pages and same-origin API routes
+- **exempts** the token-based machine-to-machine handoff routes
+  (`/h/<token>`, `/api/mcp-finalize`, `/api/mcp-extract`,
+  `/api/mcp-handoff`) via the `HANDOFF_EXEMPT_PREFIXES` list in
+  `web/src/middleware.ts`. These endpoints are fetched by the CLI
+  / Codex-cloud sandbox / Modal worker without a browser session and
+  cannot send HTTP Basic Auth credentials, but they already enforce
+  token-based auth of their own (single-use handoff token, finalize
+  token, MCP handoff secret, Modal webhook secret), so the preview
+  gate would be a redundant layer on capabilities that are already
+  cryptographically bound per submission. Without the exemption the
+  bring-your-own-subscription handoff flow cannot complete on a
+  preview deploy — the CLI's `_fetch_handoff` call hits the Basic
+  Auth challenge and the detached worker crashes before writing a
+  pidfile. Browser-called routes (`/`, `/status/*`, `/review/*`,
+  `/api/presign`, `/api/submit`, `/api/cli-handoff`, `/api/status`,
+  `/api/delete`, `/api/cancel`) stay behind the Basic Auth gate.
 
 This gives collaborators a native browser username/password prompt
 after they reach the preview deployment itself.
