@@ -45,10 +45,48 @@ function previewAuthChallenge() {
   });
 }
 
+// Token-based machine-to-machine endpoints the CLI / Codex-cloud /
+// Modal worker hit WITHOUT a browser session. Exempted from the
+// preview Basic Auth gate because:
+//
+//   1. They already enforce token-based auth of their own (single-use
+//      handoff token, finalize_token, MCP handoff_secret, Modal
+//      webhook secret) — the preview gate would be a redundant layer
+//      on capabilities that are already bound to per-submission
+//      cryptographic tokens.
+//   2. The callers (Codex cloud sandbox, Modal worker) cannot
+//      realistically send HTTP Basic Auth credentials, so without
+//      this exemption the preview deploy cannot run the CLI /
+//      subscription handoff flow end-to-end.
+//   3. Vercel's edge-level Deployment Protection (Tier 0.2) is a
+//      separate gate addressed by the `x-vercel-protection-bypass`
+//      query params appended in `/api/cli-handoff/route.ts`. Exempting
+//      these routes from the middleware does NOT open them up past
+//      Vercel's own login wall.
+//
+// Keep this list narrow — broader matches would leak the browser UI
+// surface (landing page, /status/*, /review/*) past the preview gate.
+const HANDOFF_EXEMPT_PREFIXES = [
+  "/h/",
+  "/api/mcp-finalize",
+  "/api/mcp-extract",
+  "/api/mcp-handoff",
+];
+
+function isHandoffExemptPath(pathname: string): boolean {
+  for (const prefix of HANDOFF_EXEMPT_PREFIXES) {
+    if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function middleware(request: NextRequest) {
   const previewAuth = previewBasicAuthConfig();
   if (
     previewAuth &&
+    !isHandoffExemptPath(request.nextUrl.pathname) &&
     !isAuthorizedForPreview(request, previewAuth.username, previewAuth.password)
   ) {
     return previewAuthChallenge();

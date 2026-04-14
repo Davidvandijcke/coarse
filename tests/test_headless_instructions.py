@@ -156,6 +156,48 @@ def test_submit_route_handoff_retry_checks_review_status() -> None:
     assert "{ status: 503 }" in submit_route
 
 
+def test_preview_middleware_exempts_handoff_routes() -> None:
+    """Regression: the preview Basic Auth gate must skip handoff routes.
+
+    `web/src/middleware.ts` gates every non-static path behind HTTP
+    Basic Auth when `VERCEL_ENV=preview` and `PREVIEW_BASIC_AUTH_PASSWORD`
+    is set. The CLI / Codex-cloud handoff flow fetches `GET /h/<token>`
+    and POSTs `/api/mcp-finalize` without a browser session and cannot
+    send Basic Auth, so those routes must short-circuit the gate via
+    `isHandoffExemptPath` before the auth challenge runs — otherwise
+    every preview handoff returns 401 to the CLI and the detached
+    worker crashes without writing a pidfile (the exact failure mode
+    that prompted #121 for the Vercel-edge Deployment Protection layer;
+    this test pins the analogous fix for the middleware layer).
+
+    Pinned verbatim so a future refactor that drops the exemption, or
+    that moves the gate before the check, fails loudly pointing at the
+    correct function to restore.
+    """
+    middleware = _read("web/src/middleware.ts")
+
+    # The helper itself must exist and include at minimum the two
+    # routes the CLI actually touches (GET /h/<token> and POST
+    # /api/mcp-finalize), plus the MCP-server handoff pair.
+    assert "HANDOFF_EXEMPT_PREFIXES" in middleware
+    assert '"/h/"' in middleware
+    assert '"/api/mcp-finalize"' in middleware
+    assert '"/api/mcp-extract"' in middleware
+    assert '"/api/mcp-handoff"' in middleware
+    assert "function isHandoffExemptPath" in middleware
+
+    # And the Basic Auth gate must check the exempt list BEFORE calling
+    # `isAuthorizedForPreview` — otherwise the exemption is a no-op.
+    # The expected shape is `!isHandoffExemptPath(... ) && !isAuthorizedForPreview(...)`.
+    assert "!isHandoffExemptPath(request.nextUrl.pathname)" in middleware
+
+    # Drift guard: the browser UI routes (landing page, /status, /review)
+    # must NOT be in the exempt list — they exist only to be gated.
+    assert '"/status/"' not in middleware
+    assert '"/review/"' not in middleware
+    assert '"/api/cli-handoff"' not in middleware
+
+
 def test_release_blocker_pin_is_coupled_to_unreleased_version() -> None:
     """Mechanical guard for the ``DEFAULT_MCP_UVX_FROM`` release blocker.
 
