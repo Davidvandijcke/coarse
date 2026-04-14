@@ -1,0 +1,86 @@
+{
+  "population_genetics": {
+    "isitcredible": {
+      "overall_score": 6.0,
+      "dimensions": {
+        "coverage": 6.0,
+        "specificity": 6.0,
+        "depth": 6.0,
+        "consistency": 6.0
+      },
+      "report": "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse/output/codex54high_dev_b30440d_2026-04-13/judges/population_genetics_vs_isitcredible_gemini31pro_single.md"
+    },
+    "refine": {
+      "overall_score": 5.625,
+      "dimensions": {
+        "coverage": 6.0,
+        "specificity": 6.0,
+        "depth": 5.0,
+        "consistency": 5.5
+      },
+      "report": "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse/output/codex54high_dev_b30440d_2026-04-13/judges/population_genetics_vs_refine_gemini31pro_single.md"
+    },
+    "stanford": {
+      "overall_score": 6.0,
+      "dimensions": {
+        "coverage": 6.0,
+        "specificity": 6.0,
+        "depth": 6.0,
+        "consistency": 6.0
+      },
+      "report": "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse/output/codex54high_dev_b30440d_2026-04-13/judges/population_genetics_vs_stanford_gemini31pro_single.md"
+    },
+    "reviewer3": {
+      "overall_score": 6.0,
+      "dimensions": {
+        "coverage": 6.0,
+        "specificity": 6.0,
+        "depth": 6.0,
+        "consistency": 6.0
+      },
+      "report": "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse/output/codex54high_dev_b30440d_2026-04-13/judges/population_genetics_vs_reviewer3_gemini31pro_single.md"
+    }
+  },
+  "targeting_interventions": {
+    "isitcredible": {
+      "overall_score": 5.5,
+      "dimensions": {
+        "coverage": 5.0,
+        "specificity": 6.0,
+        "depth": 5.0,
+        "consistency": 6.0
+      },
+      "report": "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse/output/codex54high_dev_b30440d_2026-04-13/judges/targeting_interventions_vs_isitcredible_gemini31pro_single.md"
+    },
+    "refine": {
+      "overall_score": 6.0,
+      "dimensions": {
+        "coverage": 6.0,
+        "specificity": 6.0,
+        "depth": 6.0,
+        "consistency": 6.0
+      },
+      "report": "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse/output/codex54high_dev_b30440d_2026-04-13/judges/targeting_interventions_vs_refine_gemini31pro_single.md"
+    },
+    "stanford": {
+      "overall_score": 6.0,
+      "dimensions": {
+        "coverage": 6.0,
+        "specificity": 6.0,
+        "depth": 6.0,
+        "consistency": 6.0
+      },
+      "report": "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse/output/codex54high_dev_b30440d_2026-04-13/judges/targeting_interventions_vs_stanford_gemini31pro_single.md"
+    },
+    "reviewer3": {
+      "overall_score": 6.0,
+      "dimensions": {
+        "coverage": 6.0,
+        "specificity": 6.0,
+        "depth": 6.0,
+        "consistency": 6.0
+      },
+      "report": "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse/output/codex54high_dev_b30440d_2026-04-13/judges/targeting_interventions_vs_reviewer3_gemini31pro_single.md"
+    }
+  }
+}
