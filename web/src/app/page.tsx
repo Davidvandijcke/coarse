@@ -305,8 +305,19 @@ export default function Home() {
   } | null>(null);
   const refreshSystemStatus = useCallback(() => {
     fetch("/api/status", { cache: "no-store" })
-      .then((r) => r.json())
-      .then(setSystemStatus)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        // Shape-guard the response before committing to state. On preview
+        // deploys behind the password gate, an unauthenticated 401 from
+        // the middleware returns `{error: "Preview is password-protected..."}`
+        // — a different shape from the expected `{accepting, message, ...}`
+        // body. Without this guard, the banner gate downstream reads
+        // `!data.accepting` as `true` (because `undefined !== false`) and
+        // renders a bogus "Submissions are temporarily paused" message.
+        if (data && typeof data.accepting === "boolean") {
+          setSystemStatus(data);
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -626,7 +637,13 @@ export default function Home() {
       );
     }
     if (resp.status === 503) {
-      return rawBody.slice(0, 300) || "Service temporarily unavailable.";
+      // Every app-emitted 503 is JSON with an `error` field and is
+      // handled by the earlier branch. This fallback fires only on
+      // infra-level 503s (Vercel edge, CDN interstitial), where the
+      // body is an HTML error page or a stack trace. We don't want
+      // to render raw HTML in an error message, so return a fixed
+      // string instead of exposing `rawBody`.
+      return "Service temporarily unavailable — please try again in a minute.";
     }
     return `${fallback} (HTTP ${resp.status})`;
   }
