@@ -28,20 +28,38 @@ Every module is reviewed against these rules. Record each result as either:
    of LLM responses outside `llm.py`.
 4. **Prompts live in `prompts.py`.** Scattered prompt strings in agents or
    pipeline code is a violation.
-5. **No `print()` in library code.** CLI output can use `rich`; internals use
-   logging.
+5. **No `print()` in library code.** Library modules (everything the
+   pipeline imports) must use `logging`. `print()` is only allowed in
+   CLI entry-point modules that stream output directly to the user:
+   `cli.py`, `cli_review.py`, `cli_attach.py`, and `headless_review.py`.
 6. **Every `.py` in `src/coarse/` has a matching `tests/test_{name}.py`.**
-   Missing test file is a HIGH finding.
+   Missing test file is a HIGH finding. Back-compat re-export shims
+   (e.g. `claude_code_client.py`) still need a dedicated test that pins
+   the forwarded symbols via `is`-identity.
 7. **Context managers for resources.** `ThreadPoolExecutor`, file handles, and
    sessions must use `with`.
 8. **Cost tracking uses `LLMClient.cost_usd` / `add_cost()`.** No manual
    per-call cost arithmetic outside `llm.py`.
-9. **API keys through `resolve_api_key()`.** No bare `os.getenv("*_API_KEY")`
-   outside `config.py`.
+9. **API keys through `resolve_api_key()`.** Library modules that make
+   LLM calls must go through `resolve_api_key()` — no bare
+   `os.getenv("*_API_KEY")` / `os.environ[...]` reads in anything the
+   pipeline imports. CLI entry modules (`cli.py`, `cli_review.py`,
+   `headless_review.py`) may read or write `OPENROUTER_API_KEY`
+   directly when bootstrapping subprocess children (env passthrough)
+   or discovering a key before `config.py` is imported (the lightweight
+   no-dep key lookup in `headless_review._find_openrouter_key`).
 10. **OCR / extraction paths handle empty or garbled output.** Extraction code
     must degrade gracefully on empty content.
-11. **Verbatim quotes pass `quote_verify.py`.** Any producer of
-    `DetailedComment.quote` must verify the quote before returning.
+11. **Verbatim quotes pass `quote_verify.py`.** Every `DetailedComment`
+    that reaches synthesis must have been run through
+    `quote_verify.verify_quotes()`. The canonical call site is
+    `review_stages._verify_with_fallback`, which wraps every agent
+    stage that produces comments (section, proof_verify, editorial,
+    crossref, critique). Individual agents **do not** call
+    `verify_quotes` themselves — that's the pipeline wrapper's job. A
+    new agent added outside the `review_stages` wrapper, or a new
+    pipeline path that bypasses `_verify_with_fallback`, must run
+    `verify_quotes` itself before returning or is a HIGH finding.
 
 ## Process
 
