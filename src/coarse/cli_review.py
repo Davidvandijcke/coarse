@@ -40,12 +40,7 @@ from coarse.cli_attach import (
     write_pidfile,
 )
 from coarse.extraction import SUPPORTED_EXTENSIONS
-
-_DEFAULT_MODELS = {
-    "claude": "claude-opus-4-6",
-    "codex": "gpt-5.4",
-    "gemini": "gemini-3.1-pro-preview",
-}
+from coarse.models import HEADLESS_DEFAULT_MODELS
 
 _DETACHED_ENV = "COARSE_REVIEW_DETACHED"
 
@@ -453,7 +448,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 5
 
-    model = args.model or _DEFAULT_MODELS[host]
+    model = args.model or HEADLESS_DEFAULT_MODELS[host]
     effort = args.effort
 
     # Handoff mode: fetch bundle, download the source file to temp, then run like local mode.

@@ -29,6 +29,8 @@ import os
 import sys
 from pathlib import Path
 
+from coarse.models import HEADLESS_DEFAULT_MODELS
+
 
 def _find_openrouter_key() -> str | None:
     """Try env var, ~/.coarse/config.toml, and ./.env (up to 3 parents up)."""
@@ -98,18 +100,11 @@ def _require_openrouter_key() -> str:
     sys.exit(3)
 
 
-_DEFAULT_MODELS = {
-    "claude": "claude-opus-4-6",
-    "codex": "gpt-5.4",
-    "gemini": "gemini-3.1-pro-preview",
-}
-
-
 def _make_client_factory(host: str, model: str | None, effort: str):
     from coarse import headless_clients as hc
 
     host = host.lower()
-    resolved_model = model or _DEFAULT_MODELS[host]
+    resolved_model = model or HEADLESS_DEFAULT_MODELS[host]
 
     # The factory replaces coarse.llm.LLMClient at monkey-patch time, so it
     # gets called with whatever kwargs the pipeline passes to LLMClient:
@@ -239,11 +234,15 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("COARSE_HEADLESS_HOST", "claude"),
         help="Which CLI to route LLM calls through",
     )
+    _canonical_help = " / ".join(
+        f"{host}={model}" for host, model in HEADLESS_DEFAULT_MODELS.items()
+    )
     parser.add_argument(
         "--model",
         default=os.environ.get("COARSE_HEADLESS_MODEL"),
-        help="Model ID (host-specific). Defaults to the host's "
-        "canonical model: claude-opus-4-6 / gpt-5.4 / gemini-3.1-pro-preview",
+        help=(
+            f"Model ID (host-specific). Defaults to the host's canonical model ({_canonical_help})."
+        ),
     )
     parser.add_argument(
         "--effort",
@@ -288,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
         "Starting coarse review of %s (host=%s, model=%s, effort=%s)",
         paper_path,
         args.host,
-        args.model or _DEFAULT_MODELS[args.host],
+        args.model or HEADLESS_DEFAULT_MODELS[args.host],
         args.effort,
     )
 

@@ -39,6 +39,18 @@ QUALITY_MODEL = "gemini/gemini-3-flash-preview"
 # Literature search via Perplexity Sonar Pro (web-grounded, returns citations)
 LITERATURE_SEARCH_MODEL = "perplexity/sonar-pro-search"
 
+# Default host-specific model IDs for the headless CLI backends
+# (``coarse-review --host claude|codex|gemini``). These are NOT litellm
+# model strings — each value is the bare model ID that the corresponding
+# headless CLI (``claude -p``, ``codex exec``, ``gemini -p``) accepts on
+# its own command line. Kept here so ``cli_review``, ``headless_review``,
+# and ``headless_clients`` all agree on the canonical default.
+HEADLESS_DEFAULT_MODELS: dict[str, str] = {
+    "claude": "claude-opus-4-6",
+    "codex": "gpt-5.4",
+    "gemini": "gemini-3.1-pro-preview",
+}
+
 # Recall evaluation judge (cheap model for YES/NO semantic matching)
 RECALL_JUDGE_MODEL = QUALITY_MODEL
 
