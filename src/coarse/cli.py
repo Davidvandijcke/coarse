@@ -439,8 +439,8 @@ def install_skills(
         if dest.exists() and not force:
             # Compare existing SKILL.md — if it's identical, silently refresh.
             try:
-                existing = (dest / "SKILL.md").read_text()
-                bundled = (src / "SKILL.md").read_text()
+                existing = (dest / "SKILL.md").read_text(encoding="utf-8")
+                bundled = (src / "SKILL.md").read_text(encoding="utf-8")
                 if existing == bundled:
                     console.print(f"  [dim]✓ {host}: already up to date at {dest}[/dim]")
                     installed.append(host)
@@ -455,7 +455,10 @@ def install_skills(
         (dest / "scripts").mkdir(exist_ok=True)
 
         # Copy SKILL.md
-        (dest / "SKILL.md").write_text((src / "SKILL.md").read_text())
+        (dest / "SKILL.md").write_text(
+            (src / "SKILL.md").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
 
         # Copy scripts/* if any are bundled (for now we rely on the
         # coarse-review CLI entry point, so no scripts are shipped per-skill).
@@ -463,7 +466,10 @@ def install_skills(
         if scripts_src.is_dir():
             for child in scripts_src.iterdir():
                 if child.is_file():
-                    (dest / "scripts" / child.name).write_text(child.read_text())
+                    (dest / "scripts" / child.name).write_text(
+                        child.read_text(encoding="utf-8"),
+                        encoding="utf-8",
+                    )
 
         installed.append(host)
         console.print(f"  [green]✓ {host}[/green] → {dest}")

@@ -565,3 +565,49 @@ def test_detach_writes_pidfile_with_correct_pid(tmp_path, monkeypatch) -> None:
     assert read_pidfile(pidfile) == 424242
     if os.name != "nt":
         assert (pidfile.stat().st_mode & 0o777) == 0o600
+
+
+def test_detach_forces_utf8_mode_in_child_env(tmp_path, monkeypatch) -> None:
+    """Regression: Windows' default text-mode encoding is `cp1252`,
+    which crashes with `UnicodeEncodeError: 'charmap' codec can't
+    encode character` the moment the pipeline touches non-ASCII
+    paper content (Greek letters, math arrows, em dashes — every
+    real academic paper). `_detach_review_process` must set
+    `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` in the child
+    environment so the whole detached pipeline defaults to UTF-8
+    regardless of parent locale.
+
+    Pin the env-var forwarding so a future refactor can't silently
+    drop it.
+    """
+    log = tmp_path / "detached.log"
+    paper = tmp_path / "paper.pdf"
+    paper.write_bytes(b"not-a-real-pdf")
+
+    captured_env: dict[str, str] = {}
+
+    class _FakePopen:
+        def __init__(self, cmd, **kwargs):
+            captured_env.update(kwargs.get("env") or {})
+            self.pid = 888888
+
+    monkeypatch.setattr(cli_review.subprocess, "Popen", _FakePopen)
+
+    rc = cli_review._detach_review_process(
+        [str(paper), "--host", "claude", "--detach", "--log-file", str(log)],
+        log,
+    )
+    assert rc == 0
+    assert captured_env.get("PYTHONUTF8") == "1", (
+        "_detach_review_process must set PYTHONUTF8=1 in the child env. "
+        "Without it, Windows' cp1252 default crashes on any non-ASCII "
+        "paper content (Δ, →, em dashes, accented author names). See "
+        "the comment in _detach_review_process for why this is required."
+    )
+    assert captured_env.get("PYTHONIOENCODING") == "utf-8", (
+        "_detach_review_process must set PYTHONIOENCODING=utf-8 in the "
+        "child env as a belt-and-suspenders complement to PYTHONUTF8=1."
+    )
+    # The detached marker env var must also still be there — that's
+    # how the child knows not to recursively re-spawn itself.
+    assert captured_env.get("COARSE_REVIEW_DETACHED") == "1"
