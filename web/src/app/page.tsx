@@ -1699,10 +1699,28 @@ export default function Home() {
                           lineHeight: 1.5,
                         }}
                       >
-                        The agent will refresh the coarse-review skill, ask
-                        for your OpenRouter key if needed, and run the full review
-                        locally. Takes 10&ndash;25 minutes. Your provider login stays
-                        local to your machine.
+                        The agent will refresh the coarse-review skill, run
+                        the full review locally, and take 10&ndash;25 minutes.
+                        Your provider login stays on your machine.
+                      </p>
+                      <p
+                        style={{
+                          fontFamily: "var(--font-chalk)",
+                          fontSize: "0.92rem",
+                          color: "var(--yellow-chalk)",
+                          margin: "0.5rem 0 0",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Heads up: your OpenRouter key has to already be on
+                        your machine — export <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>OPENROUTER_API_KEY</code>,
+                        put it in a <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>.env</code>,
+                        or save it to <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>~/.coarse/config.toml</code>{" "}
+                        before you run the commands. We deliberately don&apos;t
+                        pass it through the browser, because the handoff URL
+                        ends up inside your agent&apos;s chat log. If your key
+                        isn&apos;t found, the agent will ask for it and save
+                        it for you.
                       </p>
                     </div>
 
