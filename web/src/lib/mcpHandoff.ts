@@ -109,7 +109,7 @@ export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 // python-multipart, etc.). `install-skills` is pure stdlib and works
 // without the extra.
 const DEFAULT_MCP_UVX_FROM =
-  "coarse-ink @ git+https://github.com/Davidvandijcke/coarse@1f6603f515e3";
+  "coarse-ink @ git+https://github.com/Davidvandijcke/coarse@1adc98e0e0cf";
 
 export function resolvePinnedUvFrom(): string {
   const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();
