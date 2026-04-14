@@ -10,50 +10,22 @@ import { isEmailCapacityReached } from "@/lib/emailCapacity";
 import { consumeReviewHandoffSecret } from "@/lib/routeHandoffAuth";
 import { sendReviewEmail } from "@/lib/email";
 import {
+  buildModalWebhookHostSuffix,
+  getModalWebhookConfig,
+} from "@/lib/modalWebhook";
+import {
   getActiveReviewWindowStartIso,
   MAX_CONCURRENT_REVIEWS,
 } from "@/lib/reviewCapacity";
 
 export const maxDuration = 30;
 const MODAL_TRIGGER_TIMEOUT_MS = 10_000;
-const MODAL_WEBHOOK_HOST_SUFFIX = "--coarse-review-run-review.modal.run";
+const MODAL_WEBHOOK_HOST_SUFFIXES = [
+  buildModalWebhookHostSuffix("coarse-review", "run-review"),
+];
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-function isLocalhost(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
-}
-
-function getModalWebhookConfig(): { url: string; secret: string } | null {
-  const rawUrl = process.env.MODAL_FUNCTION_URL?.trim();
-  if (!rawUrl) return null;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new Error("MODAL_FUNCTION_URL must be a valid absolute URL");
-  }
-
-  const secret = process.env.MODAL_WEBHOOK_SECRET?.trim() ?? "";
-  if (!secret) {
-    throw new Error("MODAL_WEBHOOK_SECRET must be set when MODAL_FUNCTION_URL is configured");
-  }
-
-  if (parsed.protocol === "https:") {
-    if (!parsed.hostname.endsWith(MODAL_WEBHOOK_HOST_SUFFIX)) {
-      throw new Error(`MODAL_FUNCTION_URL must target *${MODAL_WEBHOOK_HOST_SUFFIX}`);
-    }
-    return { url: parsed.toString(), secret };
-  }
-
-  if (parsed.protocol === "http:" && process.env.NODE_ENV !== "production" && isLocalhost(parsed.hostname)) {
-    return { url: parsed.toString(), secret };
-  }
-
-  throw new Error("MODAL_FUNCTION_URL must use https (except http://localhost in development)");
 }
 
 export async function POST(request: NextRequest) {
@@ -69,7 +41,12 @@ export async function POST(request: NextRequest) {
 
   let modalWebhookConfig: { url: string; secret: string } | null = null;
   try {
-    modalWebhookConfig = getModalWebhookConfig();
+    modalWebhookConfig = getModalWebhookConfig({
+      rawUrl: process.env.MODAL_FUNCTION_URL,
+      rawSecret: process.env.MODAL_WEBHOOK_SECRET,
+      allowedHostSuffixes: MODAL_WEBHOOK_HOST_SUFFIXES,
+      urlEnvVarName: "MODAL_FUNCTION_URL",
+    });
   } catch (error) {
     console.error("Invalid Modal webhook configuration", error);
     return NextResponse.json({ error: "Server not configured to start review workers" }, { status: 503 });
@@ -176,13 +153,50 @@ export async function POST(request: NextRequest) {
   const handoffAuth = await consumeReviewHandoffSecret(supabaseAdmin, id, handoffSecret);
   if (!handoffAuth.ok) {
     if (handoffAuth.status === 403) {
-      const { data: existingEmail } = await supabaseAdmin
-        .from("review_emails")
-        .select("review_id")
-        .eq("review_id", id)
+      // The handoff secret was already consumed — either a legitimate
+      // double-click (attempt 1 fully succeeded, attempt 2 is redundant)
+      // OR a retry after a mid-submit dispatch failure (attempt 1 inserted
+      // review_emails then failed at Modal dispatch and marked the review
+      // `status=failed`; attempt 2 arrives with no secret). The old code
+      // treated BOTH cases as success because only the email-row existence
+      // was checked, which lied to the client about its own failed review.
+      //
+      // Resolve the distinction by joining the review row's current status:
+      //   - status='failed'   → return 503 with the original error so the
+      //                         client sees the same error it would have
+      //                         seen on attempt 1 (not a fake 200).
+      //   - status='queued'   → attempt 1 is still in-flight, attempt 2 is
+      //   or 'running'          a double-click race — idempotent success.
+      //   - status='done'     → attempt 1 already finished — idempotent
+      //                         success.
+      //   - no review row     → falls through to the generic 403 below.
+      const { data: reviewState } = await supabaseAdmin
+        .from("reviews")
+        .select("status, error_message")
+        .eq("id", id)
         .maybeSingle();
-      if (existingEmail?.review_id) {
-        return NextResponse.json({ id, accessToken });
+      if (reviewState) {
+        if (reviewState.status === "failed") {
+          return NextResponse.json(
+            {
+              error:
+                reviewState.error_message ||
+                "Your previous submission failed before the review worker accepted it. Please try again.",
+            },
+            { status: 503 },
+          );
+        }
+        // Successful idempotent retry — the review is already in flight
+        // or complete, so claim success with the same shape as the
+        // happy-path response below.
+        const { data: existingEmail } = await supabaseAdmin
+          .from("review_emails")
+          .select("review_id")
+          .eq("review_id", id)
+          .maybeSingle();
+        if (existingEmail?.review_id) {
+          return NextResponse.json({ id, accessToken });
+        }
       }
     }
     return NextResponse.json({ error: handoffAuth.error }, { status: handoffAuth.status });

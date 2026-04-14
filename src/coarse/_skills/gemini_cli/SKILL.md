@@ -29,6 +29,9 @@ Runs the **full coarse review pipeline** on a paper using the local `gemini -p` 
     `uv tool run --python 3.12 --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
   `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse install-skills --all --force`
+  (If that fails with `No such command 'install-skills'`, you're on a
+  PyPI release that predates the command — upgrade or ignore; the skill
+  bundle is also loadable directly via `uvx --from` without install.)
 - **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key is NOT passed through the web handoff for security reasons.
 
   Before running the review, check if `OPENROUTER_API_KEY` is set:

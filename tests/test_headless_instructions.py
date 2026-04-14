@@ -121,3 +121,69 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     assert "coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@" in handoff_lib
     assert "@feat/mcp-server" not in handoff_lib
     assert "@feat/mcp-server" not in handoff_route
+
+
+def test_release_blocker_pin_is_coupled_to_unreleased_version() -> None:
+    """Mechanical guard for the ``DEFAULT_MCP_UVX_FROM`` release blocker.
+
+    The git-ref pin in ``web/src/lib/mcpHandoff.ts`` is allowed to exist
+    ONLY while ``__version__`` is still at ``1.2.2`` (i.e. no release
+    cut has happened yet). The moment ``src/coarse/__init__.py`` or
+    ``pyproject.toml`` bumps to any other version, this test must FAIL
+    until the pin is reverted to a semver pin
+    (``coarse-ink[mcp]==<new-version>``) and every consumer site is
+    updated.
+
+    This catches the failure mode the architecture review flagged:
+    a release PR that bumps the version and updates ``SKILL.md`` to
+    ``1.3.0`` but silently forgets ``mcpHandoff.ts``. Without this
+    test, every other drift-detection assertion still passes and the
+    broken pin ships to production, where every user's clipboard
+    prompt starts cloning from a git ref that no longer matches the
+    published PyPI package.
+
+    The release-cut checklist (CHANGELOG.md ## Unreleased warning
+    block) must do all four in the same commit:
+      1. Bump pyproject.toml + src/coarse/__init__.py
+      2. Publish to PyPI
+      3. Revert DEFAULT_MCP_UVX_FROM to coarse-ink[mcp]==<new-version>
+      4. Update the three SKILL.md files to match
+    This test enforces item 3.
+    """
+    init_text = _read("src/coarse/__init__.py")
+    handoff_lib = _read("web/src/lib/mcpHandoff.ts")
+
+    # Pull the current version out of __init__.py.
+    import re as _re
+
+    match = _re.search(r'__version__\s*=\s*"([^"]+)"', init_text)
+    assert match is not None, "could not find __version__ in src/coarse/__init__.py"
+    current_version = match.group(1)
+
+    has_git_ref_pin = (
+        "coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@" in handoff_lib
+    )
+
+    if current_version == "1.2.2":
+        # Pre-release state — the git-ref pin is allowed (it was
+        # introduced specifically to unblock dev testing against the
+        # unreleased install-skills + --attach flow). Either a git
+        # ref OR a bare ==1.2.2 pin is acceptable here.
+        return
+
+    # Post-release state — the version moved but the pin didn't.
+    # This is the exact failure mode this test exists to catch.
+    assert not has_git_ref_pin, (
+        f"RELEASE BLOCKER: src/coarse/__init__.py is at {current_version!r} "
+        f"but web/src/lib/mcpHandoff.ts still pins DEFAULT_MCP_UVX_FROM to a "
+        f"git ref. Revert it to 'coarse-ink[mcp]=={current_version}' in the "
+        f"same release commit that bumps the version. See the RELEASE BLOCKER "
+        f"warning block at the top of ## Unreleased in CHANGELOG.md."
+    )
+    # Also double-check the semver pin actually matches __version__ so
+    # a release that flipped to ==1.3.1 by mistake is also caught.
+    expected_semver_pin = f'"coarse-ink[mcp]=={current_version}"'
+    assert expected_semver_pin in handoff_lib, (
+        f"web/src/lib/mcpHandoff.ts does not contain {expected_semver_pin}; "
+        f"the DEFAULT_MCP_UVX_FROM pin must match __version__={current_version!r}."
+    )

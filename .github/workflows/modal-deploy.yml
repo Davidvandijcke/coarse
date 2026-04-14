@@ -1,10 +1,15 @@
 name: deploy-modal
 
-# Auto-deploy the Modal review worker from `main` on every push that could
-# affect the deployed image. This is the real enforcement that keeps
-# production Modal in lockstep with `main` — the import-time guard in
-# `deploy/modal_worker.py::_enforce_deploy_branch` is a second belt for
-# accidental local `modal deploy` runs from a dev branch.
+# Auto-deploy both production Modal apps from `main` on every push that
+# changes shipped server code. Together with the companion
+# `modal-preview-deploy.yml` workflow, this makes the default path:
+#
+#   feature branch -> dev -> preview Modal/Vercel/Supabase validation
+#   -> release PR dev -> main -> production Modal deploy
+#
+# The import-time guard in `deploy/modal_worker.py::_enforce_deploy_branch`
+# remains the second belt for accidental local `modal deploy` runs from a
+# dev branch.
 #
 # Incident context: on 2026-04-13, production Modal was running a snapshot
 # of `dev` that contained resurrected cheap-tier stage routing plus a race
@@ -25,6 +30,7 @@ on:
     paths:
       - 'src/coarse/**'
       - 'deploy/modal_worker.py'
+      - 'deploy/mcp_server.py'
       - 'pyproject.toml'
       - '.github/workflows/modal-deploy.yml'
   # Manual re-run from the Actions tab (for retries or to force a redeploy
@@ -53,7 +59,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       # Modal reads these automatically. Added as repo secrets via
       # `gh secret set MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET`. Until they
@@ -62,6 +68,14 @@ jobs:
       # workflow lands doesn't silently do nothing.
       MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: coarse-review
+            path: deploy/modal_worker.py
+          - label: coarse-mcp
+            path: deploy/mcp_server.py
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,9 +87,9 @@ jobs:
 
       - name: Install deploy-time dependencies
         # Only the imports that `modal deploy` needs to LOAD the worker
-        # file locally. The image's own runtime deps (litellm, instructor,
-        # docling, etc.) are installed inside Modal's build, not here.
-        run: pip install 'modal>=0.68' 'fastapi>=0.115' 'pydantic>=2.0'
+        # files locally. The images' runtime deps (litellm, instructor,
+        # docling, fastmcp, etc.) are installed inside Modal's build, not here.
+        run: pip install 'modal>=0.68' 'fastapi[standard]>=0.115' 'pydantic>=2.0' 'fastmcp>=2.10'
 
       - name: Validate Modal credentials
         run: |
@@ -88,11 +102,11 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy modal worker
+      - name: Deploy ${{ matrix.label }}
         # The `_enforce_deploy_branch` import-time guard in
         # deploy/modal_worker.py sees GITHUB_ACTIONS=true and
         # GITHUB_REF_NAME=main and short-circuits as a no-op, so the
         # deploy proceeds normally from CI. If a future workflow change
         # accidentally fires this job on a non-main ref, the guard
         # raises and this step fails loudly.
-        run: modal deploy deploy/modal_worker.py
+        run: modal deploy "${{ matrix.path }}"

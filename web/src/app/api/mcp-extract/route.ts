@@ -26,6 +26,11 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  buildModalWebhookHostSuffix,
+  getModalWebhookConfig,
+  type ModalWebhookConfig,
+} from "@/lib/modalWebhook";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { requireReviewHandoffSecret } from "@/lib/routeHandoffAuth";
 
@@ -34,6 +39,9 @@ export const maxDuration = 30;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STORAGE_PATH_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|txt|md|tex|latex|html|htm|docx|epub)$/i;
+const MODAL_EXTRACT_HOST_SUFFIXES = [
+  buildModalWebhookHostSuffix("coarse-mcp", "run-extract"),
+];
 
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -124,8 +132,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id, status: reviewRow.status, cached: true });
   }
 
-  const modalUrl = process.env.MODAL_EXTRACT_URL;
-  if (!modalUrl) {
+  let modalWebhookConfig: ModalWebhookConfig | null = null;
+  try {
+    modalWebhookConfig = getModalWebhookConfig({
+      rawUrl: process.env.MODAL_EXTRACT_URL,
+      rawSecret: process.env.MODAL_WEBHOOK_SECRET,
+      allowedHostSuffixes: MODAL_EXTRACT_HOST_SUFFIXES,
+      urlEnvVarName: "MODAL_EXTRACT_URL",
+    });
+  } catch (error) {
+    console.error("Invalid MCP extraction webhook configuration", error);
+    return NextResponse.json(
+      { error: "Server not configured to start extraction workers" },
+      { status: 503 },
+    );
+  }
+  if (!modalWebhookConfig) {
     return NextResponse.json(
       {
         error:
@@ -158,11 +180,11 @@ export async function POST(request: NextRequest) {
   // intentionally does NOT include user_api_key — the worker resolves
   // it from review_secrets. This keeps the key out of Modal's
   // managed queue payload, same design as /api/submit.
-  fetch(modalUrl, {
+  fetch(modalWebhookConfig.url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.MODAL_WEBHOOK_SECRET ?? ""}`,
+      Authorization: `Bearer ${modalWebhookConfig.secret}`,
     },
     body: JSON.stringify({
       job_id: id,

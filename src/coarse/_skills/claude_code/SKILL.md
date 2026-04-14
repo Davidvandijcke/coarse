@@ -126,4 +126,4 @@ This downloads the paper from the handoff URL, runs the pipeline, and POSTs the 
 - The driver monkey-patches `coarse.llm.LLMClient` → `coarse.headless_clients.ClaudeCodeClient`, which spawns `claude -p` subprocesses for every pipeline LLM call.
 - Host-CLI env vars (`CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, etc.) are stripped from the subprocess environment so nested sessions don't conflict with the parent.
 - If a single `claude -p` call exceeds 30 minutes, it's killed and the pipeline continues without that section's comments.
-- Check progress via `tail -f /tmp/coarse-run.log` if stdout is redirected.
+- Check progress via `tail -f $LOG` where `$LOG` is the per-review log path you set in step 2 (e.g. `/tmp/coarse-review-<paper-stem>.log`). Prefer the `coarse-review --attach "$LOG"` pattern above — it replaces per-poll `tail` calls with a single blocking watch command that emits heartbeats every 30 seconds of log idleness.

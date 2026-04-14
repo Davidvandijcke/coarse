@@ -292,7 +292,17 @@ def run_attach(log_file: Path, *, timeout_seconds: int) -> int:
     log_path = log_file.expanduser().resolve()
     pidfile = pidfile_for_log(log_path)
 
-    sys.stdout.reconfigure(line_buffering=True)  # type: ignore[attr-defined]
+    # Line-buffer stdout so each log line / heartbeat is flushed immediately
+    # to the watching agent's Bash tool. Guarded against stdout replacements
+    # that don't expose reconfigure() — pytest's capsys uses a buffer that
+    # works, but io.StringIO doesn't, and some CI harnesses wrap stdout in
+    # a pipe-based writer that raises AttributeError. Line buffering is a
+    # nice-to-have, not load-bearing; failing the whole attach over it would
+    # be wrong.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        pass
 
     # Grace window for the launcher to finish writing both the pidfile
     # and the log file. Bounded — we don't want to hang forever if the

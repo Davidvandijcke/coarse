@@ -139,17 +139,6 @@ export const HOST_LAUNCH_HINT: Record<ChatHost, string> = {
 };
 
 /**
- * Build the best available launch URL for each host.
- *
- * - **Codex**: ``codex://new?prompt=<text>`` deep link with pre-filled
- *   prompt — the user just clicks "send" in the Codex app.
- *   (See https://developers.openai.com/codex/app/commands)
- * - **Claude Code**: ``claude://`` opens the app but has NO prompt
- *   parameter (feature requested, not shipped). Clipboard fallback.
- * - **Gemini CLI**: ``gemini2://`` opens the app but has NO prompt
- *   parameter documented. Clipboard fallback.
- */
-/**
  * Build the natural-language prompt the coding agent will execute.
  * Same text used in the codex://new?prompt=... deep link AND in the
  * code block users paste into Claude Code / Gemini CLI terminals.
@@ -280,6 +269,17 @@ export function buildAgentPrompt(args: {
   );
 }
 
+/**
+ * Build the best available launch URL for each host.
+ *
+ * - **Codex**: ``codex://new?prompt=<text>`` deep link with pre-filled
+ *   prompt — the user just clicks "send" in the Codex app.
+ *   (See https://developers.openai.com/codex/app/commands)
+ * - **Claude Code**: ``claude://`` opens the app but has NO prompt
+ *   parameter (feature requested, not shipped). Clipboard fallback.
+ * - **Gemini CLI**: ``gemini2://`` opens the app but has NO prompt
+ *   parameter documented. Clipboard fallback.
+ */
 export function buildLaunchUrl(args: {
   host: ChatHost;
   runCmd: string;

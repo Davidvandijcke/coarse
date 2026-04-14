@@ -459,12 +459,17 @@ def main(argv: list[str] | None = None) -> int:
     # Handoff mode: fetch bundle, download the source file to temp, then run like local mode.
     handoff_bundle: dict | None = None
     temp_source: Path | None = None
+    # Track the tempfile.mkdtemp result separately from temp_source so the
+    # cleanup in the ``finally`` below unlinks the right directory even when
+    # test mocks replace _download_handoff_source with a fixture file whose
+    # ``.parent`` is NOT the handoff tempdir (e.g. the pytest tmp_path).
+    handoff_tmpdir: Path | None = None
 
     if args.handoff:
         logger.info("Fetching handoff bundle from %s", args.handoff)
         handoff_bundle = _fetch_handoff(args.handoff)
-        tmpdir = Path(tempfile.mkdtemp(prefix="coarse-review-"))
-        temp_source = _download_handoff_source(handoff_bundle, tmpdir)
+        handoff_tmpdir = Path(tempfile.mkdtemp(prefix="coarse-review-"))
+        temp_source = _download_handoff_source(handoff_bundle, handoff_tmpdir)
         logger.info("Downloading paper to %s", temp_source)
         if temp_source.suffix.lower() != ".pdf":
             logger.info(
@@ -512,61 +517,72 @@ def main(argv: list[str] | None = None) -> int:
     review_md_path.write_text(md_text)
     logger.info("Wrote %d-char review to %s", len(md_text), review_md_path)
 
-    # Handoff mode: POST the review back to coarse web.
-    if handoff_bundle is not None:
-        logger.info(
-            "POSTing review back to %s",
-            handoff_bundle["callback_url"],
-        )
-        try:
-            # Use the paper metadata from the Review object (authoritative).
-            title = review.title or handoff_bundle.get("paper_title", "Untitled")
-            domain = review.domain or handoff_bundle.get("domain", "unknown")
-            taxonomy = review.taxonomy or handoff_bundle.get("taxonomy", "")
-
-            # Use the extracted paper_text directly — no sidecar file.
-            paper_markdown = paper_text.full_markdown
+    # Handoff mode: POST the review back to coarse web. The cleanup of the
+    # downloaded source file + its temp parent runs in a ``finally`` so the
+    # early ``return 7`` on callback failure does not leak ``/tmp/
+    # coarse-review-*`` dirs across invocations. ``shutil.rmtree`` with
+    # ``ignore_errors=True`` removes both the file and the enclosing
+    # temp-dir directly (vs. the old ``unlink + rmdir`` pair, which
+    # failed if the temp-dir ever contained a sibling file).
+    callback_failed_rc: int | None = None
+    try:
+        if handoff_bundle is not None:
             logger.info(
-                "Including %d-char paper markdown in finalize POST",
-                len(paper_markdown),
+                "POSTing review back to %s",
+                handoff_bundle["callback_url"],
             )
+            try:
+                # Use the paper metadata from the Review object (authoritative).
+                title = review.title or handoff_bundle.get("paper_title", "Untitled")
+                domain = review.domain or handoff_bundle.get("domain", "unknown")
+                taxonomy = review.taxonomy or handoff_bundle.get("taxonomy", "")
 
-            resp = _post_finalize(
-                callback_url=handoff_bundle["callback_url"],
-                finalize_token=handoff_bundle["finalize_token"],
-                paper_id=handoff_bundle["paper_id"],
-                paper_title=title,
-                domain=domain,
-                taxonomy=taxonomy,
-                markdown=md_text,
-                paper_markdown=paper_markdown,
-                host_label=host,
-            )
-            review_url = resp.get("review_url", "")
-            _print_completion_footer(
-                local_path=review_md_path,
-                review_url=review_url or None,
-            )
-        except Exception as exc:
-            _print_completion_footer(
-                local_path=review_md_path,
-                callback_failed=True,
-                callback_error=str(exc),
-            )
-            return 7
+                # Use the extracted paper_text directly — no sidecar file.
+                paper_markdown = paper_text.full_markdown
+                logger.info(
+                    "Including %d-char paper markdown in finalize POST",
+                    len(paper_markdown),
+                )
 
-    if handoff_bundle is None:
-        _print_completion_footer(local_path=review_md_path)
+                resp = _post_finalize(
+                    callback_url=handoff_bundle["callback_url"],
+                    finalize_token=handoff_bundle["finalize_token"],
+                    paper_id=handoff_bundle["paper_id"],
+                    paper_title=title,
+                    domain=domain,
+                    taxonomy=taxonomy,
+                    markdown=md_text,
+                    paper_markdown=paper_markdown,
+                    host_label=host,
+                )
+                review_url = resp.get("review_url", "")
+                _print_completion_footer(
+                    local_path=review_md_path,
+                    review_url=review_url or None,
+                )
+            except Exception as exc:
+                _print_completion_footer(
+                    local_path=review_md_path,
+                    callback_failed=True,
+                    callback_error=str(exc),
+                )
+                callback_failed_rc = 7
+        else:
+            _print_completion_footer(local_path=review_md_path)
+    finally:
+        # Clean up the handoff tempdir (and its downloaded source file)
+        # if we created one. Runs on both the success and the
+        # callback-failure paths so the early return 7 above does not
+        # leak tempdirs. Targets ``handoff_tmpdir`` directly rather
+        # than ``temp_source.parent`` so test mocks that return a
+        # fixture path whose parent is the test's own ``tmp_path``
+        # (not the handoff tempdir) don't get their fixture wiped out.
+        if handoff_tmpdir is not None:
+            import shutil
 
-    # Clean up temp source file if we downloaded one.
-    if temp_source is not None and temp_source.exists():
-        try:
-            temp_source.unlink()
-            temp_source.parent.rmdir()
-        except OSError:
-            pass
+            shutil.rmtree(handoff_tmpdir, ignore_errors=True)
 
-    return 0
+    return callback_failed_rc if callback_failed_rc is not None else 0
 
 
 if __name__ == "__main__":

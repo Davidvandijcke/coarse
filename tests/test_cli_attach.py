@@ -19,6 +19,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -245,3 +246,176 @@ def test_attach_emits_heartbeat_when_log_is_idle(tmp_path, _fast_attach, capsys)
     # "waiting…" substring is ASCII-safe on the heartbeat line so we
     # can grep for it in CI stdout without encoding gotchas.
     assert "waiting" in out
+
+
+def test_attach_timeout_exits_124(tmp_path, _fast_attach, capsys) -> None:
+    """Regression: when the worker outlives ``timeout_seconds``, ``run_attach``
+    exits with 124 (matches ``timeout(1)``) and leaves the pidfile in place
+    so the user can re-attach to the still-running worker.
+
+    Fake worker sleeps ~5s without writing markers. ``timeout_seconds=1``
+    on the watcher side should fire the 124 path. We terminate the fake
+    worker in the test's ``finally`` because it's our responsibility,
+    not the watcher's — ``--attach`` is passive by design.
+    """
+    log = tmp_path / "review.log"
+    script = textwrap.dedent(
+        """
+        import sys, time
+        log = open(sys.argv[1], 'w')
+        log.write('init\\n'); log.flush()
+        time.sleep(5.0)
+        log.close()
+        """
+    )
+    proc = _spawn_fake_review(log, script=script)
+    try:
+        write_pidfile(pidfile_for_log(log), proc.pid)
+        rc = run_attach(log, timeout_seconds=1)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)
+    assert rc == 124
+    err = capsys.readouterr().err
+    assert "timeout" in err.lower()
+    # Pidfile must survive the 124 exit so the user can re-attach to
+    # the still-running worker (the watcher gave up, not the worker).
+    assert pidfile_for_log(log).exists()
+
+
+def test_attach_log_never_appears_exits_3(tmp_path, _fast_attach, capsys) -> None:
+    """Regression: ``run_attach`` bails with exit 3 when the pidfile is
+    present but the log file never shows up within the grace window.
+
+    This path is distinct from ``test_attach_missing_pidfile_exits_3``
+    (no pidfile at all) and from ``test_attach_empty_pidfile_exits_3``
+    (pidfile exists but is malformed). Here we write a valid pidfile
+    pointing at a live PID but deliberately leave the log file
+    un-created — the watcher should respect the grace window for the
+    log file too, not just the pidfile.
+    """
+    log = tmp_path / "absent.log"
+    # Live PID so is_pid_alive succeeds — we just never write the log.
+    write_pidfile(pidfile_for_log(log), os.getpid())
+    try:
+        rc = run_attach(log, timeout_seconds=10)
+    finally:
+        pidfile_for_log(log).unlink(missing_ok=True)
+    assert rc == 3
+    err = capsys.readouterr().err
+    assert "log file" in err and "did not appear" in err
+
+
+def test_handle_watcher_interrupt_with_live_pid_prints_reattach_hint(tmp_path, capsys) -> None:
+    """Regression: Ctrl+C on the watcher MUST NOT kill the detached worker.
+
+    ``handle_watcher_interrupt`` prints a re-attach hint so the user can
+    resume watching later without breaking anything. Uses the test's own
+    PID (always alive) as a stand-in for a real detached worker.
+    """
+    from coarse.cli_attach import handle_watcher_interrupt
+
+    log = tmp_path / "review.log"
+    log.write_text("", encoding="utf-8")
+    write_pidfile(pidfile_for_log(log), os.getpid())
+    try:
+        rc = handle_watcher_interrupt(log)
+    finally:
+        pidfile_for_log(log).unlink(missing_ok=True)
+    assert rc == 130
+    out = capsys.readouterr().out
+    assert "watcher detached" in out
+    assert "re-attach with:" in out
+    assert str(log.resolve()) in out
+
+
+def test_handle_watcher_interrupt_with_dead_pid_omits_reattach_hint(tmp_path, capsys) -> None:
+    """If the worker already exited (by the time Ctrl+C fires), there's
+    nothing to re-attach to — suppress the re-attach hint so the user
+    isn't told to run a command that would hang.
+    """
+    from coarse.cli_attach import handle_watcher_interrupt
+
+    log = tmp_path / "review.log"
+    log.write_text("", encoding="utf-8")
+    # PID 99999 is almost certainly not alive on a test host (and if it
+    # is, it belongs to another user and would still route through the
+    # ps-state zombie guard as alive, which is fine — this test just
+    # cares about the ``pid is None`` branch).
+    pidfile_for_log(log).unlink(missing_ok=True)
+    try:
+        rc = handle_watcher_interrupt(log)
+    finally:
+        pass
+    assert rc == 130
+    out = capsys.readouterr().out
+    assert "watcher detached" in out
+    # No pidfile → pid is None → re-attach hint suppressed.
+    assert "re-attach with:" not in out
+
+
+def test_is_pid_alive_on_dead_pid_returns_false() -> None:
+    """Unit test for ``is_pid_alive`` on a PID that's definitely gone.
+
+    Spawn a tiny child, wait for it to exit and be reaped, then probe.
+    Avoids a hardcoded "probably-dead" PID (99999 etc.) which could
+    occasionally collide with a real process on a busy system.
+    """
+    from coarse.cli_attach import is_pid_alive
+
+    proc = subprocess.Popen(
+        [sys.executable, "-c", "pass"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    proc.wait(timeout=5)
+    # After wait(), the child is fully reaped — no zombie state.
+    assert is_pid_alive(proc.pid) is False
+
+
+def test_is_pid_alive_on_live_pid_returns_true() -> None:
+    """Unit test for ``is_pid_alive`` on a PID that's definitely alive.
+
+    Uses the test process's own PID — guaranteed alive for the duration
+    of the test. Exercises the fast-path (``os.kill`` succeeds, ``ps``
+    reports a non-zombie state).
+    """
+    from coarse.cli_attach import is_pid_alive
+
+    assert is_pid_alive(os.getpid()) is True
+
+
+def test_is_pid_alive_on_zombie_returns_false() -> None:
+    """Regression: ``is_pid_alive`` must return False for a zombie (process
+    has exited but not yet been reaped by the parent).
+
+    This is the whole reason for the ``ps -o state=`` probe — without it,
+    ``os.kill(pid, 0)`` returns success on a zombie and the watcher
+    would wait indefinitely for a dead subprocess during pytest runs
+    (where the test process is the parent and has not yet called
+    ``wait()``). In production the detached worker is orphaned to init
+    at launch time so init reaps immediately, but the test environment
+    is exactly the parent/zombie configuration this guard exists for.
+    """
+    from coarse.cli_attach import is_pid_alive
+
+    proc = subprocess.Popen(
+        [sys.executable, "-c", "pass"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    # DO NOT wait() — leave the process as a zombie so we can probe it.
+    try:
+        # Busy-wait briefly for the child to exit into zombie state.
+        # ``proc.poll()`` will return the exit code once it's done.
+        for _ in range(100):
+            if proc.poll() is not None:
+                break
+            time.sleep(0.02)
+        assert proc.poll() is not None, "fake worker did not exit in time"
+        assert is_pid_alive(proc.pid) is False
+    finally:
+        # Reap the zombie before pytest moves on.
+        proc.wait(timeout=5)

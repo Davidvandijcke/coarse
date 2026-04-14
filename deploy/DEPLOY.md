@@ -101,6 +101,13 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
 
 **How the worker runs**: When triggered by the frontend, it downloads the PDF from Supabase Storage, calls `coarse.review_paper()` with the user's OpenRouter key, writes the review markdown back to Supabase, sends a completion email, and deletes the PDF. Timeout is 10 minutes, memory is 512 MB.
 
+If you also use the subscription/MCP flow, deploy `deploy/mcp_server.py`
+and save the extract endpoint URL too:
+
+```text
+https://<your-org>--coarse-mcp-run-extract.modal.run
+```
+
 ---
 
 ## 3. Vercel
@@ -117,11 +124,15 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJ...` | From step 1 |
    | `SUPABASE_SERVICE_KEY` | `eyJ...` | From step 1 (server-side only) |
    | `MODAL_FUNCTION_URL` | `https://...modal.run` | From step 2 |
+   | `MODAL_EXTRACT_URL` | `https://...modal.run` | `coarse-mcp` `run_extract` endpoint |
    | `MODAL_WEBHOOK_SECRET` | (same value as Modal secret) | Shared secret |
    | `RESEND_API_KEY` | `re_...` | Resend sending-access key (see step 5) |
    | `NEXT_PUBLIC_SITE_URL` | `https://coarse.ink` | Your public URL |
+   | `NEXT_PUBLIC_MCP_SERVER_URL` | `https://.../mcp/` | Optional; used by legacy `/mcp` landing page |
 
 3. Deploy. The site will be live at `https://coarse.ink` (or your Vercel preview URL during development).
+
+For an isolated preview setup, see [deploy/PREVIEW_ENVIRONMENTS.md](/Users/davidvandijcke/University%20of%20Michigan%20Dropbox/David%20Van%20Dijcke/coarse/deploy/PREVIEW_ENVIRONMENTS.md).
 
 ---
 
