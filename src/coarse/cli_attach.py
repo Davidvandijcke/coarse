@@ -163,8 +163,76 @@ def register_pidfile_cleanup(log_file: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+# Command-line substrings used to verify a PID belongs to a coarse-review
+# worker rather than an unrelated process that inherited a recycled PID.
+# The detached worker is invoked via ``python -m coarse.cli_review ...``
+# (see ``_detach_review_process`` in ``cli_review.py``), so its ``ps``
+# command line contains ``coarse.cli_review``. The uvx launcher path
+# runs ``coarse-review`` as a console script; its cmdline contains the
+# string ``coarse-review`` (or ``coarse/cli_review.py`` on some uvx
+# layouts). Both substrings are safe to match.
+_COARSE_REVIEW_CMDLINE_MARKERS = (
+    "coarse.cli_review",
+    "coarse-review",
+    "coarse/cli_review",
+)
+
+
+def _pid_cmdline(pid: int) -> str | None:
+    """Return the command line for a PID, or ``None`` if ``ps`` can't answer.
+
+    On macOS/Linux, ``ps -o command= -p <pid>`` prints the full invocation
+    string. Returns ``None`` on any subprocess error so callers can fall
+    through to ``kill(0)``-based liveness.
+    """
+    if os.name == "nt":
+        return None
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "command=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return ""  # ps says no such pid — distinguishable from 'unknown'
+    return result.stdout.strip()
+
+
+def _pid_looks_like_coarse_review(pid: int) -> bool:
+    """True if the PID's command line looks like a coarse-review worker.
+
+    Guards against **PID recycling across runs**: if review A crashes
+    hard (SIGKILL, OOM, segfault) without firing its atexit pidfile
+    cleanup, a stale ``<log>.pid`` is left on disk. Time passes, the OS
+    reuses review A's PID for some unrelated process, user points
+    ``--attach`` at the same log path. Without this guard,
+    ``is_pid_alive`` sees ``os.kill(pid, 0)`` succeed and treats the
+    unrelated process as an alive worker — the watcher then hangs for
+    the full ``--attach-timeout``.
+
+    With this guard, ``ps -o command=`` is inspected for any of the
+    expected coarse-review substrings. A recycled PID whose cmdline
+    doesn't match returns False, and ``is_pid_alive`` reports dead.
+
+    Falls back to True when ``ps`` is missing or unreadable — we'd
+    rather falsely wait out the timeout than falsely claim a live
+    worker is dead, because the false-dead path causes the watcher
+    to drain the log and exit while the real worker is still
+    running, which loses review output.
+    """
+    cmdline = _pid_cmdline(pid)
+    if cmdline is None:
+        return True  # ps missing → fall through to kill(0) result
+    if cmdline == "":
+        return False  # ps explicitly says no such pid
+    return any(marker in cmdline for marker in _COARSE_REVIEW_CMDLINE_MARKERS)
+
+
 def is_pid_alive(pid: int) -> bool:
-    """Portable 'is this PID still running' check.
+    """Portable 'is this PID still running as a coarse-review worker' check.
 
     ``os.kill(pid, 0)`` sends signal 0 — no-op permission check that
     returns normally if the PID exists, ``ProcessLookupError`` if
@@ -178,16 +246,25 @@ def is_pid_alive(pid: int) -> bool:
     time so init reaps immediately — no zombies — but in pytest the
     test process IS the parent of the fake worker and sees a zombie
     for the whole test. Probe ``ps -o state=`` for a Z state so the
-    watcher correctly reports dead in both environments. The ``ps``
-    hop adds ~2ms per poll in the hot path, which is negligible at
-    the 5s production poll cadence.
+    watcher correctly reports dead in both environments.
+
+    **PID recycling guard**: after all the above returns 'alive', we
+    additionally verify via ``_pid_looks_like_coarse_review`` that
+    the command line at that PID looks like a coarse-review worker.
+    This closes the stale-pidfile-after-hard-crash failure mode
+    spelled out in ``_pid_looks_like_coarse_review``'s docstring.
+
+    The ``ps`` probes add ~2ms per poll in the hot path, which is
+    negligible at the 5s production poll cadence.
     """
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
+        # Another user's process — definitely not our worker (our
+        # detached child is always spawned by the current user).
+        return False
 
     if os.name == "nt":
         return True
@@ -210,7 +287,11 @@ def is_pid_alive(pid: int) -> bool:
     state = result.stdout.strip()
     if state.startswith("Z"):
         return False
-    return True
+    # State probe passed — process exists and is not a zombie. Now
+    # verify its command line looks like a coarse-review worker so
+    # a PID recycled from a hard-crashed prior run doesn't masquerade
+    # as alive.
+    return _pid_looks_like_coarse_review(pid)
 
 
 # ---------------------------------------------------------------------------

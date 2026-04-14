@@ -62,9 +62,18 @@ def _spawn_fake_review(
     via sys.argv[1]. The subprocess is a real OS process so
     ``os.kill(pid, 0)`` behaves correctly (faking the PID check would
     defeat the whole point of the watcher).
+
+    A trailing ``"coarse-review"`` marker is passed as sys.argv[2] so
+    the cmdline check inside ``cli_attach.is_pid_alive`` (which
+    probes ``ps -o command=`` for the substrings ``coarse.cli_review``
+    / ``coarse-review``) recognises the fake worker as a
+    coarse-review process and returns True for liveness. Without the
+    marker, the PID-recycling guard in ``is_pid_alive`` would treat
+    the fake worker as an unrelated python and report it dead, which
+    would prematurely drain the log and break every watcher test.
     """
     return subprocess.Popen(
-        [sys.executable, "-c", script, str(log_path)],
+        [sys.executable, "-c", script, str(log_path), "coarse-review"],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -310,23 +319,32 @@ def test_handle_watcher_interrupt_with_live_pid_prints_reattach_hint(tmp_path, c
     """Regression: Ctrl+C on the watcher MUST NOT kill the detached worker.
 
     ``handle_watcher_interrupt`` prints a re-attach hint so the user can
-    resume watching later without breaking anything. Uses the test's own
-    PID (always alive) as a stand-in for a real detached worker.
+    resume watching later without breaking anything. Uses a real
+    ``_spawn_fake_review`` subprocess (so its command line contains the
+    ``coarse-review`` marker the PID-recycling guard in ``is_pid_alive``
+    requires — the pytest runner itself would be rejected by that
+    guard, which is the whole point of the guard).
     """
     from coarse.cli_attach import handle_watcher_interrupt
 
     log = tmp_path / "review.log"
     log.write_text("", encoding="utf-8")
-    write_pidfile(pidfile_for_log(log), os.getpid())
+    proc = _spawn_fake_review(
+        log,
+        script="import sys, time; time.sleep(2.0)",
+    )
     try:
+        write_pidfile(pidfile_for_log(log), proc.pid)
         rc = handle_watcher_interrupt(log)
+        out = capsys.readouterr().out
+        assert rc == 130
+        assert "watcher detached" in out
+        assert "re-attach with:" in out
+        assert str(log.resolve()) in out
     finally:
+        proc.terminate()
+        proc.wait(timeout=5)
         pidfile_for_log(log).unlink(missing_ok=True)
-    assert rc == 130
-    out = capsys.readouterr().out
-    assert "watcher detached" in out
-    assert "re-attach with:" in out
-    assert str(log.resolve()) in out
 
 
 def test_handle_watcher_interrupt_with_dead_pid_omits_reattach_hint(tmp_path, capsys) -> None:
@@ -374,16 +392,57 @@ def test_is_pid_alive_on_dead_pid_returns_false() -> None:
     assert is_pid_alive(proc.pid) is False
 
 
-def test_is_pid_alive_on_live_pid_returns_true() -> None:
-    """Unit test for ``is_pid_alive`` on a PID that's definitely alive.
+def test_is_pid_alive_on_live_coarse_review_worker_returns_true(tmp_path) -> None:
+    """Unit test for ``is_pid_alive`` on an alive coarse-review-flavored process.
 
-    Uses the test process's own PID — guaranteed alive for the duration
-    of the test. Exercises the fast-path (``os.kill`` succeeds, ``ps``
-    reports a non-zombie state).
+    Uses ``_spawn_fake_review`` so the subprocess's command line contains
+    the ``coarse-review`` marker the PID-recycling guard looks for.
+    Exercises the full happy path: ``os.kill`` succeeds, ``ps -o state=``
+    reports a non-zombie state, and ``_pid_looks_like_coarse_review``
+    recognises the cmdline.
     """
     from coarse.cli_attach import is_pid_alive
 
-    assert is_pid_alive(os.getpid()) is True
+    log = tmp_path / "alive.log"
+    # Long-running (2s) subprocess — we terminate it in the ``finally``
+    # once we've confirmed is_pid_alive returns True.
+    proc = _spawn_fake_review(
+        log,
+        script="import sys, time; open(sys.argv[1], 'w').close(); time.sleep(2.0)",
+    )
+    try:
+        # Busy-wait briefly for the subprocess to reach a steady state
+        # (otherwise ps may not yet see it).
+        for _ in range(50):
+            if log.exists():
+                break
+            time.sleep(0.02)
+        assert is_pid_alive(proc.pid) is True
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)
+
+
+def test_is_pid_alive_returns_false_on_non_coarse_review_pid() -> None:
+    """Regression: PID-recycling guard rejects an alive process whose
+    command line doesn't match the coarse-review markers.
+
+    Uses ``os.getpid()`` (the pytest runner) as a stand-in for a recycled
+    PID that the OS handed out to an unrelated process after a prior
+    coarse-review worker crashed hard without cleaning up its pidfile.
+    Without this guard, the watcher sees ``kill -0`` succeed and
+    incorrectly hangs on what it thinks is a running worker for the
+    full ``--attach-timeout``. The cmdline probe closes that hole: the
+    pytest process's command line is something like
+    ``.../python -m pytest tests/...`` — no coarse-review marker — so
+    ``is_pid_alive`` reports it dead and the watcher cleanly bails
+    with exit 2 ("silent crash, no marker in log").
+    """
+    from coarse.cli_attach import is_pid_alive
+
+    # The pytest runner is alive, belongs to the current user, and is
+    # definitely not a coarse-review worker. Expected: False.
+    assert is_pid_alive(os.getpid()) is False
 
 
 def test_is_pid_alive_on_zombie_returns_false() -> None:

@@ -70,7 +70,7 @@ uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
   coarse-review --attach "$LOG"
 ```
 
-Run the attach call with a long tool timeout — at least 30 minutes — so Codex doesn't kill the blocking command prematurely. Do NOT re-run the `--detach` command from STEP 2a if the attach call returns early (that would spawn a second worker). Safe to Ctrl+C the attach: the watcher detaches but the worker keeps running, and re-attaching with the same command is idempotent. Attach exit codes: `0` complete, `1` failure marker, `2` silent crash, `3` missing pidfile, `124` attach's own 30-min timeout, `130` user interrupt.
+Run the attach call with a long tool timeout — at least 45 minutes (`--timeout 2700`) — so Codex doesn't kill the blocking command prematurely. The 45-minute recommendation leaves ~20 minutes of margin on top of the 10-25 minute review runtime for cold starts, slow models, long papers, and `--effort max` runs; 30 minutes is too tight because the tool timeout is a wall clock, not an idle-stream cap. Bump to 60 minutes (`--timeout 3600`) for book-length papers or the largest models. Do NOT re-run the `--detach` command from STEP 2a if the attach call returns early (that would spawn a second worker). Safe to Ctrl+C the attach: the watcher detaches but the worker keeps running, and re-attaching with the same command is idempotent. Attach exit codes: `0` complete, `1` failure marker, `2` silent crash, `3` missing pidfile, `124` attach's own 30-min timeout, `130` user interrupt.
 
 When attach exits cleanly, use the final log lines as the authoritative artifact locations:
 

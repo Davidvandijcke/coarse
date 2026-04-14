@@ -28,7 +28,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
-import { MCP_UVX_FROM } from "@/lib/mcpHandoff";
+import { buildHandoffLandingCommands } from "@/lib/mcpHandoff";
+import {
+  DEFAULT_SUBMISSIONS_PAUSED_MESSAGE,
+  getSubmissionPauseState,
+} from "@/lib/systemStatus";
 
 export const maxDuration = 15;
 
@@ -54,6 +58,19 @@ export async function GET(
     );
   }
   const supabase = createClient(supabaseUrl, supabaseKey);
+  const pauseState = await getSubmissionPauseState(supabase);
+  if (!pauseState.accepting) {
+    const message =
+      pauseState.message ?? DEFAULT_SUBMISSIONS_PAUSED_MESSAGE;
+    const accept = request.headers.get("accept") ?? "";
+    if (accept.includes("application/json") && !accept.includes("text/html")) {
+      return NextResponse.json({ error: message }, { status: 503 });
+    }
+    return new NextResponse(renderPausedLandingPage(message), {
+      status: 503,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  }
 
   // Step 1: look up the token — it must exist, not be expired, not be consumed.
   const { data: tokenRow, error: tokenErr } = await supabase
@@ -79,10 +96,16 @@ export async function GET(
   }
 
   // Step 2: look up the review row to get the stored filename, which
-  // tells us the storage path (<uuid>.<ext>).
+  // tells us the storage path (<uuid>.<ext>). Also pull `domain` and
+  // `taxonomy` so the handoff bundle surfaces whatever metadata was
+  // recorded at presign time — `taxonomy` was added to the reviews
+  // table by `migrate_mcp_handoff.sql` and is written by `mcp-finalize`
+  // when a handoff review completes, so returning it here keeps the
+  // column wired end-to-end instead of half-wired (write-only on one
+  // side of the handoff, hardcoded empty on the other).
   const { data: reviewRow, error: reviewErr } = await supabase
     .from("reviews")
-    .select("id, paper_filename, domain")
+    .select("id, paper_filename, domain, taxonomy")
     .eq("id", tokenRow.paper_id)
     .single();
   if (reviewErr || !reviewRow) {
@@ -133,7 +156,7 @@ export async function GET(
     callback_url: callbackUrl,
     paper_title: reviewRow.paper_filename ?? "",
     domain: reviewRow.domain ?? "",
-    taxonomy: "",
+    taxonomy: reviewRow.taxonomy ?? "",
   };
 
   // Content negotiation.
@@ -157,6 +180,52 @@ export async function GET(
   });
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderPausedLandingPage(message: string): string {
+  const safeMessage = escapeHtml(message);
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>coarse - submissions paused</title>
+  <style>
+    :root {
+      --board: #0f1115;
+      --board-surface: #1a1d24;
+      --tray: #2a2f3a;
+      --chalk: #d6d3c8;
+      --chalk-bright: #f4f0e1;
+      --dust: #85847a;
+      --red-chalk: #d46e6e;
+    }
+    html, body { margin: 0; padding: 0; background: var(--board); color: var(--chalk); font-family: Georgia, serif; }
+    main { max-width: 720px; margin: 4rem auto; padding: 0 1.5rem; }
+    h1 { font-size: 2rem; color: var(--chalk-bright); margin-bottom: 0.75rem; }
+    .notice { border-left: 3px solid var(--red-chalk); padding: 1rem 1.25rem; background: var(--board-surface); line-height: 1.7; }
+    .note { color: var(--dust); margin-top: 1rem; line-height: 1.6; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Submissions are paused</h1>
+  <div class="notice">${safeMessage}</div>
+  <p class="note">
+    New handoffs are blocked until the maintainer resumes the service. If you already started a review,
+    your existing status and review pages will keep working.
+  </p>
+</main>
+</body>
+</html>`;
+}
+
 
 function renderLandingPage(args: {
   handoffUrl: string;
@@ -164,21 +233,19 @@ function renderLandingPage(args: {
   paperId: string;
 }): string {
   const { handoffUrl, paperTitle, paperId } = args;
-  const safe = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const safe = (s: string) => escapeHtml(s);
 
-  const pinnedFrom = MCP_UVX_FROM;
-  const quotedFrom = `'${pinnedFrom}'`;
-  // Per-review unique log file so parallel runs in the same shell
-  // don't clobber each other. Mirrors the buildCliCommands path in
-  // web/src/lib/mcpHandoff.ts.
-  const logFile = `/tmp/coarse-review-${paperId}.log`;
-  const setupCmd = `uvx --python 3.12 --from ${quotedFrom} coarse install-skills --all --force`;
-  const runCmd = `uvx --python 3.12 --from ${quotedFrom} coarse-review --detach --log-file ${logFile} --handoff ${handoffUrl}`;
-  // Single blocking watch command — replaces the legacy per-60s tail
-  // polling loop. See _run_attach in src/coarse/cli_review.py for the
-  // contract (heartbeats every 30s, exit codes 0/1/2/3/124/130).
-  const attachCmd = `uvx --python 3.12 --from ${quotedFrom} coarse-review --attach ${logFile}`;
+  // Shared with the browser handoff flow in web/src/app/page.tsx via
+  // `buildHandoffLandingCommands` so the two surfaces can't drift on
+  // uvx pin, log-file scheme, or attach-command shape. The landing
+  // page shows a host-agnostic run command (no --host/--model/--effort
+  // appended) because the user edits the command before running to
+  // pick their own host; the browser flow uses `buildCliCommands`
+  // which appends the flags selected in the modal.
+  const { setupCmd, runCmd, attachCmd, logFile } = buildHandoffLandingCommands({
+    handoffUrl,
+    paperId,
+  });
 
   return `<!doctype html>
 <html lang="en">

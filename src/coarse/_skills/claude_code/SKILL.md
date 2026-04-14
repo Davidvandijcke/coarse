@@ -78,7 +78,7 @@ uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
   coarse-review --attach "$LOG"
 ```
 
-Run the attach call with a long Bash-tool timeout: in Claude Code, pass `timeout: 1800000` (30 minutes) on the `Bash` tool invocation so the tool doesn't kill the blocking command. Do NOT re-run the `--detach` command from STEP 2a if the attach call returns early — that would spawn a second worker. Safe to Ctrl+C the attach: the watcher detaches but the worker keeps running, and you can re-attach with the same command. Attach exit codes: `0` complete, `1` failure marker, `2` silent crash, `3` missing pidfile, `124` attach's own 30-min timeout, `130` user interrupt.
+Run the attach call with a long Bash-tool timeout: in Claude Code, pass `timeout: 2700000` (45 minutes) on the `Bash` tool invocation so the tool doesn't kill the blocking command. The 45-minute recommendation leaves ~20 minutes of margin on top of the 10-25 minute review runtime for cold starts, slow models, long papers, and `--effort max` runs — 30 minutes is too tight because the tool timeout is a wall clock, not an idle-stream cap. Bump to 60 minutes for book-length papers or the largest models. Do NOT re-run the `--detach` command from STEP 2a if the attach call returns early — that would spawn a second worker. Safe to Ctrl+C the attach: the watcher detaches but the worker keeps running, and you can re-attach with the same command. Attach exit codes: `0` complete, `1` failure marker, `2` silent crash, `3` missing pidfile, `124` attach's own 30-min timeout, `130` user interrupt.
 
 **When attach exits with code 0, do NOT hunt across the filesystem for the review file.** `coarse-review` prints the authoritative paths in the final log lines:
 

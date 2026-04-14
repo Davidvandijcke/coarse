@@ -103,6 +103,77 @@ def test_review_section_chains_verify_for_proof_sections():
     verify_agent.run.assert_called_once()
 
 
+def test_review_section_handles_empty_comments_without_crashing():
+    """Regression: a section agent that returns ``[]`` (no issues worth
+    flagging) must propagate cleanly through ``_review_section`` without
+    crashing the proof-verify chain or the downstream quote-verify
+    fallback.
+
+    This is the pipeline-integration counterpart to the Pydantic
+    envelope test in ``tests/test_section.py::
+    test_section_agent_accepts_empty_comments_list``, which only
+    covers the agent's run() method with a MagicMock'd client. This
+    test wires the section agent through ``_review_section`` (the
+    exact call site used by the pipeline at pipeline.py::review_paper)
+    and asserts that an empty result:
+
+      1. Does NOT trigger the proof-verify chain (the ``if focus ==
+         "proof" and comments and ...`` guard at review_stages.py:110
+         must short-circuit on an empty list).
+      2. Does NOT crash ``_verify_with_fallback``, which is called
+         unconditionally after the section agent runs.
+      3. Propagates as an empty list rather than None or a crash.
+
+    Before the ``min_length=1`` constraint was dropped from
+    ``_SectionComments.comments`` in src/coarse/agents/section.py,
+    an empty result crashed with ``List should have at least 1
+    item`` inside instructor's validation layer — never reaching
+    _review_section at all. After the drop, it's the caller's
+    responsibility to handle an empty list gracefully, and this
+    test pins that responsibility.
+    """
+    section_agent = Mock()
+    verify_agent = Mock()
+    # Section agent legitimately finds no issues worth flagging.
+    section_agent.run.return_value = []
+
+    section = SectionInfo(
+        number=1,
+        title="Proof",
+        text="x" * 600,
+        section_type=SectionType.OTHER,
+        math_content=True,  # Would normally trigger proof verify.
+    )
+    paper_markdown = "Preface.\n\nThis is a sufficiently long quote from the paper.\n\nTrailer."
+
+    result = _review_section(
+        section_agent,
+        verify_agent,
+        section,
+        paper_markdown,
+        "Paper",
+        _overview(),
+        None,
+        "proof",  # Focus is proof, but empty list must still short-circuit.
+        "",
+        [section],
+        "Abstract",
+    )
+
+    # Empty list propagates cleanly — not None, not a crash, not the
+    # mock's return_value being mis-wrapped.
+    assert result == []
+    # Section agent was called exactly once (the main review pass).
+    section_agent.run.assert_called_once()
+    # Proof verify was NOT called — the `and comments and ...` guard at
+    # review_stages.py:110 short-circuits when `comments` is falsy
+    # (empty list). This is the regression the min_length=1 drop
+    # exposes: without the short-circuit, verify_agent.run would be
+    # called with [] and probably crash when it tries to iterate
+    # comments internally.
+    verify_agent.run.assert_not_called()
+
+
 def test_run_editorial_pass_falls_back_to_crossref_and_critique():
     # `run_editorial_pass` finishes each agent pass with
     # `_verify_with_fallback`, which runs the real `verify_quotes` on the

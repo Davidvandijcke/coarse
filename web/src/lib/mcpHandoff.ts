@@ -227,15 +227,23 @@ export function buildAgentPrompt(args: {
     `every 30 seconds of log idleness so the bash tool sees stdout ` +
     `activity and doesn't think the command is hung. It exits ` +
     `automatically when the review process exits. IMPORTANT: run it ` +
-    `with a long bash-tool timeout — at least 1800000 ms (30 min) in ` +
-    `Claude Code's \`Bash\` tool via the \`timeout\` parameter, ` +
-    `\`--timeout 1800\` in Codex, or the equivalent in Gemini CLI. Do ` +
-    `NOT re-run the \`--detach\` command from STEP 3 if the attach ` +
-    `call returns early — that would spawn a second worker against ` +
-    `the same handoff URL. If attach exits because the bash tool ` +
-    `timed out (not because the review finished), just re-run the ` +
-    `EXACT same attach command again — it's idempotent and will ` +
-    `re-attach to the same running worker.\n\n` +
+    `with a long bash-tool timeout — at least **2700000 ms (45 min)** ` +
+    `in Claude Code's \`Bash\` tool via the \`timeout\` parameter, ` +
+    `\`--timeout 2700\` in Codex, or the equivalent in Gemini CLI. ` +
+    `The 45-minute recommendation leaves ~20 minutes of margin on top ` +
+    `of the 10-25 minute review runtime for cold starts, slow models, ` +
+    `very long papers, and \`--effort max\` runs. 30 minutes used to ` +
+    `be the recommendation and it was tight — every agent's tool ` +
+    `timeout is a wall clock, not an idle-stream cap, so a 25-minute ` +
+    `review with a 30-minute cap leaves only 5 minutes of safety ` +
+    `margin. Bump to 60 minutes if you're reviewing a book-length ` +
+    `paper or you've picked the largest model. Do NOT re-run the ` +
+    `\`--detach\` command from STEP 3 if the attach call returns ` +
+    `early — that would spawn a second worker against the same ` +
+    `handoff URL. If attach exits because the bash tool timed out ` +
+    `(not because the review finished), just re-run the EXACT same ` +
+    `attach command again — it's idempotent and will re-attach to ` +
+    `the same running worker.\n\n` +
     `Attach exit codes tell you what happened:\n` +
     `  - 0 — review completed successfully, \`view:\` + \`local:\` ` +
     `lines are in the log\n` +
@@ -343,9 +351,29 @@ export async function mintCliHandoff(
 }
 
 /**
- * Build the two shell commands the user needs to paste into their
- * terminal. The setup command is idempotent; the run command includes
- * whatever model/effort overrides the user selected in the modal.
+ * Shared return shape for both `buildCliCommands` (browser React path
+ * with host/model/effort already chosen) and `buildHandoffLandingCommands`
+ * (server-side `/h/[token]/route.ts` HTML landing page that lets the
+ * user edit the command before running).
+ */
+export interface HandoffCliCommands {
+  setupCmd: string;
+  runCmd: string;
+  attachCmd: string;
+  logFile: string;
+}
+
+/**
+ * Build the core per-review handoff commands that are **host-agnostic**
+ * (no --host/--model/--effort appended). Used by the `/h/[token]`
+ * landing-page HTML renderer, which wants to show the user a command
+ * they can edit themselves to add host/model/effort flags rather than
+ * having them pre-baked by whatever modal host was selected in the
+ * browser.
+ *
+ * Shared with `buildCliCommands` below so the two surfaces can't
+ * drift — same uvx pin, same log-file scheme, same attach command,
+ * same shell-quoting rules.
  *
  * The log file is derived from ``paperId`` so parallel reviews
  * launched from the same shell (or stacked attempts against the same
@@ -354,27 +382,42 @@ export async function mintCliHandoff(
  * tokened review key, because ``ps aux`` and ``/tmp`` listings are
  * the wrong place for an access token.
  */
-export function buildCliCommands(args: {
+export function buildHandoffLandingCommands(args: {
   handoffUrl: string;
-  host: ChatHost;
-  model: string;
-  effort: EffortLevel;
   paperId: string;
-}): { setupCmd: string; runCmd: string; attachCmd: string; logFile: string } {
-  const { handoffUrl, host, model, effort, paperId } = args;
-  const cliName = HOST_CLI_NAME[host];
+}): HandoffCliCommands {
+  const { handoffUrl, paperId } = args;
   const quotedUvFrom = shellQuote(MCP_UVX_FROM);
   const logFile = `/tmp/coarse-review-${paperId}.log`;
   const setupCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse install-skills --all --force`;
-  const runCmd =
-    `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach --log-file ${logFile} --handoff ${handoffUrl}` +
-    ` --host ${cliName}` +
-    ` --model ${model}` +
-    ` --effort ${effort}`;
+  const runCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach --log-file ${logFile} --handoff ${handoffUrl}`;
   // Single blocking watch command that replaces the legacy per-60s
   // tail polling loop. See buildAgentPrompt STEP 4 and the
   // _run_attach docstring in src/coarse/cli_review.py for the full
   // contract (heartbeats, pidfile discovery, exit codes 0/1/2/3/124/130).
   const attachCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --attach ${logFile}`;
   return { setupCmd, runCmd, attachCmd, logFile };
+}
+
+/**
+ * Build the two shell commands the user needs to paste into their
+ * terminal. The setup command is idempotent; the run command includes
+ * whatever model/effort overrides the user selected in the modal.
+ *
+ * Layered on top of `buildHandoffLandingCommands` — the host-agnostic
+ * base commands, then the host/model/effort flags appended to the run
+ * command.
+ */
+export function buildCliCommands(args: {
+  handoffUrl: string;
+  host: ChatHost;
+  model: string;
+  effort: EffortLevel;
+  paperId: string;
+}): HandoffCliCommands {
+  const { handoffUrl, host, model, effort, paperId } = args;
+  const cliName = HOST_CLI_NAME[host];
+  const base = buildHandoffLandingCommands({ handoffUrl, paperId });
+  const runCmd = `${base.runCmd} --host ${cliName} --model ${model} --effort ${effort}`;
+  return { ...base, runCmd };
 }

@@ -94,24 +94,21 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     )
     assert "coarse.ink does not receive or store your" in handoff_page
 
-    # The /h/<token> landing-page HTML renderer has its OWN runCmd
-    # builder (it can't share buildCliCommands because it emits HTML,
-    # not a React prop). It must also thread paperId → logFile + attachCmd through.
-    assert 'import { MCP_UVX_FROM } from "@/lib/mcpHandoff";' in handoff_route
-    assert "const pinnedFrom = MCP_UVX_FROM;" in handoff_route
-    assert "const quotedFrom = `'${pinnedFrom}'`;" in handoff_route
-    assert "const logFile = `/tmp/coarse-review-${paperId}.log`;" in handoff_route
+    # The /h/<token> landing-page HTML renderer shares its core runCmd
+    # derivation with `buildCliCommands` via `buildHandoffLandingCommands`
+    # so the two surfaces can't drift on uvx pin, log-file scheme, or
+    # attach-command shape. The landing page shows a host-agnostic run
+    # command (no --host/--model/--effort flags); the browser flow
+    # appends those via the full `buildCliCommands`.
+    assert 'import { buildHandoffLandingCommands } from "@/lib/mcpHandoff";' in handoff_route
     assert (
-        "uvx --python 3.12 --from ${quotedFrom} coarse install-skills --all --force"
+        "const { setupCmd, runCmd, attachCmd, logFile } = buildHandoffLandingCommands({"
         in handoff_route
     )
-    assert (
-        "uvx --python 3.12 --from ${quotedFrom} coarse-review --detach "
-        "--log-file ${logFile} --handoff ${handoffUrl}" in handoff_route
-    )
-    assert (
-        "uvx --python 3.12 --from ${quotedFrom} coarse-review --attach ${logFile}" in handoff_route
-    )
+    # mcpHandoff.ts itself must define the shared helper so the refactor
+    # can't be silently reverted to inline command construction.
+    assert "export function buildHandoffLandingCommands(" in handoff_lib
+    assert "export interface HandoffCliCommands {" in handoff_lib
     assert (
         "Runs locally on your machine using your own Claude Code, Codex, or Gemini CLI account."
         in handoff_route
@@ -121,6 +118,42 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     assert "coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@" in handoff_lib
     assert "@feat/mcp-server" not in handoff_lib
     assert "@feat/mcp-server" not in handoff_route
+
+
+def test_submit_route_handoff_retry_checks_review_status() -> None:
+    """Regression: /api/submit's handoff-secret-consumed (403) retry branch
+    must SELECT reviews.status before returning success.
+
+    Before this guard, a client that hit Modal dispatch failure then
+    retried would see the 403 branch + existing review_emails row and
+    get a fake 200 response — even though the underlying review was
+    in status='failed' and the /status/<id> page showed the real
+    failure. That behavior was documented as a MEDIUM UX finding in
+    the pre-PR review; this drift test pins the fix so a future
+    refactor can't quietly revert to silent-success-on-failure.
+
+    Asserts the shape of the check: the 403 branch must SELECT
+    ``status, error_message`` on the reviews row AND compare
+    ``reviewState.status === "failed"`` in code. If either guard is
+    removed, a future edit may re-introduce the fake-200 bug and
+    this test will fail loudly pointing at the exact pattern to
+    restore.
+    """
+    submit_route = _read("web/src/app/api/submit/route.ts")
+
+    assert "if (handoffAuth.status === 403)" in submit_route
+    # The 403 branch must SELECT status + error_message before
+    # returning success — without this lookup, the retry has no way
+    # to tell a true idempotent success from a failed-then-retried
+    # scenario.
+    assert '.select("status, error_message")' in submit_route
+    # The explicit status='failed' check is the load-bearing guard.
+    # The string is pinned verbatim so any refactor that omits the
+    # check (or silently loosens the comparison to truthy rather
+    # than explicit equality) trips this test.
+    assert 'reviewState.status === "failed"' in submit_route
+    # Failure responses must return 503, not a fake 200.
+    assert "{ status: 503 }" in submit_route
 
 
 def test_release_blocker_pin_is_coupled_to_unreleased_version() -> None:
