@@ -73,15 +73,23 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     # buildCliCommands in mcpHandoff.ts). The log path must be built
     # from paperId so parallel reviews don't clobber each other.
     assert "const logFile = `/tmp/coarse-review-${paperId}.log`;" in handoff_lib
+    # After #126 the handoff URL and log file are shell-quoted in the
+    # runCmd/attachCmd templates so the Vercel protection-bypass `&`
+    # in the URL doesn't background the first half of the command.
+    # See test_handoff_run_command_quotes_url_for_shell below for the
+    # detailed regression context.
+    assert "const quotedHandoffUrl = shellQuote(handoffUrl);" in handoff_lib
+    assert "const quotedLogFile = shellQuote(logFile);" in handoff_lib
     assert (
         "uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach "
-        "--log-file ${logFile} --handoff ${handoffUrl}" in handoff_lib
+        "--log-file ${quotedLogFile} --handoff ${quotedHandoffUrl}" in handoff_lib
     )
     # Signal-driven wait: buildCliCommands must emit the matching
-    # `--attach ${logFile}` command so the prompt can reference it.
-    # This replaces the legacy per-60s tail polling loop.
+    # `--attach` command with the quoted log file. This replaces the
+    # legacy per-60s tail polling loop.
     assert (
-        "uvx --python 3.12 --from ${quotedUvFrom} coarse-review --attach ${logFile}" in handoff_lib
+        "uvx --python 3.12 --from ${quotedUvFrom} coarse-review --attach ${quotedLogFile}"
+        in handoff_lib
     )
     assert "attachCmd: string;" in handoff_lib
     assert "rg '^  view:|^  local:' ${logFile}" in handoff_lib
@@ -212,6 +220,49 @@ def test_preview_middleware_exempts_handoff_routes() -> None:
         "isHandoffExemptPath must strip a trailing slash from exempt "
         "prefixes before composing `${prefix}/` for the startsWith "
         "check — otherwise `/h/<token>` is never exempted."
+    )
+
+
+def test_handoff_run_command_quotes_url_for_shell() -> None:
+    """Regression: after #121 appended the Vercel Deployment Protection
+    bypass query params, the handoff URL contains
+    ``?x-vercel-protection-bypass=<secret>&x-vercel-set-bypass-cookie=true``.
+    The unquoted ``&`` made the shell background the first part of the
+    pasted command and run ``x-vercel-set-bypass-cookie=true`` as a
+    bogus foreground command — Codex tripped on this exact failure
+    mode on a live preview handoff.
+
+    ``buildHandoffLandingCommands`` must wrap ``handoffUrl`` in single
+    quotes (via the ``shellQuote`` helper) before embedding it in
+    ``runCmd``. Pin the quoting so a future refactor can't drop it.
+    """
+    import re
+
+    handoff_lib = _read("web/src/lib/mcpHandoff.ts")
+
+    # The helper must call shellQuote on handoffUrl specifically, not
+    # just on MCP_UVX_FROM.
+    assert "shellQuote(handoffUrl)" in handoff_lib, (
+        "buildHandoffLandingCommands must call shellQuote(handoffUrl) "
+        "before embedding the URL in runCmd. Otherwise the `&` in the "
+        "Vercel protection-bypass query string backgrounds the first "
+        "part of the command when the user pastes it into bash/zsh."
+    )
+
+    # The bare unquoted form MUST NOT appear in any command template.
+    # `--handoff ${handoffUrl}` (no quotes) is the exact bug we're
+    # fixing. Use a regex to tolerate whitespace drift.
+    bad_pattern = re.compile(r"--handoff\s+\$\{handoffUrl\}")
+    assert not bad_pattern.search(handoff_lib), (
+        "Found `--handoff ${handoffUrl}` (unquoted) in a command template. "
+        "Wrap handoffUrl in `shellQuote(...)` before embedding it."
+    )
+
+    # The fixed form must appear — `--handoff ${quotedHandoffUrl}` or
+    # equivalent local binding that sources from shellQuote(handoffUrl).
+    good_pattern = re.compile(r"--handoff\s+\$\{quotedHandoffUrl\}")
+    assert good_pattern.search(handoff_lib), (
+        "Expected `--handoff ${quotedHandoffUrl}` in a command template (the quoted form)."
     )
 
 

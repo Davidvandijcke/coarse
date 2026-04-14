@@ -389,13 +389,28 @@ export function buildHandoffLandingCommands(args: {
   const { handoffUrl, paperId } = args;
   const quotedUvFrom = shellQuote(MCP_UVX_FROM);
   const logFile = `/tmp/coarse-review-${paperId}.log`;
+  // The handoff URL MUST be single-quoted in the shell. After the
+  // Vercel Deployment Protection bypass landed in #121, the URL can
+  // contain `?x-vercel-protection-bypass=<secret>&x-vercel-set-bypass-cookie=true`
+  // — and that unquoted `&` makes the shell background the first
+  // part of the command, so `coarse-review --handoff <first-part>`
+  // runs immediately against a truncated URL (→ 404 or 401 because
+  // the bypass token is gone) and `x-vercel-set-bypass-cookie=true`
+  // runs as a foreground "command" that fails with "command not
+  // found". Paste-in-terminal users hit this the moment bypass was
+  // configured on preview. The uvx pin and the log file are wrapped
+  // in single quotes for the same reason — defence-in-depth against
+  // future additions to either value (e.g. a paper_id with shell
+  // metacharacters, or a pinned version string that gains a `&`).
+  const quotedHandoffUrl = shellQuote(handoffUrl);
+  const quotedLogFile = shellQuote(logFile);
   const setupCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse install-skills --all --force`;
-  const runCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach --log-file ${logFile} --handoff ${handoffUrl}`;
+  const runCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach --log-file ${quotedLogFile} --handoff ${quotedHandoffUrl}`;
   // Single blocking watch command that replaces the legacy per-60s
   // tail polling loop. See buildAgentPrompt STEP 4 and the
   // _run_attach docstring in src/coarse/cli_review.py for the full
   // contract (heartbeats, pidfile discovery, exit codes 0/1/2/3/124/130).
-  const attachCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --attach ${logFile}`;
+  const attachCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --attach ${quotedLogFile}`;
   return { setupCmd, runCmd, attachCmd, logFile };
 }
 
