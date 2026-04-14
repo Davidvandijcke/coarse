@@ -30,7 +30,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { consumeReviewHandoffSecret } from "@/lib/routeHandoffAuth";
 import { getSubmissionPauseResponse } from "@/lib/systemStatus";
-import { getSiteOriginForRequest } from "@/lib/siteOrigin";
+import {
+  appendPreviewBypassQuery,
+  getSiteOriginForRequest,
+} from "@/lib/siteOrigin";
 
 export const maxDuration = 15;
 
@@ -151,20 +154,18 @@ export async function POST(request: NextRequest) {
   // which returns HTTP 401 to any request without a valid Vercel login
   // cookie — including the CLI / Codex-cloud sandbox that fetches this
   // handoff URL. If the operator has configured a
-  // `VERCEL_AUTOMATION_BYPASS_SECRET` for the preview environment, append
-  // the documented bypass query params so unauthenticated fetches skip
-  // the login wall. Production URLs stay clean because the secret is
-  // only set on preview.
+  // `VERCEL_AUTOMATION_BYPASS_SECRET` for the preview environment,
+  // `appendPreviewBypassQuery` appends the documented bypass query
+  // params so unauthenticated fetches skip the login wall. Production
+  // URLs stay clean because the helper is a no-op when
+  // `VERCEL_ENV !== "preview"` or the secret is unset.
   //
   // Ref: Vercel → Deployment Protection → Protection Bypass for Automation.
-  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? "";
-  const isPreview = process.env.VERCEL_ENV === "preview";
-  const bypassQuery =
-    isPreview && bypassSecret
-      ? `?x-vercel-protection-bypass=${encodeURIComponent(bypassSecret)}&x-vercel-set-bypass-cookie=true`
-      : "";
-  const handoffUrl = `${siteUrl.replace(/\/$/, "")}/h/${tokenRow.token}${bypassQuery}`;
+  const baseHandoffUrl = `${siteUrl.replace(/\/$/, "")}/h/${tokenRow.token}`;
+  const handoffUrl = appendPreviewBypassQuery(baseHandoffUrl);
 
+  const isPreview = process.env.VERCEL_ENV === "preview";
+  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? "";
   const warnings: string[] = [];
   if (siteUrl.includes("localhost")) {
     warnings.push(

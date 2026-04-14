@@ -33,7 +33,10 @@ import {
   DEFAULT_SUBMISSIONS_PAUSED_MESSAGE,
   getSubmissionPauseState,
 } from "@/lib/systemStatus";
-import { getSiteOriginForRequest } from "@/lib/siteOrigin";
+import {
+  appendPreviewBypassQuery,
+  getSiteOriginForRequest,
+} from "@/lib/siteOrigin";
 
 export const maxDuration = 15;
 
@@ -144,7 +147,21 @@ export async function GET(
   }
 
   const siteUrl = getSiteOriginForRequest(request.url);
-  const callbackUrl = `${siteUrl.replace(/\/$/, "")}/api/mcp-finalize`;
+  // The callback URL is POSTed by the CLI / Codex-cloud sandbox
+  // from outside any browser session, so it has no Vercel SSO
+  // cookie and will be blocked by Vercel's edge Deployment
+  // Protection on preview deploys unless we append the same
+  // Protection Bypass for Automation query params we already
+  // append to the handoff URL in `/api/cli-handoff/route.ts`.
+  // `appendPreviewBypassQuery` is a no-op on production (it checks
+  // `VERCEL_ENV === "preview"` first), so production callback URLs
+  // stay clean. Without this, the review runs end-to-end but the
+  // final POST from `cli_review.py::_post_finalize` gets 401'd at
+  // the Vercel edge and the review URL never lands in the web UI.
+  // See `deploy/PREVIEW_ENVIRONMENTS.md::Step 0.3` for the
+  // operator-side dashboard step that enables this.
+  const baseCallbackUrl = `${siteUrl.replace(/\/$/, "")}/api/mcp-finalize`;
+  const callbackUrl = appendPreviewBypassQuery(baseCallbackUrl);
 
   const bundle = {
     paper_id: tokenRow.paper_id,
