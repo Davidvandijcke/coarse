@@ -28,6 +28,22 @@ import {
 import { buildReviewPath, parseReviewLocator } from "@/lib/reviewAccess";
 import { getVisibleSiteHost } from "@/lib/siteOrigin";
 
+/* ── Desktop-app platform detection ─────────────────────────
+ * The handoff modal's "Open {Host}" buttons dispatch custom URL
+ * schemes (claude://, codex://new?prompt=...). Those only work when
+ * the *desktop* app is installed and has registered the protocol
+ * handler. Linux users with CLI-only installs, mobile visitors, and
+ * anyone in a headless browser hit silent failures — the button just
+ * does nothing with no feedback. Render the button conditionally: mac
+ * and windows only.
+ */
+function isDesktopAppPlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return false;
+  return /Macintosh|Mac OS X|Windows/i.test(ua);
+}
+
 /* ── Turnstile window API type + helper ───────────────────── */
 type TurnstileApi = {
   render: (
@@ -329,7 +345,6 @@ export default function Home() {
   const [handoffBundle, setHandoffBundle] = useState<CliHandoffBundle | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [selectedEffort, setSelectedEffort] = useState<EffortLevel>("high");
-  const [showManualCommands, setShowManualCommands] = useState<boolean>(false);
   const [launchStatus, setLaunchStatus] = useState<string>("");
 
   // Refresh system capacity state on mount and when the tab becomes active.
@@ -812,38 +827,38 @@ export default function Home() {
       console.error("clipboard write failed", err);
     }
 
-    // Open the host's app if it has a launchable URL scheme.
-    // Codex gets codex://new?prompt=<text> (pre-fills composer).
-    // Claude Code gets claude:// (opens app, clipboard fallback).
-    // Gemini CLI has no app to open — show manual commands instead.
-    //
-    // IMPORTANT: custom URL schemes fail silently when the handler
-    // isn't registered (common on Windows where Claude Code is a
-    // CLI-only install). The browser gives no UI feedback — the
-    // button just appears to do nothing. Always expand the manual
-    // commands panel after the click so users have a reliable path
-    // forward regardless of whether the protocol handler fires.
+    // Custom URL schemes (claude://, codex://...) fail silently when the
+    // desktop handler isn't registered. The browser gives no feedback and
+    // the button appears to do nothing. Detect this with a 2.5s visibility
+    // timer: if the OS never switches focus to another app, the scheme
+    // didn't resolve and we swap in a "didn't work — paste the commands
+    // instead" hint so the user isn't stuck.
     const launchUrl = buildLaunchUrl({ host, runCmd, setupCmd, attachCmd, logFile });
-    setShowManualCommands(true);
-    if (launchUrl) {
-      window.location.href = launchUrl;
-      if (host === "codex") {
+    if (!launchUrl) {
+      setLaunchStatus("Command copied to clipboard. Paste it into your terminal.");
+      return;
+    }
+
+    let becameHidden = false;
+    const onVis = () => {
+      if (document.visibilityState === "hidden") becameHidden = true;
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.location.href = launchUrl;
+    setLaunchStatus(
+      host === "codex"
+        ? "Opening Codex desktop app — the composer should pre-fill. Hit send."
+        : `Opening ${HOST_LABELS[host]} — paste the prompt from your clipboard (⌘V / Ctrl+V).`,
+    );
+    setTimeout(() => {
+      document.removeEventListener("visibilitychange", onVis);
+      if (!becameHidden) {
         setLaunchStatus(
-          `Codex should open with the review command pre-filled — just hit send. ` +
-            `If Codex didn't open (desktop app not installed), copy the commands below ` +
-            `into your terminal instead.`,
-        );
-      } else {
-        setLaunchStatus(
-          `${HOST_LABELS[host]} should open now — paste the prompt from your clipboard (⌘V / Ctrl+V) into the chat. ` +
-            `If the app didn't open (not installed, or no protocol handler registered on Windows), ` +
-            `copy the commands below into your terminal instead.`,
+          `${HOST_LABELS[host]} desktop app didn't open. If you only have the CLI ` +
+            `version installed, paste the commands above into your terminal instead.`,
         );
       }
-    } else {
-      // No app to launch (Gemini CLI) — manual commands already shown.
-      setLaunchStatus(`Command copied to clipboard. Paste it into your terminal.`);
-    }
+    }, 2500);
   }
 
   function resetHandoff() {
@@ -852,7 +867,6 @@ export default function Home() {
     setHandoffState(null);
     setHandoffMessage("");
     setLaunchStatus("");
-    setShowManualCommands(false);
   }
 
   const accepting = systemStatus?.accepting !== false;
@@ -1656,42 +1670,41 @@ export default function Home() {
                       </label>
                     </div>
 
-                    {/* Primary launch button — hidden for Gemini CLI (no app) */}
-                    {host !== "gemini-cli" && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={handleLaunch}
-                          style={{
-                            display: "block",
-                            width: "100%",
-                            padding: "0.875rem 1.5rem",
-                            background: "var(--yellow-chalk)",
-                            color: "var(--board)",
-                            border: "none",
-                            borderRadius: "2px",
-                            fontFamily: "var(--font-chalk)",
-                            fontSize: "1.1rem",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            transition: "opacity 0.15s",
-                          }}
-                        >
-                          {HOST_LAUNCH_LABEL[host]}
-                        </button>
-                        <p
-                          style={{
-                            fontFamily: "var(--font-chalk)",
-                            fontSize: "0.9rem",
-                            color: "var(--dust)",
-                            margin: "0.5rem 0 0",
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          {launchStatus || HOST_LAUNCH_HINT[host]}
-                        </p>
-                      </>
-                    )}
+                    {/* PRIMARY: always-visible prompt. Uniform across
+                        all three hosts — no collapsibles, no host-
+                        specific reveals. Users paste this into their
+                        terminal and it works regardless of whether any
+                        desktop-app deep-link fires. */}
+                    <div style={{ marginTop: "0.25rem" }}>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-chalk)",
+                          fontSize: "0.95rem",
+                          color: "var(--yellow-chalk)",
+                          marginBottom: "0.5rem",
+                        }}
+                      >
+                        Paste this prompt into your {HOST_LABELS[host]} terminal:
+                      </div>
+                      <CodeBlock
+                        text={buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile })}
+                        maxHeight="160px"
+                      />
+                      <p
+                        style={{
+                          fontFamily: "var(--font-chalk)",
+                          fontSize: "0.92rem",
+                          color: "var(--dust)",
+                          margin: "0.5rem 0 0",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        The agent will refresh the coarse-review skill, ask
+                        for your OpenRouter key if needed, and run the full review
+                        locally. Takes 10&ndash;25 minutes. Your provider login stays
+                        local to your machine.
+                      </p>
+                    </div>
 
                     {/* Review URL */}
                     <p
@@ -1721,70 +1734,46 @@ export default function Home() {
                       /review/{handoffState.paperId}
                     </a>
 
-                    {/* Prompt to paste — primary UI for Claude Code +
-                        Gemini CLI; collapsible fallback for Codex */}
-                    {host === "claude-code" || host === "gemini-cli" ? (
-                      <div style={{ marginTop: "1.25rem" }}>
-                        <div
-                          style={{
-                            fontFamily: "var(--font-chalk)",
-                            fontSize: "0.95rem",
-                            color: "var(--yellow-chalk)",
-                            marginBottom: "0.5rem",
-                          }}
-                        >
-                          Paste this prompt into{" "}
-                          {host === "claude-code"
-                            ? "your Claude Code terminal"
-                            : "your Gemini CLI terminal"}
-                          :
-                        </div>
-                        <CodeBlock
-                          text={buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile })}
-                          maxHeight="160px"
-                        />
-                        <p
-                          style={{
-                            fontFamily: "var(--font-chalk)",
-                            fontSize: "0.92rem",
-                            color: "var(--dust)",
-                            margin: "0.5rem 0 0",
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          The agent will refresh the coarse-review skill, ask
-                          for your OpenRouter key if needed, and run the full review
-                          locally. Takes 10–25 minutes. Your provider login stays
-                          local to your machine.
-                        </p>
-                      </div>
-                    ) : (
+                    {/* SECONDARY: desktop-app launch button. Hidden on
+                        Linux/mobile (no desktop handlers) and for Gemini
+                        (no documented URL scheme). When the scheme
+                        fires successfully the user gets a nice one-click
+                        handoff; when it silently fails the 2.5s timer in
+                        handleLaunch swaps the hint to "didn't open".
+                        Either way, the commands above are always the
+                        guaranteed path. */}
+                    {host !== "gemini-cli" && isDesktopAppPlatform() && (
                       <div style={{ marginTop: "1.25rem" }}>
                         <button
                           type="button"
-                          onClick={() => setShowManualCommands(!showManualCommands)}
+                          onClick={handleLaunch}
                           style={{
+                            display: "block",
+                            width: "100%",
+                            padding: "0.65rem 1.25rem",
                             background: "transparent",
-                            border: "none",
-                            color: "var(--dust)",
+                            color: "var(--chalk)",
+                            border: "1px dashed var(--tray)",
+                            borderRadius: "2px",
                             fontFamily: "var(--font-chalk)",
-                            fontSize: "0.9rem",
+                            fontSize: "1rem",
                             cursor: "pointer",
-                            padding: 0,
-                            textDecoration: "underline",
-                            textUnderlineOffset: "2px",
+                            transition: "border-color 0.15s",
                           }}
                         >
-                          {showManualCommands ? "Hide prompt ▴" : "Or paste a prompt manually ▾"}
+                          {HOST_LAUNCH_LABEL[host]}
                         </button>
-                        {showManualCommands && (
-                          <div style={{ marginTop: "0.75rem" }}>
-                            <div style={{ fontFamily: "var(--font-chalk)", fontSize: "0.9rem", color: "var(--dust)", marginBottom: "0.35rem" }}>
-                              paste this into Codex if the launch button didn&apos;t work:
-                            </div>
-                            <CodeBlock text={buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile })} maxHeight="160px" />
-                          </div>
-                        )}
+                        <p
+                          style={{
+                            fontFamily: "var(--font-chalk)",
+                            fontSize: "0.88rem",
+                            color: "var(--dust)",
+                            margin: "0.4rem 0 0",
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {launchStatus || HOST_LAUNCH_HINT[host]}
+                        </p>
                       </div>
                     )}
 

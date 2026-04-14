@@ -88,14 +88,21 @@ const DEFAULT_MCP_UVX_FROM = "coarse-ink==1.3.0";
 export function resolvePinnedUvFrom(): string {
   const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();
   if (!raw) return DEFAULT_MCP_UVX_FROM;
-  // Allowlist for `NEXT_PUBLIC_COARSE_UVX_FROM` overrides. Accepts
-  // both the plain form (`coarse-ink==...`) and the `[mcp]` extra
-  // form for operators who explicitly want the MCP server path.
-  // Similarly for git-ref overrides used during dev testing.
+  // Allowlist for `NEXT_PUBLIC_COARSE_UVX_FROM` overrides. Accepts:
+  //   1. Plain semver pin: `coarse-ink==1.3.0` (production default).
+  //   2. `[mcp]` extra form for operators who want the MCP path.
+  //   3. Commit-sha git ref for pinned dev testing.
+  //   4. `@dev` or `@main` branch ref — self-updating Preview default,
+  //      lets Vercel Preview always track HEAD of `dev` without having
+  //      to rotate the env var on every push.
+  // Branch refs are locked to `dev` and `main` only so a leaked env
+  // var can't be pointed at an attacker-controlled fork.
   const exactVersion = /^coarse-ink(\[mcp\])?==[A-Za-z0-9.+-]+$/;
   const exactCommit =
     /^coarse-ink(\[mcp\])?\s*@\s*git\+https:\/\/github\.com\/Davidvandijcke\/coarse@[0-9a-f]{7,40}$/i;
-  if (exactVersion.test(raw) || exactCommit.test(raw)) return raw;
+  const exactBranch =
+    /^coarse-ink(\[mcp\])?\s*@\s*git\+https:\/\/github\.com\/Davidvandijcke\/coarse@(dev|main)$/i;
+  if (exactVersion.test(raw) || exactCommit.test(raw) || exactBranch.test(raw)) return raw;
   return DEFAULT_MCP_UVX_FROM;
 }
 
@@ -113,18 +120,18 @@ export const HOST_INSTALL_URL: Record<ChatHost, string> = {
 };
 
 export const HOST_LAUNCH_LABEL: Record<ChatHost, string> = {
-  "claude-code": "Open Claude Code",
-  "codex": "Open Codex",
+  "claude-code": "Try opening Claude Code desktop app",
+  "codex": "Try opening Codex desktop app",
   "gemini-cli": "Open Gemini CLI",
 };
 
 export const HOST_LAUNCH_HINT: Record<ChatHost, string> = {
   "claude-code":
-    "Opens Claude Code and copies the review command to your clipboard. Paste it (⌘V) and hit send.",
+    "Only works if you have the Claude desktop app installed (not the terminal-only Claude Code CLI). If nothing happens, use the commands above.",
   "codex":
-    "Opens Codex with the review command pre-filled. Just hit send.",
+    "Only works if you have the Codex desktop app installed. If nothing happens, use the commands above.",
   "gemini-cli":
-    "Copy the commands below and run them in your terminal.",
+    "Copy the commands above and run them in your terminal.",
 };
 
 /**
