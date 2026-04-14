@@ -1,4 +1,4 @@
-.PHONY: test test-all lint format check security install-hooks pause resume pause-status
+.PHONY: test test-all lint format check security install-hooks pause resume pause-status release-audit
 
 test:
 	uv run pytest tests/ -v
@@ -28,3 +28,6 @@ resume:
 
 pause-status:
 	@python3 scripts/kill_switch.py status
+
+release-audit:
+	@python3 scripts/release_audit.py
