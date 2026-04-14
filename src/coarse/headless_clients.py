@@ -245,7 +245,7 @@ class _HeadlessCLIClient:
         response_model: type[BaseModel],
         max_tokens: int = 4096,
         temperature: float = 0.3,
-        timeout: int = 600,
+        timeout: int = 1800,
         **_kwargs,
     ) -> BaseModel:
         """Structured completion — runs the CLI and parses into response_model."""
@@ -290,7 +290,7 @@ class _HeadlessCLIClient:
         messages: list[dict],
         max_tokens: int = 4096,
         temperature: float = 0.3,
-        timeout: int = 600,
+        timeout: int = 1800,
         **_kwargs,
     ) -> str:
         """Unstructured text completion."""

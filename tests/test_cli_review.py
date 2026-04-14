@@ -17,7 +17,12 @@ import pytest
 
 from coarse import cli_review
 from coarse.cli_attach import pidfile_for_log, read_pidfile, write_pidfile
-from coarse.cli_review import _fetch_handoff, _infer_handoff_extension, main
+from coarse.cli_review import (
+    _fetch_handoff,
+    _format_hyperlink,
+    _infer_handoff_extension,
+    main,
+)
 from coarse.types import OverviewFeedback, OverviewIssue, PaperText, Review
 
 
@@ -112,6 +117,55 @@ def test_fetch_handoff_success_returns_bundle() -> None:
         bundle = _fetch_handoff("coarse.ink/h/token")
     assert bundle["paper_id"] == payload["paper_id"]
     assert bundle["signed_download_url"] == payload["signed_download_url"]
+
+
+def test_format_hyperlink_wraps_url_when_stdout_is_tty() -> None:
+    """OSC 8 escape must be emitted when stdout is a TTY."""
+
+    class _FakeTtyStdout:
+        def isatty(self) -> bool:
+            return True
+
+    with patch("coarse.cli_review.sys.stdout", _FakeTtyStdout()):
+        result = _format_hyperlink("https://coarse.ink/review/abc?token=xyz")
+
+    expected = (
+        "\x1b]8;;https://coarse.ink/review/abc?token=xyz\x1b\\"
+        "https://coarse.ink/review/abc?token=xyz"
+        "\x1b]8;;\x1b\\"
+    )
+    assert result == expected
+
+
+def test_format_hyperlink_returns_plain_url_when_not_tty() -> None:
+    """Non-TTY stdout (log capture, CI, pytest) must get the plain URL
+    so agents parsing `view:` from the log don't trip on escape codes."""
+
+    class _FakeNonTtyStdout:
+        def isatty(self) -> bool:
+            return False
+
+    with patch("coarse.cli_review.sys.stdout", _FakeNonTtyStdout()):
+        result = _format_hyperlink("https://coarse.ink/review/abc?token=xyz")
+
+    assert result == "https://coarse.ink/review/abc?token=xyz"
+    # Explicit: no OSC 8 escape bytes leaked through.
+    assert "\x1b" not in result
+
+
+def test_format_hyperlink_tolerates_stdout_without_isatty() -> None:
+    """`sys.stdout` replaced by `io.StringIO` or similar has no `isatty`
+    in some older harnesses; the helper must fall back to plain text
+    rather than crashing the whole footer."""
+
+    class _FakeBrokenStdout:
+        @property
+        def isatty(self):
+            raise AttributeError("no isatty here")
+
+    with patch("coarse.cli_review.sys.stdout", _FakeBrokenStdout()):
+        result = _format_hyperlink("https://coarse.ink/review/abc")
+    assert result == "https://coarse.ink/review/abc"
 
 
 def test_infer_handoff_extension_prefers_supported_title_suffix() -> None:
