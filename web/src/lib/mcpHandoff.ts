@@ -98,7 +98,7 @@ export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 // on every uvx invocation (slow), and installs whatever is currently at that
 // commit (no semver guarantees). Do NOT forget to revert.
 const DEFAULT_MCP_UVX_FROM =
-  "coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@913c8f186916";
+  "coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@1f6603f515e3";
 
 export function resolvePinnedUvFrom(): string {
   const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();
