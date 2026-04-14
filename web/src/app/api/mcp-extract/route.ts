@@ -37,6 +37,13 @@ import { getSubmissionPauseResponse } from "@/lib/systemStatus";
 
 export const maxDuration = 30;
 
+// Upper bound on how long we'll wait for Modal's run_extract endpoint to
+// ACK the fire-and-forget trigger. Matches MODAL_TRIGGER_TIMEOUT_MS in
+// /api/submit. The fetch runs after this route has returned 202, so this
+// timeout exists to free the Vercel function slot if Modal stalls, not to
+// keep the user waiting.
+const MODAL_TRIGGER_TIMEOUT_MS = 10_000;
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STORAGE_PATH_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|txt|md|tex|latex|html|htm|docx|epub)$/i;
@@ -166,12 +173,20 @@ export async function POST(request: NextRequest) {
   // intentionally does NOT include user_api_key — the worker resolves
   // it from review_secrets. This keeps the key out of Modal's
   // managed queue payload, same design as /api/submit.
+  //
+  // AbortController bounds how long the socket can stay open after this
+  // route has returned 202. Without it, a hung Modal endpoint would leak
+  // Vercel function slots; the .catch below handles the AbortError path
+  // by marking the review as failed and clearing the staged secret.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), MODAL_TRIGGER_TIMEOUT_MS);
   fetch(modalWebhookConfig.url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${modalWebhookConfig.secret}`,
     },
+    signal: controller.signal,
     body: JSON.stringify({
       job_id: id,
       pdf_storage_path: storagePath,
@@ -196,19 +211,25 @@ export async function POST(request: NextRequest) {
           .eq("id", id);
       }
     })
-    .catch(async () => {
+    .catch(async (err) => {
       try {
         await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
       } catch (cleanupErr) {
         console.error(`[${id}] mcp-extract catch cleanup failed`, cleanupErr);
       }
+      const isAbort = err instanceof Error && err.name === "AbortError";
       await supabaseAdmin
         .from("reviews")
         .update({
           status: "failed",
-          error_message: "Failed to start extraction worker",
+          error_message: isAbort
+            ? "Extraction worker did not respond in time"
+            : "Failed to start extraction worker",
         })
         .eq("id", id);
+    })
+    .finally(() => {
+      clearTimeout(timeoutId);
     });
 
   return NextResponse.json({ id, status: "extracting" }, { status: 202 });
