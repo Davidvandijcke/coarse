@@ -192,11 +192,13 @@ Preview website signoff checklist:
    or manually re-run it with `gh workflow run modal-preview-deploy.yml --ref dev`
 3. Open the preview URL from the `dev` commit / PR checks
 4. Log in through Vercel Authentication if prompted
-5. Verify the upload succeeds, the status page loads, and the MCP
+5. If preview browser auth is enabled, enter
+   `PREVIEW_BASIC_AUTH_USERNAME` / `PREVIEW_BASIC_AUTH_PASSWORD`
+6. Verify the upload succeeds, the status page loads, and the MCP
    handoff UI still works
-6. Verify `coarse-review` and `coarse-mcp` invocations appear only in
+7. Verify `coarse-review` and `coarse-mcp` invocations appear only in
    the Modal `preview` environment
-7. Verify new rows land only in preview Supabase
+8. Verify new rows land only in preview Supabase
 
 GitHub checks to watch:
 
@@ -205,6 +207,13 @@ GitHub checks to watch:
 
 Those are independent. A fresh Vercel preview does not imply fresh
 preview Modal workers unless `deploy-modal-preview` also passes.
+
+If you need to share preview with collaborators outside the Vercel
+team, keep using Vercel's share/invite flow for the deployment itself
+and optionally set `PREVIEW_BASIC_AUTH_USERNAME` plus
+`PREVIEW_BASIC_AUTH_PASSWORD` on the Preview environment for an
+app-level browser password prompt. See
+[deploy/PREVIEW_ENVIRONMENTS.md](PREVIEW_ENVIRONMENTS.md).
 
 ---
 

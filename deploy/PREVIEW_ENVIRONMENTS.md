@@ -322,6 +322,39 @@ hostnames yet, remove `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and
 `TURNSTILE_SECRET_KEY` from the Vercel Preview environment so preview
 fails open while production stays protected.
 
+### Step 1.7b — Add a preview-only browser password gate
+
+Vercel's native **Password Protection** is not part of the base Pro
+preview setup; it requires Enterprise or Pro with the Advanced
+Deployment Protection add-on. The repo therefore ships a fallback:
+preview-only HTTP Basic Auth enforced by `web/src/middleware.ts`.
+
+Set these on the `dev` preview environment in Vercel:
+
+| Variable                      | Value                              |
+|------------------------------|------------------------------------|
+| `PREVIEW_BASIC_AUTH_USERNAME`| `preview` (or another shared login) |
+| `PREVIEW_BASIC_AUTH_PASSWORD`| a shared password for testers       |
+
+Behavior:
+
+- active only when `VERCEL_ENV=preview`
+- inactive on production
+- inactive in local development unless you explicitly mimic preview envs
+- applies to both pages and same-origin API routes
+
+This gives collaborators a native browser username/password prompt
+after they reach the preview deployment itself.
+
+Important: this does **not** replace Vercel's own deployment
+protection. If Vercel Authentication is enabled, external testers still
+need one of:
+
+1. a Vercel invite to the deployment, or
+2. a Vercel sharable link from the Share dialog (`Anyone with the link`)
+
+Then the app-level preview password prompt is the second gate.
+
 ### Step 1.7a — Store local admin secrets in `.env`
 
 The repo already gitignores the root `.env` file. Use that for local
@@ -446,14 +479,20 @@ Preview-site usage rules:
 
 1. Open the preview deployment from the latest `dev` commit. Do not use
    production for first-pass validation.
+1. If you're sharing the preview outside the Vercel team, use the
+   Vercel Share dialog and generate the sharable preview link instead of
+   copying the raw address-bar URL.
 2. If the landing page shows `Service temporarily unavailable.`, stop.
    Check preview Vercel logs for missing Supabase env vars or a missing
    `count_active_submitted_reviews` RPC in preview Supabase.
-3. Run the OpenRouter flow and confirm the status/review URLs stay on
+3. If the browser shows a username/password prompt, use
+   `PREVIEW_BASIC_AUTH_USERNAME` and `PREVIEW_BASIC_AUTH_PASSWORD` from
+   the preview env configuration.
+4. Run the OpenRouter flow and confirm the status/review URLs stay on
    the preview hostname.
-4. Run the subscription / CLI handoff flow and confirm the generated
+5. Run the subscription / CLI handoff flow and confirm the generated
    `/h/<token>` and final review URL also stay on the preview hostname.
-5. Only after both paths pass on preview should the change move toward
+6. Only after both paths pass on preview should the change move toward
    `main`.
 
 ### Step 1.9a — Fix the common `preview-modal` GitHub Actions failure
