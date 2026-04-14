@@ -776,22 +776,33 @@ export default function Home() {
     // Codex gets codex://new?prompt=<text> (pre-fills composer).
     // Claude Code gets claude:// (opens app, clipboard fallback).
     // Gemini CLI has no app to open — show manual commands instead.
+    //
+    // IMPORTANT: custom URL schemes fail silently when the handler
+    // isn't registered (common on Windows where Claude Code is a
+    // CLI-only install). The browser gives no UI feedback — the
+    // button just appears to do nothing. Always expand the manual
+    // commands panel after the click so users have a reliable path
+    // forward regardless of whether the protocol handler fires.
     const launchUrl = buildLaunchUrl({ host, runCmd, setupCmd, attachCmd, logFile });
+    setShowManualCommands(true);
     if (launchUrl) {
       window.location.href = launchUrl;
       if (host === "codex") {
         setLaunchStatus(
-          `Codex opened with the review command pre-filled. Just hit send.`,
+          `Codex should open with the review command pre-filled — just hit send. ` +
+            `If Codex didn't open (desktop app not installed), copy the commands below ` +
+            `into your terminal instead.`,
         );
       } else {
         setLaunchStatus(
-          `${HOST_LABELS[host]} opened. Prompt copied — paste it (⌘V) into the chat.`,
+          `${HOST_LABELS[host]} should open now — paste the prompt from your clipboard (⌘V / Ctrl+V) into the chat. ` +
+            `If the app didn't open (not installed, or no protocol handler registered on Windows), ` +
+            `copy the commands below into your terminal instead.`,
         );
       }
     } else {
-      // No app to launch (Gemini CLI) — expand manual commands.
-      setShowManualCommands(true);
-      setLaunchStatus(`Command copied to clipboard.`);
+      // No app to launch (Gemini CLI) — manual commands already shown.
+      setLaunchStatus(`Command copied to clipboard. Paste it into your terminal.`);
     }
   }
 
