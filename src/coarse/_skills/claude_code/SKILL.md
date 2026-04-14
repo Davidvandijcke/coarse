@@ -16,7 +16,7 @@ description: >
 
 Runs the **full coarse review pipeline** on a paper using the local `claude -p` CLI as the LLM backend. Every LLM call the pipeline makes — structure metadata, overview, per-section review, proof verification, editorial dedup — is served by a headless Claude Code subprocess using the user's Claude Max subscription. The only per-paper cost is the ~$0.05-0.15 Mistral OCR extraction, which uses the user's OpenRouter key locally.
 
-This is the **same pipeline** that powers coarse.vercel.app — only the LLM backend is swapped.
+This is the **same pipeline** that powers coarse.ink — only the LLM backend is swapped.
 
 ## Prerequisites
 
@@ -31,7 +31,10 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
   - If `uv` exists but `uvx` does not, replace `uvx --python 3.12 --from ...` below with
     `uv tool run --python 3.12 --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
-  `uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' coarse install-skills --all --force`
+  `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse install-skills --all --force`
+  (If that fails with `No such command 'install-skills'`, you're on a
+  PyPI release that predates the command — upgrade or ignore; the skill
+  bundle is also loadable directly via `uvx --from` without install.)
 - **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key is NOT passed through the web handoff for security reasons.
 
   Before running the review, check if `OPENROUTER_API_KEY` is set:
@@ -42,13 +45,13 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
 
   > I need an OpenRouter API key for the OCR extraction step (~$0.10 per paper). You have three options:
   >
-  > 1. **Get a key** at https://openrouter.ai/settings/keys (or via http://localhost:3000/setup) and **paste it to me** — I'll save it to `~/.coarse/config.toml` for you with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' coarse setup`.
+  > 1. **Get a key** at https://openrouter.ai/settings/keys (or via http://localhost:3000/setup) and **paste it to me** — I'll save it to `~/.coarse/config.toml` for you with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse setup`.
   > 2. **Set it yourself**: `export OPENROUTER_API_KEY=sk-or-v1-...` then re-ask me.
   > 3. **If you explicitly prefer project-local storage**, add it to `.env` yourself: `echo 'OPENROUTER_API_KEY=sk-or-v1-...' >> .env`
   >
   > Which would you like?
 
-  If the user pastes a key, prefer saving it with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' coarse setup` so it lands in `~/.coarse/config.toml`. Only write `./.env` if the user explicitly asks for project-local storage. Verify the key starts with `sk-or-` before saving.
+  If the user pastes a key, prefer saving it with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse setup` so it lands in `~/.coarse/config.toml`. Only write `./.env` if the user explicitly asks for project-local storage. Verify the key starts with `sk-or-` before saving.
 - `claude` CLI logged in.
 
 ## How to run
@@ -57,23 +60,26 @@ This is the **same pipeline** that powers coarse.vercel.app — only the LLM bac
 
 **If they already have a pre-extracted markdown** (from a previous coarse run), pass it with `--pre-extracted` to skip OCR.
 
-**Launch in the background** — full review takes 10-25 minutes, which exceeds Claude Code's default 2-minute tool timeout. Always use `run_in_background: true` or redirect to a log file so it's not killed mid-run:
+**Launch in the background** — full review takes 10-25 minutes, which exceeds Claude Code's default 2-minute tool timeout. Always use `run_in_background: true` or redirect to a log file so it's not killed mid-run. Use a **per-review unique log file** so parallel runs in the same shell don't clobber each other's output:
 
 ```bash
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' \
-  coarse-review --detach --log-file /tmp/coarse-review.log \
+# Pick a unique suffix — use the paper filename stem or `$(date +%s)`:
+LOG=/tmp/coarse-review-$(basename <paper_path> .pdf).log
+
+uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+  coarse-review --detach --log-file "$LOG" \
   <paper_path> --host claude [--model claude-opus-4-6] [--effort high]
 ```
 
 This returns immediately with the review PID and writes all output to
-`/tmp/coarse-review.log`.
+the log file you chose.
 
-Then poll the log every 60-90 seconds with `tail -20 /tmp/coarse-review.log`. Do NOT kill the process because it looks stuck — it takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, it's done.
+Then poll the log every 60-90 seconds with `tail -20 "$LOG"`. Do NOT kill the process because it looks stuck — it takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, it's done.
 
 **When the run finishes, do NOT hunt across the filesystem for the review file.** `coarse-review` prints the authoritative paths in the final log lines:
 
 ```bash
-rg '^  view:|^  local:' /tmp/coarse-review.log
+rg '^  view:|^  local:' "$LOG"
 ```
 
 - `local:` is the exact markdown path that was written, even if `uvx` used a temporary working directory.
@@ -84,15 +90,17 @@ If `view:` says `unavailable`, treat that as a callback failure and report only 
 Available models: `claude-opus-4-6` (default), `claude-sonnet-4-6`, `claude-haiku-4-5`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
 
-If the user came from the coarse web form, they'll have a handoff URL instead. Run:
+If the user came from the coarse web form, they'll paste a handoff URL instead of a local file path. The paper is a REMOTE resource at that URL — do NOT search for a local PDF and do NOT ask the user for a file path. Just run:
 
 ```bash
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' \
-  coarse-review --detach --log-file /tmp/coarse-review.log \
-  --handoff coarse.vercel.app/h/<token> --host claude [--model ...] [--effort ...]
+LOG=/tmp/coarse-review-$(date +%s).log
+
+uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+  coarse-review --detach --log-file "$LOG" \
+  --handoff https://coarse.ink/h/<token> --host claude [--model ...] [--effort ...]
 ```
 
-This downloads the paper, runs the pipeline, and POSTs the final review back so it shows up at `coarse.vercel.app/review/<paper_id>`.
+This downloads the paper from the handoff URL, runs the pipeline, and POSTs the final review back so it shows up at `https://coarse.ink/review/<paper_id>?token=<access_token>`. The `view:` line in the log will already include the signed access token — use that URL as-is.
 
 **When the script completes** (you'll be notified), read the output markdown and show the user:
 

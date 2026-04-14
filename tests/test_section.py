@@ -285,3 +285,46 @@ def test_section_author_notes_prepend_to_user_message():
 
     assert "<author_notes>" in user_content
     assert "please verify the regression specification carefully" in user_content
+
+
+def test_section_agent_accepts_empty_comments_list() -> None:
+    """Regression: a section may legitimately have zero issues worth flagging.
+
+    Before this fix, ``_SectionComments.comments`` was ``Field(min_length=1)``,
+    so when a cheap model running at ``--effort low`` returned
+    ``comments: []``, pydantic raised ``List should have at least 1 item``.
+    The 3-retry loop in ``headless_clients._HeadlessCLIClient.complete``
+    (and instructor's ``max_retries=3`` on the hosted llm.py path) would
+    then exhaust, the pipeline would log ``Section agent failed ... skipping``,
+    and the whole section's feedback would be silently dropped.
+
+    The fix is to make the envelope tolerate an empty list — every other
+    agent envelope in this package already does, and
+    ``review_stages._review_section`` already handles empty results
+    gracefully. This test pins the contract so the min_length constraint
+    can't be reintroduced by a future refactor.
+    """
+    empty_response = _SectionComments(comments=[])
+    assert empty_response.comments == []
+
+    client = _make_client()
+    client.complete.return_value = empty_response
+
+    agent = SectionAgent(client)
+    comments = agent.run(_make_section(), "Paper")
+
+    assert comments == []
+    client.complete.assert_called_once()
+
+
+def test_section_comments_envelope_accepts_zero_and_many() -> None:
+    """The envelope accepts 0, 1, and N comments uniformly (no bounds)."""
+    assert _SectionComments(comments=[]).comments == []
+
+    one = _SectionComments(comments=[_make_comment(number=1)])
+    assert len(one.comments) == 1
+
+    many = _SectionComments(
+        comments=[_make_comment(number=i) for i in range(1, 8)],
+    )
+    assert len(many.comments) == 7

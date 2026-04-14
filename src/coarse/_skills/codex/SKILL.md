@@ -28,7 +28,7 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
   - If `uv` exists but `uvx` does not, replace `uvx --python 3.12 --from ...` below with
     `uv tool run --python 3.12 --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
-  `uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' coarse install-skills --all --force`
+  `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse install-skills --all --force`
 - **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key is NOT passed through the web handoff for security reasons.
 
   Before running the review, check if `OPENROUTER_API_KEY` is set:
@@ -39,34 +39,36 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 
   > I need an OpenRouter API key for the OCR extraction step (~$0.10 per paper). You have three options:
   >
-  > 1. **Get a key** at https://openrouter.ai/settings/keys (or via http://localhost:3000/setup) and **paste it to me** — I'll save it to `~/.coarse/config.toml` for you with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' coarse setup`.
+  > 1. **Get a key** at https://openrouter.ai/settings/keys (or via http://localhost:3000/setup) and **paste it to me** — I'll save it to `~/.coarse/config.toml` for you with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse setup`.
   > 2. **Set it yourself**: `export OPENROUTER_API_KEY=sk-or-v1-...` then re-ask me.
   > 3. **If you explicitly prefer project-local storage**, add it to `.env` yourself: `echo 'OPENROUTER_API_KEY=sk-or-v1-...' >> .env`
   >
   > Which would you like?
 
-  If the user pastes a key, prefer saving it with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' coarse setup` so it lands in `~/.coarse/config.toml`. Only write `./.env` if the user explicitly asks for project-local storage. Verify the key starts with `sk-or-` before saving.
+  If the user pastes a key, prefer saving it with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse setup` so it lands in `~/.coarse/config.toml`. Only write `./.env` if the user explicitly asks for project-local storage. Verify the key starts with `sk-or-` before saving.
 - `codex` CLI logged in: `codex login`.
 
 ## How to run
 
 **CRITICAL: Run in the background, not foreground.** A full review takes 10-25 minutes, which exceeds Codex's default 5-minute tool timeout. Foreground runs will be killed mid-review and reported as crashed when they're actually still working.
 
-Use this pattern:
+Use a **per-review unique log file** so parallel runs don't clobber each other's output:
 
 ```bash
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' \
-  coarse-review --detach --log-file /tmp/coarse-review.log \
+LOG=/tmp/coarse-review-$(basename <paper_path> .pdf).log
+
+uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+  coarse-review --detach --log-file "$LOG" \
   <paper_path> --host codex [--model gpt-5.4] [--effort high]
 ```
 
 This returns immediately with the review PID and writes all output to
-`/tmp/coarse-review.log`.
+the log file you chose.
 
 Then poll the log file every 60-90 seconds:
 
 ```bash
-tail -20 /tmp/coarse-review.log
+tail -20 "$LOG"
 ```
 
 Do NOT kill the process because you think it hung — the review takes a genuine 10-25 minutes. When the log shows `REVIEW COMPLETE` or `PUBLISHED TO COARSE WEB`, it's done.
@@ -74,10 +76,10 @@ Do NOT kill the process because you think it hung — the review takes a genuine
 When the run finishes, use the final log lines as the authoritative artifact locations:
 
 ```bash
-rg '^  view:|^  local:' /tmp/coarse-review.log
+rg '^  view:|^  local:' "$LOG"
 ```
 
-If `local:` is present, read that exact file. If `view:` is present, use that URL. Do not run broad filesystem searches trying to rediscover the review file.
+If `local:` is present, read that exact file. If `view:` is present, use that URL (it already includes the signed access token — use it as-is). Do not run broad filesystem searches trying to rediscover the review file.
 If `view:` says `unavailable`, report the callback failure and use only the `local:` path.
 
 Available models: `gpt-5.4` (default), `gpt-5.3-codex`, `gpt-5.4-mini`, `gpt-5.4-pro`.
@@ -89,12 +91,14 @@ These map to Codex's internal reasoning effort:
 - `high` → `high`
 - `max` → `high`
 
-**Handoff mode** (when the user came from the coarse web form), same background-process pattern:
+**Handoff mode** (when the user came from the coarse web form): the paper is a REMOTE resource at the handoff URL. Do NOT search for a local PDF and do NOT ask the user for a file path — the `--handoff` URL IS the paper source. Same background-process pattern:
 
 ```bash
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2' \
-  coarse-review --detach --log-file /tmp/coarse-review.log \
-  --handoff coarse.vercel.app/h/<token> --host codex
+LOG=/tmp/coarse-review-$(date +%s).log
+
+uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+  coarse-review --detach --log-file "$LOG" \
+  --handoff https://coarse.ink/h/<token> --host codex
 ```
 
 **When complete**, show the user the output path, web URL (if present), recommendation, top issues, and comment count.

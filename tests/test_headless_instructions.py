@@ -26,12 +26,23 @@ def test_bundled_skill_assets_use_ephemeral_uvx_flow() -> None:
         assert "uv tool run --python 3.12 --from ..." in text
         assert "coarse setup" in text
         assert "~/.coarse/config.toml" in text
-        assert "uvx --python 3.12 --from 'coarse-ink[mcp]==1.2.2'" in text
+        # Pin to the version that will be published with the release PR
+        # that lands this branch on main. See CHANGELOG.md ## Unreleased
+        # "RELEASE BLOCKER" note — DEFAULT_MCP_UVX_FROM and these SKILL.md
+        # files must all flip from the temporary git-ref pin to
+        # ``coarse-ink[mcp]==1.3.0`` as part of the release cut.
+        assert "uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0'" in text
         assert "coarse install-skills --all --force" in text
-        assert "--detach --log-file /tmp/coarse-review.log" in text
-        assert "rg '^  view:|^  local:' /tmp/coarse-review.log" in text
+        # Per-review unique log file: every skill uses a LOG env var
+        # derived from a per-paper suffix so parallel runs in the same
+        # shell don't clobber each other's logs.
+        assert "LOG=/tmp/coarse-review-" in text
+        assert '--detach --log-file "$LOG"' in text
+        assert "rg '^  view:|^  local:' \"$LOG\"" in text
         assert "uv pip install --reinstall" not in text
         assert "@feat/mcp-server" not in text
+        # Old stale URL must not reappear — canonical host is coarse.ink.
+        assert "coarse.vercel.app" not in text
 
 
 def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
@@ -51,30 +62,42 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
         "uvx --python 3.12 --from ${quotedUvFrom} coarse install-skills --all --force"
         in handoff_lib
     )
+    # Per-review unique log file threaded via paperId → logFile (see
+    # buildCliCommands in mcpHandoff.ts). The log path must be built
+    # from paperId so parallel reviews don't clobber each other.
+    assert "const logFile = `/tmp/coarse-review-${paperId}.log`;" in handoff_lib
     assert (
         "uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach "
-        "--log-file /tmp/coarse-review.log --handoff ${handoffUrl}" in handoff_lib
+        "--log-file ${logFile} --handoff ${handoffUrl}" in handoff_lib
     )
-    assert "rg '^  view:|^  local:' /tmp/coarse-review.log" in handoff_lib
+    assert "rg '^  view:|^  local:' ${logFile}" in handoff_lib
 
-    assert "const fullPrompt = buildAgentPrompt({ setupCmd, runCmd });" in handoff_page
+    # page.tsx must pass logFile through to buildAgentPrompt on every
+    # call site (handleLaunch + the collapsible manual-commands UI).
+    assert "const fullPrompt = buildAgentPrompt({ setupCmd, runCmd, logFile });" in handoff_page
     assert "coarse.ink does not receive or store your" in handoff_page
 
+    # The /h/<token> landing-page HTML renderer has its OWN runCmd
+    # builder (it can't share buildCliCommands because it emits HTML,
+    # not a React prop). It must also thread paperId → logFile through.
     assert 'import { MCP_UVX_FROM } from "@/lib/mcpHandoff";' in handoff_route
     assert "const pinnedFrom = MCP_UVX_FROM;" in handoff_route
     assert "const quotedFrom = `'${pinnedFrom}'`;" in handoff_route
+    assert "const logFile = `/tmp/coarse-review-${paperId}.log`;" in handoff_route
     assert (
         "uvx --python 3.12 --from ${quotedFrom} coarse install-skills --all --force"
         in handoff_route
     )
     assert (
         "uvx --python 3.12 --from ${quotedFrom} coarse-review --detach "
-        "--log-file /tmp/coarse-review.log --handoff ${handoffUrl}" in handoff_route
+        "--log-file ${logFile} --handoff ${handoffUrl}" in handoff_route
     )
     assert (
         "Runs locally on your machine using your own Claude Code, Codex, or Gemini CLI account."
         in handoff_route
     )
-    assert "coarse-ink[mcp]==1.2.2" in handoff_lib
+    # Temporary git-ref pin — MUST flip back to a semver in the release PR.
+    # See the RELEASE BLOCKER note at the top of CHANGELOG.md ## Unreleased.
+    assert "coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@" in handoff_lib
     assert "@feat/mcp-server" not in handoff_lib
     assert "@feat/mcp-server" not in handoff_route

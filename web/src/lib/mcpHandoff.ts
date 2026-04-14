@@ -6,8 +6,9 @@
 //      triggered).
 //   2. User clicks "Review with Claude Code / Codex / Gemini CLI".
 //   3. Frontend POSTs to /api/cli-handoff which mints a short-lived
-//      finalize_token (60 min) bound to the paper_id and returns a
-//      handoff URL of the form ``coarse.vercel.app/h/<token>``.
+//      finalize_token (3h, see FINALIZE_TOKEN_TTL_MINUTES) bound to
+//      the paper_id and returns a handoff URL of the form
+//      ``https://coarse.ink/h/<token>`` (or localhost in dev).
 //   4. A modal renders the two commands the user pastes into their
 //      terminal:
 //        - one-time skill refresh: `uvx --python 3.12 --from ... coarse install-skills`
@@ -23,8 +24,12 @@
 //           through the chosen headless CLI
 //        e. POSTs the rendered review back to /api/mcp-finalize with
 //           the finalize_token
-//        f. Prints `https://coarse.vercel.app/review/<paper_id>` —
+//        f. Prints `https://coarse.ink/review/<paper_id>?token=<t>` —
 //           the user clicks it to see the review in the normal web UI.
+//           The tokened URL form is required because /api/presign sets
+//           `access_token_required=true` on every review row; the
+//           mcp-finalize response embeds a signed token so the `view:`
+//           line is clickable without any additional token grafting.
 //
 // No server-side extraction. No OpenRouter key on the web backend. The
 // handoff URL is the only thing that crosses the browser→terminal
@@ -148,15 +153,24 @@ export const HOST_LAUNCH_HINT: Record<ChatHost, string> = {
  * Build the natural-language prompt the coding agent will execute.
  * Same text used in the codex://new?prompt=... deep link AND in the
  * code block users paste into Claude Code / Gemini CLI terminals.
+ *
+ * ``logFile`` is the per-review unique log path so parallel reviews in
+ * the same terminal don't clobber each other and so the agent can
+ * correlate a tail/rg invocation to a specific review. Derived from
+ * the paper UUID by buildCliCommands.
  */
 export function buildAgentPrompt(args: {
   setupCmd: string;
   runCmd: string;
+  logFile: string;
 }): string {
-  const { setupCmd, runCmd } = args;
+  const { setupCmd, runCmd, logFile } = args;
   const configCmd = setupCmd.replace("coarse install-skills --all --force", "coarse setup");
   return (
-    `Please review an academic paper for me using the coarse-review skill.\n\n` +
+    `Please review an academic paper for me using the coarse-review skill. ` +
+    `The paper is a REMOTE resource — its source URL is already embedded ` +
+    `in the command below. Do NOT search for a local PDF, do NOT ask me ` +
+    `for a file path, and do NOT try to interpret the URL as a filename.\n\n` +
     `STEP 0 — Check whether \`uvx\` is available. Run ` +
     `\`command -v uvx || command -v uv\`. If neither command exists, ` +
     `install uv first with \`curl -LsSf https://astral.sh/uv/install.sh | sh\`, ` +
@@ -170,7 +184,11 @@ export function buildAgentPrompt(args: {
     `Run this command to copy the pinned coarse-review skill bundle into ` +
     `your Claude Code / Codex / Gemini CLI skill folder. This uses uvx, ` +
     `so it does not permanently install ` +
-    `coarse-ink into your global environment:\n\n` +
+    `coarse-ink into your global environment. If the exact command below ` +
+    `reports \`No such command 'install-skills'\`, that's a known ` +
+    `version-skew and is safe to ignore — the review runs the same way ` +
+    `either way because uvx is already loading the coarse bundle via ` +
+    `\`--from\`.\n\n` +
     `${setupCmd}\n\n` +
     `STEP 2 — Check for an OpenRouter API key. ` +
     `Run \`echo $OPENROUTER_API_KEY\` and \`grep OPENROUTER_API_KEY .env 2>/dev/null\`. ` +
@@ -188,36 +206,45 @@ export function buildAgentPrompt(args: {
     `If I paste a key (it should start with sk-or-), save it to ` +
     `~/.coarse/config.toml via \`${configCmd}\` unless I explicitly ask ` +
     `for project-local .env storage.\n\n` +
-    `STEP 3 — Start the review with coarse-review's built-in detached ` +
-    `launcher. The review takes 10-25 minutes, which exceeds most agent ` +
-    `tool timeouts, so use this exact command:\n\n` +
+    `STEP 3 — Run the EXACT command below, verbatim, in the background. ` +
+    `Do not substitute, rewrite, or interpret any argument. Every piece ` +
+    `of this command is already filled in — there is no placeholder for ` +
+    `you to resolve. The \`--handoff\` URL is the paper source; ` +
+    `coarse-review downloads the PDF from that URL over the network at ` +
+    `the start of the pipeline. You do NOT need to, and MUST NOT, search ` +
+    `the filesystem (no \`find\`, no \`glob\`, no \`ls /tmp\`, no ` +
+    `\`FindFiles\`) for the paper before running it. You do NOT need to ` +
+    `ask me for a paper path — everything needed is already in the command.\n\n` +
+    `The review takes 10-25 minutes, which exceeds most agent tool ` +
+    `timeouts, so coarse-review's built-in \`--detach\` flag backgrounds ` +
+    `it and returns immediately with the Review PID. Run this:\n\n` +
     `  ${runCmd}\n\n` +
-    `This command returns immediately with the Review PID and writes all ` +
-    `output to \`/tmp/coarse-review.log\`.\n\n` +
-    `Then poll the log file every 60-90 seconds with ` +
-    `\`tail -20 /tmp/coarse-review.log\` to check progress. Do NOT ` +
-    `re-run the command in the foreground. Do NOT kill the process because ` +
-    `you think it hung; it takes a genuine 10-25 minutes.\n\n` +
+    `The command writes all output to \`${logFile}\` — a per-review ` +
+    `unique path so parallel reviews in the same shell don't clobber ` +
+    `each other's logs. Poll that exact path every 60-90 seconds with ` +
+    `\`tail -20 ${logFile}\` to check progress. Do NOT re-run the ` +
+    `command in the foreground. Do NOT kill the process because you ` +
+    `think it hung — the review takes a genuine 10-25 minutes end-to-end.\n\n` +
     `STEP 4 — When the run finishes, use ONLY the final log lines to ` +
-    `locate the artifacts. Do NOT do a broad filesystem search. ` +
-    `Run \`rg '^  view:|^  local:' /tmp/coarse-review.log\`. ` +
-    `The \`local:\` line is the exact markdown path written by ` +
-    `coarse-review, even when uvx runs from a temporary directory. ` +
-    `If \`local:\` is present, read that file directly. If \`view:\` is ` +
-    `present, use that as the canonical web URL. If the log says ` +
-    `\`view: unavailable\`, report that the web callback failed and use ` +
-    `only the \`local:\` path. Do NOT try to discover another web URL. ` +
-    `Do NOT run global ` +
-    `\`find\`, \`locate\`, \`lsof\`, or whole-computer searches trying to ` +
-    `discover the review file.\n\n` +
+    `locate the artifacts. Do NOT do a broad filesystem search. Run ` +
+    `\`rg '^  view:|^  local:' ${logFile}\`. The \`local:\` line is ` +
+    `the exact markdown path written by coarse-review, even when uvx ` +
+    `runs from a temporary directory. If \`local:\` is present, read ` +
+    `that file directly. If \`view:\` is present, use that as the ` +
+    `canonical web URL (it already includes the signed access token). ` +
+    `If the log says \`view: unavailable\`, report that the web ` +
+    `callback failed and use only the \`local:\` path. Do NOT try to ` +
+    `discover another web URL. Do NOT run global \`find\`, \`locate\`, ` +
+    `\`lsof\`, or whole-computer searches trying to discover the ` +
+    `review file.\n\n` +
     `Note: this runs locally on my machine using my own Claude Code, ` +
-    `Codex, or Gemini CLI account. coarse.ink does not receive or store ` +
-    `my provider login, and my provider's terms, limits, and policies ` +
-    `apply.\n\n` +
+    `Codex, or Gemini CLI account. coarse.ink does not receive or ` +
+    `store my provider login, and my provider's terms, limits, and ` +
+    `policies apply.\n\n` +
     `When the log shows "PUBLISHED TO COARSE WEB" or "REVIEW ` +
     `COMPLETE", the review is done. Show me:\n` +
-    `  - The review URL (search for 'view:' in the log)\n` +
-    `  - The local markdown path (search for 'local:' in the log)\n` +
+    `  - The review URL (the \`view:\` line)\n` +
+    `  - The local markdown path (the \`local:\` line)\n` +
     `  - A summary of the recommendation (accept / revise / reject)\n` +
     `  - The top 3 macro issues from the overview section`
   );
@@ -227,9 +254,10 @@ export function buildLaunchUrl(args: {
   host: ChatHost;
   runCmd: string;
   setupCmd: string;
+  logFile: string;
 }): string {
-  const { host, runCmd, setupCmd } = args;
-  const prompt = buildAgentPrompt({ setupCmd, runCmd });
+  const { host, runCmd, setupCmd, logFile } = args;
+  const prompt = buildAgentPrompt({ setupCmd, runCmd, logFile });
 
   if (host === "codex") {
     // Codex supports codex://new?prompt=<text> deep links that pre-fill
@@ -287,21 +315,30 @@ export async function mintCliHandoff(
  * Build the two shell commands the user needs to paste into their
  * terminal. The setup command is idempotent; the run command includes
  * whatever model/effort overrides the user selected in the modal.
+ *
+ * The log file is derived from ``paperId`` so parallel reviews
+ * launched from the same shell (or stacked attempts against the same
+ * handoff) don't clobber each other's output. The format is
+ * ``/tmp/coarse-review-<paperId>.log`` — just the UUID, not the full
+ * tokened review key, because ``ps aux`` and ``/tmp`` listings are
+ * the wrong place for an access token.
  */
 export function buildCliCommands(args: {
   handoffUrl: string;
   host: ChatHost;
   model: string;
   effort: EffortLevel;
-}): { setupCmd: string; runCmd: string } {
-  const { handoffUrl, host, model, effort } = args;
+  paperId: string;
+}): { setupCmd: string; runCmd: string; logFile: string } {
+  const { handoffUrl, host, model, effort, paperId } = args;
   const cliName = HOST_CLI_NAME[host];
   const quotedUvFrom = shellQuote(MCP_UVX_FROM);
+  const logFile = `/tmp/coarse-review-${paperId}.log`;
   const setupCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse install-skills --all --force`;
   const runCmd =
-    `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach --log-file /tmp/coarse-review.log --handoff ${handoffUrl}` +
+    `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach --log-file ${logFile} --handoff ${handoffUrl}` +
     ` --host ${cliName}` +
     ` --model ${model}` +
     ` --effort ${effort}`;
-  return { setupCmd, runCmd };
+  return { setupCmd, runCmd, logFile };
 }

@@ -149,6 +149,7 @@ export async function GET(
   const html = renderLandingPage({
     handoffUrl,
     paperTitle: reviewRow.paper_filename ?? "your paper",
+    paperId: tokenRow.paper_id,
   });
   return new NextResponse(html, {
     status: 200,
@@ -160,15 +161,20 @@ export async function GET(
 function renderLandingPage(args: {
   handoffUrl: string;
   paperTitle: string;
+  paperId: string;
 }): string {
-  const { handoffUrl, paperTitle } = args;
+  const { handoffUrl, paperTitle, paperId } = args;
   const safe = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
   const pinnedFrom = MCP_UVX_FROM;
   const quotedFrom = `'${pinnedFrom}'`;
+  // Per-review unique log file so parallel runs in the same shell
+  // don't clobber each other. Mirrors the buildCliCommands path in
+  // web/src/lib/mcpHandoff.ts.
+  const logFile = `/tmp/coarse-review-${paperId}.log`;
   const setupCmd = `uvx --python 3.12 --from ${quotedFrom} coarse install-skills --all --force`;
-  const runCmd = `uvx --python 3.12 --from ${quotedFrom} coarse-review --detach --log-file /tmp/coarse-review.log --handoff ${handoffUrl}`;
+  const runCmd = `uvx --python 3.12 --from ${quotedFrom} coarse-review --detach --log-file ${logFile} --handoff ${handoffUrl}`;
 
   return `<!doctype html>
 <html lang="en">
@@ -216,7 +222,7 @@ function renderLandingPage(args: {
   <div class="step">
     <h2>2. Run the review</h2>
     <pre class="cmd" id="run"><button class="copy" onclick="copy('run')">copy</button>${safe(runCmd)}</pre>
-    <p class="note">This starts a detached local review process, writes logs to <code>/tmp/coarse-review.log</code>, and posts the finished review back here. Takes 10–25 minutes. Check progress with <code>tail -20 /tmp/coarse-review.log</code>. The review will appear at <a href="/" >coarse.vercel.app/review/…</a> when it's done.</p>
+    <p class="note">This starts a detached local review process, writes logs to <code>${safe(logFile)}</code>, and posts the finished review back here. Takes 10–25 minutes. Check progress with <code>tail -20 ${safe(logFile)}</code>. The review will appear at <code>coarse.ink/review/${safe(paperId)}?token=…</code> when it's done — the <code>view:</code> line in the log has the full tokened URL.</p>
     <p class="note"><strong>Options:</strong> edit the command before running to add <code>--host claude|codex|gemini</code> (default: first CLI found on PATH), <code>--model &lt;id&gt;</code>, and <code>--effort low|medium|high|max</code>.</p>
   </div>
 
