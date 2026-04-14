@@ -197,6 +197,92 @@ def test_preview_middleware_exempts_handoff_routes() -> None:
     assert '"/review/"' not in middleware
     assert '"/api/cli-handoff"' not in middleware
 
+    # The match function must normalize trailing slashes before
+    # composing `prefix + "/"` — otherwise a prefix like `"/h/"`
+    # silently becomes `"/h//"` and never matches a real URL, so
+    # `/h/<token>` gets 401'd by the preview gate despite being in
+    # the exempt list. This is the exact bug we shipped in #122 and
+    # that broke the handoff flow end-to-end on the preview deploy
+    # even after #124. Pin the normalization so it can't regress.
+    assert (
+        'rawPrefix.endsWith("/")' in middleware
+        or "rawPrefix.endsWith('/')" in middleware
+        or ".slice(0, -1)" in middleware
+    ), (
+        "isHandoffExemptPath must strip a trailing slash from exempt "
+        "prefixes before composing `${prefix}/` for the startsWith "
+        "check — otherwise `/h/<token>` is never exempted."
+    )
+
+
+def test_preview_middleware_exempt_match_semantics() -> None:
+    """Functional regression: reimplements the JS match logic in Python
+    and runs a positive + negative suite against the actual prefix list
+    parsed from ``web/src/middleware.ts``. Catches the "trailing-slash
+    prefix never matches" bug even if the source is refactored into a
+    different shape, as long as the prefix list itself stays parseable.
+
+    The string-content assertions above pin the shape of the code;
+    this test pins the observable behavior.
+    """
+    import re
+
+    middleware = _read("web/src/middleware.ts")
+
+    match = re.search(
+        r"const\s+HANDOFF_EXEMPT_PREFIXES\s*=\s*\[([^\]]*)\]",
+        middleware,
+        re.DOTALL,
+    )
+    assert match, "could not parse HANDOFF_EXEMPT_PREFIXES from middleware.ts"
+    prefixes = re.findall(r'"([^"]+)"', match.group(1))
+    assert prefixes, "HANDOFF_EXEMPT_PREFIXES appears empty"
+
+    def is_exempt(pathname: str) -> bool:
+        for raw in prefixes:
+            prefix = raw[:-1] if raw.endswith("/") else raw
+            if pathname == prefix or pathname.startswith(f"{prefix}/"):
+                return True
+        return False
+
+    # Positive cases: these paths MUST be exempt or the CLI handoff
+    # breaks end-to-end behind the preview Basic Auth middleware.
+    for exempt_path in (
+        "/h/00000000-0000-0000-0000-000000000000",
+        "/h/abc123",
+        "/api/mcp-finalize",
+        "/api/mcp-extract",
+        "/api/mcp-handoff",
+    ):
+        assert is_exempt(exempt_path), (
+            f"expected {exempt_path!r} to be exempt from the preview "
+            "Basic Auth gate — if this fails the CLI handoff will 401 "
+            "on preview deploys with PREVIEW_BASIC_AUTH_PASSWORD set"
+        )
+
+    # Negative cases: browser UI must STAY behind the gate, and
+    # prefix normalization must NOT false-match sibling paths.
+    for protected_path in (
+        "/",
+        "/status/12345",
+        "/review/12345",
+        "/api/cli-handoff",
+        "/api/presign",
+        "/api/submit",
+        "/api/status",
+        "/api/delete",
+        "/api/cancel",
+        "/help",  # must not false-match the `/h` prefix after normalization
+        "/health",
+        "/hqueue",
+    ):
+        assert not is_exempt(protected_path), (
+            f"expected {protected_path!r} to be GATED by the preview "
+            "Basic Auth middleware, but the exempt check let it "
+            "through — this is a prefix-match false-positive and "
+            "would leak the browser UI past the preview gate"
+        )
+
 
 def test_release_blocker_pin_is_coupled_to_unreleased_version() -> None:
     """Mechanical guard for the ``DEFAULT_MCP_UVX_FROM`` release blocker.

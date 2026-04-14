@@ -108,7 +108,16 @@ const HANDOFF_EXEMPT_PREFIXES = [
 ];
 
 function isHandoffExemptPath(pathname: string): boolean {
-  for (const prefix of HANDOFF_EXEMPT_PREFIXES) {
+  for (const rawPrefix of HANDOFF_EXEMPT_PREFIXES) {
+    // Normalize so `"/h/"` and `"/h"` both behave the same: strip a
+    // single trailing slash, then match on either the exact path or
+    // a proper subpath (prefix + "/" + rest). This avoids the bug
+    // where a trailing-slash prefix like `"/h/"` silently composed
+    // to `"/h//"` in the `startsWith` arm and never matched any real
+    // URL, leaving `/h/<token>` unexempted despite being in the list.
+    // The segment-boundary check also prevents `/help` or `/health`
+    // from falsely matching the `/h` prefix.
+    const prefix = rawPrefix.endsWith("/") ? rawPrefix.slice(0, -1) : rawPrefix;
     if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
       return true;
     }
