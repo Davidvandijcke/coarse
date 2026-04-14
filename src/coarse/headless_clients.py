@@ -30,6 +30,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from coarse.models import HEADLESS_DEFAULT_MODELS
+
 logger = logging.getLogger(__name__)
 
 _CTRL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -307,7 +309,7 @@ class ClaudeCodeClient(_HeadlessCLIClient):
         config: Any = None,
         *,
         claude_bin: str = "claude",
-        claude_model: str = "claude-opus-4-6",
+        claude_model: str = HEADLESS_DEFAULT_MODELS["claude"],
         effort: str = "high",
         timeout: int = 1800,
         **kwargs,
