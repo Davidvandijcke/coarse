@@ -1750,15 +1750,16 @@ export default function Home() {
                           style={{
                             display: "block",
                             width: "100%",
-                            padding: "0.65rem 1.25rem",
-                            background: "transparent",
-                            color: "var(--chalk)",
-                            border: "1px dashed var(--tray)",
+                            padding: "0.8rem 1.25rem",
+                            background: "var(--board-surface)",
+                            color: "var(--yellow-chalk)",
+                            border: "1.5px solid var(--yellow-chalk)",
                             borderRadius: "2px",
                             fontFamily: "var(--font-chalk)",
-                            fontSize: "1rem",
+                            fontSize: "1.08rem",
+                            fontWeight: 600,
                             cursor: "pointer",
-                            transition: "border-color 0.15s",
+                            transition: "background 0.15s",
                           }}
                         >
                           {HOST_LAUNCH_LABEL[host]}
