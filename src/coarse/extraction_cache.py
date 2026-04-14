@@ -49,7 +49,15 @@ def _save_cache(pdf_path: Path, paper_text: PaperText) -> None:
         if os.name == "nt":
             cache.write_bytes(payload)
         else:
-            fd = os.open(cache, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            # O_NOFOLLOW closes the `cache.is_symlink()` TOCTOU
+            # window above — the check-then-open pair is racy on
+            # principle even though the attacker window is small.
+            # Letting the kernel refuse the open atomically is the
+            # one-syscall version of the same guarantee.
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(cache, flags, 0o600)
             try:
                 os.fchmod(fd, 0o600)
             except OSError:

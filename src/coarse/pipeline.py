@@ -26,6 +26,7 @@ from coarse.quote_verify import QuoteVerificationDrop, verify_quotes, verify_quo
 from coarse.review_stages import (
     _detect_section_focus,
     _review_section,
+    _verify_with_fallback,
     calibrate_domain,
     extract_contribution,
     run_editorial_pass,
@@ -66,21 +67,6 @@ def _check_extraction_quality(structure: "PaperStructure") -> bool:
         return False
 
     return True
-
-
-def _verify_with_fallback(
-    comments: list["DetailedComment"],
-    paper_markdown: str,
-    *,
-    stage_name: str = "Quote verification",
-    drop_unverified: bool = True,
-) -> list["DetailedComment"]:
-    """Run quote verification, falling back to originals if all are dropped."""
-    verified = verify_quotes(comments, paper_markdown, drop_unverified=drop_unverified)
-    if comments and not verified:
-        logger.warning("%s dropped ALL comments — keeping original comments", stage_name)
-        return comments
-    return verified
 
 
 _QUOTE_REPAIR_RATIO_FLOOR = 0.65
@@ -187,6 +173,7 @@ def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]
     """Renumber comments sequentially 1..N."""
     return [c.model_copy(update={"number": i}) for i, c in enumerate(comments, start=1)]
 
+
 def extract_and_structure(
     file_path: str | Path,
     client: LLMClient,
@@ -245,6 +232,8 @@ def extract_and_structure(
             "The file may be scanned/image-only with no extractable text."
         )
     return paper_text, structure
+
+
 def review_paper(
     pdf_path: str | Path,
     model: str | None = None,

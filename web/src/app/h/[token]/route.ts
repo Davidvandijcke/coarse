@@ -77,13 +77,24 @@ export async function GET(
   }
 
   // Step 1: look up the token — it must exist, not be expired, not be consumed.
+  // Use `.maybeSingle()` (not `.single()`) so a missing row returns
+  // `data=null, error=null` instead of an error. This lets us
+  // distinguish "token not found" (→ 404) from "DB timeout or
+  // permission error" (→ 500) — symmetric with `/api/mcp-finalize`.
   const { data: tokenRow, error: tokenErr } = await supabase
     .from("mcp_handoff_tokens")
     .select("token, paper_id, expires_at, consumed_at")
     .eq("token", token)
-    .single();
+    .maybeSingle();
 
-  if (tokenErr || !tokenRow) {
+  if (tokenErr) {
+    console.error("[/h/token] token lookup failed:", tokenErr.message);
+    return NextResponse.json(
+      { error: "Token lookup failed" },
+      { status: 500 },
+    );
+  }
+  if (!tokenRow) {
     return NextResponse.json({ error: "Token not found" }, { status: 404 });
   }
   if (tokenRow.consumed_at) {
@@ -165,7 +176,12 @@ export async function GET(
 
   const bundle = {
     paper_id: tokenRow.paper_id,
-    signed_pdf_url: signed.signedUrl,
+    // Canonical field name is `signed_download_url` — the handoff
+    // supports any reviewable format, not just PDFs, so the historical
+    // `signed_pdf_url` name was a misnomer. The Python CLI at
+    // `src/coarse/cli_review.py::_fetch_handoff` reads the canonical
+    // key only; no consumer reads the legacy key anymore.
+    signed_download_url: signed.signedUrl,
     finalize_token: tokenRow.token,
     callback_url: callbackUrl,
     paper_title: reviewRow.paper_filename ?? "",

@@ -558,11 +558,21 @@ def test_windows_pid_alive_uses_openprocess_and_exit_code(monkeypatch) -> None:
     fake_ctypes.wintypes = fake_wintypes  # type: ignore[attr-defined]
     fake_ctypes.byref = lambda obj: obj  # type: ignore[attr-defined]
 
+    WAIT_OBJECT_0 = 0x00000000
+    WAIT_TIMEOUT = 0x00000102
+
     class _FakeKernel32:
-        def __init__(self, handle: int, exit_code: int, getexit_ok: bool = True):
+        def __init__(
+            self,
+            handle: int,
+            exit_code: int,
+            getexit_ok: bool = True,
+            wait_result: int = WAIT_TIMEOUT,
+        ):
             self._handle = handle
             self._exit_code = exit_code
             self._getexit_ok = getexit_ok
+            self._wait_result = wait_result
             self.closed = False
 
         def OpenProcess(self, _access, _inherit, _pid):
@@ -573,6 +583,9 @@ def test_windows_pid_alive_uses_openprocess_and_exit_code(monkeypatch) -> None:
                 return 0
             exit_code_ref.value = self._exit_code
             return 1
+
+        def WaitForSingleObject(self, _handle, _timeout):
+            return self._wait_result
 
         def CloseHandle(self, _handle):
             self.closed = True
@@ -590,25 +603,43 @@ def test_windows_pid_alive_uses_openprocess_and_exit_code(monkeypatch) -> None:
 
     STILL_ACTIVE = 259
 
-    # Case 1: live process
-    fake_ctypes.windll = _FakeWindll(_FakeKernel32(handle=42, exit_code=STILL_ACTIVE))
+    # Case 1: live process — GetExitCodeProcess returns STILL_ACTIVE,
+    # WaitForSingleObject returns WAIT_TIMEOUT (still running). ALIVE.
+    fake_ctypes.windll = _FakeWindll(
+        _FakeKernel32(handle=42, exit_code=STILL_ACTIVE, wait_result=WAIT_TIMEOUT),
+    )
     assert _windows_pid_alive(1234) is True
     assert fake_ctypes.windll.kernel32.closed is True
 
-    # Case 2: process already exited with a real exit code
+    # Case 2: process exited with a real non-259 code — GetExitCodeProcess
+    # returns the code directly. DEAD.
     fake_ctypes.windll = _FakeWindll(_FakeKernel32(handle=42, exit_code=0))
     assert _windows_pid_alive(1234) is False
     assert fake_ctypes.windll.kernel32.closed is True
 
-    # Case 3: OpenProcess returned NULL (no such PID, or permission denied)
+    # Case 3: OpenProcess returned NULL (no such PID, or permission denied).
     fake_ctypes.windll = _FakeWindll(_FakeKernel32(handle=0, exit_code=STILL_ACTIVE))
     assert _windows_pid_alive(1234) is False
     # CloseHandle must NOT have been called for the NULL handle
     assert fake_ctypes.windll.kernel32.closed is False
 
-    # Case 4: GetExitCodeProcess fails
+    # Case 4: GetExitCodeProcess fails.
     fake_ctypes.windll = _FakeWindll(
         _FakeKernel32(handle=42, exit_code=STILL_ACTIVE, getexit_ok=False),
+    )
+    assert _windows_pid_alive(1234) is False
+    assert fake_ctypes.windll.kernel32.closed is True
+
+    # Case 5 (STILL_ACTIVE disambiguation): process legitimately exited
+    # with code 259 — GetExitCodeProcess returns 259 AND
+    # WaitForSingleObject returns WAIT_OBJECT_0 (the process object is
+    # signaled, i.e. actually exited). DEAD despite the 259 collision.
+    fake_ctypes.windll = _FakeWindll(
+        _FakeKernel32(
+            handle=42,
+            exit_code=STILL_ACTIVE,
+            wait_result=WAIT_OBJECT_0,
+        ),
     )
     assert _windows_pid_alive(1234) is False
     assert fake_ctypes.windll.kernel32.closed is True

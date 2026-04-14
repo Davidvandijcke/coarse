@@ -62,6 +62,32 @@ def _detect_host() -> str:
     )
 
 
+def _scrub_url(url: str) -> str:
+    """Strip the query string from a URL before interpolating it into an
+    error message or log line.
+
+    On preview deploys, `/api/cli-handoff` and `/h/[token]` append
+    `?x-vercel-protection-bypass=<VERCEL_AUTOMATION_BYPASS_SECRET>`
+    to the handoff and callback URLs via `appendPreviewBypassQuery`.
+    That secret must never land in a CLI stderr line or the detached
+    log file (which coding agents routinely capture and grep).
+    Stripping the query string also removes any Supabase signed-URL
+    token, so the same helper is reused on `signed_download_url`.
+
+    Path + scheme + host are preserved so the error is still useful
+    for the human reading it.
+    """
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+
+        parts = urlsplit(url)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    except Exception:
+        # Last-resort: chop at the first `?` by string slicing, which
+        # is correct for any valid URL and safe even on garbled input.
+        return url.split("?", 1)[0]
+
+
 _CONTENT_TYPE_EXTENSIONS = {
     "application/pdf": ".pdf",
     "application/epub+zip": ".epub",
@@ -152,17 +178,16 @@ def _fetch_handoff(url: str) -> dict:
             )
         else:
             hint = f"HTTP {resp.status_code} — re-trigger the handoff from the coarse web form."
-        raise RuntimeError(f"Failed to fetch handoff bundle ({url}): {hint}")
+        raise RuntimeError(f"Failed to fetch handoff bundle ({_scrub_url(url)}): {hint}")
     try:
         bundle = resp.json()
     except ValueError as exc:
-        raise RuntimeError(f"Handoff URL did not return JSON: {resp.text[:200]}") from exc
-
-    signed_download_url = bundle.get("signed_download_url") or bundle.get("signed_pdf_url")
-    if signed_download_url:
-        bundle["signed_download_url"] = signed_download_url
-        # Backward compatibility for any callers still reading the legacy key.
-        bundle.setdefault("signed_pdf_url", signed_download_url)
+        # Don't interpolate `resp.text` — an error body from Vercel can
+        # contain the bypass secret query string (echoed from the URL)
+        # or upstream auth hints. Log the first 120 chars with any
+        # URL-shaped substrings scrubbed instead.
+        body_preview = _scrub_url(resp.text[:200]) if resp.text else ""
+        raise RuntimeError(f"Handoff URL did not return JSON: {body_preview[:120]}") from exc
 
     required = ("paper_id", "finalize_token", "callback_url", "signed_download_url")
     missing = [k for k in required if not bundle.get(k)]
@@ -198,6 +223,10 @@ def _download_handoff_source(bundle: dict, dest_dir: Path) -> Path:
     return dest
 
 
+_POST_FINALIZE_MAX_ATTEMPTS = 3
+_POST_FINALIZE_RETRY_BACKOFF_SECONDS = (2.0, 4.0, 8.0)
+
+
 def _post_finalize(
     *,
     callback_url: str,
@@ -210,7 +239,23 @@ def _post_finalize(
     paper_markdown: str,
     host_label: str,
 ) -> dict:
-    """POST the rendered review back to coarse.vercel.app/api/mcp-finalize."""
+    """POST the rendered review back to coarse.vercel.app/api/mcp-finalize.
+
+    Retries up to ``_POST_FINALIZE_MAX_ATTEMPTS`` times on transient
+    failure classes (connection error, timeout, 429, 5xx) with
+    exponential backoff. Permanent 4xx failures (except 429) fail
+    fast — retrying an invalid-token 401 or a malformed-payload 400
+    will not help, and keeps the user's terminal blocked for no
+    benefit. The user has already waited 10-25 minutes for the
+    review; losing it to a single transient blip would be a poor
+    trade-off.
+
+    Token consumption is server-side atomic (`UPDATE ... WHERE
+    consumed_at IS NULL` in `/api/mcp-finalize`), so retrying a
+    transient failure is safe — either the first attempt already
+    persisted the review (and the retry gets a 410) or it didn't
+    (and the retry gets a fresh 200).
+    """
     import requests
 
     payload = {
@@ -223,20 +268,61 @@ def _post_finalize(
         "paper_markdown": paper_markdown,
         "model": f"coarse-review-cli:{host_label}",
     }
-    resp = requests.post(
-        callback_url,
-        json=payload,
-        timeout=60,
-        headers={"Content-Type": "application/json"},
-    )
-    if not resp.ok:
+
+    last_exc: Exception | None = None
+    last_status: int | None = None
+    last_body: str = ""
+    for attempt in range(_POST_FINALIZE_MAX_ATTEMPTS):
+        if attempt > 0:
+            import time
+
+            sleep_seconds = _POST_FINALIZE_RETRY_BACKOFF_SECONDS[
+                min(attempt - 1, len(_POST_FINALIZE_RETRY_BACKOFF_SECONDS) - 1)
+            ]
+            print(
+                f"[post_finalize] retry {attempt + 1}/{_POST_FINALIZE_MAX_ATTEMPTS} "
+                f"after {sleep_seconds:.0f}s backoff",
+                file=sys.stderr,
+            )
+            time.sleep(sleep_seconds)
+        try:
+            resp = requests.post(
+                callback_url,
+                json=payload,
+                timeout=60,
+                headers={"Content-Type": "application/json"},
+            )
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            last_exc = exc
+            continue
+
+        if resp.ok:
+            try:
+                return resp.json()
+            except ValueError:
+                return {}
+
+        last_status = resp.status_code
+        last_body = resp.text[:300] if resp.text else ""
+        # Transient failure classes: 429 and any 5xx. Everything else
+        # is a permanent failure (400 invalid payload, 401 bad token,
+        # 403 token mismatch, 404 paper row deleted, 410 token already
+        # consumed) — retrying won't help and just wastes the user's
+        # time. Fail fast.
+        if resp.status_code != 429 and resp.status_code < 500:
+            break
+
+    # All attempts exhausted or permanent failure.
+    body_preview = _scrub_url(last_body) if last_body else ""
+    if last_exc is not None:
         raise RuntimeError(
-            f"Callback to {callback_url} failed: HTTP {resp.status_code} — {resp.text[:300]}"
+            f"Callback to {_scrub_url(callback_url)} failed after "
+            f"{_POST_FINALIZE_MAX_ATTEMPTS} attempts: "
+            f"{type(last_exc).__name__}: {last_exc}"
         )
-    try:
-        return resp.json()
-    except ValueError:
-        return {}
+    raise RuntimeError(
+        f"Callback to {_scrub_url(callback_url)} failed: HTTP {last_status} — {body_preview[:200]}"
+    )
 
 
 def _format_hyperlink(url: str) -> str:
@@ -519,85 +605,113 @@ def main(argv: list[str] | None = None) -> int:
     model = args.model or HEADLESS_DEFAULT_MODELS[host]
     effort = args.effort
 
-    # Handoff mode: fetch bundle, download the source file to temp, then run like local mode.
+    # Handoff mode: fetch bundle, download the source file to temp, then
+    # run like local mode. Everything from here to the end of main() is
+    # wrapped in a single outer try/finally so the handoff tempdir gets
+    # cleaned up regardless of which stage fails — fetch, download,
+    # pipeline, or finalize POST. Earlier revisions had three separate
+    # cleanup blocks and a pipeline-failure path that leaked
+    # `/tmp/coarse-review-*` dirs across invocations.
     handoff_bundle: dict | None = None
-    temp_source: Path | None = None
     # Track the tempfile.mkdtemp result separately from temp_source so the
     # cleanup in the ``finally`` below unlinks the right directory even when
     # test mocks replace _download_handoff_source with a fixture file whose
     # ``.parent`` is NOT the handoff tempdir (e.g. the pytest tmp_path).
     handoff_tmpdir: Path | None = None
-
-    if args.handoff:
-        logger.info("Fetching handoff bundle from %s", args.handoff)
-        handoff_bundle = _fetch_handoff(args.handoff)
-        handoff_tmpdir = Path(tempfile.mkdtemp(prefix="coarse-review-"))
-        temp_source = _download_handoff_source(handoff_bundle, handoff_tmpdir)
-        logger.info("Downloading paper to %s", temp_source)
-        if temp_source.suffix.lower() != ".pdf":
-            logger.info(
-                "Non-PDF handoff detected (%s); using direct extraction without OCR",
-                temp_source.suffix.lower() or "<no extension>",
-            )
-        paper_path = temp_source
-    else:
-        paper_path = args.paper_path.expanduser()
-        if not paper_path.exists():
-            print(f"ERROR: paper not found: {paper_path}", file=sys.stderr)
-            return 2
-
-    out_dir = args.output_dir.expanduser().resolve()
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    _ensure_openrouter_key_loaded(args.pre_extracted.expanduser() if args.pre_extracted else None)
-
-    # Call the pipeline directly so we get the PaperText back in-process
-    # (no sidecar file dance). run_headless_review handles all the
-    # monkey-patching for the chosen host.
-    from coarse.headless_review import run_headless_review
-
-    logger.info(
-        "Running coarse pipeline (host=%s, model=%s, effort=%s)",
-        host,
-        model,
-        effort,
-    )
-
-    try:
-        review, md_text, paper_text = run_headless_review(
-            paper_path,
-            host=host,
-            model=model,
-            effort=effort,
-            pre_extracted=args.pre_extracted.expanduser() if args.pre_extracted else None,
-        )
-    except Exception as exc:
-        print(f"ERROR: pipeline failed — {exc}", file=sys.stderr)
-        return 6
-
-    # Save the review markdown locally regardless of mode. Explicit
-    # utf-8 because review markdown contains non-ASCII content (math
-    # symbols, em dashes, quoted paper excerpts) and Windows' default
-    # `cp1252` encoding crashes on those. `PYTHONUTF8=1` in the
-    # detached child also covers this, but the explicit encoding
-    # makes the non-detached path safe too.
-    review_md_path = out_dir / f"{paper_path.stem}_review.md"
-    review_md_path.write_text(md_text, encoding="utf-8")
-    logger.info("Wrote %d-char review to %s", len(md_text), review_md_path)
-
-    # Handoff mode: POST the review back to coarse web. The cleanup of the
-    # downloaded source file + its temp parent runs in a ``finally`` so the
-    # early ``return 7`` on callback failure does not leak ``/tmp/
-    # coarse-review-*`` dirs across invocations. ``shutil.rmtree`` with
-    # ``ignore_errors=True`` removes both the file and the enclosing
-    # temp-dir directly (vs. the old ``unlink + rmdir`` pair, which
-    # failed if the temp-dir ever contained a sibling file).
     callback_failed_rc: int | None = None
+
     try:
+        if args.handoff:
+            # Scrub the URL before logging — on preview deploys the URL
+            # carries the Vercel bypass secret as a query param and we
+            # don't want it in the detached log file.
+            logger.info("Fetching handoff bundle from %s", _scrub_url(args.handoff))
+            try:
+                handoff_bundle = _fetch_handoff(args.handoff)
+            except Exception as exc:
+                # `_fetch_handoff` already raises RuntimeError with a
+                # scrubbed URL. Anything else (requests.ConnectionError,
+                # requests.Timeout) gets a generic message so a surprise
+                # exception type doesn't leak URL query strings through
+                # its default __str__.
+                print(
+                    f"ERROR: fetching handoff bundle: {type(exc).__name__}: {_scrub_url(str(exc))}",
+                    file=sys.stderr,
+                )
+                return 8
+            handoff_tmpdir = Path(tempfile.mkdtemp(prefix="coarse-review-"))
+            logger.info("Downloading paper from handoff signed URL to %s", handoff_tmpdir)
+            try:
+                temp_source = _download_handoff_source(handoff_bundle, handoff_tmpdir)
+            except Exception as exc:
+                print(
+                    f"ERROR: downloading paper: {type(exc).__name__}: {_scrub_url(str(exc))}",
+                    file=sys.stderr,
+                )
+                return 8
+            if temp_source.suffix.lower() != ".pdf":
+                logger.info(
+                    "Non-PDF handoff detected (%s); using direct extraction without OCR",
+                    temp_source.suffix.lower() or "<no extension>",
+                )
+            paper_path = temp_source
+        else:
+            paper_path = args.paper_path.expanduser()
+            if not paper_path.exists():
+                print(f"ERROR: paper not found: {paper_path}", file=sys.stderr)
+                return 2
+
+        out_dir = args.output_dir.expanduser().resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        _ensure_openrouter_key_loaded(
+            args.pre_extracted.expanduser() if args.pre_extracted else None,
+        )
+
+        # Call the pipeline directly so we get the PaperText back in-process
+        # (no sidecar file dance). run_headless_review handles all the
+        # monkey-patching for the chosen host.
+        from coarse.headless_review import run_headless_review
+
+        logger.info(
+            "Running coarse pipeline (host=%s, model=%s, effort=%s)",
+            host,
+            model,
+            effort,
+        )
+
+        try:
+            review, md_text, paper_text = run_headless_review(
+                paper_path,
+                host=host,
+                model=model,
+                effort=effort,
+                pre_extracted=args.pre_extracted.expanduser() if args.pre_extracted else None,
+            )
+        except Exception as exc:
+            # Scrub the exception string before printing — if any upstream
+            # helper ever interpolates a URL or token into its error, this
+            # is the last line of defense before the detached log file.
+            print(f"ERROR: pipeline failed — {_scrub_url(str(exc))}", file=sys.stderr)
+            return 6
+
+        # Save the review markdown locally regardless of mode. Explicit
+        # utf-8 because review markdown contains non-ASCII content (math
+        # symbols, em dashes, quoted paper excerpts) and Windows' default
+        # `cp1252` encoding crashes on those. `PYTHONUTF8=1` in the
+        # detached child also covers this, but the explicit encoding
+        # makes the non-detached path safe too.
+        review_md_path = out_dir / f"{paper_path.stem}_review.md"
+        review_md_path.write_text(md_text, encoding="utf-8")
+        logger.info("Wrote %d-char review to %s", len(md_text), review_md_path)
+
+        # Handoff mode: POST the review back to coarse web.
         if handoff_bundle is not None:
+            # Log a scrubbed callback URL — the real one carries the
+            # Vercel bypass secret query param on preview deploys.
             logger.info(
                 "POSTing review back to %s",
-                handoff_bundle["callback_url"],
+                _scrub_url(handoff_bundle["callback_url"]),
             )
             try:
                 # Use the paper metadata from the Review object (authoritative).
@@ -632,19 +746,19 @@ def main(argv: list[str] | None = None) -> int:
                 _print_completion_footer(
                     local_path=review_md_path,
                     callback_failed=True,
-                    callback_error=str(exc),
+                    callback_error=_scrub_url(str(exc)),
                 )
                 callback_failed_rc = 7
         else:
             _print_completion_footer(local_path=review_md_path)
     finally:
-        # Clean up the handoff tempdir (and its downloaded source file)
-        # if we created one. Runs on both the success and the
-        # callback-failure paths so the early return 7 above does not
-        # leak tempdirs. Targets ``handoff_tmpdir`` directly rather
-        # than ``temp_source.parent`` so test mocks that return a
-        # fixture path whose parent is the test's own ``tmp_path``
-        # (not the handoff tempdir) don't get their fixture wiped out.
+        # Single cleanup point for the handoff tempdir. Runs on every
+        # exit path — fetch failure, download failure, pipeline
+        # failure, finalize failure, happy path. Targets
+        # ``handoff_tmpdir`` directly rather than ``temp_source.parent``
+        # so test mocks that return a fixture path whose parent is the
+        # test's own ``tmp_path`` (not the handoff tempdir) don't get
+        # their fixture wiped out.
         if handoff_tmpdir is not None:
             import shutil
 

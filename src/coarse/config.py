@@ -101,7 +101,16 @@ def save_config(config: CoarseConfig) -> None:
         with open(path, "wb") as f:
             f.write(payload)
     else:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        # O_NOFOLLOW refuses the open if the target is a symlink,
+        # hardening against a co-tenant UID that pre-creates
+        # `~/.coarse/config.toml` as a symlink to a victim-owned file
+        # and waits for the service account to write API keys through
+        # the link. POSIX-only; `os.O_NOFOLLOW` is absent on some
+        # exotic POSIX variants so guard with `hasattr`.
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(path, flags, 0o600)
         try:
             os.fchmod(fd, 0o600)
         except OSError:

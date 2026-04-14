@@ -26,7 +26,28 @@ MAX_SOURCE_LINES = 800
 # estimation helpers). Splitting it cleanly requires a design pass that is
 # out of scope for this check — the known-oversized list exists for exactly
 # this "tracked for future refactor" state.
-KNOWN_OVERSIZED = {"extraction", "prompts", "llm"}
+# Modules that are allowlisted above ``MAX_SOURCE_LINES``. The value is
+# a per-module ceiling — larger than ``MAX_SOURCE_LINES`` (800) but not
+# unbounded. The ceiling is the allowlist's teeth: without it,
+# allowlisted modules can grow indefinitely under cover of "already
+# flagged, will refactor later." With the ceiling, any growth past the
+# recorded line count requires an explicit bump in this dict PLUS a
+# commit explaining why. The numbers are set to ~10% over current size
+# so incidental adds are fine and real bloat fails the test.
+#
+# `extraction` used to be in this dict back when it was 900+ lines.
+# After the refactor in #88 / #102 it dropped to ~291 lines, well
+# under the cap — removed from the allowlist so any regression is
+# caught immediately.
+KNOWN_OVERSIZED: dict[str, int] = {
+    # prompts.py currently holds every LLM prompt template for the
+    # pipeline — splitting it is a real refactor (per-agent files,
+    # shared boundary-notice helpers) and is deferred to post-v1.3.0.
+    "prompts": 2700,
+    # llm.py wraps litellm + instructor + retry + cost tracking.
+    # Splitting it requires an API redesign, also deferred.
+    "llm": 1000,
+}
 
 
 def _module_name(path: Path) -> str:
@@ -150,11 +171,24 @@ def test_no_src_coarse_file_exceeds_800_lines():
         for path in sorted(SRC_ROOT.rglob("*.py"))
         if path.read_text().count("\n") + 1 > MAX_SOURCE_LINES
     }
-    unexpected = {
-        module: lines for module, lines in offenders.items() if module not in KNOWN_OVERSIZED
-    }
+    unexpected: dict[str, int] = {}
+    for module, lines in offenders.items():
+        if module not in KNOWN_OVERSIZED:
+            unexpected[module] = lines
+            continue
+        # Allowlisted modules have an explicit per-module ceiling so
+        # they cannot grow unchecked. Tripping this branch means the
+        # allowlisted module grew past its recorded cap — bump the
+        # entry in `KNOWN_OVERSIZED` with a commit explaining why, or
+        # start the refactor this allowlist was deferring.
+        cap = KNOWN_OVERSIZED[module]
+        if lines > cap:
+            unexpected[module] = lines
 
-    assert unexpected == {}
+    assert unexpected == {}, (
+        "Oversized modules (or allowlisted modules that grew past their "
+        "recorded cap): " + ", ".join(f"{m}={n}" for m, n in sorted(unexpected.items()))
+    )
 
 
 def test_models_types_and_prompts_stay_within_allowed_layers():

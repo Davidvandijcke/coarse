@@ -26,7 +26,20 @@ let pricingCache: Map<string, ModelPricing> | null = null;
 /** Fetch and cache the full OpenRouter pricing map. */
 async function fetchPricingMap(): Promise<Map<string, ModelPricing>> {
   if (pricingCache) return pricingCache;
-  const resp = await fetch("https://openrouter.ai/api/v1/models");
+  // 10s timeout so a hung openrouter.ai upstream does not pin a Vercel
+  // function slot indefinitely. Matches the pattern used by every
+  // other server→upstream fetch in the web surface (turnstile.ts,
+  // mcp-extract/route.ts, submit/route.ts).
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10_000);
+  let resp: Response;
+  try {
+    resp = await fetch("https://openrouter.ai/api/v1/models", {
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
   const data = await resp.json();
   const map = new Map<string, ModelPricing>();
   for (const m of data.data ?? []) {

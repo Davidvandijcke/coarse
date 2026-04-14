@@ -99,7 +99,10 @@ def request_json(
         request.add_header("Prefer", "return=representation")
 
     try:
-        with urlopen(request) as response:
+        # 15s timeout so a stalled Supabase edge doesn't hang the
+        # operator indefinitely. kill_switch is run interactively and
+        # a hang with no feedback is worse than a retry.
+        with urlopen(request, timeout=15) as response:
             raw = response.read().decode("utf-8")
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")

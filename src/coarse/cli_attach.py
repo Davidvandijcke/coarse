@@ -251,26 +251,54 @@ def _windows_pid_alive(pid: int) -> bool:
     boundaries in most cases). `GetExitCodeProcess` then returns
     `STILL_ACTIVE` (259) iff the process is still running.
 
+    The `STILL_ACTIVE == 259` collision (a process that legitimately
+    exited with code 259 is indistinguishable from a running one
+    via `GetExitCodeProcess` alone) is disambiguated by a follow-up
+    `WaitForSingleObject(handle, 0)` call: `WAIT_OBJECT_0` means the
+    process object is signaled (i.e., actually exited), `WAIT_TIMEOUT`
+    means it is still running. The two-call sequence is the pattern
+    Microsoft's own docs recommend for unambiguous liveness checks.
+
     Returns False on any failure path (PID doesn't exist, permission
-    denied, process exited with code 259 — which is vanishingly rare
-    in practice; see the Microsoft KB on STILL_ACTIVE collision for
-    discussion — we accept the edge case).
+    denied, process genuinely exited).
     """
     import ctypes
     from ctypes import wintypes
 
     kernel32 = ctypes.windll.kernel32
     PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    SYNCHRONIZE = 0x00100000
     STILL_ACTIVE = 259
+    # WAIT_OBJECT_0 (0x0) signals the process actually exited; we
+    # only care about the distinction from WAIT_TIMEOUT below.
+    WAIT_TIMEOUT = 0x00000102
 
-    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    # Open with both QUERY_LIMITED_INFORMATION (for GetExitCodeProcess)
+    # and SYNCHRONIZE (for WaitForSingleObject). Both are cheap and
+    # granted to the process owner by default.
+    handle = kernel32.OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+        False,
+        pid,
+    )
     if not handle:
         return False
     try:
         exit_code = wintypes.DWORD()
         if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
             return False
-        return exit_code.value == STILL_ACTIVE
+        if exit_code.value != STILL_ACTIVE:
+            # Process exited with a non-STILL_ACTIVE code — unambiguous dead.
+            return False
+        # Exit code is 259 — could be STILL_ACTIVE (alive) or a real
+        # exit code of 259 (dead). Disambiguate via WaitForSingleObject
+        # with a zero timeout. WAIT_OBJECT_0 means the process handle
+        # is signaled (actually exited); WAIT_TIMEOUT means still
+        # running. Anything else (WAIT_FAILED, WAIT_ABANDONED) we
+        # treat as "dead" to err on the side of not hanging the
+        # watcher.
+        wait_result = kernel32.WaitForSingleObject(handle, 0)
+        return wait_result == WAIT_TIMEOUT
     finally:
         kernel32.CloseHandle(handle)
 
