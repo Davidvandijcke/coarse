@@ -301,6 +301,12 @@ export default function Home() {
     accepting: boolean; banner: string | null; activeReviews: number; capacity: number;
     emailCapacityReached?: boolean;
   } | null>(null);
+  const refreshSystemStatus = useCallback(() => {
+    fetch("/api/status", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(setSystemStatus)
+      .catch(() => {});
+  }, []);
 
   // CLI handoff state machine:
   //
@@ -325,10 +331,29 @@ export default function Home() {
   const [showManualCommands, setShowManualCommands] = useState<boolean>(false);
   const [launchStatus, setLaunchStatus] = useState<string>("");
 
-  // Fetch system capacity status on mount
+  // Refresh system capacity state on mount and when the tab becomes active.
   useEffect(() => {
-    fetch("/api/status").then(r => r.json()).then(setSystemStatus).catch(() => {});
-  }, []);
+    refreshSystemStatus();
+
+    const handleFocus = () => {
+      refreshSystemStatus();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshSystemStatus();
+      }
+    };
+    const intervalId = window.setInterval(refreshSystemStatus, 30000);
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshSystemStatus]);
 
   // Render the Cloudflare Turnstile widget once its script has loaded. The
   // <Script strategy="afterInteractive"> tag in layout.tsx pulls the API

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 export const DEFAULT_SUBMISSIONS_PAUSED_MESSAGE =
   "Submissions are temporarily paused. Please try again later or use the CLI: pip install coarse-ink";
 export const DEFAULT_SUBMISSIONS_UNAVAILABLE_MESSAGE =
-  "Service temporarily unavailable. Please try again later.";
+  "Service temporarily unavailable. Please try again in a moment.";
 
 type SystemStatusRow = {
   accepting_reviews: boolean;
@@ -34,11 +34,16 @@ export async function getSubmissionPauseState(
     };
   }
 
+  if (!data.accepting_reviews) {
+    return {
+      accepting: false,
+      message: getSubmissionPauseMessage(data.banner_message),
+    };
+  }
+
   return {
-    accepting: data.accepting_reviews,
-    message: data.accepting_reviews
-      ? null
-      : getSubmissionPauseMessage(data.banner_message),
+    accepting: true,
+    message: null,
   };
 }
 

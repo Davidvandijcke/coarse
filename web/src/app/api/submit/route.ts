@@ -17,6 +17,7 @@ import {
   getActiveReviewWindowStartIso,
   MAX_CONCURRENT_REVIEWS,
 } from "@/lib/reviewCapacity";
+import { getSubmissionPauseResponse } from "@/lib/systemStatus";
 
 export const maxDuration = 30;
 const MODAL_TRIGGER_TIMEOUT_MS = 10_000;
@@ -57,22 +58,8 @@ export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   const rateLimited = await checkRateLimit(supabaseAdmin, ip, "submit");
   if (rateLimited) return rateLimited;
-
-  // Check if submissions are paused (manual kill switch)
-  const { data: statusRow } = await supabaseAdmin
-    .from("system_status")
-    .select("accepting_reviews, banner_message")
-    .eq("id", 1)
-    .single();
-
-  if (statusRow && !statusRow.accepting_reviews) {
-    return NextResponse.json(
-      {
-        error: statusRow.banner_message || "Submissions are temporarily paused. Please try again later or use the CLI: pip install coarse-ink",
-      },
-      { status: 503 },
-    );
-  }
+  const paused = await getSubmissionPauseResponse(supabaseAdmin);
+  if (paused) return paused;
 
   // Parse JSON body (no file — file was uploaded directly to Supabase via presign)
   let id = "";

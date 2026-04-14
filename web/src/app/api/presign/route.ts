@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { hashHandoffSecret, mintHandoffSecret } from "@/lib/handoffAuth";
 import { signReviewAccessToken } from "@/lib/reviewAuth";
+import { getSubmissionPauseResponse } from "@/lib/systemStatus";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 
 const SUPPORTED_EXTENSIONS = new Set([
@@ -31,6 +32,8 @@ export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   const rateLimited = await checkRateLimit(supabaseAdmin, ip, "presign");
   if (rateLimited) return rateLimited;
+  const paused = await getSubmissionPauseResponse(supabaseAdmin);
+  if (paused) return paused;
 
   let filename = "";
   let turnstileToken = "";

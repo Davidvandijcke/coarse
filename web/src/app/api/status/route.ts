@@ -5,6 +5,7 @@ import {
   getActiveReviewWindowStartIso,
   MAX_CONCURRENT_REVIEWS,
 } from "@/lib/reviewCapacity";
+import { DEFAULT_SUBMISSIONS_UNAVAILABLE_MESSAGE } from "@/lib/systemStatus";
 
 // TEMP banner shown while EMAIL_DELIVERY_DISABLED is true. Flip the kill
 // switch in `lib/emailCapacity.ts` to re-enable emails; this constant can
@@ -24,7 +25,7 @@ export async function GET() {
     return NextResponse.json(
       {
         accepting: false,
-        banner: "Service temporarily unavailable.",
+        banner: DEFAULT_SUBMISSIONS_UNAVAILABLE_MESSAGE,
         activeReviews: 0,
         capacity: MAX_CONCURRENT_REVIEWS,
         emailCapacityReached: EMAIL_DELIVERY_DISABLED,
@@ -45,10 +46,13 @@ export async function GET() {
   ]);
 
   const activeCountError = activeResult.error;
-  const accepting = activeCountError
+  const statusUnavailable = Boolean(statusResult.error || !statusResult.data);
+  const serviceUnavailable = statusUnavailable || Boolean(activeCountError);
+  const statusRow = statusResult.data;
+  const accepting = serviceUnavailable
     ? false
-    : (statusResult.data?.accepting_reviews ?? true);
-  const dbBanner = statusResult.data?.banner_message ?? null;
+    : (statusRow?.accepting_reviews ?? false);
+  const dbBanner = statusRow?.banner_message ?? null;
   const activeReviews = activeCountError
     ? MAX_CONCURRENT_REVIEWS
     : Number(activeResult.data ?? 0);
@@ -61,7 +65,7 @@ export async function GET() {
   // outage notice while the kill switch is on.
   const banner =
     dbBanner
-    ?? (activeCountError ? "Service temporarily unavailable." : null)
+    ?? (serviceUnavailable ? DEFAULT_SUBMISSIONS_UNAVAILABLE_MESSAGE : null)
     ?? (EMAIL_DELIVERY_DISABLED ? EMAIL_DISABLED_BANNER : null);
 
   return NextResponse.json(

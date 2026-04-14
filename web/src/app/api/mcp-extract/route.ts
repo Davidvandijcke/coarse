@@ -33,6 +33,7 @@ import {
 } from "@/lib/modalWebhook";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { requireReviewHandoffSecret } from "@/lib/routeHandoffAuth";
+import { getSubmissionPauseResponse } from "@/lib/systemStatus";
 
 export const maxDuration = 30;
 
@@ -57,23 +58,8 @@ export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   const rateLimited = await checkRateLimit(supabaseAdmin, ip, "mcp-extract");
   if (rateLimited) return rateLimited;
-
-  // Respect the same kill-switch as /api/submit
-  const { data: statusRow } = await supabaseAdmin
-    .from("system_status")
-    .select("accepting_reviews, banner_message")
-    .eq("id", 1)
-    .single();
-  if (statusRow && !statusRow.accepting_reviews) {
-    return NextResponse.json(
-      {
-        error:
-          statusRow.banner_message ??
-          "Submissions are temporarily paused. Please try again later or use the CLI: pip install coarse-ink",
-      },
-      { status: 503 },
-    );
-  }
+  const paused = await getSubmissionPauseResponse(supabaseAdmin);
+  if (paused) return paused;
 
   let id = "";
   let apiKey = "";

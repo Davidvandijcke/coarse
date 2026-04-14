@@ -29,6 +29,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { consumeReviewHandoffSecret } from "@/lib/routeHandoffAuth";
+import { getSubmissionPauseResponse } from "@/lib/systemStatus";
 
 export const maxDuration = 15;
 
@@ -53,6 +54,8 @@ export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   const rateLimited = await checkRateLimit(supabase, ip, "cli-handoff");
   if (rateLimited) return rateLimited;
+  const paused = await getSubmissionPauseResponse(supabase);
+  if (paused) return paused;
 
   let paperId = "";
   let host = "";
