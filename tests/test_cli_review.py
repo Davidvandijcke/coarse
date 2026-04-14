@@ -17,7 +17,7 @@ import pytest
 
 from coarse import cli_review
 from coarse.cli_attach import pidfile_for_log, read_pidfile, write_pidfile
-from coarse.cli_review import _infer_handoff_extension, main
+from coarse.cli_review import _fetch_handoff, _infer_handoff_extension, main
 from coarse.types import OverviewFeedback, OverviewIssue, PaperText, Review
 
 
@@ -32,6 +32,86 @@ def _make_review() -> Review:
         ),
         detailed_comments=[],
     )
+
+
+class _FakeResponse:
+    """Minimal requests.Response stand-in for _fetch_handoff tests."""
+
+    def __init__(self, status_code: int, payload: dict | None = None) -> None:
+        self.status_code = status_code
+        self.ok = 200 <= status_code < 400
+        self._payload = payload
+        self.text = "" if payload is None else "payload"
+
+    def json(self) -> dict:
+        if self._payload is None:
+            raise ValueError("no json")
+        return self._payload
+
+
+def test_fetch_handoff_401_reports_vercel_preview_protection() -> None:
+    """401 should name the preview-protection cause, not the old 15-min TTL."""
+    with patch(
+        "requests.get",
+        return_value=_FakeResponse(401),
+    ):
+        with pytest.raises(RuntimeError) as exc:
+            _fetch_handoff("https://preview.example.test/h/token")
+    msg = str(exc.value)
+    assert "Vercel Preview Protection" in msg
+    assert "VERCEL_AUTOMATION_BYPASS_SECRET" in msg
+    assert "15-min TTL" not in msg
+
+
+def test_fetch_handoff_403_reports_vercel_preview_protection() -> None:
+    with patch(
+        "requests.get",
+        return_value=_FakeResponse(403),
+    ):
+        with pytest.raises(RuntimeError) as exc:
+            _fetch_handoff("https://preview.example.test/h/token")
+    assert "Vercel Preview Protection" in str(exc.value)
+
+
+def test_fetch_handoff_410_reports_expired_token_with_correct_ttl() -> None:
+    """410 should reference the real 3-hour TTL, not the stale 15-min string."""
+    with patch(
+        "requests.get",
+        return_value=_FakeResponse(410),
+    ):
+        with pytest.raises(RuntimeError) as exc:
+            _fetch_handoff("https://coarse.ink/h/token")
+    msg = str(exc.value)
+    assert "expired" in msg
+    assert f"{cli_review.FINALIZE_TOKEN_TTL_MINUTES}" in msg
+    assert "15-min" not in msg
+
+
+def test_fetch_handoff_404_reports_token_not_found() -> None:
+    with patch(
+        "requests.get",
+        return_value=_FakeResponse(404),
+    ):
+        with pytest.raises(RuntimeError) as exc:
+            _fetch_handoff("https://coarse.ink/h/token")
+    assert "404" in str(exc.value)
+    assert "not found" in str(exc.value)
+
+
+def test_fetch_handoff_success_returns_bundle() -> None:
+    payload = {
+        "paper_id": "12345678-1234-1234-1234-123456789abc",
+        "signed_download_url": "https://example.test/papers/123.pdf?token=abc",
+        "finalize_token": "tok-123",
+        "callback_url": "https://example.test/api/mcp-finalize",
+    }
+    with patch(
+        "requests.get",
+        return_value=_FakeResponse(200, payload),
+    ):
+        bundle = _fetch_handoff("coarse.ink/h/token")
+    assert bundle["paper_id"] == payload["paper_id"]
+    assert bundle["signed_download_url"] == payload["signed_download_url"]
 
 
 def test_infer_handoff_extension_prefers_supported_title_suffix() -> None:

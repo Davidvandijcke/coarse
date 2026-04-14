@@ -43,6 +43,10 @@ from coarse.extraction import SUPPORTED_EXTENSIONS
 from coarse.models import HEADLESS_DEFAULT_MODELS
 
 _DETACHED_ENV = "COARSE_REVIEW_DETACHED"
+# Informational only: must match FINALIZE_TOKEN_TTL_MINUTES in
+# web/src/app/api/cli-handoff/route.ts. Only surfaced in CLI error
+# messages — the server is authoritative and a mismatch is cosmetic.
+FINALIZE_TOKEN_TTL_MINUTES = 180
 
 
 def _detect_host() -> str:
@@ -122,11 +126,33 @@ def _fetch_handoff(url: str) -> dict:
         allow_redirects=True,
     )
     if not resp.ok:
-        raise RuntimeError(
-            f"Failed to fetch handoff bundle ({url}): HTTP {resp.status_code}. "
-            f"The token may have expired (15-min TTL) — re-trigger the handoff "
-            f"from the coarse web form."
-        )
+        # 401/403 are almost never a coarse-side failure: the /h/<token>
+        # route returns 400/404/410/503/500, so a 401/403 means the
+        # request was stopped by Vercel Deployment Protection before it
+        # even reached the Next.js route. This happens when the handoff
+        # URL points at a preview deployment without a configured
+        # VERCEL_AUTOMATION_BYPASS_SECRET.
+        if resp.status_code in (401, 403):
+            hint = (
+                "HTTP 401/403 — the handoff URL is behind Vercel Preview "
+                "Protection. The operator needs to set "
+                "VERCEL_AUTOMATION_BYPASS_SECRET on the preview "
+                "environment (see deploy/PREVIEW_ENVIRONMENTS.md)."
+            )
+        elif resp.status_code == 410:
+            hint = (
+                f"HTTP 410 — the handoff token has expired or already "
+                f"been consumed. Tokens live for {FINALIZE_TOKEN_TTL_MINUTES} "
+                "minutes; re-trigger the handoff from the coarse web form."
+            )
+        elif resp.status_code == 404:
+            hint = (
+                "HTTP 404 — token not found or the paper row was deleted. "
+                "Re-trigger the handoff from the coarse web form."
+            )
+        else:
+            hint = f"HTTP {resp.status_code} — re-trigger the handoff from the coarse web form."
+        raise RuntimeError(f"Failed to fetch handoff bundle ({url}): {hint}")
     try:
         bundle = resp.json()
     except ValueError as exc:

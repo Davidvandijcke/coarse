@@ -147,7 +147,35 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const handoffUrl = `${siteUrl.replace(/\/$/, "")}/h/${tokenRow.token}`;
+  // Vercel preview deployments sit behind Deployment Protection (Tier 0),
+  // which returns HTTP 401 to any request without a valid Vercel login
+  // cookie — including the CLI / Codex-cloud sandbox that fetches this
+  // handoff URL. If the operator has configured a
+  // `VERCEL_AUTOMATION_BYPASS_SECRET` for the preview environment, append
+  // the documented bypass query params so unauthenticated fetches skip
+  // the login wall. Production URLs stay clean because the secret is
+  // only set on preview.
+  //
+  // Ref: Vercel → Deployment Protection → Protection Bypass for Automation.
+  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? "";
+  const isPreview = process.env.VERCEL_ENV === "preview";
+  const bypassQuery =
+    isPreview && bypassSecret
+      ? `?x-vercel-protection-bypass=${encodeURIComponent(bypassSecret)}&x-vercel-set-bypass-cookie=true`
+      : "";
+  const handoffUrl = `${siteUrl.replace(/\/$/, "")}/h/${tokenRow.token}${bypassQuery}`;
+
+  const warnings: string[] = [];
+  if (siteUrl.includes("localhost")) {
+    warnings.push(
+      "Handoff URL uses localhost — the CLI must run on this same machine. For remote CLIs, set NEXT_PUBLIC_SITE_URL to a public URL.",
+    );
+  }
+  if (isPreview && !bypassSecret) {
+    warnings.push(
+      "Preview deployment detected but VERCEL_AUTOMATION_BYPASS_SECRET is unset — the CLI fetch will hit Vercel Preview Protection and fail with HTTP 401. Set the bypass secret on the preview environment (see deploy/PREVIEW_ENVIRONMENTS.md).",
+    );
+  }
 
   return NextResponse.json({
     token: tokenRow.token,
@@ -155,8 +183,6 @@ export async function POST(request: NextRequest) {
     handoff_url: handoffUrl,
     host: host || null,
     finalize_token_ttl_minutes: FINALIZE_TOKEN_TTL_MINUTES,
-    warning: siteUrl.includes("localhost")
-      ? "Handoff URL uses localhost — the CLI must run on this same machine. For remote CLIs, set NEXT_PUBLIC_SITE_URL to a public URL."
-      : undefined,
+    warning: warnings.length > 0 ? warnings.join(" ") : undefined,
   });
 }
