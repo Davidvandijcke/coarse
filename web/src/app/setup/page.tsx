@@ -431,13 +431,12 @@ function OpenRouterTab() {
               >
                 Settings → Credits
               </a>
-              . Add at least $20. A single review costs roughly $0.25&ndash;$2
-              depending on the model, so $20 covers multiple reviews and gives
-              each one enough headroom to finish. The estimate you see before
-              you submit is a ballpark, not a ceiling &mdash; complex papers
-              with lots of math can cost closer to 2&times; the estimate.
-              If you leave too little headroom on the key, a single review can
-              exhaust it and fail halfway. Unused credits don&apos;t expire.
+              . Add at least $20. Cheap open-source models cost
+              ~$0.25 per review; SOTA models like Claude Opus or GPT-5 can
+              run $5&ndash;$10 on a long paper. The cost estimate shown
+              before submission is a ballpark, not a ceiling. Leave headroom
+              or the review can exhaust the key halfway and fail. Unused
+              credits don&apos;t expire.
             </p>
 
             <ChalkSketch annotation="credits page">
@@ -593,17 +592,14 @@ function OpenRouterTab() {
               </a>
               , click the{" "}
               <strong style={{ color: "var(--chalk-bright)" }}>&#8942;</strong>
-              {" "}menu next to your new key and choose &ldquo;Edit&rdquo;.
-              Set the credit limit to{" "}
+              {" "}menu next to your new key, choose &ldquo;Edit&rdquo;, and
+              set the credit limit to{" "}
               <strong style={{ color: "var(--chalk-bright)" }}>
                 at least $20
               </strong>
-              . The key stops working once the limit is hit, so there&apos;s
-              zero risk of surprise charges. But set it too tight and you pay
-              for that in a different currency: a single review can burn
-              through a too-low cap and fail halfway, leaving you with nothing
-              to show for the spend. The $20 floor gives any single review
-              roughly 10&times; the headroom it needs even on a big paper.
+              . The key stops working once the limit is hit, so surprise
+              charges are impossible. But set it too tight and a single
+              expensive review can exhaust it mid-run.
             </p>
 
             <ChalkSketch annotation="key menu">
@@ -748,14 +744,12 @@ function OpenRouterTab() {
                 <strong style={{ color: "var(--chalk-bright)" }}>
                   A note on cost estimates:
                 </strong>{" "}
-                coarse shows an approximate cost before each review (typically
-                $0.25&ndash;$2). That&apos;s a heuristic with a ~15% buffer, not
-                a hard ceiling. Actual cost can run up to ~2&times; the estimate
-                on complex papers depending on how much the model reasons,
-                how the critique agent rewrites comments, and whether
-                proof-verification kicks in for math-heavy sections. If your
-                per-key limit is set right at the estimate, a single review can
-                drain it and fail mid-run. Leave headroom.
+                the estimate shown before submission is a heuristic with a
+                ~15% buffer, not a hard ceiling. Actual cost on SOTA models
+                with long papers can run up to ~2&times; the estimate once
+                proof-verification and critique rewrites kick in. If the
+                per-key cap sits right at the estimate, one tough review can
+                drain it and fail mid-run. Always leave headroom.
               </p>
             </div>
           </Step>
@@ -854,45 +848,17 @@ function SubscriptionTab() {
             fontSize: "1.05rem",
           }}
         >
-          You pay OpenRouter about $0.15 for the OCR pass. The review itself
-          runs on your existing Claude Code, Codex, or Gemini CLI
-          subscription, so there are no per-token LLM charges on top.
+          For users already paying for Claude Code, Codex, or Gemini CLI.
+          The review runs on your subscription and bills there. You only
+          pay OpenRouter ~$0.15 for the OCR pass.
         </p>
-        <div
-          style={{
-            marginTop: "1.25rem",
-            padding: "0.75rem 1rem",
-            background: "rgba(123, 167, 188, 0.06)",
-            borderLeft: "3px solid var(--blue-chalk)",
-            borderRadius: "0 2px 2px 0",
-          }}
-        >
-          <p
-            style={{
-              fontFamily: "Georgia, serif",
-              fontSize: "1rem",
-              lineHeight: 1.6,
-              color: "var(--chalk)",
-              margin: 0,
-            }}
-          >
-            <strong style={{ color: "var(--chalk-bright)" }}>
-              When to use this path:
-            </strong>{" "}
-            you&apos;re already paying Anthropic Pro, ChatGPT Plus, or Google
-            for a coding-agent subscription and would rather not pay
-            OpenRouter twice. The review runs on your own machine (or your
-            Codex cloud sandbox), bills against your existing plan, and lands
-            back on coarse.ink when it&apos;s done.
-          </p>
-        </div>
       </section>
 
       <CharcoalRule />
 
       <div style={{ paddingTop: "2.5rem" }}>
         {/* Step 1 */}
-        <Step number={1} title="Install one of the coding agents">
+        <Step number={1} title="Install a coding agent">
           <p
             style={{
               fontFamily: "Georgia, serif",
@@ -902,10 +868,9 @@ function SubscriptionTab() {
               margin: "0 0 0.75rem",
             }}
           >
-            Pick whichever one you already pay for. If you don&apos;t pay for
-            any of them yet, Gemini CLI has a free tier that works for most
-            papers. Install and then log in on the vendor&apos;s own page
-            &mdash; those docs update faster than anything we could copy here.
+            Pick whichever one you pay for. Gemini CLI has a free tier if
+            you don&apos;t. Install it from the vendor&apos;s own page &mdash;
+            their docs stay up to date.
           </p>
 
           <div
@@ -922,7 +887,6 @@ function SubscriptionTab() {
               installLabel="Install instructions ↗"
               loginCmd="claude login"
               testCmd="claude -p 'say hi'"
-              note="If you use the terminal CLI, install it with npm or Homebrew first, then run claude login and follow the browser prompt."
             />
             <AgentCard
               name="Codex"
@@ -931,16 +895,14 @@ function SubscriptionTab() {
               installLabel="Install instructions ↗"
               loginCmd="codex login"
               testCmd="codex exec 'say hi'"
-              note="After install, run codex login and sign in with the same ChatGPT account that has your Plus/Pro subscription. The free ChatGPT tier does not include Codex."
             />
             <AgentCard
               name="Gemini CLI"
-              price="Free tier works, Google AI Pro for heavier use"
+              price="Free tier works for most papers"
               installHref="https://github.com/google-gemini/gemini-cli#quickstart"
               installLabel="Install instructions ↗"
               loginCmd="gemini"
               testCmd="gemini -p 'say hi'"
-              note="Run gemini once to trigger the login flow. The free tier gives you enough to review several papers a day."
             />
           </div>
 
@@ -953,20 +915,8 @@ function SubscriptionTab() {
               color: "var(--chalk)",
             }}
           >
-            Open a terminal and run the &ldquo;test&rdquo; command above. If
-            you see a response, you&apos;re set. If you see
-            &ldquo;command not found,&rdquo; the CLI isn&apos;t on your{" "}
-            <code
-              style={{
-                fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.95rem",
-                color: "var(--chalk-bright)",
-              }}
-            >
-              PATH
-            </code>
-            {" "}&mdash; follow the install guide&apos;s troubleshooting
-            section before continuing.
+            Run the test command to verify install + login. If it prints a
+            response, you&apos;re set.
           </p>
         </Step>
 
@@ -978,31 +928,17 @@ function SubscriptionTab() {
               fontSize: "1.1rem",
               lineHeight: 1.7,
               color: "var(--chalk)",
-              margin: "0 0 0.75rem",
-            }}
-          >
-            coarse still needs OpenRouter for the OCR pass that turns your PDF
-            into text. That costs about $0.10 per paper, no matter which
-            coding agent runs the review itself. Follow the{" "}
-            <strong style={{ color: "var(--chalk-bright)" }}>
-              OpenRouter key
-            </strong>{" "}
-            tab on this page to create an account and add credit. $1 is
-            plenty &mdash; you won&apos;t need the $20 buffer because
-            extraction is cheap and bounded, and the review itself bills
-            against your subscription, not OpenRouter.
-          </p>
-          <p
-            style={{
-              fontFamily: "Georgia, serif",
-              fontSize: "1.05rem",
-              lineHeight: 1.7,
-              color: "var(--dust)",
               margin: 0,
             }}
           >
-            You still want the per-key spend limit from step 4 of the
-            OpenRouter tab, just set it to $2 instead of $20.
+            coarse still needs OpenRouter for the OCR pass (~$0.10 per
+            paper). Follow the{" "}
+            <strong style={{ color: "var(--chalk-bright)" }}>
+              OpenRouter key
+            </strong>{" "}
+            tab to create an account and add $1 of credit. Set the per-key
+            limit to $2. You don&apos;t need the $20 buffer on this path
+            because the review itself bills your subscription, not OpenRouter.
           </p>
         </Step>
 
@@ -1038,7 +974,7 @@ function SubscriptionTab() {
         </Step>
 
         {/* Step 4 */}
-        <Step number={4} title="Run the commands in your terminal">
+        <Step number={4} title="Run the three commands">
           <p
             style={{
               fontFamily: "Georgia, serif",
@@ -1048,53 +984,11 @@ function SubscriptionTab() {
               margin: "0 0 0.75rem",
             }}
           >
-            The modal shows three commands. They&apos;re already filled in
-            with your paper&apos;s handoff URL, so you don&apos;t need to edit
-            anything.
-          </p>
-
-          <ol
-            style={{
-              fontFamily: "Georgia, serif",
-              fontSize: "1.1rem",
-              lineHeight: 1.7,
-              color: "var(--chalk)",
-              margin: "0 0 0.75rem",
-              paddingLeft: "1.25rem",
-            }}
-          >
-            <li style={{ marginBottom: "0.5rem" }}>
-              <strong style={{ color: "var(--chalk-bright)" }}>Setup</strong>{" "}
-              refreshes the coarse skill bundle in your CLI&apos;s skill
-              folder. Takes about 10 seconds and is safe to run every time.
-            </li>
-            <li style={{ marginBottom: "0.5rem" }}>
-              <strong style={{ color: "var(--chalk-bright)" }}>Launch</strong>{" "}
-              kicks off the review in the background and returns within 2
-              seconds. It prints a log file path and a PID. Keep the terminal
-              open.
-            </li>
-            <li>
-              <strong style={{ color: "var(--chalk-bright)" }}>
-                Wait
-              </strong>{" "}
-              blocks until the review finishes. Expect 10&ndash;25 minutes.
-              You can Ctrl+C out of this one; the review keeps running and
-              you can re-attach with the same command.
-            </li>
-          </ol>
-
-          <p
-            style={{
-              fontFamily: "Georgia, serif",
-              fontSize: "1.1rem",
-              lineHeight: 1.7,
-              color: "var(--chalk)",
-              margin: "0 0 0.75rem",
-            }}
-          >
-            Open whichever CLI you installed in step 1 and paste each command
-            in order. When the third command exits, it prints a{" "}
+            The modal shows three pre-filled commands: <strong>setup</strong>{" "}
+            (refreshes the skill bundle, ~10s), <strong>launch</strong>{" "}
+            (starts the review in background, returns in 2s), and{" "}
+            <strong>wait</strong> (blocks until done, 10&ndash;25 min).
+            Paste each into your CLI in order. When wait exits, it prints a{" "}
             <code
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
@@ -1104,8 +998,7 @@ function SubscriptionTab() {
             >
               view:
             </code>{" "}
-            line with a clickable URL. Click it and your finished review opens
-            on coarse.ink.
+            URL. Click it to open the finished review on coarse.ink.
           </p>
 
           <div
@@ -1127,13 +1020,12 @@ function SubscriptionTab() {
               }}
             >
               <strong style={{ color: "var(--chalk-bright)" }}>
-                Tool-timeout tip for coding agents:
+                If you&apos;re pasting into a coding agent
               </strong>{" "}
-              if you&apos;re pasting the commands into Claude Code, Codex, or
-              Gemini CLI itself (instead of a plain terminal), bump the bash
-              tool timeout to at least 45 minutes before running the wait
-              command. The review takes 10&ndash;25 minutes and agents have
-              default timeouts as low as 2 minutes.
+              (not a plain terminal), bump its bash-tool timeout to at least
+              45 min before running the wait command. Default agent timeouts
+              can be as low as 2 min, which is way under the 10&ndash;25 min
+              review runtime.
             </p>
           </div>
         </Step>
@@ -1141,51 +1033,25 @@ function SubscriptionTab() {
         {/* Step 5 — Troubleshooting */}
         <Step number={5} title="If something goes wrong">
           <Trouble
-            symptom="The &ldquo;Open Claude Code&rdquo; button in the modal does nothing."
+            symptom="The &ldquo;Open Claude Code&rdquo; button does nothing."
             fix={
               <>
-                That button tries to launch the Claude Code desktop app via a{" "}
-                <code
-                  style={{
-                    fontFamily: "var(--font-space-mono), monospace",
-                    fontSize: "0.95rem",
-                    color: "var(--chalk-bright)",
-                  }}
-                >
-                  claude://
-                </code>{" "}
-                protocol URL. It only works if you have the Claude desktop app
-                installed. If you installed Claude Code as a CLI tool (the
-                most common case), the browser can&apos;t open a terminal for
-                you. Copy the three commands from the modal and paste them
-                into your terminal manually.
+                The button only works if you have the Claude desktop app
+                installed. If you installed Claude Code as a CLI, the
+                browser can&apos;t launch a terminal for you. Copy the three
+                commands from the modal and paste them in manually.
               </>
             }
           />
           <Trouble
-            symptom="&ldquo;No such command &lsquo;install-skills&rsquo;&rdquo; during the setup step."
-            fix={
-              <>
-                Safe to ignore. The launch command loads the coarse code
-                via{" "}
-                <code
-                  style={{
-                    fontFamily: "var(--font-space-mono), monospace",
-                    fontSize: "0.95rem",
-                    color: "var(--chalk-bright)",
-                  }}
-                >
-                  uvx --from
-                </code>{" "}
-                and doesn&apos;t need the skill folder. Move on.
-              </>
-            }
+            symptom="&ldquo;No such command &lsquo;install-skills&rsquo;&rdquo;."
+            fix={<>Safe to ignore. Move on to the launch command.</>}
           />
           <Trouble
-            symptom="My Anthropic bill went up right after I ran a review."
+            symptom="My Anthropic / OpenAI / Google bill went up after a review."
             fix={
               <>
-                Check whether you have{" "}
+                Check for{" "}
                 <code
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
@@ -1194,24 +1060,8 @@ function SubscriptionTab() {
                   }}
                 >
                   ANTHROPIC_API_KEY
-                </code>{" "}
-                set in your shell. Claude Code&apos;s documented behavior is:
-                if the key is set, it bills the API account instead of your
-                subscription. coarse-review strips this variable from the
-                child process before running{" "}
-                <code
-                  style={{
-                    fontFamily: "var(--font-space-mono), monospace",
-                    fontSize: "0.95rem",
-                    color: "var(--chalk-bright)",
-                  }}
-                >
-                  claude -p
                 </code>
-                , but older versions (before v1.3.0) didn&apos;t. If you
-                upgraded partway through, it&apos;s worth double-checking
-                your billing dashboard and the env var. Same thing applies
-                to{" "}
+                ,{" "}
                 <code
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
@@ -1220,8 +1070,8 @@ function SubscriptionTab() {
                   }}
                 >
                   OPENAI_API_KEY
-                </code>{" "}
-                / Codex and{" "}
+                </code>
+                , or{" "}
                 <code
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
@@ -1231,17 +1081,18 @@ function SubscriptionTab() {
                 >
                   GOOGLE_API_KEY
                 </code>{" "}
-                / Gemini.
+                in your shell environment. If set, the host CLI bills the
+                API account instead of your subscription. v1.3.0+ strips
+                these automatically, but older versions didn&apos;t.
               </>
             }
           />
           <Trouble
-            symptom="The wait command exits but I only see 10 detailed comments instead of the usual 20."
+            symptom="Fewer comments than usual (~10 instead of 15&ndash;25)."
             fix={
               <>
-                One or more section-review calls hit their 30-minute timeout
-                and got dropped. This is rare on the default effort level but
-                can happen with{" "}
+                A section hit the 30-min timeout and got dropped. Rare on
+                default effort, more common with{" "}
                 <code
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
@@ -1251,10 +1102,8 @@ function SubscriptionTab() {
                 >
                   --effort max
                 </code>{" "}
-                on a book-length paper. Re-run the review on the same paper
-                and you&apos;ll typically get a full comment set the second
-                time. If it happens twice in a row, drop the effort one
-                notch.
+                on long papers. Re-run; drop effort one notch if it
+                happens twice.
               </>
             }
           />
@@ -1288,7 +1137,6 @@ function AgentCard({
   installLabel,
   loginCmd,
   testCmd,
-  note,
 }: {
   name: string;
   price: string;
@@ -1296,7 +1144,6 @@ function AgentCard({
   installLabel: string;
   loginCmd: string;
   testCmd: string;
-  note: string;
 }) {
   return (
     <div
@@ -1374,18 +1221,6 @@ function AgentCard({
           {testCmd}
         </div>
       </div>
-      <p
-        style={{
-          marginTop: "0.65rem",
-          marginBottom: 0,
-          fontFamily: "Georgia, serif",
-          fontSize: "0.95rem",
-          lineHeight: 1.55,
-          color: "var(--dust)",
-        }}
-      >
-        {note}
-      </p>
     </div>
   );
 }

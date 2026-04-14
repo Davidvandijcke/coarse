@@ -593,6 +593,44 @@ export default function Home() {
     maxFiles: 1,
   });
 
+  /**
+   * Extract a user-readable error message from a non-2xx Response.
+   *
+   * Assumes JSON by convention (every /api/* route returns JSON on
+   * error) but falls back to text if the body isn't valid JSON. Most
+   * importantly, this never throws a SyntaxError on the caller: when
+   * a middleware layer returns a plain-text 401 (preview Basic Auth
+   * on an unauthenticated fetch, for example) the old code crashed
+   * with "Unexpected token A in JSON" and surfaced that cryptic
+   * message as the submit error. Now we pick a clean human-readable
+   * fallback keyed on the status code.
+   */
+  async function readApiError(resp: Response, fallback: string): Promise<string> {
+    const rawBody = await resp.text().catch(() => "");
+    if (rawBody) {
+      try {
+        const parsed = JSON.parse(rawBody) as { error?: unknown };
+        if (parsed && typeof parsed.error === "string" && parsed.error.trim()) {
+          return parsed.error;
+        }
+      } catch {
+        // Body wasn't JSON — fall through to the plain-text path.
+      }
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      return (
+        "Authentication failed. On preview deploys this usually means the " +
+        "browser's cached Basic Auth credentials didn't get sent on the " +
+        "form submit. Refresh the tab (Cmd/Ctrl+Shift+R), sign in again at " +
+        "the password prompt, and retry."
+      );
+    }
+    if (resp.status === 503) {
+      return rawBody.slice(0, 300) || "Service temporarily unavailable.";
+    }
+    return `${fallback} (HTTP ${resp.status})`;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (handoffPhase !== "idle") return;
@@ -622,8 +660,7 @@ export default function Home() {
         body: JSON.stringify({ filename: file.name, turnstile_token: turnstileToken }),
       });
       if (!presignResp.ok) {
-        const data = await presignResp.json();
-        throw new Error(data.error || "Failed to prepare upload");
+        throw new Error(await readApiError(presignResp, "Failed to prepare upload"));
       }
       const { id, storagePath, signedUrl, token, handoffSecret, accessToken } = await presignResp.json();
 
@@ -658,8 +695,7 @@ export default function Home() {
         }),
       });
       if (!submitResp.ok) {
-        const data = await submitResp.json();
-        throw new Error(data.error || "Submission failed");
+        throw new Error(await readApiError(submitResp, "Submission failed"));
       }
       router.push(buildReviewPath("status", id, accessToken));
     } catch (err) {
@@ -702,8 +738,7 @@ export default function Home() {
         body: JSON.stringify({ filename: file.name }),
       });
       if (!presignResp.ok) {
-        const data = await presignResp.json();
-        throw new Error(data.error || "Failed to prepare upload");
+        throw new Error(await readApiError(presignResp, "Failed to prepare upload"));
       }
       const { id, signedUrl, handoffSecret } = await presignResp.json();
 
@@ -1863,6 +1898,17 @@ export default function Home() {
             }}
           >
             terms
+          </a>
+          <a
+            href="mailto:dvdijcke@umich.edu"
+            style={{
+              fontFamily: "var(--font-chalk)",
+              fontSize: "1.05rem",
+              color: "var(--dust)",
+              textDecoration: "none",
+            }}
+          >
+            contact
           </a>
         </footer>
       </main>

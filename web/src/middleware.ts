@@ -69,7 +69,29 @@ function isAuthorizedForPreview(request: NextRequest, expectedUser: string, expe
   }
 }
 
-function previewAuthChallenge() {
+function previewAuthChallenge(pathname: string) {
+  // API routes get a JSON body so client-side `fetch().json()` calls
+  // don't crash the UI with a `SyntaxError: Unexpected token A in JSON
+  // at position 0` when they hit an unauthenticated 401 (for example
+  // when the browser's cached Basic Auth header isn't sent on a
+  // subresource request). Browser navigations still get the plain
+  // text + WWW-Authenticate header that drives the native login
+  // prompt. The Accept header would be more idiomatic here but
+  // `fetch()` calls from the app don't always set it, and the path
+  // prefix is a reliable enough discriminator for the preview gate.
+  const isApiRoute = pathname.startsWith("/api/");
+  if (isApiRoute) {
+    return NextResponse.json(
+      { error: "Preview is password-protected. Refresh the browser tab and sign in again, then retry." },
+      {
+        status: 401,
+        headers: {
+          "WWW-Authenticate": PREVIEW_BASIC_AUTH_REALM,
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
   return new NextResponse("Authentication required", {
     status: 401,
     headers: {
@@ -148,7 +170,7 @@ export function middleware(request: NextRequest) {
     !isHandoffExemptPath(request.nextUrl.pathname) &&
     !isAuthorizedForPreview(request, previewAuth.username, previewAuth.password)
   ) {
-    return previewAuthChallenge();
+    return previewAuthChallenge(request.nextUrl.pathname);
   }
 
   if (!request.nextUrl.pathname.startsWith("/api/")) {
