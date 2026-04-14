@@ -221,8 +221,8 @@ Hard deploy rules:
 - Do not validate deploy-affecting changes locally against production
   Supabase when preview exists.
 - Do not manually deploy production Modal from a non-`main` branch.
-- Preview is not green unless both `/api/submit` and `/api/mcp-extract`
-  route to preview Modal, not production.
+- Preview is not green unless `/api/submit` routes to preview Modal,
+  not production.
 - This is a required human release workflow, not a fully repo-enforced
   gate. The smoke test and backend-isolation check still need to be
   performed by the operator.

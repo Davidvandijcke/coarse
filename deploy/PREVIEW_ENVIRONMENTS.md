@@ -1,5 +1,17 @@
 # Preview environment setup — Tier 0 + Tier 1
 
+> **⚠️ v1.3.0 note:** the `coarse-mcp` Modal app and the whole MCP
+> server path were retired in v1.3.0. Any step or paragraph below
+> that references `deploy/mcp_server.py`, `coarse-mcp`,
+> `MODAL_EXTRACT_URL`, or `NEXT_PUBLIC_MCP_SERVER_URL` is historical
+> and should be **skipped** when setting up a new preview environment.
+> Only the `coarse-review` Modal app needs to be deployed. If an
+> old preview still has `coarse-mcp` running, run
+> `modal app stop coarse-mcp -e preview` to tear it down. The
+> subscription-handoff flow (what replaced the MCP path) runs
+> entirely on the user's local machine and doesn't need a Modal app
+> beyond `coarse-review` for the OpenRouter review flow.
+
 **Status:** repo-side automation/docs are in place; the external Vercel,
 Supabase, Modal, and GitHub environment setup still needs to be done by
 an operator. Use this file as the runbook.

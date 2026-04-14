@@ -104,28 +104,22 @@ function previewAuthChallenge(pathname: string) {
 // Token-based endpoints that enforce their own auth downstream and
 // should therefore skip the preview Basic Auth gate. Three categories:
 //
-//   1. **Machine-to-machine handoff routes** (`/h/`, `/api/mcp-*`) —
-//      the CLI / Codex-cloud sandbox / Modal worker hit these WITHOUT
-//      a browser session. They already enforce token-based auth of
-//      their own (single-use handoff token, finalize_token, MCP
-//      handoff_secret, Modal webhook secret) — the preview gate would
-//      be a redundant layer on capabilities already bound to
-//      per-submission cryptographic tokens. And the callers cannot
-//      realistically send HTTP Basic Auth credentials, so without
-//      this exemption the preview deploy cannot run the CLI /
-//      subscription handoff flow end-to-end.
+//   1. **Subscription-handoff routes** (`/h/`, `/api/mcp-finalize`) —
+//      the local `coarse-review --handoff` CLI hits these without a
+//      browser session. The handoff token (GET /h/<token>) and the
+//      finalize token (POST /api/mcp-finalize) both enforce their
+//      own single-use token-based auth — the preview gate would be a
+//      redundant layer on capabilities already bound to a specific
+//      paper-id + token, and the CLI can't send Basic Auth headers.
 //
 //   2. **Signed-token review viewing** (`/review/`, `/api/review/`) —
 //      users reach these via a per-paper signed URL minted by
-//      `mcp-finalize`. `/api/review/[id]` enforces the signed token
-//      via `hasValidReviewAccessToken` (`reviewAuth.ts`), and
+//      `/api/mcp-finalize`. `/api/review/[id]` enforces the signed
+//      token via `hasValidReviewAccessToken` (`reviewAuth.ts`), and
 //      `/review/[id]` is a client-side shell that fetches the API.
 //      Anyone who has the signed URL already has capability; gating
 //      it again behind Basic Auth just blocks the intended recipient
-//      (the user who ran the subscription handoff) from opening the
-//      finished review on a preview deploy. Without this exemption
-//      the `view:` URL the CLI prints at the end of a successful
-//      handoff cannot be opened.
+//      from opening the finished review on a preview deploy.
 //
 //   3. Vercel's edge-level Deployment Protection (Tier 0.2) is a
 //      separate gate addressed by the `x-vercel-protection-bypass`
@@ -134,13 +128,17 @@ function previewAuthChallenge(pathname: string) {
 //      from the middleware does NOT open them up past Vercel's own
 //      login wall.
 //
+// `/api/mcp-extract` and `/api/mcp-handoff` used to be in this list
+// but were deleted in v1.3.0 along with the rest of the MCP server
+// path. The name `mcp-finalize` sticks around because it's the
+// finalize callback the subscription handoff uses — misleading
+// naming kept for migration continuity.
+//
 // Keep this list narrow — broader matches would leak the browser UI
 // surface (landing page, /status/*) past the preview gate.
 const HANDOFF_EXEMPT_PREFIXES = [
   "/h/",
   "/api/mcp-finalize",
-  "/api/mcp-extract",
-  "/api/mcp-handoff",
   "/review/",
   "/api/review/",
 ];

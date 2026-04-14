@@ -29,7 +29,7 @@ async function fetchPricingMap(): Promise<Map<string, ModelPricing>> {
   // 10s timeout so a hung openrouter.ai upstream does not pin a Vercel
   // function slot indefinitely. Matches the pattern used by every
   // other server→upstream fetch in the web surface (turnstile.ts,
-  // mcp-extract/route.ts, submit/route.ts).
+  // submit/route.ts).
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10_000);
   let resp: Response;

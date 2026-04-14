@@ -1,9 +1,10 @@
 name: deploy-modal-preview
 
-# Auto-deploy both Modal apps into the dedicated preview environment on
-# deploy-relevant `dev` pushes. This keeps the `dev` preview frontend
-# wired to matching preview `coarse-review` + `coarse-mcp` backends
-# instead of production Modal.
+# Auto-deploy the `coarse-review` Modal app into the dedicated preview
+# environment on deploy-relevant `dev` pushes. This keeps the `dev`
+# preview frontend wired to a matching preview backend instead of
+# production Modal. The legacy `coarse-mcp` app was retired in v1.3.0
+# — see `CHANGELOG.md ### Removed` and `MCP server` entry.
 
 on:
   push:
@@ -11,7 +12,6 @@ on:
     paths:
       - 'src/coarse/**'
       - 'deploy/modal_worker.py'
-      - 'deploy/mcp_server.py'
       - 'pyproject.toml'
       - '.github/workflows/modal-preview-deploy.yml'
   workflow_dispatch: {}
@@ -42,9 +42,6 @@ jobs:
           - label: coarse-review
             path: deploy/modal_worker.py
             needs_force: true
-          - label: coarse-mcp
-            path: deploy/mcp_server.py
-            needs_force: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,7 +52,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install deploy-time dependencies
-        run: pip install 'modal>=0.68' 'fastapi[standard]>=0.115' 'pydantic>=2.0' 'fastmcp>=2.10'
+        run: pip install 'modal>=0.68' 'fastapi[standard]>=0.115' 'pydantic>=2.0'
 
       - name: Validate preview Modal credentials
         run: |

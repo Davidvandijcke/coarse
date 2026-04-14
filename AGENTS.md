@@ -8,9 +8,9 @@ For any substantial deploy-affecting change, the default workflow is:
 1. Land the change on a feature branch into `dev`.
 2. Use the Vercel preview deployment for the latest `dev` commit as the
    signoff site.
-3. Let `.github/workflows/modal-preview-deploy.yml` deploy both Modal
-   apps (`deploy/modal_worker.py` and `deploy/mcp_server.py`) into the
-   Modal `preview` environment from `dev` when the change touches
+3. Let `.github/workflows/modal-preview-deploy.yml` deploy the
+   `coarse-review` Modal app (`deploy/modal_worker.py`) into the Modal
+   `preview` environment from `dev` when the change touches
    deploy-relevant paths, or rerun it manually on `dev` if needed.
 4. Validate the change against preview Vercel + preview Supabase +
    preview Modal before touching `main`.

@@ -190,19 +190,24 @@ def test_preview_middleware_exempts_handoff_routes() -> None:
     middleware = _read("web/src/middleware.ts")
 
     # The helper itself must exist and include:
-    #   - the M2M handoff routes the CLI / MCP server touch
-    #     (GET /h/<token>, POST /api/mcp-finalize, /api/mcp-extract,
-    #     /api/mcp-handoff)
+    #   - the subscription-handoff routes the local `coarse-review`
+    #     CLI touches (GET /h/<token>, POST /api/mcp-finalize)
     #   - the signed-token review viewing routes (/review/, /api/review/)
     #     whose own token validation is the real auth gate
+    # `/api/mcp-extract` + `/api/mcp-handoff` were removed from the
+    # list in v1.3.0 along with the rest of the MCP server path.
     assert "HANDOFF_EXEMPT_PREFIXES" in middleware
     assert '"/h/"' in middleware
     assert '"/api/mcp-finalize"' in middleware
-    assert '"/api/mcp-extract"' in middleware
-    assert '"/api/mcp-handoff"' in middleware
     assert '"/review/"' in middleware
     assert '"/api/review/"' in middleware
     assert "function isHandoffExemptPath" in middleware
+    # Drift guard: the retired MCP routes must NOT reappear in the
+    # exempt list. They were deleted along with their route handlers
+    # in v1.3.0; any regression here would indicate the route files
+    # were also resurrected.
+    assert '"/api/mcp-extract"' not in middleware
+    assert '"/api/mcp-handoff"' not in middleware
 
     # And the Basic Auth gate must check the exempt list BEFORE calling
     # `isAuthorizedForPreview` — otherwise the exemption is a no-op.
@@ -313,12 +318,10 @@ def test_preview_middleware_exempt_match_semantics() -> None:
     # or review-viewing flow breaks end-to-end behind the preview
     # Basic Auth middleware.
     for exempt_path in (
-        # M2M handoff fetch / callback
+        # Subscription-handoff fetch / callback
         "/h/00000000-0000-0000-0000-000000000000",
         "/h/abc123",
         "/api/mcp-finalize",
-        "/api/mcp-extract",
-        "/api/mcp-handoff",
         # Signed-token review viewing (the `view:` URL the CLI prints
         # at the end of a successful handoff). Route-level token
         # validation is the real gate; the middleware would just

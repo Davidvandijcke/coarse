@@ -1,5 +1,12 @@
 # Deploying coarse
 
+> **⚠️ v1.3.0 note:** the `coarse-mcp` Modal app, `deploy/mcp_server.py`,
+> the `/mcp` page, and `/api/mcp-{extract,handoff}` routes were
+> retired in v1.3.0. Skip any section below that mentions deploying
+> `coarse-mcp` or setting `MODAL_EXTRACT_URL` / `NEXT_PUBLIC_MCP_SERVER_URL`.
+> Only `deploy/modal_worker.py` (the `coarse-review` app) and the
+> web frontend need to be deployed.
+
 The web app runs on four free services:
 
 | Service | Role | Free tier |

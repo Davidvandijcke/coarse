@@ -133,12 +133,15 @@ CHECKLIST = """
          - NEXT_PUBLIC_SUPABASE_ANON_KEY    = <production anon key>
          - SUPABASE_SERVICE_KEY             = <production service key>
          - MODAL_FUNCTION_URL               = <production coarse-review webhook>
-         - MODAL_EXTRACT_URL                = <production coarse-mcp extract webhook>
          - MODAL_WEBHOOK_SECRET             = <production secret>
          - RESEND_API_KEY                   = <production Resend key>
          - NEXT_PUBLIC_SITE_URL             = https://coarse.ink
          - NEXT_PUBLIC_TURNSTILE_SITE_KEY   = <production site key>
          - TURNSTILE_SECRET_KEY             = <production secret>
+
+      (`MODAL_EXTRACT_URL` used to be required by the MCP path but
+      was retired in v1.3.0. Safe to delete from Production if still
+      present.)
 
   [ ] Vercel -> Project -> Settings -> Environment Variables ->
       Production MUST NOT have:
@@ -161,8 +164,9 @@ CHECKLIST = """
 
   [ ] `modal app list` (or dashboard -> default environment):
          - coarse-review should be deployed from main
-         - coarse-mcp    should be deployed from main
-         - Neither should be in the `preview` environment
+         - coarse-mcp    should NOT be present (retired in v1.3.0;
+           run `modal app stop coarse-mcp` if still deployed)
+         - No app should be in the `preview` environment alone
 
   [ ] `modal secret list`: production `coarse-supabase`,
       `coarse-webhook`, `coarse-resend` should all exist in the

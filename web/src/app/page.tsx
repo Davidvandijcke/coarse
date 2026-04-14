@@ -208,18 +208,6 @@ function Header() {
           setup
         </a>
         <a
-          href="/mcp"
-          style={{
-            fontFamily: "var(--font-chalk)",
-            fontSize: "1.05rem",
-            color: "var(--dust)",
-            textDecoration: "none",
-            transition: "color 0.2s",
-          }}
-        >
-          mcp
-        </a>
-        <a
           href="/compare"
           style={{
             fontFamily: "var(--font-chalk)",

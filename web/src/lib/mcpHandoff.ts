@@ -307,13 +307,6 @@ export function buildLaunchUrl(args: {
   return "";
 }
 
-// Public URL of the coarse MCP server (legacy — only used by /mcp
-// landing page for users who want the older Claude.ai connector path).
-// Kept as an exported constant so the /mcp page still renders; the new
-// CLI handoff flow doesn't reference it.
-export const MCP_SERVER_URL =
-  process.env.NEXT_PUBLIC_MCP_SERVER_URL ?? "https://coarse.vercel.app/mcp";
-
 /**
  * Handoff bundle returned by POST /api/cli-handoff. The frontend uses
  * this to render the copy-paste modal.

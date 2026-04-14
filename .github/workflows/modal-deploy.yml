@@ -30,7 +30,6 @@ on:
     paths:
       - 'src/coarse/**'
       - 'deploy/modal_worker.py'
-      - 'deploy/mcp_server.py'
       - 'pyproject.toml'
       - '.github/workflows/modal-deploy.yml'
   # Manual re-run from the Actions tab (for retries or to force a redeploy
@@ -74,8 +73,6 @@ jobs:
         include:
           - label: coarse-review
             path: deploy/modal_worker.py
-          - label: coarse-mcp
-            path: deploy/mcp_server.py
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,9 +84,9 @@ jobs:
 
       - name: Install deploy-time dependencies
         # Only the imports that `modal deploy` needs to LOAD the worker
-        # files locally. The images' runtime deps (litellm, instructor,
-        # docling, fastmcp, etc.) are installed inside Modal's build, not here.
-        run: pip install 'modal>=0.68' 'fastapi[standard]>=0.115' 'pydantic>=2.0' 'fastmcp>=2.10'
+        # file locally. The image's runtime deps (litellm, instructor,
+        # docling, etc.) are installed inside Modal's build, not here.
+        run: pip install 'modal>=0.68' 'fastapi[standard]>=0.115' 'pydantic>=2.0'
 
       - name: Validate Modal credentials
         run: |

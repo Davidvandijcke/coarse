@@ -26,19 +26,13 @@ _MODAL_WORKER = _REPO_ROOT / "deploy" / "modal_worker.py"
 def _install_stubs() -> None:
     """Install minimal stand-ins for `modal` and `fastapi` in sys.modules.
 
-    UNCONDITIONALLY replaces ``sys.modules['modal']`` and
-    ``sys.modules['fastapi']``. Earlier this was guarded by
-    ``if "modal" not in sys.modules``, which silently skipped the stub
-    when *another* test (e.g. ``test_mcp_server.py``) had already
-    imported real modal — because ``deploy/mcp_server.py`` does a
-    ``try: import modal`` at module load. That left ``run_review`` and
-    ``run_extract`` wrapped as real ``modal.Function`` objects instead
-    of plain callables, so the ``test_run_review_accepts_valid_token``
-    and friends would crash with ``'Function' object is not callable``
-    whenever they ran after the MCP suite. Stubbing unconditionally
-    means the order-dependency disappears — this test file always sees
-    a known, no-op Modal + FastAPI surface regardless of what's already
-    in sys.modules.
+    Unconditionally replaces `sys.modules['modal']` and
+    `sys.modules['fastapi']` so this test file always sees a known
+    no-op Modal + FastAPI surface regardless of what's already in
+    `sys.modules`. The old MCP server test suite had an import-order
+    dependency that bit every time tests ran in a certain order;
+    unconditional stubbing kills the dependency. (The MCP server
+    itself was removed in v1.3.0.)
     """
     modal_stub = types.ModuleType("modal")
 

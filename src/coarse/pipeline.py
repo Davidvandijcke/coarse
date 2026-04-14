@@ -184,10 +184,9 @@ def extract_and_structure(
     """Extract a paper and parse its structure without running any review stages.
 
     The non-reasoning half of ``review_paper()``: extraction, optional
-    extraction QA, and structure analysis. Callers that want to drive the
-    review reasoning themselves — e.g. the MCP server at
-    ``deploy/mcp_server.py`` — reuse this helper without pulling in the
-    agents or the cost gate.
+    extraction QA, and structure analysis. Split out so that callers
+    which want to drive review reasoning themselves can reuse it
+    without pulling in the agents or the cost gate.
 
     Raises ExtractionError if extraction produces no usable sections.
     """

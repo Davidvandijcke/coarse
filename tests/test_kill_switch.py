@@ -173,10 +173,11 @@ def test_makefile_exposes_pause_commands() -> None:
 
 
 def test_paid_routes_use_shared_pause_helper_and_early_return() -> None:
+    # `/api/mcp-extract` used to be in this list but was deleted in
+    # v1.3.0 along with the rest of the MCP server path.
     route_paths = [
         "web/src/app/api/presign/route.ts",
         "web/src/app/api/submit/route.ts",
-        "web/src/app/api/mcp-extract/route.ts",
         "web/src/app/api/cli-handoff/route.ts",
     ]
 
@@ -185,13 +186,6 @@ def test_paid_routes_use_shared_pause_helper_and_early_return() -> None:
         assert "getSubmissionPauseResponse" in text
         assert "const paused = await getSubmissionPauseResponse(" in text
         assert "if (paused) return paused;" in text
-
-
-def test_mcp_handoff_route_stays_open_for_inflight_reviews() -> None:
-    text = _read("web/src/app/api/mcp-handoff/route.ts")
-
-    assert "getSubmissionPauseResponse" not in text
-    assert "const paused = await getSubmissionPauseResponse(" not in text
 
 
 def test_handoff_landing_page_checks_pause_before_token_lookup() -> None:
