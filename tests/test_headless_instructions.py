@@ -184,14 +184,19 @@ def test_preview_middleware_exempts_handoff_routes() -> None:
     """
     middleware = _read("web/src/middleware.ts")
 
-    # The helper itself must exist and include at minimum the two
-    # routes the CLI actually touches (GET /h/<token> and POST
-    # /api/mcp-finalize), plus the MCP-server handoff pair.
+    # The helper itself must exist and include:
+    #   - the M2M handoff routes the CLI / MCP server touch
+    #     (GET /h/<token>, POST /api/mcp-finalize, /api/mcp-extract,
+    #     /api/mcp-handoff)
+    #   - the signed-token review viewing routes (/review/, /api/review/)
+    #     whose own token validation is the real auth gate
     assert "HANDOFF_EXEMPT_PREFIXES" in middleware
     assert '"/h/"' in middleware
     assert '"/api/mcp-finalize"' in middleware
     assert '"/api/mcp-extract"' in middleware
     assert '"/api/mcp-handoff"' in middleware
+    assert '"/review/"' in middleware
+    assert '"/api/review/"' in middleware
     assert "function isHandoffExemptPath" in middleware
 
     # And the Basic Auth gate must check the exempt list BEFORE calling
@@ -199,10 +204,13 @@ def test_preview_middleware_exempts_handoff_routes() -> None:
     # The expected shape is `!isHandoffExemptPath(... ) && !isAuthorizedForPreview(...)`.
     assert "!isHandoffExemptPath(request.nextUrl.pathname)" in middleware
 
-    # Drift guard: the browser UI routes (landing page, /status, /review)
-    # must NOT be in the exempt list — they exist only to be gated.
+    # Drift guard: the remaining browser UI routes must NOT be in the
+    # exempt list. /status/ is read-mostly but holds user-facing
+    # information that should stay behind the preview gate; and
+    # /api/cli-handoff is the POST that mints handoff tokens in the
+    # first place and must stay behind the gate to prevent random
+    # callers from exhausting the rate limit.
     assert '"/status/"' not in middleware
-    assert '"/review/"' not in middleware
     assert '"/api/cli-handoff"' not in middleware
 
     # The match function must normalize trailing slashes before
@@ -297,18 +305,28 @@ def test_preview_middleware_exempt_match_semantics() -> None:
         return False
 
     # Positive cases: these paths MUST be exempt or the CLI handoff
-    # breaks end-to-end behind the preview Basic Auth middleware.
+    # or review-viewing flow breaks end-to-end behind the preview
+    # Basic Auth middleware.
     for exempt_path in (
+        # M2M handoff fetch / callback
         "/h/00000000-0000-0000-0000-000000000000",
         "/h/abc123",
         "/api/mcp-finalize",
         "/api/mcp-extract",
         "/api/mcp-handoff",
+        # Signed-token review viewing (the `view:` URL the CLI prints
+        # at the end of a successful handoff). Route-level token
+        # validation is the real gate; the middleware would just
+        # block the intended recipient from opening the review.
+        "/review/00000000-0000-0000-0000-000000000000",
+        "/review/abc-def",
+        "/api/review/00000000-0000-0000-0000-000000000000",
     ):
         assert is_exempt(exempt_path), (
             f"expected {exempt_path!r} to be exempt from the preview "
-            "Basic Auth gate — if this fails the CLI handoff will 401 "
-            "on preview deploys with PREVIEW_BASIC_AUTH_PASSWORD set"
+            "Basic Auth gate — if this fails the CLI handoff or the "
+            "signed `view:` URL cannot be opened on preview deploys "
+            "with PREVIEW_BASIC_AUTH_PASSWORD set"
         )
 
     # Negative cases: browser UI must STAY behind the gate, and
@@ -316,7 +334,6 @@ def test_preview_middleware_exempt_match_semantics() -> None:
     for protected_path in (
         "/",
         "/status/12345",
-        "/review/12345",
         "/api/cli-handoff",
         "/api/presign",
         "/api/submit",
@@ -326,6 +343,7 @@ def test_preview_middleware_exempt_match_semantics() -> None:
         "/help",  # must not false-match the `/h` prefix after normalization
         "/health",
         "/hqueue",
+        "/reviews",  # must not false-match the `/review` prefix
     ):
         assert not is_exempt(protected_path), (
             f"expected {protected_path!r} to be GATED by the preview "

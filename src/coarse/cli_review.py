@@ -239,6 +239,32 @@ def _post_finalize(
         return {}
 
 
+def _format_hyperlink(url: str) -> str:
+    """Render ``url`` as an OSC 8 hyperlink when stdout is a real TTY.
+
+    Modern terminals (iTerm2, Kitty, GNOME Terminal, Wezterm, etc.)
+    render the OSC 8 escape sequence as clickable text. Terminals that
+    do not support it (dumb pipes, most CI log captures, older xterm)
+    either strip the escape silently or render the raw text. We only
+    emit the escape when stdout is a TTY so that log captures, Claude
+    Code's Bash tool output, and pytest fixtures see a plain URL they
+    can parse.
+
+    Returned text displays as the URL itself — not as a custom label —
+    so the `view:` line remains grep-friendly for agents that parse
+    the log on the backend (buildAgentPrompt instructs them to do so).
+    """
+    if not url:
+        return url
+    try:
+        if not sys.stdout.isatty():
+            return url
+    except (AttributeError, ValueError):
+        return url
+    # OSC 8 ; params ; URI ST  <text>  OSC 8 ; ; ST
+    return f"\x1b]8;;{url}\x1b\\{url}\x1b]8;;\x1b\\"
+
+
 def _print_completion_footer(
     *,
     local_path: Path,
@@ -260,7 +286,7 @@ def _print_completion_footer(
         print("  view:     unavailable")
     elif review_url:
         print("PUBLISHED TO COARSE WEB")
-        print(f"  view:     {review_url}")
+        print(f"  view:     {_format_hyperlink(review_url)}")
     print(f"  local:    {local_path.resolve()}")
     print("REVIEW COMPLETE")
 

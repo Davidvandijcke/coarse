@@ -270,7 +270,15 @@ export function buildAgentPrompt(args: {
     `policies apply.\n\n` +
     `When attach has exited cleanly (code 0) and you've read the ` +
     `completion footer, show me:\n` +
-    `  - The review URL (the \`view:\` line)\n` +
+    `  - The review URL (the \`view:\` line) — render it as a ` +
+    `clickable markdown link like \`[Open review](\${viewUrl})\` so ` +
+    `I can click it in the chat instead of copy-pasting. If the ` +
+    `terminal environment and my platform clearly support it, also ` +
+    `offer (don't execute without asking) to open the URL in my ` +
+    `default browser — \`open "\${viewUrl}"\` on macOS, ` +
+    `\`xdg-open "\${viewUrl}"\` on Linux, \`start "" "\${viewUrl}"\` ` +
+    `on Windows. Skip the offer entirely in cloud sandbox sessions ` +
+    `where there is no graphical display.\n` +
     `  - The local markdown path (the \`local:\` line)\n` +
     `  - A summary of the recommendation (accept / revise / reject)\n` +
     `  - The top 3 macro issues from the overview section`
