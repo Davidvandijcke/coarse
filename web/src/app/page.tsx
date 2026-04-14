@@ -1712,15 +1712,13 @@ export default function Home() {
                           lineHeight: 1.5,
                         }}
                       >
-                        Heads up: your OpenRouter key has to already be on
-                        your machine — export <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>OPENROUTER_API_KEY</code>,
-                        put it in a <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>.env</code>,
-                        or save it to <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>~/.coarse/config.toml</code>{" "}
-                        before you run the commands. We deliberately don&apos;t
-                        pass it through the browser, because the handoff URL
-                        ends up inside your agent&apos;s chat log. If your key
-                        isn&apos;t found, the agent will ask for it and save
-                        it for you.
+                        Your OpenRouter key needs to be on your machine first
+                        — export <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>OPENROUTER_API_KEY</code>,
+                        or put it in <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>.env</code>{" "}
+                        or <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>~/.coarse/config.toml</code>.
+                        We don&apos;t pass it through the browser because the
+                        handoff URL ends up in your agent&apos;s chat log. If
+                        it&apos;s missing, the agent will ask.
                       </p>
                     </div>
 
