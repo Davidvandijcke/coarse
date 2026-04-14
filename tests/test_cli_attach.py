@@ -478,3 +478,137 @@ def test_is_pid_alive_on_zombie_returns_false() -> None:
     finally:
         # Reap the zombie before pytest moves on.
         proc.wait(timeout=5)
+
+
+def test_is_pid_alive_routes_windows_to_native_helper(monkeypatch) -> None:
+    """Regression: Windows' `os.kill(pid, 0)` raises
+    `OSError: [WinError 87]` because the Windows Python runtime only
+    accepts SIGTERM / CTRL_C_EVENT / CTRL_BREAK_EVENT as signal args.
+    The previous ``is_pid_alive`` called ``os.kill(pid, 0)`` first
+    and short-circuited on ``os.name == "nt"`` AFTER the call, so
+    the watcher crashed on every poll on Windows.
+
+    After the fix, the Windows branch short-circuits BEFORE
+    ``os.kill`` and routes to ``_windows_pid_alive``. This test
+    monkey-patches ``os.name`` to simulate Windows, stubs
+    ``_windows_pid_alive`` to return a sentinel value, and asserts
+    that ``is_pid_alive`` returns the sentinel without ever touching
+    ``os.kill``. That way the regression cannot recur even on a CI
+    machine that is not actually Windows.
+    """
+    from coarse import cli_attach as _ca
+
+    monkeypatch.setattr(_ca.os, "name", "nt")
+
+    # If `is_pid_alive` ever falls through to `os.kill`, fail loudly
+    # with a distinctive exception so the test clearly points at the
+    # regression mode instead of silently passing on unexpected paths.
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError(
+            "is_pid_alive fell through to os.kill on Windows — the "
+            "Windows short-circuit must run BEFORE os.kill so the "
+            "unsupported signal-0 path is never reached."
+        )
+
+    monkeypatch.setattr(_ca.os, "kill", _boom)
+
+    # Stub the Windows liveness helper with a known sentinel value
+    # so we can confirm the branch routed to it.
+    monkeypatch.setattr(_ca, "_windows_pid_alive", lambda pid: True)
+    assert _ca.is_pid_alive(12345) is True
+
+    monkeypatch.setattr(_ca, "_windows_pid_alive", lambda pid: False)
+    assert _ca.is_pid_alive(12345) is False
+
+
+def test_windows_pid_alive_uses_openprocess_and_exit_code(monkeypatch) -> None:
+    """Unit test for ``_windows_pid_alive`` with ctypes.windll mocked.
+
+    Simulates three scenarios:
+      1. OpenProcess succeeds + GetExitCodeProcess returns STILL_ACTIVE → True
+      2. OpenProcess succeeds + GetExitCodeProcess returns a real exit code → False
+      3. OpenProcess fails (returns NULL handle) → False
+
+    We mock the ctypes module lookup because the real one only exists
+    on Windows.
+    """
+    import sys
+    import types
+
+    if sys.platform == "win32":
+        # On a real Windows runner, exercise the real codepath with
+        # the current process's own PID — GetCurrentProcessId is
+        # guaranteed live.
+        import os as _os
+
+        from coarse.cli_attach import _windows_pid_alive
+
+        assert _windows_pid_alive(_os.getpid()) is True
+        return
+
+    # Non-Windows: stub out ctypes.windll to simulate kernel32 calls.
+    fake_ctypes = types.ModuleType("ctypes")
+    fake_wintypes = types.ModuleType("ctypes.wintypes")
+
+    class _FakeDWORD:
+        def __init__(self, value: int = 0):
+            self.value = value
+
+    fake_wintypes.DWORD = _FakeDWORD  # type: ignore[attr-defined]
+    fake_ctypes.wintypes = fake_wintypes  # type: ignore[attr-defined]
+    fake_ctypes.byref = lambda obj: obj  # type: ignore[attr-defined]
+
+    class _FakeKernel32:
+        def __init__(self, handle: int, exit_code: int, getexit_ok: bool = True):
+            self._handle = handle
+            self._exit_code = exit_code
+            self._getexit_ok = getexit_ok
+            self.closed = False
+
+        def OpenProcess(self, _access, _inherit, _pid):
+            return self._handle
+
+        def GetExitCodeProcess(self, _handle, exit_code_ref):
+            if not self._getexit_ok:
+                return 0
+            exit_code_ref.value = self._exit_code
+            return 1
+
+        def CloseHandle(self, _handle):
+            self.closed = True
+
+    class _FakeWindll:
+        def __init__(self, kernel32):
+            self.kernel32 = kernel32
+
+    # Patch the `import ctypes; from ctypes import wintypes` lookups
+    # inside `_windows_pid_alive` by injecting into sys.modules.
+    monkeypatch.setitem(sys.modules, "ctypes", fake_ctypes)
+    monkeypatch.setitem(sys.modules, "ctypes.wintypes", fake_wintypes)
+
+    from coarse.cli_attach import _windows_pid_alive
+
+    STILL_ACTIVE = 259
+
+    # Case 1: live process
+    fake_ctypes.windll = _FakeWindll(_FakeKernel32(handle=42, exit_code=STILL_ACTIVE))
+    assert _windows_pid_alive(1234) is True
+    assert fake_ctypes.windll.kernel32.closed is True
+
+    # Case 2: process already exited with a real exit code
+    fake_ctypes.windll = _FakeWindll(_FakeKernel32(handle=42, exit_code=0))
+    assert _windows_pid_alive(1234) is False
+    assert fake_ctypes.windll.kernel32.closed is True
+
+    # Case 3: OpenProcess returned NULL (no such PID, or permission denied)
+    fake_ctypes.windll = _FakeWindll(_FakeKernel32(handle=0, exit_code=STILL_ACTIVE))
+    assert _windows_pid_alive(1234) is False
+    # CloseHandle must NOT have been called for the NULL handle
+    assert fake_ctypes.windll.kernel32.closed is False
+
+    # Case 4: GetExitCodeProcess fails
+    fake_ctypes.windll = _FakeWindll(
+        _FakeKernel32(handle=42, exit_code=STILL_ACTIVE, getexit_ok=False),
+    )
+    assert _windows_pid_alive(1234) is False
+    assert fake_ctypes.windll.kernel32.closed is True

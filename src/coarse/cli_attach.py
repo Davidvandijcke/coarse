@@ -231,8 +231,65 @@ def _pid_looks_like_coarse_review(pid: int) -> bool:
     return any(marker in cmdline for marker in _COARSE_REVIEW_CMDLINE_MARKERS)
 
 
+def _windows_pid_alive(pid: int) -> bool:
+    """Windows-native process-liveness check via `OpenProcess` +
+    `GetExitCodeProcess`. Pure stdlib (no psutil), no subprocess spawn.
+
+    Windows' `os.kill(pid, 0)` is **not supported** — the Windows
+    implementation only accepts `SIGTERM`, `CTRL_C_EVENT`, and
+    `CTRL_BREAK_EVENT` as signal arguments, and calling it with
+    signal 0 raises `OSError: [WinError 87] The parameter is
+    incorrect`. The earlier `if os.name == "nt": return True`
+    short-circuit sat AFTER the `os.kill` call, so the exception
+    fired before the early-return could save us, and the watcher
+    crashed on every poll.
+
+    This helper replaces that path entirely. `OpenProcess` with
+    `PROCESS_QUERY_LIMITED_INFORMATION` (0x1000) succeeds as long as
+    the calling user has any access to the process object (cheaper
+    than `PROCESS_QUERY_INFORMATION` and works across session
+    boundaries in most cases). `GetExitCodeProcess` then returns
+    `STILL_ACTIVE` (259) iff the process is still running.
+
+    Returns False on any failure path (PID doesn't exist, permission
+    denied, process exited with code 259 — which is vanishingly rare
+    in practice; see the Microsoft KB on STILL_ACTIVE collision for
+    discussion — we accept the edge case).
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.windll.kernel32
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return False
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return False
+        return exit_code.value == STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def is_pid_alive(pid: int) -> bool:
     """Portable 'is this PID still running as a coarse-review worker' check.
+
+    On Windows, delegates to ``_windows_pid_alive`` (OpenProcess +
+    GetExitCodeProcess) because ``os.kill(pid, 0)`` is not supported
+    by the Windows Python runtime — see that helper's docstring.
+    The PID-recycling and zombie guards below are POSIX-only (they
+    shell out to ``ps``), so Windows callers accept a slightly
+    weaker guarantee: the watcher trusts the OS kernel's view of
+    process existence, with no command-line fingerprint check. In
+    practice this is fine because the coarse-review detached worker
+    is the only thing writing to the log path, and PID recycling
+    across runs is rare on the short timescale of a review.
+
+    On POSIX:
 
     ``os.kill(pid, 0)`` sends signal 0 — no-op permission check that
     returns normally if the PID exists, ``ProcessLookupError`` if
@@ -257,6 +314,9 @@ def is_pid_alive(pid: int) -> bool:
     The ``ps`` probes add ~2ms per poll in the hot path, which is
     negligible at the 5s production poll cadence.
     """
+    if os.name == "nt":
+        return _windows_pid_alive(pid)
+
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -265,9 +325,6 @@ def is_pid_alive(pid: int) -> bool:
         # Another user's process — definitely not our worker (our
         # detached child is always spawned by the current user).
         return False
-
-    if os.name == "nt":
-        return True
 
     try:
         result = subprocess.run(

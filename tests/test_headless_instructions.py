@@ -30,8 +30,11 @@ def test_bundled_skill_assets_use_ephemeral_uvx_flow() -> None:
         # that lands this branch on main. See CHANGELOG.md ## Unreleased
         # "RELEASE BLOCKER" note — DEFAULT_MCP_UVX_FROM and these SKILL.md
         # files must all flip from the temporary git-ref pin to
-        # ``coarse-ink[mcp]==1.3.0`` as part of the release cut.
-        assert "uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0'" in text
+        # ``coarse-ink==1.3.0`` as part of the release cut. The `[mcp]`
+        # extra was dropped to cut the uvx install from ~114 to ~60
+        # packages — the handoff flow does not need fastmcp or
+        # pymupdf4llm.
+        assert "uvx --python 3.12 --from 'coarse-ink==1.3.0'" in text
         assert "coarse install-skills --all --force" in text
         # Per-review unique log file: every skill uses a LOG env var
         # derived from a per-paper suffix so parallel runs in the same
@@ -123,7 +126,7 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     )
     # Temporary git-ref pin — MUST flip back to a semver in the release PR.
     # See the RELEASE BLOCKER note at the top of CHANGELOG.md ## Unreleased.
-    assert "coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@" in handoff_lib
+    assert "coarse-ink @ git+https://github.com/Davidvandijcke/coarse@" in handoff_lib
     assert "@feat/mcp-server" not in handoff_lib
     assert "@feat/mcp-server" not in handoff_route
 
@@ -390,9 +393,7 @@ def test_release_blocker_pin_is_coupled_to_unreleased_version() -> None:
     assert match is not None, "could not find __version__ in src/coarse/__init__.py"
     current_version = match.group(1)
 
-    has_git_ref_pin = (
-        "coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@" in handoff_lib
-    )
+    has_git_ref_pin = "coarse-ink @ git+https://github.com/Davidvandijcke/coarse@" in handoff_lib
 
     if current_version == "1.2.2":
         # Pre-release state — the git-ref pin is allowed (it was
@@ -406,13 +407,16 @@ def test_release_blocker_pin_is_coupled_to_unreleased_version() -> None:
     assert not has_git_ref_pin, (
         f"RELEASE BLOCKER: src/coarse/__init__.py is at {current_version!r} "
         f"but web/src/lib/mcpHandoff.ts still pins DEFAULT_MCP_UVX_FROM to a "
-        f"git ref. Revert it to 'coarse-ink[mcp]=={current_version}' in the "
+        f"git ref. Revert it to 'coarse-ink=={current_version}' in the "
         f"same release commit that bumps the version. See the RELEASE BLOCKER "
         f"warning block at the top of ## Unreleased in CHANGELOG.md."
     )
     # Also double-check the semver pin actually matches __version__ so
     # a release that flipped to ==1.3.1 by mistake is also caught.
-    expected_semver_pin = f'"coarse-ink[mcp]=={current_version}"'
+    # The pin no longer carries the [mcp] extra — the CLI handoff flow
+    # does not need fastmcp or pymupdf4llm (see DEFAULT_MCP_UVX_FROM
+    # block comment in mcpHandoff.ts).
+    expected_semver_pin = f'"coarse-ink=={current_version}"'
     assert expected_semver_pin in handoff_lib, (
         f"web/src/lib/mcpHandoff.ts does not contain {expected_semver_pin}; "
         f"the DEFAULT_MCP_UVX_FROM pin must match __version__={current_version!r}."

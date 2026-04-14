@@ -331,6 +331,22 @@ def _detach_review_process(argv: list[str], log_file: Path) -> int:
 
     env = dict(os.environ)
     env[_DETACHED_ENV] = "1"
+    # Force UTF-8 everywhere in the detached child, regardless of
+    # the parent's locale. On Windows, the default text-mode encoding
+    # is `cp1252` (or another legacy codepage), which crashes with
+    # `UnicodeEncodeError: 'charmap' codec can't encode character`
+    # the moment the pipeline touches non-ASCII paper content
+    # (Greek letters, math arrows, em dashes — everything a real
+    # academic paper contains). `PYTHONUTF8=1` is Python's
+    # documented switch for UTF-8 Mode, which overrides
+    # `locale.getpreferredencoding(False)` for every `open()`,
+    # `sys.stdout`, `sys.stderr`, and `subprocess` text pipe in the
+    # child process. `PYTHONIOENCODING=utf-8` is belt-and-suspenders
+    # for older Python paths that don't honour UTF-8 Mode fully.
+    # Parent env stays untouched — only the detached worker gets
+    # the override. See: https://docs.python.org/3/library/os.html#utf8-mode
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
 
     cmd = [sys.executable, "-m", "coarse.cli_review", *argv]
     popen_kwargs: dict[str, object] = {
@@ -559,9 +575,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: pipeline failed — {exc}", file=sys.stderr)
         return 6
 
-    # Save the review markdown locally regardless of mode.
+    # Save the review markdown locally regardless of mode. Explicit
+    # utf-8 because review markdown contains non-ASCII content (math
+    # symbols, em dashes, quoted paper excerpts) and Windows' default
+    # `cp1252` encoding crashes on those. `PYTHONUTF8=1` in the
+    # detached child also covers this, but the explicit encoding
+    # makes the non-detached path safe too.
     review_md_path = out_dir / f"{paper_path.stem}_review.md"
-    review_md_path.write_text(md_text)
+    review_md_path.write_text(md_text, encoding="utf-8")
     logger.info("Wrote %d-char review to %s", len(md_text), review_md_path)
 
     # Handoff mode: POST the review back to coarse web. The cleanup of the

@@ -63,7 +63,7 @@ def _find_openrouter_key() -> str | None:
         if not env_path.exists():
             continue
         try:
-            for line in env_path.read_text().splitlines():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
@@ -172,7 +172,7 @@ def _patch_extraction(pre_extracted: Path) -> None:
     """Monkey-patch extract_file to return the pre-extracted markdown."""
     from coarse.types import PaperText
 
-    md_text = pre_extracted.read_text()
+    md_text = pre_extracted.read_text(encoding="utf-8")
     paper_text = PaperText(
         full_markdown=md_text,
         token_estimate=len(md_text) // 4,
@@ -308,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
         return 4
 
     out_path = out_dir / f"{paper_path.stem}_review.md"
-    out_path.write_text(markdown)
+    out_path.write_text(markdown, encoding="utf-8")
     logger.info("Wrote %d-char review to %s", len(markdown), out_path)
 
     print()
