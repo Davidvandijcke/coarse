@@ -28,7 +28,7 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
   - If `uv` exists but `uvx` does not, replace `uvx --python 3.12 --from ...` below with
     `uv tool run --python 3.12 --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
-  `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse install-skills --all --force`
+  `uvx --python 3.12 --from 'coarse-ink==1.3.0' coarse install-skills --all --force`
   (If that fails with `No such command 'install-skills'`, you're on a
   PyPI release that predates the command — upgrade or ignore; the skill
   bundle is also loadable directly via `uvx --from` without install.)
@@ -42,13 +42,13 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 
   > I need an OpenRouter API key for the OCR extraction step (~$0.10 per paper). You have three options:
   >
-  > 1. **Get a key** at https://openrouter.ai/settings/keys (or via http://localhost:3000/setup) and **paste it to me** — I'll save it to `~/.coarse/config.toml` for you with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse setup`.
+  > 1. **Get a key** at https://openrouter.ai/settings/keys (or via http://localhost:3000/setup) and **paste it to me** — I'll save it to `~/.coarse/config.toml` for you with `uvx --python 3.12 --from 'coarse-ink==1.3.0' coarse setup`.
   > 2. **Set it yourself**: `export OPENROUTER_API_KEY=sk-or-v1-...` then re-ask me.
   > 3. **If you explicitly prefer project-local storage**, add it to `.env` yourself: `echo 'OPENROUTER_API_KEY=sk-or-v1-...' >> .env`
   >
   > Which would you like?
 
-  If the user pastes a key, prefer saving it with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse setup` so it lands in `~/.coarse/config.toml`. Only write `./.env` if the user explicitly asks for project-local storage. Verify the key starts with `sk-or-` before saving.
+  If the user pastes a key, prefer saving it with `uvx --python 3.12 --from 'coarse-ink==1.3.0' coarse setup` so it lands in `~/.coarse/config.toml`. Only write `./.env` if the user explicitly asks for project-local storage. Verify the key starts with `sk-or-` before saving.
 - `codex` CLI logged in: `codex login`.
 
 ## How to run
@@ -61,12 +61,12 @@ Step 1 detaches the worker (~2 seconds) and writes `<log>.pid`. Step 2 uses `--a
 LOG=/tmp/coarse-review-$(basename <paper_path> .pdf).log
 
 # STEP 2a — launch (returns in ~2s)
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+uvx --python 3.12 --from 'coarse-ink==1.3.0' \
   coarse-review --detach --log-file "$LOG" \
   <paper_path> --host codex [--model gpt-5.4] [--effort high]
 
 # STEP 2b — wait (one blocking call, ~10-25 min, emits heartbeats)
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+uvx --python 3.12 --from 'coarse-ink==1.3.0' \
   coarse-review --attach "$LOG"
 ```
 
@@ -96,12 +96,12 @@ These map to Codex's internal reasoning effort:
 LOG=/tmp/coarse-review-$(date +%s).log
 
 # STEP 2a — launch
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+uvx --python 3.12 --from 'coarse-ink==1.3.0' \
   coarse-review --detach --log-file "$LOG" \
   --handoff https://coarse.ink/h/<token> --host codex
 
 # STEP 2b — wait
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+uvx --python 3.12 --from 'coarse-ink==1.3.0' \
   coarse-review --attach "$LOG"
 ```
 

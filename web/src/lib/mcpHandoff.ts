@@ -97,8 +97,19 @@ export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 // prompt contain a `git+https://` URL, which requires git on PATH, re-clones
 // on every uvx invocation (slow), and installs whatever is currently at that
 // commit (no semver guarantees). Do NOT forget to revert.
+//
+// Note: the variable is still called `DEFAULT_MCP_UVX_FROM` for backward
+// compatibility with the RELEASE BLOCKER coupling test, but the pin
+// itself dropped the `[mcp]` extra — the CLI handoff flow does NOT need
+// `fastmcp` (only used by `coarse mcp-upload`, a separate command) or
+// `pymupdf4llm` (only used when `COARSE_EXTRACTION_FAST=1` is set).
+// Dropping the extra cuts the uvx install from ~114 packages to ~60 by
+// removing fastmcp + pymupdf4llm and their ~40 transitive dependencies
+// (mcp SDK, uvicorn, starlette, httpx-sse, sse-starlette, pydantic-settings,
+// python-multipart, etc.). `install-skills` is pure stdlib and works
+// without the extra.
 const DEFAULT_MCP_UVX_FROM =
-  "coarse-ink[mcp] @ git+https://github.com/Davidvandijcke/coarse@1f6603f515e3";
+  "coarse-ink @ git+https://github.com/Davidvandijcke/coarse@1f6603f515e3";
 
 export function resolvePinnedUvFrom(): string {
   const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();

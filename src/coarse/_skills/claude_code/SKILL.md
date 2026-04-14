@@ -31,7 +31,7 @@ This is the **same pipeline** that powers coarse.ink — only the LLM backend is
   - If `uv` exists but `uvx` does not, replace `uvx --python 3.12 --from ...` below with
     `uv tool run --python 3.12 --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
-  `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse install-skills --all --force`
+  `uvx --python 3.12 --from 'coarse-ink==1.3.0' coarse install-skills --all --force`
   (If that fails with `No such command 'install-skills'`, you're on a
   PyPI release that predates the command — upgrade or ignore; the skill
   bundle is also loadable directly via `uvx --from` without install.)
@@ -45,13 +45,13 @@ This is the **same pipeline** that powers coarse.ink — only the LLM backend is
 
   > I need an OpenRouter API key for the OCR extraction step (~$0.10 per paper). You have three options:
   >
-  > 1. **Get a key** at https://openrouter.ai/settings/keys (or via http://localhost:3000/setup) and **paste it to me** — I'll save it to `~/.coarse/config.toml` for you with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse setup`.
+  > 1. **Get a key** at https://openrouter.ai/settings/keys (or via http://localhost:3000/setup) and **paste it to me** — I'll save it to `~/.coarse/config.toml` for you with `uvx --python 3.12 --from 'coarse-ink==1.3.0' coarse setup`.
   > 2. **Set it yourself**: `export OPENROUTER_API_KEY=sk-or-v1-...` then re-ask me.
   > 3. **If you explicitly prefer project-local storage**, add it to `.env` yourself: `echo 'OPENROUTER_API_KEY=sk-or-v1-...' >> .env`
   >
   > Which would you like?
 
-  If the user pastes a key, prefer saving it with `uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' coarse setup` so it lands in `~/.coarse/config.toml`. Only write `./.env` if the user explicitly asks for project-local storage. Verify the key starts with `sk-or-` before saving.
+  If the user pastes a key, prefer saving it with `uvx --python 3.12 --from 'coarse-ink==1.3.0' coarse setup` so it lands in `~/.coarse/config.toml`. Only write `./.env` if the user explicitly asks for project-local storage. Verify the key starts with `sk-or-` before saving.
 - `claude` CLI logged in.
 
 ## How to run
@@ -69,12 +69,12 @@ Use a **per-review unique log file** so parallel runs in the same shell don't cl
 LOG=/tmp/coarse-review-$(basename <paper_path> .pdf).log
 
 # STEP 2a — launch (returns within 2 seconds with Review PID + Log file)
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+uvx --python 3.12 --from 'coarse-ink==1.3.0' \
   coarse-review --detach --log-file "$LOG" \
   <paper_path> --host claude [--model claude-opus-4-6] [--effort high]
 
 # STEP 2b — wait (one blocking call, ~10-25 min, emits heartbeats)
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+uvx --python 3.12 --from 'coarse-ink==1.3.0' \
   coarse-review --attach "$LOG"
 ```
 
@@ -100,12 +100,12 @@ If the user came from the coarse web form, they'll paste a handoff URL instead o
 LOG=/tmp/coarse-review-$(date +%s).log
 
 # STEP 2a — launch
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+uvx --python 3.12 --from 'coarse-ink==1.3.0' \
   coarse-review --detach --log-file "$LOG" \
   --handoff https://coarse.ink/h/<token> --host claude [--model ...] [--effort ...]
 
 # STEP 2b — wait (same long-timeout discipline as local mode)
-uvx --python 3.12 --from 'coarse-ink[mcp]==1.3.0' \
+uvx --python 3.12 --from 'coarse-ink==1.3.0' \
   coarse-review --attach "$LOG"
 ```
 
