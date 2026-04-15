@@ -1233,7 +1233,7 @@ export default function Home() {
                 >
                   {emailDisabled
                     ? "Email delivery is temporarily down. Save your review key when you submit and check back in about an hour."
-                    : <>We&apos;ll email you when it&apos;s done.</>}
+                    : <>We&apos;ll email you when it&apos;s done. Check your spam folder if you don&apos;t see it — we&apos;re a new sending domain and some filters are cautious.</>}
                 </p>
               </div>
 
