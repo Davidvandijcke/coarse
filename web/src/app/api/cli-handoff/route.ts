@@ -1,13 +1,12 @@
 // POST /api/cli-handoff
 //
 // Mints a handoff token for the CLI flow (Claude Code / Codex / Gemini CLI).
-// Unlike /api/mcp-handoff, this route does NOT trigger server-side extraction
-// — extraction happens locally on the user's machine when they run
+// Extraction happens locally on the user's machine when they run
 // `coarse-review --handoff <url>`. All we need to mint is:
 //
-//   1. A row in mcp_handoff_tokens (single-use finalize token, 3-hour TTL) —
-//      the same table the older MCP flow uses, since the finalize semantics
-//      are identical.
+//   1. A row in handoff_tokens (single-use finalize token, 3-hour TTL).
+//      Historically named `mcp_handoff_tokens` when the now-retired MCP
+//      server path co-owned it; see `deploy/migrate_rename_handoff_tokens.sql`.
 //
 // The GET /h/<token> endpoint then serves the full bundle (paper_id +
 // signed PDF download URL + finalize_token + callback_url) to whoever
@@ -20,10 +19,9 @@
 // Response:
 //   { token, handoff_url, paper_id }
 //
-// Security: same threat model as /api/mcp-handoff — a leaked token lets
-// an attacker (a) download the paper for the lifetime of the signed URL
-// minted by GET /h/<token> and (b) write a review to exactly one reviews
-// row for 3 hours.
+// Security: a leaked token lets an attacker (a) download the paper for
+// the lifetime of the signed URL minted by GET /h/<token> and (b) write
+// a review to exactly one reviews row for 3 hours.
 
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
@@ -96,14 +94,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Step 2: mint the finalize_token. Reuse the mcp_handoff_tokens table —
-  // the finalize semantics are identical (single-use, 3-hour TTL, bound
-  // to one paper_id, consumed on POST /api/mcp-finalize).
+  // Step 2: mint the finalize_token. Single-use, 3-hour TTL, bound to
+  // one paper_id, consumed on POST /api/mcp-finalize.
   const expiresAt = new Date(
     Date.now() + FINALIZE_TOKEN_TTL_MINUTES * 60_000,
   ).toISOString();
   const { data: tokenRow, error: tokenErr } = await supabase
-    .from("mcp_handoff_tokens")
+    .from("handoff_tokens")
     .insert({
       paper_id: paperId,
       expires_at: expiresAt,
@@ -120,7 +117,7 @@ export async function POST(request: NextRequest) {
   // Opportunistic cleanup (fire-and-forget).
   if (Math.random() < 0.01) {
     try {
-      void supabase.rpc("cleanup_mcp_handoff_tokens");
+      void supabase.rpc("cleanup_handoff_tokens");
     } catch {
       // ignore
     }

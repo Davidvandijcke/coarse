@@ -1,16 +1,20 @@
 // POST /api/mcp-finalize
 //
-// Final step of the web→MCP handoff: the MCP server POSTs the rendered
-// review markdown + metadata here, authenticated by a single-use
-// `finalize_token` minted earlier by /api/mcp-handoff. This route is
-// the one place the reviews table gets written to for MCP-driven
-// reviews — the MCP server itself never holds a Supabase service key.
+// Final step of the CLI / subscription handoff: the caller POSTs the
+// rendered review markdown + metadata here, authenticated by a
+// single-use `finalize_token` minted earlier by /api/cli-handoff. This
+// route is the one place the reviews table gets written to for
+// handoff-driven reviews — the caller itself never holds a Supabase
+// service key. The route is still named `mcp-finalize` for historical
+// continuity; the MCP server path was retired in v1.3.0 but the
+// finalize semantics and callback URL the CLI bakes into handoff
+// bundles live here.
 //
 // Request body:
 //   {
-//     token: uuid,             // the finalize_token from /api/mcp-handoff
-//     paper_id: uuid,          // must match mcp_handoff_tokens.paper_id
-//     paper_title: string,     // from the MCP server's extraction
+//     token: uuid,             // the finalize_token from /api/cli-handoff
+//     paper_id: uuid,          // must match handoff_tokens.paper_id
+//     paper_title: string,     // from local extraction
 //     domain?: string,         // classified domain
 //     taxonomy?: string,       // classified taxonomy
 //     markdown: string,        // the rendered review markdown (render_review)
@@ -27,7 +31,7 @@
 //   - Returns { review_url } — the shareable URL the chat host prints.
 //
 // Security:
-//   - Service key stays on the Next.js side. MCP server never sees it.
+//   - Service key stays on the Next.js side. The caller never sees it.
 //   - Token is single-use (consumed_at set before upsert so a concurrent
 //     replay sees the row as already consumed).
 //   - Expiry enforced at SELECT time (expires_at > now()).
@@ -36,7 +40,7 @@
 //     a fresh token. That's the safe default: replay is worse than
 //     asking the user to retry.
 //
-// See deploy/migrate_mcp_handoff.sql for the schema.
+// See deploy/migrate_rename_handoff_tokens.sql for the schema.
 
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
@@ -152,7 +156,7 @@ export async function POST(request: NextRequest) {
   // Step 1: validate the token. Must exist, not expired, not consumed,
   // and paper_id must match the body to prevent cross-paper replay.
   const { data: tokenRow, error: tokenErr } = await supabase
-    .from("mcp_handoff_tokens")
+    .from("handoff_tokens")
     .select("token, paper_id, expires_at, consumed_at")
     .eq("token", token)
     .maybeSingle();
@@ -193,7 +197,7 @@ export async function POST(request: NextRequest) {
   // consumed_at IS NULL so the second caller sees zero rows affected
   // and gets a clean "already consumed" error.
   const { data: claimed, error: claimErr } = await supabase
-    .from("mcp_handoff_tokens")
+    .from("handoff_tokens")
     .update({ consumed_at: new Date().toISOString() })
     .eq("token", token)
     .is("consumed_at", null)
