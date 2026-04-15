@@ -50,14 +50,20 @@ jobs:
             BODY="Daily reviews ($DAILY) high — monitor Resend monthly quota.\n\n"
           fi
 
-          if [ "$MONTHLY" -gt 300 ] 2>/dev/null; then
+          # Modal has a payment method on file, so the $30 free tier is
+          # a soft floor, not a hard ceiling. Measured cost is ~$0.01 per
+          # review (870 reviews ≈ $8 of Modal compute), so thresholds
+          # below correspond to: 5000/mo ≈ $50 (worth a heads-up), and
+          # 20000/mo ≈ $200 (runaway/abuse territory, auto-pause as a
+          # circuit breaker).
+          if [ "$MONTHLY" -gt 5000 ] 2>/dev/null; then
             ALERT="warning"
-            BODY="${BODY}Monthly reviews ($MONTHLY) approaching Modal free tier ($30/mo).\n\n"
+            BODY="${BODY}Monthly reviews ($MONTHLY) — Modal spend ~\$$((MONTHLY / 100)). Worth checking the Modal dashboard.\n\n"
           fi
 
-          if [ "$MONTHLY" -gt 800 ] 2>/dev/null; then
+          if [ "$MONTHLY" -gt 20000 ] 2>/dev/null; then
             ALERT="critical"
-            BODY="${BODY}CRITICAL: Monthly reviews ($MONTHLY) exceeded safe threshold. Auto-pausing submissions.\n\n"
+            BODY="${BODY}CRITICAL: Monthly reviews ($MONTHLY) exceeded runaway threshold. Auto-pausing submissions as a circuit breaker.\n\n"
           fi
 
           BODY="${BODY}See deploy/CAPACITY.md for expansion instructions."
