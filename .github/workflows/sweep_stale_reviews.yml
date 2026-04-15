@@ -96,9 +96,29 @@ jobs:
                   print("reviews: nothing to sweep")
                   sys.exit(0)
 
-              # Log each one so we have an audit trail in the workflow output.
+              # Audit trail without leaking review IDs to the public
+              # workflow log. The review UUID is the sole access key for
+              # legacy rows (the RLS hardening in
+              # deploy/migrate_review_access_security.sql only covers new
+              # rows that carry an access_token_required flag), so
+              # printing full UUIDs here turned the public Actions log
+              # into a read side-channel on an otherwise
+              # unguessable-token scheme. We emit only the first 8 chars
+              # — enough to correlate with an operator-side query, not
+              # enough to enumerate — and also tell the Actions runner
+              # to mask the full UUID in case a future edit prints it
+              # accidentally somewhere else in the job.
               for row in stale:
-                  print(f"  {row['status']:8} {row['id']} created={row['created_at']}")
+                  rid = row.get("id") or ""
+                  if isinstance(rid, str) and rid:
+                      print(f"::add-mask::{rid}")
+                      prefix = rid[:8]
+                  else:
+                      prefix = "????????"
+                  print(
+                      f"  {row['status']:8} {prefix}... "
+                      f"created={row['created_at']}"
+                  )
 
               api(
                   "PATCH",
