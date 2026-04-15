@@ -56,7 +56,7 @@ WHERE id = 1;
 
 **Check**: [Modal dashboard](https://modal.com) > Usage tab.
 
-**Thresholds**: A typical review uses ~$0.08–0.10 of compute. 300 reviews/month ≈ free tier. The daily monitoring cron alerts at 300 and auto-pauses at 800.
+**Thresholds**: Measured cost is ~$0.01 per review (870 reviews ≈ $8 of Modal compute). There is a payment method on file, so the $30 free tier is a soft floor rather than a hard ceiling. The daily monitoring cron warns at 5000/mo (~$50) and auto-pauses at 20000/mo (~$200) as a runaway circuit breaker.
 
 **Expand**: Add a payment method in the Modal dashboard. Modal charges per compute-second beyond the free tier — no plan upgrade needed.
 
