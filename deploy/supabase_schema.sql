@@ -9,7 +9,7 @@ create table reviews (
   id uuid primary key default gen_random_uuid(),   -- serves as the unique access key
   paper_filename text not null,
   status text not null default 'queued'
-    check (status in ('queued', 'running', 'done', 'failed', 'cancelled')),
+    check (status in ('queued', 'running', 'extracting', 'extracted', 'done', 'failed', 'cancelled')),
   paper_title text,
   model text,
   domain text,
