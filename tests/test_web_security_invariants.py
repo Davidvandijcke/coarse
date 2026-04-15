@@ -6,13 +6,22 @@ that the specific unsafe strings Codex security flagged are gone.
 Cheaper than adding a vitest dependency for a handful of grep-style
 assertions, and enough to catch an accidental revert during review.
 
-Covers three findings:
+Covers the load-bearing findings:
 
-- #1/#5: ``web/src/lib/mcpHandoff.ts`` must not instruct the agent to
-  echo/grep the API key value or invite the user to paste the key
-  into chat.
+- #5: ``web/src/lib/mcpHandoff.ts`` and the three bundled SKILL.md
+  files must not instruct the agent to echo/grep the API key value
+  (that copies the plaintext into the LLM transcript regardless of
+  user intent). Presence-only probes must stay wired up.
 - #4: ``web/src/app/api/cli-handoff/route.ts`` must not rebuild
   ``siteUrl`` from the ``x-forwarded-host`` request header.
+
+**Not covered anymore**: the earlier strict ban on offering
+"paste the key here" as an option was relaxed per user request —
+users are allowed to paste the key into chat if they want, and the
+prompt now just notes the key passes through the LLM provider and
+lets them choose. The echo/grep ban remains because that's the
+agent *unilaterally* copying the value even when the user didn't
+ask for it.
 """
 
 from __future__ import annotations
@@ -32,32 +41,20 @@ def test_mcp_handoff_prompt_does_not_leak_api_key() -> None:
     src = _read("web/src/lib/mcpHandoff.ts")
 
     # The value-printing probes (finding #5) must be gone from the
-    # actual instruction text. They're still mentioned by name as
-    # *forbidden* probes, which is fine — we only need to ensure the
-    # prompt does not tell the agent to run them.
+    # actual instruction text. Agents must not UNILATERALLY copy the
+    # key into the transcript even if the user didn't ask. A prompt
+    # that instructs `echo $OPENROUTER_API_KEY` / `grep OPENROUTER_API_KEY .env`
+    # does exactly that — the shell command runs regardless of intent.
+    # (Paste-into-chat as an EXPLICIT user-chosen option is allowed —
+    # that's covered by the module docstring.)
     assert "Run `echo $OPENROUTER_API_KEY` and `grep OPENROUTER_API_KEY .env" not in src, (
         "buildAgentPrompt still instructs the agent to echo/grep the "
         "OpenRouter key — that copies the key value into the LLM "
         "transcript. Use presence-only probes instead."
     )
 
-    # The "paste it here" / "paste it to me" option (finding #1) must
-    # not appear as an allowed path in the prompt.
-    lowered = src.lower()
-    assert "paste it here" not in lowered, (
-        "buildAgentPrompt still offers 'paste it here' as an option — "
-        "that leaks the key to the LLM provider."
-    )
-    assert "paste it to me" not in lowered, (
-        "buildAgentPrompt still offers 'paste it to me' as an option — "
-        "that leaks the key to the LLM provider."
-    )
-
-    # Positive guard: the new prompt must include an explicit do-not-
-    # paste warning and the presence-only probe.
-    assert "do not paste" in lowered or "don't paste" in lowered, (
-        "buildAgentPrompt should explicitly tell the user/agent not to paste the API key into chat."
-    )
+    # Positive guard: the presence-only env probe must still be the
+    # prompt's recommended check.
     assert 'test -n "$OPENROUTER_API_KEY"' in src, (
         "buildAgentPrompt should use a presence-only env probe "
         '(`test -n "$OPENROUTER_API_KEY"`) instead of echoing the value.'
@@ -113,22 +110,23 @@ def test_cli_handoff_route_does_not_trust_forwarded_host() -> None:
 
 
 def test_bundled_skills_do_not_leak_api_key() -> None:
-    """Finding #1 also patched the three bundled SKILL.md files."""
+    """Finding #5 also patched the three bundled SKILL.md files.
+
+    Same rationale as the mcpHandoff.ts check: agents must not
+    unilaterally copy the key value into their transcript via
+    ``echo`` / ``printenv`` / ``grep`` shell probes. Paste-into-chat
+    as an explicit user-chosen option is fine and is not checked here.
+    """
     for skill in (
         "src/coarse/_skills/claude_code/SKILL.md",
         "src/coarse/_skills/codex/SKILL.md",
         "src/coarse/_skills/gemini_cli/SKILL.md",
     ):
         src = _read(skill)
-        lowered = src.lower()
 
-        assert "paste it to me" not in lowered, (
-            f"{skill} still offers 'paste it to me' — that leaks the API key to the LLM provider."
-        )
-
-        # The old *instructional* lines (finding #1). The new prompt
-        # mentions these commands in a "do NOT run" context, which is
-        # fine — we only want the old prescriptive lines gone.
+        # The old *instructional* lines. The new prompt mentions these
+        # commands (or doesn't mention them at all) in a non-prescriptive
+        # way; we only want the old prescriptive lines gone.
         assert (
             "In the environment: `echo $OPENROUTER_API_KEY` or `printenv OPENROUTER_API_KEY`"
         ) not in src, f"{skill} still prescribes echo/printenv of the key value."

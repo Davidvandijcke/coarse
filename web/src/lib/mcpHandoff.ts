@@ -184,33 +184,30 @@ export function buildAgentPrompt(args: {
     `either way because uvx is already loading the coarse bundle via ` +
     `\`--from\`.\n\n` +
     `${setupCmd}\n\n` +
-    `STEP 2 — Check for an OpenRouter API key WITHOUT printing it. ` +
-    `The key must never flow through this chat, because anything you ` +
-    `output is sent to the LLM provider and may be logged. Do NOT run ` +
-    `\`echo $OPENROUTER_API_KEY\`, \`printenv OPENROUTER_API_KEY\`, ` +
-    `\`grep OPENROUTER_API_KEY .env\`, or \`cat .env\` — those would ` +
-    `copy the key value into the transcript. Use presence-only probes ` +
-    `instead:\n\n` +
+    `STEP 2 — Check for an OpenRouter API key without printing its ` +
+    `value. Prefer presence-only probes so the key doesn't needlessly ` +
+    `show up in the chat transcript:\n\n` +
     `  test -n "$OPENROUTER_API_KEY" && echo "env: set" || echo "env: missing"\n` +
     `  test -f .env && grep -q '^OPENROUTER_API_KEY=' .env && echo ".env: set" || echo ".env: missing"\n\n` +
     `If neither probe reports "set", tell me:\n\n` +
     `  "I need an OpenRouter API key for the Mistral OCR extraction step ` +
-    `(~$0.10 per paper). The key has to be set locally on your machine — ` +
-    `**please do not paste it into this chat**, because anything here is ` +
-    `transmitted to the LLM provider and may be logged. Pick one:\n` +
-    `   1. (Recommended) Run the setup helper yourself in a separate ` +
-    `terminal and paste the key into its interactive prompt. It lands ` +
-    `in ~/.coarse/config.toml and never passes through this chat:\n` +
-    `      ${configCmd}\n` +
-    `   2. Export it in your shell: export OPENROUTER_API_KEY=sk-or-v1-... ` +
-    `then re-ask me.\n` +
-    `   3. Project-local .env: echo 'OPENROUTER_API_KEY=sk-or-v1-...' >> .env ` +
-    `in your current directory.\n` +
-    `   Tell me once it's set and I'll re-run the presence probes."\n\n` +
-    `If I paste the key into chat anyway, refuse to store it, tell me ` +
-    `the key has been exposed to the LLM provider and should be rotated ` +
-    `at https://openrouter.ai/settings/keys, and re-offer the three ` +
-    `options above.\n\n` +
+    `(~$0.10 per paper). A few options:\n` +
+    `   1. Paste the key here and I'll save it to ~/.coarse/config.toml ` +
+    `via \`${configCmd}\`. Heads up that whatever you paste here passes ` +
+    `through the LLM provider (Anthropic / OpenAI / Google), so treat ` +
+    `the key as slightly less private than one you typed into a local ` +
+    `terminal — rotate at https://openrouter.ai/settings/keys if that ` +
+    `worries you.\n` +
+    `   2. Set it yourself in a separate terminal and come back: ` +
+    `\`export OPENROUTER_API_KEY=sk-or-v1-...\` or add it to a \`.env\` ` +
+    `file in your current directory.\n` +
+    `   3. Run \`${configCmd}\` in a separate terminal yourself and ` +
+    `paste the key into its interactive prompt — the key lands in ` +
+    `~/.coarse/config.toml without touching this chat at all.\n` +
+    `   Which do you want?"\n\n` +
+    `If I paste the key into chat, just save it — run \`${configCmd}\` ` +
+    `with the pasted value and confirm it's stored. No need to lecture ` +
+    `me about it; I already know what I'm doing.\n\n` +
     `STEP 3 — Launch the detached review. Run the EXACT command below, ` +
     `verbatim. Do not substitute, rewrite, or interpret any argument — ` +
     `every piece is already filled in. The \`--handoff\` URL is the ` +

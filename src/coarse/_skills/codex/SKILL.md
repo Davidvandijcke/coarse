@@ -32,25 +32,23 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
   (If that fails with `No such command 'install-skills'`, you're on a
   PyPI release that predates the command — upgrade or ignore; the skill
   bundle is also loadable directly via `uvx --from` without install.)
-- **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). The key must be set locally on the user's machine. **Never ask the user to paste the key into this chat and never print it yourself** — anything that appears in the chat transcript is sent to the LLM provider and may be retained in logs.
+- **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). Prefer checking for the key with presence-only probes so you don't needlessly echo its value into the transcript, but if the user hands you the key directly just save it — don't lecture them.
 
-  Before running the review, check whether `OPENROUTER_API_KEY` is already configured *without printing its value*. Use presence-only probes:
+  Before running the review, check whether `OPENROUTER_API_KEY` is already configured:
   - In the environment: `test -n "$OPENROUTER_API_KEY" && echo "env: set" || echo "env: missing"`
   - In a `.env` file in the current directory: `test -f .env && grep -q '^OPENROUTER_API_KEY=' .env && echo ".env: set" || echo ".env: missing"`
 
-  Do **not** run `echo $OPENROUTER_API_KEY`, `printenv OPENROUTER_API_KEY`, `grep OPENROUTER_API_KEY .env`, or `cat .env` — those commands copy the key value into the transcript.
+  If neither probe reports "set", ask the user:
 
-  If neither probe reports "set", tell the user:
-
-  > I need an OpenRouter API key for the OCR extraction step (~$0.10 per paper). The key has to be set locally — **please don't paste it into this chat**, because anything here is transmitted to the LLM provider and may be logged. Pick one of:
+  > I need an OpenRouter API key for the OCR extraction step (~$0.10 per paper). A few options:
   >
-  > 1. **Save it via the setup helper** (recommended): run `uvx --python 3.12 --from 'coarse-ink==1.3.0' coarse setup` yourself in a terminal and paste the key into the interactive prompt. It lands in `~/.coarse/config.toml` and never passes through this chat.
-  > 2. **Export it in your shell**: `export OPENROUTER_API_KEY=sk-or-v1-...`, then re-ask me.
-  > 3. **Project-local `.env`**: `echo 'OPENROUTER_API_KEY=sk-or-v1-...' >> .env` in your current directory.
+  > 1. Paste the key here and I'll save it to `~/.coarse/config.toml` via `uvx --python 3.12 --from 'coarse-ink==1.3.0' coarse setup`. Note the key passes through the LLM provider (OpenAI) on its way to me, so treat it as slightly less private than one you typed into a local terminal — rotate at https://openrouter.ai/settings/keys if that worries you.
+  > 2. Set it yourself in a separate terminal: `export OPENROUTER_API_KEY=sk-or-v1-...` or add it to `.env` in your current directory, then re-ask me.
+  > 3. Run `uvx --python 3.12 --from 'coarse-ink==1.3.0' coarse setup` in a separate terminal yourself and paste the key into its interactive prompt — the key never touches this chat.
   >
-  > Tell me once it's set and I'll re-check with the presence probes above.
+  > Which do you want?
 
-  If the user pastes a key into chat anyway, **refuse to store it**, remind them that the key has now been exposed to the LLM provider and should be rotated at https://openrouter.ai/settings/keys, then re-offer the three options above.
+  If the user pastes a key here, save it via `uvx --python 3.12 --from 'coarse-ink==1.3.0' coarse setup` with the pasted value and confirm it's stored. Their chat, their choice.
 - `codex` CLI logged in: `codex login`.
 
 ## How to run
