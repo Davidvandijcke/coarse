@@ -937,29 +937,7 @@ function SubscriptionTab() {
         </Step>
 
         {/* Step 2 */}
-        <Step number={2} title="Add $1 to OpenRouter for extraction">
-          <p
-            style={{
-              fontFamily: "Georgia, serif",
-              fontSize: "1.1rem",
-              lineHeight: 1.7,
-              color: "var(--chalk)",
-              margin: 0,
-            }}
-          >
-            coarse still needs OpenRouter for the OCR pass (~$0.10 per
-            paper). Follow the{" "}
-            <strong style={{ color: "var(--chalk-bright)" }}>
-              OpenRouter key
-            </strong>{" "}
-            tab to create an account and add $1 of credit. Set the per-key
-            limit to $2. You don&apos;t need the $20 buffer on this path
-            because the review itself bills your subscription, not OpenRouter.
-          </p>
-        </Step>
-
-        {/* Step 3 */}
-        <Step number={3} title="Upload your paper">
+        <Step number={2} title="Put an OpenRouter key on your machine">
           <p
             style={{
               fontFamily: "Georgia, serif",
@@ -969,7 +947,72 @@ function SubscriptionTab() {
               margin: "0 0 0.75rem",
             }}
           >
-            Go to the{" "}
+            coarse still needs OpenRouter for the OCR step (~$0.10 per
+            paper). Follow the{" "}
+            <strong style={{ color: "var(--chalk-bright)" }}>
+              OpenRouter key
+            </strong>{" "}
+            tab to create an account, add $1 of credit, and set a $2
+            per-key limit. The $20 buffer from the OpenRouter-only path
+            isn&apos;t needed here because the review itself runs on
+            your coding-agent subscription.
+          </p>
+          <p
+            style={{
+              fontFamily: "Georgia, serif",
+              fontSize: "1.1rem",
+              lineHeight: 1.7,
+              color: "var(--chalk)",
+              margin: 0,
+            }}
+          >
+            Then put the key on your own machine: run{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              export OPENROUTER_API_KEY=sk-or-v1-...
+            </code>
+            , drop it in a{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              .env
+            </code>
+            , or save it to{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              ~/.coarse/config.toml
+            </code>
+            . Your CLI reads it locally when it runs the extraction;
+            coarse.ink never sees it.
+          </p>
+        </Step>
+
+        {/* Step 3 */}
+        <Step number={3} title="Upload your paper and pick a CLI">
+          <p
+            style={{
+              fontFamily: "Georgia, serif",
+              fontSize: "1.1rem",
+              lineHeight: 1.7,
+              color: "var(--chalk)",
+              margin: 0,
+            }}
+          >
+            On the{" "}
             <a
               href="/"
               style={{
@@ -980,17 +1023,19 @@ function SubscriptionTab() {
             >
               main page
             </a>
-            , drop your PDF onto the form, paste your OpenRouter key, and
-            click{" "}
+            , drop your PDF onto the form, then click the{" "}
             <strong style={{ color: "var(--chalk-bright)" }}>
-              Review with my subscription
-            </strong>
-            . Pick which CLI you want to use in the modal that appears.
+              Review with my subscription ▾
+            </strong>{" "}
+            dropdown and pick your CLI. coarse uploads the file, mints a
+            handoff token, and shows the prompt you&apos;ll paste in the
+            next step. You don&apos;t paste your OpenRouter key on the
+            form here; the CLI reads it from your machine (step 2).
           </p>
         </Step>
 
         {/* Step 4 */}
-        <Step number={4} title="Run the three commands">
+        <Step number={4} title="Paste the prompt into your CLI">
           <p
             style={{
               fontFamily: "Georgia, serif",
@@ -1000,11 +1045,40 @@ function SubscriptionTab() {
               margin: "0 0 0.75rem",
             }}
           >
-            The modal shows three pre-filled commands. Paste{" "}
-            <strong>setup</strong> (~10s), then <strong>launch</strong>{" "}
-            (returns in 2s). The <strong>wait</strong> command blocks
-            until the review finishes, 10&ndash;25 min. When it exits, it
-            prints a{" "}
+            coarse gives you one natural-language prompt. Copy it from
+            the panel, paste it into your{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              claude -p
+            </code>
+            ,{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              codex exec
+            </code>
+            , or{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              gemini -p
+            </code>{" "}
+            session, and hit send. The agent refreshes its skill bundle,
+            runs the full coarse pipeline on its own subprocess calls,
+            and prints a{" "}
             <code
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
@@ -1014,7 +1088,8 @@ function SubscriptionTab() {
             >
               view:
             </code>{" "}
-            URL. Click it to open the finished review on coarse.ink.
+            URL when it&apos;s done. 10&ndash;25 minutes. Click the URL
+            to open the finished review on coarse.ink.
           </p>
 
           <div
@@ -1038,10 +1113,10 @@ function SubscriptionTab() {
               <strong style={{ color: "var(--chalk-bright)" }}>
                 If you&apos;re pasting into a coding agent
               </strong>{" "}
-              (not a plain terminal), bump its bash-tool timeout to at least
-              45 min before running the wait command. Default agent timeouts
-              can be as low as 2 min, which is way under the 10&ndash;25 min
-              review runtime.
+              (not a plain terminal), bump its bash-tool timeout to at
+              least 45 min before you send the prompt. Default agent
+              timeouts can be as low as 2 min, way under the 10&ndash;25
+              min review runtime.
             </p>
           </div>
         </Step>
@@ -1049,19 +1124,34 @@ function SubscriptionTab() {
         {/* Step 5 — Troubleshooting */}
         <Step number={5} title="If something goes wrong">
           <Trouble
-            symptom="The &ldquo;Open Claude Code&rdquo; button does nothing."
+            symptom="The &ldquo;Try opening Claude Code / Codex&rdquo; button does nothing."
             fix={
               <>
-                The button only works if you have the Claude desktop app
-                installed. If you installed Claude Code as a CLI, the
-                browser can&apos;t launch a terminal for you. Copy the three
-                commands from the modal and paste them in manually.
+                The button only works if you have the desktop app
+                installed. With a CLI-only install, the browser
+                can&apos;t launch a terminal for you. Copy the prompt
+                from the panel and paste it into your CLI manually.
               </>
             }
           />
           <Trouble
-            symptom="&ldquo;No such command &lsquo;install-skills&rsquo;&rdquo;."
-            fix={<>Safe to ignore. Move on to the launch command.</>}
+            symptom="&ldquo;No such command &lsquo;install-skills&rsquo;&rdquo; inside the agent run."
+            fix={
+              <>
+                Safe to ignore. The skill bundle still loads directly
+                through{" "}
+                <code
+                  style={{
+                    fontFamily: "var(--font-space-mono), monospace",
+                    fontSize: "0.95rem",
+                    color: "var(--chalk-bright)",
+                  }}
+                >
+                  uvx --from
+                </code>
+                ; the agent will continue to the review step.
+              </>
+            }
           />
           <Trouble
             symptom="My Anthropic / OpenAI / Google bill went up after a review."
