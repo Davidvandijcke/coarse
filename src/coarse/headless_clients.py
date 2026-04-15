@@ -27,6 +27,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from typing import Any
 
 from pydantic import BaseModel
@@ -147,6 +148,122 @@ def _classify_cli_error(stderr: str) -> str | None:
         if needle in lowered:
             return hint
     return None
+
+
+# Transient-error patterns the retry loop treats as worth another
+# attempt. Rate limits, network flakes, upstream overload — anything
+# the host's backend might recover from within a few seconds. Missing
+# patterns default to permanent and fail fast, which is safer than
+# looping on a real bug.
+_TRANSIENT_ERROR_PATTERNS: tuple[str, ...] = (
+    "rate limit",
+    "rate-limit",
+    "rate limited",
+    "too many requests",
+    "429",
+    "503",
+    "502",
+    "504",
+    "temporarily unavailable",
+    "temporarily overloaded",
+    "service unavailable",
+    "upstream error",
+    "upstream timeout",
+    "upstream overloaded",
+    "overloaded",
+    "connection reset",
+    "connection refused",
+    "connection timed out",
+    "network error",
+    "network unreachable",
+    "please try again",
+    "retry in",
+    "eai_again",
+    "econnreset",
+)
+
+
+def _is_transient_cli_error(stderr: str, returncode: int) -> bool:
+    """True when ``stderr`` looks like a transient failure the retry
+    loop should take another run at."""
+    # Exit 124 is the GNU `timeout(1)` convention for "process was
+    # killed because it exceeded the timeout" — on Linux some
+    # wrappers surface this when the child backend took too long.
+    # Not the same as our Python-level ``subprocess.TimeoutExpired``
+    # (which already bubbles up directly and isn't retried here).
+    if returncode == 124 and not stderr:
+        return True
+    if not stderr:
+        return False
+    lowered = stderr.lower()
+    return any(pat in lowered for pat in _TRANSIENT_ERROR_PATTERNS)
+
+
+# Unknown-model patterns the retry loop uses to trigger a one-time
+# fallback to the host's class-default model. Separate from the
+# transient list because the recovery action is different (swap
+# model then retry, vs retry unchanged after a backoff).
+_UNKNOWN_MODEL_PATTERNS: tuple[str, ...] = (
+    "unknown model",
+    "model not found",
+    "invalid model",
+    "no such model",
+    "model does not exist",
+    "unrecognized model",
+)
+
+
+def _is_unknown_model_error(stderr: str) -> bool:
+    """True when the host CLI rejected the ``--model`` value we passed."""
+    if not stderr:
+        return False
+    lowered = stderr.lower()
+    return any(pat in lowered for pat in _UNKNOWN_MODEL_PATTERNS)
+
+
+# Retry budget shared by all headless clients. 3 attempts with
+# backoffs of 2s and 4s between them — cheap enough that a falsely-
+# classified permanent error only wastes ~6s, small enough that a
+# real transient rate limit usually clears within one hop.
+_MAX_RUN_ATTEMPTS = 3
+_RUN_BACKOFF_SECONDS: tuple[float, ...] = (2.0, 4.0)
+
+
+# Subscription-concurrency cap. A 20-section paper with
+# ``max_workers=10`` in the pipeline can spawn 10 concurrent
+# ``claude -p`` subprocesses — enough to trip Claude Max / ChatGPT
+# Pro / Gemini rate limits on the host side. We cap concurrent
+# subprocesses per client class via a class-level semaphore,
+# overridable at startup via ``COARSE_HEADLESS_CONCURRENCY``. Each
+# client class (Claude / Codex / Gemini) gets its own semaphore so
+# a mixed-host run doesn't have them contend against each other.
+_CONCURRENCY_DEFAULT = 3
+_CONCURRENCY_ENV_VAR = "COARSE_HEADLESS_CONCURRENCY"
+_CONCURRENCY_MIN = 1
+_CONCURRENCY_MAX = 20
+
+
+def _parse_concurrency_env() -> int:
+    """Read ``COARSE_HEADLESS_CONCURRENCY``, falling back to the
+    default on missing / invalid / out-of-range values."""
+    raw = os.environ.get(_CONCURRENCY_ENV_VAR, "").strip()
+    if not raw:
+        return _CONCURRENCY_DEFAULT
+    try:
+        n = int(raw)
+    except ValueError:
+        logger.warning("Ignoring invalid %s=%r (not an integer)", _CONCURRENCY_ENV_VAR, raw)
+        return _CONCURRENCY_DEFAULT
+    if n < _CONCURRENCY_MIN or n > _CONCURRENCY_MAX:
+        logger.warning(
+            "Ignoring out-of-range %s=%d (must be %d-%d)",
+            _CONCURRENCY_ENV_VAR,
+            n,
+            _CONCURRENCY_MIN,
+            _CONCURRENCY_MAX,
+        )
+        return _CONCURRENCY_DEFAULT
+    return n
 
 
 # Env vars each host CLI sets when spawning subprocesses. Stripping them
@@ -349,6 +466,14 @@ class _HeadlessCLIClient:
     #: Human-readable name for error messages ("claude -p", "codex exec", ...).
     display_name: str = "headless-cli"
 
+    #: Per-class concurrency semaphore. Lazily initialised via
+    #: ``_get_semaphore`` on first use so tests can override the
+    #: environment variable before the semaphore is created. Stored
+    #: on each *subclass* so Claude / Codex / Gemini each get their
+    #: own cap — a mixed-host run doesn't cross-contend.
+    _semaphore: threading.Semaphore | None = None
+    _semaphore_init_lock: threading.Lock = threading.Lock()
+
     def __init__(
         self,
         model: str | None = None,
@@ -362,6 +487,38 @@ class _HeadlessCLIClient:
         self._timeout = timeout
         self._cost_usd: float = 0.0
         self._lock = threading.Lock()
+        #: Set True once the retry loop has fallen back to the class
+        #: default model after an "unknown model" error. Prevents the
+        #: fallback from firing more than once per instance.
+        self._model_fallback_attempted: bool = False
+
+    @classmethod
+    def _get_semaphore(cls) -> threading.Semaphore:
+        """Return the class-level concurrency semaphore, creating it
+        from ``COARSE_HEADLESS_CONCURRENCY`` on first call. Double-
+        checked locking so concurrent first-instantiations don't
+        create two semaphores for the same class.
+        """
+        # Walk the MRO to check if *this* class has its own semaphore
+        # attribute (not an inherited ``None`` from the base). Using
+        # ``cls.__dict__`` avoids picking up the base's None.
+        if cls.__dict__.get("_semaphore") is not None:
+            return cls.__dict__["_semaphore"]  # type: ignore[return-value]
+        with cls._semaphore_init_lock:
+            if cls.__dict__.get("_semaphore") is None:
+                cls._semaphore = threading.Semaphore(_parse_concurrency_env())
+        return cls.__dict__["_semaphore"]  # type: ignore[return-value]
+
+    def _can_fall_back_to_default_model(self) -> bool:
+        """Subclasses override: return True when the current model
+        differs from the class default AND a fallback hasn't yet
+        been attempted."""
+        return False
+
+    def _fall_back_to_default_model(self) -> None:
+        """Subclasses override: swap the current model for the
+        class default and flip ``_model_fallback_attempted``."""
+        self._model_fallback_attempted = True
 
     @property
     def model(self) -> str:
@@ -396,52 +553,115 @@ class _HeadlessCLIClient:
         return prompt
 
     def _run(self, prompt: str, *, timeout: int | None = None) -> str:
-        cmd = self._build_cmd()
-        try:
-            proc = subprocess.run(
-                cmd,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                # Force UTF-8 decode regardless of the user's locale.
-                # Without this Python falls back to
-                # `locale.getpreferredencoding(False)` — cp1252 on
-                # default Windows — and crashes with UnicodeDecodeError
-                # the first time a claude/codex/gemini response
-                # contains a Greek letter, math symbol, em-dash, or
-                # emoji. `errors="replace"` keeps us alive on the rare
-                # truly invalid byte instead of crashing the whole
-                # 25-minute review. See also the `LANG`/`LC_ALL` forcing
-                # in `_clean_subprocess_env` which makes the child CLI
-                # write UTF-8 in the first place.
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout or self._timeout,
-                check=False,
-                env=_clean_subprocess_env(),
-            )
-        except FileNotFoundError as exc:
-            # The host CLI binary isn't on PATH. Surface an
-            # actionable install hint instead of letting the opaque
-            # `[Errno 2] No such file or directory: 'claude'` bubble
-            # up through 10 pipeline stages of logs.
-            raise RuntimeError(
-                f"{self.display_name} binary not found on PATH. "
-                f"Install it with: {self._install_hint()}"
-            ) from exc
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(
-                f"{self.display_name} timed out after {timeout or self._timeout}s"
-            ) from exc
-        if proc.returncode != 0:
+        """Run the host CLI once with retry on transient failures.
+
+        The retry loop is shared by all three clients:
+
+        1. **Concurrency semaphore**: at most ``N`` subprocesses of
+           this class run at once (default 3, override via
+           ``COARSE_HEADLESS_CONCURRENCY``). The semaphore protects
+           against Claude Max / ChatGPT Pro / Gemini rate limits
+           when the pipeline spawns 10 parallel section reviews.
+        2. **Attempt loop**: up to ``_MAX_RUN_ATTEMPTS`` (3) tries
+           with ``_RUN_BACKOFF_SECONDS`` delays between them. Only
+           failures classified as transient via
+           ``_is_transient_cli_error`` are retried; everything else
+           fails fast.
+        3. **Permanent failures skip retry**: ``FileNotFoundError``
+           (missing binary), Python-level timeout, auth-expired
+           stderr, and generic non-zero exits without a transient
+           pattern.
+        4. **Unknown-model fallback**: on an "unknown model" error
+           the loop tries once more with the class default model,
+           at most once per instance.
+        """
+        with type(self)._get_semaphore():
+            return self._run_with_retry(prompt, timeout=timeout)
+
+    def _run_with_retry(self, prompt: str, *, timeout: int | None = None) -> str:
+        last_status = -1
+        last_stderr = ""
+        for attempt in range(_MAX_RUN_ATTEMPTS):
+            if attempt > 0:
+                sleep_seconds = _RUN_BACKOFF_SECONDS[
+                    min(attempt - 1, len(_RUN_BACKOFF_SECONDS) - 1)
+                ]
+                logger.warning(
+                    "%s retry %d/%d after %.0fs backoff (last status=%d, stderr=%s)",
+                    self.display_name,
+                    attempt + 1,
+                    _MAX_RUN_ATTEMPTS,
+                    sleep_seconds,
+                    last_status,
+                    last_stderr[:200],
+                )
+                time.sleep(sleep_seconds)
+
+            cmd = self._build_cmd()
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    input=prompt,
+                    capture_output=True,
+                    text=True,
+                    # Force UTF-8 decode regardless of the user's locale.
+                    # See commit edb6dde for the full story.
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=timeout or self._timeout,
+                    check=False,
+                    env=_clean_subprocess_env(),
+                )
+            except FileNotFoundError as exc:
+                # Permanent: binary missing. No point retrying.
+                raise RuntimeError(
+                    f"{self.display_name} binary not found on PATH. "
+                    f"Install it with: {self._install_hint()}"
+                ) from exc
+            except subprocess.TimeoutExpired as exc:
+                # Permanent at the Python-level timeout. The caller's
+                # ``timeout`` is already the maximum wait budget; if
+                # we retried we'd be cheating that contract.
+                raise RuntimeError(
+                    f"{self.display_name} timed out after {timeout or self._timeout}s"
+                ) from exc
+
+            if proc.returncode == 0:
+                return proc.stdout
+
             stderr = proc.stderr or ""
+            last_status = proc.returncode
+            last_stderr = stderr
+
+            # Auth failures are permanent — the user needs to log in.
             auth_hint = _classify_cli_error(stderr)
             if auth_hint:
                 raise RuntimeError(
                     f"{self.display_name} auth failure. {auth_hint} Raw error: {stderr[:300]}"
                 )
+
+            # Unknown-model fallback: swap to the class default model
+            # and retry once. Does not consume a backoff slot because
+            # the fallback is a recovery action, not a patience test.
+            if _is_unknown_model_error(stderr) and self._can_fall_back_to_default_model():
+                self._fall_back_to_default_model()
+                # Decrement attempt counter via a loop re-entry, no
+                # backoff sleep — we want this recovery to be instant.
+                continue
+
+            # Transient failures get a retry, subject to the attempt cap.
+            if _is_transient_cli_error(stderr, proc.returncode) and attempt < _MAX_RUN_ATTEMPTS - 1:
+                continue
+
+            # Permanent or retries exhausted.
             raise RuntimeError(f"{self.display_name} exited {proc.returncode}: {stderr[:500]}")
-        return proc.stdout
+
+        # The loop should always either return successfully or raise.
+        # This line is unreachable in practice but keeps mypy happy.
+        raise RuntimeError(
+            f"{self.display_name} failed after {_MAX_RUN_ATTEMPTS} attempts "
+            f"(last status={last_status}): {last_stderr[:300]}"
+        )
 
     def complete(
         self,
@@ -543,6 +763,23 @@ class ClaudeCodeClient(_HeadlessCLIClient):
     def _install_hint(self) -> str:
         return "npm install -g @anthropic-ai/claude-code@latest (or https://claude.ai/download)"
 
+    def _can_fall_back_to_default_model(self) -> bool:
+        if self._model_fallback_attempted:
+            return False
+        default = HEADLESS_DEFAULT_MODELS["claude"]
+        return bool(self._claude_model) and self._claude_model != default
+
+    def _fall_back_to_default_model(self) -> None:
+        default = HEADLESS_DEFAULT_MODELS["claude"]
+        logger.warning(
+            "Claude Code rejected model %r — falling back to default %r. "
+            "Override the model with --model <name> on the next run.",
+            self._claude_model,
+            default,
+        )
+        self._claude_model = default
+        self._model_fallback_attempted = True
+
     def _ensure_effort_probed(self) -> None:
         """Probe whether ``claude -p --help`` mentions ``--effort``,
         caching the result on the class so every subsequent client in
@@ -635,6 +872,26 @@ class CodexClient(_HeadlessCLIClient):
 
     def _install_hint(self) -> str:
         return "npm install -g @openai/codex@latest (or https://developers.openai.com/codex/cli)"
+
+    def _can_fall_back_to_default_model(self) -> bool:
+        if self._model_fallback_attempted:
+            return False
+        if self._codex_model is None:
+            # Already using codex's built-in default — nothing to fall back to.
+            return False
+        default = HEADLESS_DEFAULT_MODELS["codex"]
+        return self._codex_model != default
+
+    def _fall_back_to_default_model(self) -> None:
+        default = HEADLESS_DEFAULT_MODELS["codex"]
+        logger.warning(
+            "Codex rejected model %r — falling back to default %r. "
+            "Override the model with --model <name> on the next run.",
+            self._codex_model,
+            default,
+        )
+        self._codex_model = default
+        self._model_fallback_attempted = True
 
     def _ensure_config_override_probed(self) -> None:
         """Probe whether ``codex exec --help`` mentions ``-c`` config
@@ -743,6 +1000,25 @@ class GeminiClient(_HeadlessCLIClient):
 
     def _install_hint(self) -> str:
         return "npm install -g @google/gemini-cli@latest (or https://github.com/google-gemini/gemini-cli)"
+
+    def _can_fall_back_to_default_model(self) -> bool:
+        if self._model_fallback_attempted:
+            return False
+        if self._gemini_model is None:
+            return False
+        default = HEADLESS_DEFAULT_MODELS["gemini"]
+        return self._gemini_model != default
+
+    def _fall_back_to_default_model(self) -> None:
+        default = HEADLESS_DEFAULT_MODELS["gemini"]
+        logger.warning(
+            "Gemini CLI rejected model %r — falling back to default %r. "
+            "Override the model with --model <name> on the next run.",
+            self._gemini_model,
+            default,
+        )
+        self._gemini_model = default
+        self._model_fallback_attempted = True
 
     def _ensure_flags_probed(self) -> None:
         cls = type(self)

@@ -539,3 +539,293 @@ def test_run_preserves_generic_errors_without_auth_hint() -> None:
     assert "Syntax error" in msg
     # No auth hint should be injected.
     assert "login" not in msg.lower()
+
+
+# ─────────────────────────────────────────────────────────────────
+# Commit 2: retry loop, model fallback, semaphore, transient
+# ─────────────────────────────────────────────────────────────────
+
+
+def _make_fake_proc(returncode: int, stdout: str = "", stderr: str = ""):
+    p = MagicMock()
+    p.returncode = returncode
+    p.stdout = stdout
+    p.stderr = stderr
+    return p
+
+
+def test_classify_transient_error_recognizes_rate_limits() -> None:
+    from coarse.headless_clients import _is_transient_cli_error
+
+    assert _is_transient_cli_error("Error: rate limit exceeded", 1) is True
+    assert _is_transient_cli_error("429 Too Many Requests", 1) is True
+    assert _is_transient_cli_error("503 Service Unavailable", 1) is True
+    assert _is_transient_cli_error("connection reset by peer", 1) is True
+    assert _is_transient_cli_error("please try again later", 1) is True
+    # GNU timeout(1) exit code, no stderr.
+    assert _is_transient_cli_error("", 124) is True
+
+
+def test_classify_transient_error_rejects_permanent() -> None:
+    from coarse.headless_clients import _is_transient_cli_error
+
+    assert _is_transient_cli_error("Syntax error in prompt", 1) is False
+    assert _is_transient_cli_error("Unknown argument: --effort", 2) is False
+    assert _is_transient_cli_error("", 1) is False
+    assert _is_transient_cli_error("authentication failed", 1) is False
+
+
+def test_classify_unknown_model_error() -> None:
+    from coarse.headless_clients import _is_unknown_model_error
+
+    assert _is_unknown_model_error("Error: unknown model 'claude-opus-5-zeta'") is True
+    assert _is_unknown_model_error("model not found: gpt-9") is True
+    assert _is_unknown_model_error("Invalid model 'x'") is True
+    assert _is_unknown_model_error("") is False
+    assert _is_unknown_model_error("rate limit") is False
+
+
+def test_run_retries_transient_failure_then_succeeds(monkeypatch) -> None:
+    """First two calls return 429, third succeeds. _run should return
+    the third call's stdout, not raise."""
+    _mark_claude_effort_supported(True)
+    # Zero out the backoff so the test runs fast.
+    monkeypatch.setattr("coarse.headless_clients._RUN_BACKOFF_SECONDS", (0, 0))
+    client = ClaudeCodeClient(claude_bin="claude")
+
+    call_results = [
+        _make_fake_proc(1, stderr="Error: 429 rate limit exceeded"),
+        _make_fake_proc(1, stderr="Error: 503 Service Unavailable"),
+        _make_fake_proc(0, stdout="final success"),
+    ]
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        side_effect=call_results,
+    ) as mock_run:
+        result = client._run("prompt")
+
+    assert result == "final success"
+    assert mock_run.call_count == 3
+
+
+def test_run_exhausts_retry_on_persistent_rate_limit(monkeypatch) -> None:
+    """All three attempts return 429. _run should raise with the
+    stderr from the last attempt."""
+    _mark_claude_effort_supported(True)
+    monkeypatch.setattr("coarse.headless_clients._RUN_BACKOFF_SECONDS", (0, 0))
+    client = ClaudeCodeClient(claude_bin="claude")
+
+    rate_limited = _make_fake_proc(1, stderr="429 rate limit")
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        return_value=rate_limited,
+    ) as mock_run:
+        with pytest.raises(RuntimeError, match="exited 1"):
+            client._run("prompt")
+
+    assert mock_run.call_count == 3
+
+
+def test_run_does_not_retry_permanent_failure(monkeypatch) -> None:
+    """A syntax error in stderr is permanent — fail fast, no retry."""
+    _mark_claude_effort_supported(True)
+    monkeypatch.setattr("coarse.headless_clients._RUN_BACKOFF_SECONDS", (0, 0))
+    client = ClaudeCodeClient(claude_bin="claude")
+
+    syntax_error = _make_fake_proc(2, stderr="Error: invalid syntax in template")
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        return_value=syntax_error,
+    ) as mock_run:
+        with pytest.raises(RuntimeError, match="exited 2"):
+            client._run("prompt")
+
+    assert mock_run.call_count == 1
+
+
+def test_run_does_not_retry_auth_failure(monkeypatch) -> None:
+    """Auth failures are permanent — user needs to log in, retrying
+    won't help."""
+    _mark_claude_effort_supported(True)
+    monkeypatch.setattr("coarse.headless_clients._RUN_BACKOFF_SECONDS", (0, 0))
+    client = ClaudeCodeClient(claude_bin="claude")
+
+    auth_fail = _make_fake_proc(1, stderr="not authenticated — run `claude login`")
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        return_value=auth_fail,
+    ) as mock_run:
+        with pytest.raises(RuntimeError, match="auth failure"):
+            client._run("prompt")
+
+    assert mock_run.call_count == 1
+
+
+def test_run_falls_back_to_default_model_on_unknown_model(monkeypatch) -> None:
+    """First call fails with 'unknown model', second call with the
+    default model succeeds. _run swaps models and returns."""
+    _mark_claude_effort_supported(True)
+    monkeypatch.setattr("coarse.headless_clients._RUN_BACKOFF_SECONDS", (0, 0))
+
+    from coarse.models import HEADLESS_DEFAULT_MODELS
+
+    default = HEADLESS_DEFAULT_MODELS["claude"]
+    client = ClaudeCodeClient(
+        claude_bin="claude",
+        claude_model="claude-opus-5-zeta-preview",  # non-existent
+    )
+    assert client._claude_model != default
+
+    call_results = [
+        _make_fake_proc(1, stderr="Error: unknown model 'claude-opus-5-zeta-preview'"),
+        _make_fake_proc(0, stdout="ok with default"),
+    ]
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        side_effect=call_results,
+    ):
+        result = client._run("prompt")
+
+    assert result == "ok with default"
+    # Model was swapped to the class default.
+    assert client._claude_model == default
+    # The fallback flag is set so a second unknown-model error won't
+    # loop.
+    assert client._model_fallback_attempted is True
+
+
+def test_run_only_falls_back_to_default_model_once(monkeypatch) -> None:
+    """Both the user model AND the default fail. No infinite loop —
+    the fallback triggers once, then the loop treats the second
+    unknown-model error as permanent."""
+    _mark_claude_effort_supported(True)
+    monkeypatch.setattr("coarse.headless_clients._RUN_BACKOFF_SECONDS", (0, 0))
+
+    client = ClaudeCodeClient(claude_bin="claude", claude_model="broken-user-pick")
+
+    persistent_unknown = _make_fake_proc(1, stderr="unknown model")
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        return_value=persistent_unknown,
+    ) as mock_run:
+        with pytest.raises(RuntimeError):
+            client._run("prompt")
+
+    # At most: first attempt (unknown model, fallback triggered) +
+    # second attempt (unknown model, no more fallback, fails).
+    # Third would happen only if the classifier treated "unknown
+    # model" as transient — verify it doesn't.
+    assert mock_run.call_count == 2
+
+
+def test_codex_model_fallback_noop_when_no_user_model(monkeypatch) -> None:
+    """If codex_model=None we're already using codex's built-in
+    default — nothing to fall back to, so don't try."""
+    _mark_codex_config_override_supported(True)
+    client = CodexClient(codex_bin="codex")  # codex_model defaults to None
+    assert client._can_fall_back_to_default_model() is False
+
+
+def test_gemini_model_fallback_noop_when_no_user_model(monkeypatch) -> None:
+    _mark_gemini_flags_supported(approval_mode=True, output_format=True)
+    client = GeminiClient(gemini_bin="gemini")  # gemini_model defaults to None
+    assert client._can_fall_back_to_default_model() is False
+
+
+def test_parse_concurrency_env_defaults_on_missing(monkeypatch) -> None:
+    from coarse.headless_clients import _CONCURRENCY_DEFAULT, _parse_concurrency_env
+
+    monkeypatch.delenv("COARSE_HEADLESS_CONCURRENCY", raising=False)
+    assert _parse_concurrency_env() == _CONCURRENCY_DEFAULT
+
+
+def test_parse_concurrency_env_accepts_valid_override(monkeypatch) -> None:
+    from coarse.headless_clients import _parse_concurrency_env
+
+    monkeypatch.setenv("COARSE_HEADLESS_CONCURRENCY", "7")
+    assert _parse_concurrency_env() == 7
+
+
+def test_parse_concurrency_env_rejects_invalid_and_oor(monkeypatch) -> None:
+    from coarse.headless_clients import _CONCURRENCY_DEFAULT, _parse_concurrency_env
+
+    monkeypatch.setenv("COARSE_HEADLESS_CONCURRENCY", "not-an-int")
+    assert _parse_concurrency_env() == _CONCURRENCY_DEFAULT
+
+    monkeypatch.setenv("COARSE_HEADLESS_CONCURRENCY", "0")
+    assert _parse_concurrency_env() == _CONCURRENCY_DEFAULT
+
+    monkeypatch.setenv("COARSE_HEADLESS_CONCURRENCY", "999")
+    assert _parse_concurrency_env() == _CONCURRENCY_DEFAULT
+
+
+def test_semaphore_caps_concurrent_subprocesses(monkeypatch) -> None:
+    """Verify the per-class semaphore actually limits parallelism.
+    Spawn more concurrent _run calls than the limit and confirm that
+    at any moment, no more than `limit` are inside subprocess.run.
+    """
+    import threading as _threading
+
+    _mark_claude_effort_supported(True)
+    monkeypatch.setenv("COARSE_HEADLESS_CONCURRENCY", "2")
+    # Reset any cached semaphore on the class so the env var takes effect.
+    if "_semaphore" in ClaudeCodeClient.__dict__:
+        del ClaudeCodeClient._semaphore
+
+    active = 0
+    max_active = 0
+    lock = _threading.Lock()
+    gate = _threading.Event()
+
+    def fake_run(*args, **kwargs):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        # Hold the subprocess "running" until the gate is tripped so
+        # multiple threads stack inside at once.
+        gate.wait(timeout=1)
+        with lock:
+            active -= 1
+        return _make_fake_proc(0, stdout="ok")
+
+    with patch("coarse.headless_clients.subprocess.run", side_effect=fake_run):
+        client = ClaudeCodeClient(claude_bin="claude")
+        threads = [_threading.Thread(target=lambda: client._run("p")) for _ in range(5)]
+        for t in threads:
+            t.start()
+        # Let the first batch land inside subprocess.run.
+        import time as _time
+
+        _time.sleep(0.05)
+        gate.set()
+        for t in threads:
+            t.join(timeout=3)
+
+    assert max_active <= 2, f"semaphore did not cap concurrency: saw {max_active}"
+
+    # Cleanup: drop the class-level semaphore so subsequent tests get
+    # a fresh one with whatever COARSE_HEADLESS_CONCURRENCY they set.
+    if "_semaphore" in ClaudeCodeClient.__dict__:
+        del ClaudeCodeClient._semaphore
+
+
+def test_run_handles_large_prompt_stdin() -> None:
+    """500 KB prompts (realistic for big papers) round-trip through
+    _run without hanging or truncation."""
+    _mark_claude_effort_supported(True)
+    client = ClaudeCodeClient(claude_bin="claude")
+
+    large_prompt = "X" * (500 * 1024)
+    received_inputs: list[str] = []
+
+    def fake_run(cmd, **kwargs):
+        received_inputs.append(kwargs.get("input", ""))
+        return _make_fake_proc(0, stdout="ok")
+
+    with patch("coarse.headless_clients.subprocess.run", side_effect=fake_run):
+        result = client._run(large_prompt)
+
+    assert result == "ok"
+    assert len(received_inputs) == 1
+    assert len(received_inputs[0]) == len(large_prompt)

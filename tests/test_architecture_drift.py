@@ -47,6 +47,15 @@ KNOWN_OVERSIZED: dict[str, int] = {
     # llm.py wraps litellm + instructor + retry + cost tracking.
     # Splitting it requires an API redesign, also deferred.
     "llm": 1000,
+    # headless_clients.py holds the Claude / Codex / Gemini headless
+    # LLMClient replacements + the shared retry / semaphore / probe
+    # / fallback infrastructure. Post-v1.3.0 candidates for splitting
+    # into claude_client.py / codex_client.py / gemini_client.py /
+    # headless_transport.py, but each client's surface is tightly
+    # coupled to the shared base and the split isn't free. Cap
+    # bumped in commit ${COMMIT2_SHA} when the retry-loop + model-
+    # fallback + semaphore landed.
+    "headless_clients": 1100,
 }
 
 

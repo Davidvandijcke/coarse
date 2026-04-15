@@ -286,6 +286,27 @@ _SKILL_HOSTS: dict[str, tuple[str, str]] = {
     "gemini": ("gemini_cli", ".gemini/skills/coarse-review"),
 }
 
+# Sentinel file written alongside SKILL.md at install time so the
+# next install can detect version drift. Users who installed an old
+# coarse-ink version months ago and upgraded to a newer one won't
+# otherwise know their local skill bundle is stale — install-skills
+# always overwrites, but without the sentinel there's no notice when
+# a replacement happens. Single ``__version__`` line, no structure.
+_SKILL_VERSION_FILE = ".coarse-version"
+
+
+def _read_skill_version(dest: Path) -> str | None:
+    """Return the coarse-ink version recorded in the skill bundle
+    at ``dest`` (if any), or ``None`` if the sentinel is missing or
+    unreadable."""
+    sentinel = dest / _SKILL_VERSION_FILE
+    if not sentinel.exists():
+        return None
+    try:
+        return sentinel.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
 
 def _bin_available(name: str) -> bool:
     import shutil
@@ -314,6 +335,8 @@ def install_skills(
     """
     from importlib.resources import files as resource_files
 
+    from coarse import __version__ as _current_version
+
     try:
         skills_root = resource_files("coarse") / "_skills"
     except (ModuleNotFoundError, FileNotFoundError) as exc:
@@ -333,6 +356,11 @@ def install_skills(
         src = skills_root / pkg_dir
         dest = Path.home() / install_rel
 
+        # Read the version sentinel from any prior install before we
+        # clobber it. Used to decide whether to log a replacement
+        # notice ("refreshed 1.3.0 -> 1.4.0") or a fresh install.
+        previous_version = _read_skill_version(dest)
+
         if dest.exists() and not force:
             # Compare existing SKILL.md — if it's identical, silently refresh.
             try:
@@ -341,6 +369,11 @@ def install_skills(
                 if existing == bundled:
                     console.print(f"  [dim]✓ {host}: already up to date at {dest}[/dim]")
                     installed.append(host)
+                    # Still (re)write the sentinel — previous versions of
+                    # install-skills didn't write it, so on the first run
+                    # after this commit the sentinel may be missing even
+                    # though SKILL.md is already current.
+                    (dest / _SKILL_VERSION_FILE).write_text(_current_version, encoding="utf-8")
                     continue
             except Exception:
                 pass
@@ -368,8 +401,18 @@ def install_skills(
                         encoding="utf-8",
                     )
 
+        # Write the version sentinel last so its presence means
+        # "all prior files in this dir are from this version".
+        (dest / _SKILL_VERSION_FILE).write_text(_current_version, encoding="utf-8")
+
         installed.append(host)
-        console.print(f"  [green]✓ {host}[/green] → {dest}")
+        if previous_version and previous_version != _current_version:
+            console.print(
+                f"  [green]✓ {host}[/green] → {dest} "
+                f"[dim](replaced {previous_version} → {_current_version})[/dim]"
+            )
+        else:
+            console.print(f"  [green]✓ {host}[/green] → {dest}")
 
     console.print()
     if installed:
