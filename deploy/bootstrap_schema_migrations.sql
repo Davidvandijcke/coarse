@@ -7,11 +7,10 @@
 -- applied by hand during initial setup, so apply_migrations.sh will skip
 -- re-applying destructive historical migrations like migrate_email_phase2.
 --
--- The seed list deliberately does NOT include migrate_drop_mcp_handoff_tokens
--- — that one is a post-bootstrap migration that should run against any DB
--- that still has the retired mcp_handoff_tokens table lingering from the
--- earlier migrate_mcp_handoff.sql. It is idempotent (`drop table if exists`)
--- so it is a no-op on a fresh project bootstrapped from the current baseline.
+-- The seed list deliberately does NOT include migrate_rename_handoff_tokens
+-- — that one is a post-bootstrap migration that renames the handoff-token
+-- table to drop the historical `mcp_` prefix (creating it fresh on any
+-- project where it is already gone). It is idempotent end-to-end.
 --
 -- Idempotent — safe to re-run. Only adds names that are missing.
 

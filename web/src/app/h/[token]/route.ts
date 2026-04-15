@@ -82,7 +82,7 @@ export async function GET(
   // distinguish "token not found" (→ 404) from "DB timeout or
   // permission error" (→ 500) — symmetric with `/api/mcp-finalize`.
   const { data: tokenRow, error: tokenErr } = await supabase
-    .from("mcp_handoff_tokens")
+    .from("handoff_tokens")
     .select("token, paper_id, expires_at, consumed_at")
     .eq("token", token)
     .maybeSingle();
@@ -113,9 +113,9 @@ export async function GET(
   // Step 2: look up the review row to get the stored filename, which
   // tells us the storage path (<uuid>.<ext>). Also pull `domain` and
   // `taxonomy` so the handoff bundle surfaces whatever metadata was
-  // recorded at presign time — `taxonomy` was added to the reviews
-  // table by `migrate_mcp_handoff.sql` and is written by `mcp-finalize`
-  // when a handoff review completes, so returning it here keeps the
+  // recorded at presign time — `taxonomy` is inlined in
+  // `supabase_schema.sql` and is written by `mcp-finalize` when a
+  // handoff review completes, so returning it here keeps the
   // column wired end-to-end instead of half-wired (write-only on one
   // side of the handoff, hardcoded empty on the other).
   const { data: reviewRow, error: reviewErr } = await supabase

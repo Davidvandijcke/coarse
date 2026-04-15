@@ -194,7 +194,7 @@ def test_handoff_landing_page_checks_pause_before_token_lookup() -> None:
     assert "getSubmissionPauseState" in text
     assert "if (!pauseState.accepting)" in text
     assert "renderPausedLandingPage" in text
-    assert text.index("getSubmissionPauseState") < text.index('.from("mcp_handoff_tokens")')
+    assert text.index("getSubmissionPauseState") < text.index('.from("handoff_tokens")')
 
 
 def test_system_status_helper_fails_closed() -> None:
