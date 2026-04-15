@@ -694,6 +694,72 @@ def test_run_falls_back_to_default_model_on_unknown_model(monkeypatch) -> None:
     assert client._model_fallback_attempted is True
 
 
+def test_run_fallback_does_not_burn_retry_slot(monkeypatch) -> None:
+    """Unknown-model fallback must NOT consume a transient-retry slot.
+
+    Sequence: user model hits unknown-model error → fall back to default
+    model → default model hits a 429 → should still have 2 retries
+    available (not 1, which was the bug before the while-loop rewrite).
+    """
+    _mark_claude_effort_supported(True)
+    monkeypatch.setattr("coarse.headless_clients._RUN_BACKOFF_SECONDS", (0, 0))
+
+    client = ClaudeCodeClient(
+        claude_bin="claude",
+        claude_model="claude-opus-5-zeta-preview",
+    )
+
+    call_results = [
+        # 1. user model → unknown model → fallback (no attempt consumed)
+        _make_fake_proc(1, stderr="Error: unknown model 'claude-opus-5-zeta-preview'"),
+        # 2. default model, attempt 1 → 429 transient → retry
+        _make_fake_proc(1, stderr="429 rate limit exceeded"),
+        # 3. default model, attempt 2 → 503 transient → retry
+        _make_fake_proc(1, stderr="503 service unavailable"),
+        # 4. default model, attempt 3 → success
+        _make_fake_proc(0, stdout="final ok"),
+    ]
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        side_effect=call_results,
+    ) as mock_run:
+        result = client._run("prompt")
+
+    assert result == "final ok"
+    # Should be exactly 4 subprocess calls: 1 fallback-trigger + 3
+    # full retries on the default model.
+    assert mock_run.call_count == 4
+
+
+def test_run_terminal_error_mentions_original_user_model(monkeypatch) -> None:
+    """When fallback is triggered and the default model also fails
+    permanently, the raised RuntimeError must name the user's
+    originally-selected model so they know which one was rejected."""
+    _mark_claude_effort_supported(True)
+    monkeypatch.setattr("coarse.headless_clients._RUN_BACKOFF_SECONDS", (0, 0))
+
+    client = ClaudeCodeClient(
+        claude_bin="claude",
+        claude_model="claude-opus-5-zeta-preview",
+    )
+
+    call_results = [
+        _make_fake_proc(1, stderr="Error: unknown model 'claude-opus-5-zeta-preview'"),
+        _make_fake_proc(2, stderr="Error: some permanent failure on the default model"),
+    ]
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        side_effect=call_results,
+    ):
+        with pytest.raises(RuntimeError) as excinfo:
+            client._run("prompt")
+
+    msg = str(excinfo.value)
+    assert "some permanent failure" in msg
+    assert "claude-opus-5-zeta-preview" in msg
+    assert "user-selected model" in msg
+
+
 def test_run_only_falls_back_to_default_model_once(monkeypatch) -> None:
     """Both the user model AND the default fail. No infinite loop —
     the fallback triggers once, then the loop treats the second

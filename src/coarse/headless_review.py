@@ -301,8 +301,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except ImportError as exc:
         print(
-            f"ERROR: coarse-ink not installed ({exc}).\n"
-            f"Install with: pip install 'coarse-ink[mcp]'",
+            f"ERROR: coarse-ink not installed ({exc}).\nInstall with: pip install coarse-ink",
             file=sys.stderr,
         )
         return 4

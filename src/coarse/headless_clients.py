@@ -579,23 +579,30 @@ class _HeadlessCLIClient:
             return self._run_with_retry(prompt, timeout=timeout)
 
     def _run_with_retry(self, prompt: str, *, timeout: int | None = None) -> str:
-        last_status = -1
+        # Manual attempt counter so an unknown-model fallback swap can
+        # re-enter the loop WITHOUT consuming a transient-retry slot
+        # AND without triggering the backoff sleep on the next
+        # iteration. A for-loop would auto-increment and the `continue`
+        # would land on `attempt > 0` + a mandatory 2s sleep.
+        attempt = 0
+        just_fell_back = False
         last_stderr = ""
-        for attempt in range(_MAX_RUN_ATTEMPTS):
-            if attempt > 0:
+        original_user_model: str | None = None
+        while attempt < _MAX_RUN_ATTEMPTS:
+            if attempt > 0 and not just_fell_back:
                 sleep_seconds = _RUN_BACKOFF_SECONDS[
                     min(attempt - 1, len(_RUN_BACKOFF_SECONDS) - 1)
                 ]
                 logger.warning(
-                    "%s retry %d/%d after %.0fs backoff (last status=%d, stderr=%s)",
+                    "%s retry %d/%d after %.0fs backoff (stderr=%s)",
                     self.display_name,
                     attempt + 1,
                     _MAX_RUN_ATTEMPTS,
                     sleep_seconds,
-                    last_status,
                     last_stderr[:200],
                 )
                 time.sleep(sleep_seconds)
+            just_fell_back = False
 
             cmd = self._build_cmd()
             try:
@@ -604,8 +611,6 @@ class _HeadlessCLIClient:
                     input=prompt,
                     capture_output=True,
                     text=True,
-                    # Force UTF-8 decode regardless of the user's locale.
-                    # See commit edb6dde for the full story.
                     encoding="utf-8",
                     errors="replace",
                     timeout=timeout or self._timeout,
@@ -613,15 +618,11 @@ class _HeadlessCLIClient:
                     env=_clean_subprocess_env(),
                 )
             except FileNotFoundError as exc:
-                # Permanent: binary missing. No point retrying.
                 raise RuntimeError(
                     f"{self.display_name} binary not found on PATH. "
                     f"Install it with: {self._install_hint()}"
                 ) from exc
             except subprocess.TimeoutExpired as exc:
-                # Permanent at the Python-level timeout. The caller's
-                # ``timeout`` is already the maximum wait budget; if
-                # we retried we'd be cheating that contract.
                 raise RuntimeError(
                     f"{self.display_name} timed out after {timeout or self._timeout}s"
                 ) from exc
@@ -630,38 +631,44 @@ class _HeadlessCLIClient:
                 return proc.stdout
 
             stderr = proc.stderr or ""
-            last_status = proc.returncode
             last_stderr = stderr
 
-            # Auth failures are permanent — the user needs to log in.
             auth_hint = _classify_cli_error(stderr)
             if auth_hint:
                 raise RuntimeError(
                     f"{self.display_name} auth failure. {auth_hint} Raw error: {stderr[:300]}"
                 )
 
-            # Unknown-model fallback: swap to the class default model
-            # and retry once. Does not consume a backoff slot because
-            # the fallback is a recovery action, not a patience test.
+            # Unknown-model fallback: swap to the class default and
+            # re-enter the loop WITHOUT incrementing `attempt`, so the
+            # fallback model still gets its full retry budget on
+            # subsequent transient failures.
             if _is_unknown_model_error(stderr) and self._can_fall_back_to_default_model():
+                if original_user_model is None:
+                    original_user_model = (
+                        getattr(self, "_claude_model", None)
+                        or getattr(self, "_codex_model", None)
+                        or getattr(self, "_gemini_model", None)
+                    )
                 self._fall_back_to_default_model()
-                # Decrement attempt counter via a loop re-entry, no
-                # backoff sleep — we want this recovery to be instant.
+                just_fell_back = True
                 continue
 
-            # Transient failures get a retry, subject to the attempt cap.
             if _is_transient_cli_error(stderr, proc.returncode) and attempt < _MAX_RUN_ATTEMPTS - 1:
+                attempt += 1
                 continue
 
-            # Permanent or retries exhausted.
-            raise RuntimeError(f"{self.display_name} exited {proc.returncode}: {stderr[:500]}")
+            suffix = ""
+            if original_user_model is not None:
+                suffix = (
+                    f" (user-selected model {original_user_model!r} was "
+                    f"rejected first; retried with default)"
+                )
+            raise RuntimeError(
+                f"{self.display_name} exited {proc.returncode}: {stderr[:500]}{suffix}"
+            )
 
-        # The loop should always either return successfully or raise.
-        # This line is unreachable in practice but keeps mypy happy.
-        raise RuntimeError(
-            f"{self.display_name} failed after {_MAX_RUN_ATTEMPTS} attempts "
-            f"(last status={last_status}): {last_stderr[:300]}"
-        )
+        raise AssertionError("unreachable: _run_with_retry exited the loop")
 
     def complete(
         self,

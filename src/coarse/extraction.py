@@ -80,9 +80,8 @@ def _extract_pymupdf4llm(path: Path) -> str:
         import pymupdf4llm
     except ImportError as exc:
         raise ExtractionError(
-            "pymupdf4llm is not installed. Add 'pymupdf4llm' to your "
-            "environment (or install coarse-ink[mcp]) to enable the fast "
-            "extraction path."
+            "pymupdf4llm is not installed. Install it with "
+            "`pip install pymupdf4llm` to enable the fast extraction path."
         ) from exc
 
     pymupdf4llm.use_layout(False)

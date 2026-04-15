@@ -392,7 +392,7 @@ def _classify_api_error(exc: BaseException) -> str | None:
         status = getattr(resp, "status_code", None)
     msg = str(exc).lower()
 
-    if status == 401 or "invalid" in msg and "key" in msg or "unauthorized" in msg:
+    if status == 401 or ("invalid" in msg and "key" in msg) or "unauthorized" in msg:
         return "Invalid API key. Check that your key is correct and active."
     if status == 402 or any(
         kw in msg

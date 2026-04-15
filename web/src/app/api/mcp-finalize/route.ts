@@ -234,23 +234,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Best-effort storage cleanup after a successful finalize. Remove both
-  // the original upload (`<paper_id>.<ext>`) and any extracted MCP state
-  // blob (`<paper_id>.mcp.json`). If deletion fails, the normal 24h cleanup
-  // cron can still sweep the stragglers.
-  const storageObjects = [`${paperId}.mcp.json`];
+  // Best-effort cleanup of the uploaded paper after a successful finalize.
+  // The `<paper_id>.mcp.json` state blob from the retired MCP extract path
+  // is no longer written by any v1.3.0 code path, so it's no longer on the
+  // cleanup list. If deletion fails, the 24h cleanup cron sweeps the
+  // straggler.
   const sourceExt = getExtension(String(reviewMeta?.paper_filename ?? ""));
   if (sourceExt) {
-    storageObjects.unshift(`${paperId}${sourceExt}`);
-  }
-  try {
-    await supabase.storage.from("papers").remove(storageObjects);
-  } catch (cleanupErr) {
-    console.error("[mcp-finalize] storage cleanup failed", {
-      paperId,
-      storageObjects,
-      cleanupErr,
-    });
+    const storageObjects = [`${paperId}${sourceExt}`];
+    try {
+      await supabase.storage.from("papers").remove(storageObjects);
+    } catch (cleanupErr) {
+      console.error("[mcp-finalize] storage cleanup failed", {
+        paperId,
+        storageObjects,
+        cleanupErr,
+      });
+    }
   }
   try {
     await supabase.from("review_handoff_secrets").delete().eq("review_id", paperId);
