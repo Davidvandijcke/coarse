@@ -83,45 +83,13 @@ create index idx_review_handoff_secrets_created_at on review_handoff_secrets (cr
 --
 -- Single-use capability tokens that let the locally-running
 -- ``coarse-review --handoff`` CLI fetch a paper bundle and POST the
--- finished review back without holding a Supabase service key. Legacy
--- name (``mcp_*``) is kept because every v1.3.0 CLI and every row the
--- browser-side mint path writes references it; renaming would require
--- a coordinated CLI release and a dual-read migration window. See
--- web/src/app/api/cli-handoff/route.ts, web/src/app/h/[token]/route.ts,
--- and web/src/app/api/mcp-finalize/route.ts for the three call sites.
--- TTL lives in FINALIZE_TOKEN_TTL_MINUTES on the server; 3 hours.
-
-create table mcp_handoff_tokens (
-  token uuid primary key default gen_random_uuid(),
-  paper_id uuid not null references reviews(id) on delete cascade,
-  created_at timestamptz default now(),
-  expires_at timestamptz not null,
-  consumed_at timestamptz
-);
-
-create index idx_mcp_handoff_expiry on mcp_handoff_tokens (expires_at);
-
-alter table mcp_handoff_tokens enable row level security;
-
--- Opportunistic sweep called from /api/cli-handoff on each mint to
--- keep the table bounded. Removes expired tokens and consumed tokens
--- older than 5 minutes (the 5-min grace lets a client idempotently
--- retry a callback that lost its response to a network blip).
-create or replace function cleanup_mcp_handoff_tokens()
-returns int
-language plpgsql
-security definer
-as $$
-declare
-  deleted_count int;
-begin
-  delete from mcp_handoff_tokens
-  where expires_at < now()
-     or (consumed_at is not null and consumed_at < now() - interval '5 minutes');
-  get diagnostics deleted_count = row_count;
-  return deleted_count;
-end;
-$$;
+-- finished review back without holding a Supabase service key. The
+-- table + cleanup function live in ``deploy/migrate_rename_handoff_tokens.sql``
+-- as a post-bootstrap migration (created fresh on any project where
+-- the legacy ``mcp_handoff_tokens`` table is already gone, renamed in
+-- place otherwise). See web/src/app/api/cli-handoff/route.ts,
+-- web/src/app/h/[token]/route.ts, and web/src/app/api/mcp-finalize/route.ts
+-- for the three call sites. TTL is FINALIZE_TOKEN_TTL_MINUTES (3h).
 
 -- ============================================================================
 -- Storage buckets
