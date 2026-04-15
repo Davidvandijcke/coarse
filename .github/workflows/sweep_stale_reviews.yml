@@ -115,10 +115,14 @@ jobs:
                       prefix = rid[:8]
                   else:
                       prefix = "????????"
-                  print(
-                      f"  {row['status']:8} {prefix}... "
-                      f"created={row['created_at']}"
-                  )
+                  # Defensive row access: the select hard-codes
+                  # id,status,created_at so a missing field would
+                  # indicate an upstream schema drift. Fall back to
+                  # placeholder strings rather than KeyError'ing and
+                  # aborting the sweep before the PATCH runs.
+                  status = str(row.get("status") or "?")
+                  created = row.get("created_at") or "?"
+                  print(f"  {status:8} {prefix}... created={created}")
 
               api(
                   "PATCH",

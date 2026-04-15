@@ -3,8 +3,8 @@
 These tests don't exercise Next.js — the web package has no JS test
 runner. Instead they read the TypeScript source verbatim and assert
 that the specific unsafe strings Codex security flagged are gone.
-Cheaper than adding a vitest dependency for three assertions, and
-enough to catch an accidental revert during review.
+Cheaper than adding a vitest dependency for a handful of grep-style
+assertions, and enough to catch an accidental revert during review.
 
 Covers three findings:
 
@@ -67,47 +67,48 @@ def test_mcp_handoff_prompt_does_not_leak_api_key() -> None:
 def test_cli_handoff_route_does_not_trust_forwarded_host() -> None:
     src = _read("web/src/app/api/cli-handoff/route.ts")
 
-    # The vulnerable rewrite (finding #4) lived inside an
-    # ``if (siteUrl.includes("localhost"))`` branch that replaced
-    # ``siteUrl`` with ``https://${forwardedHost}``. We strip the
-    # comments first so that the security-note comment explaining the
-    # fix can freely reference both ``x-forwarded-host`` and
-    # ``https://${forwardedHost}`` without tripping the guard.
-    code_only_lines: list[str] = []
-    in_block_comment = False
-    for raw_line in src.splitlines():
-        line = raw_line
-        if in_block_comment:
-            end = line.find("*/")
-            if end == -1:
-                continue
-            line = line[end + 2 :]
-            in_block_comment = False
-        while "/*" in line:
-            start = line.find("/*")
-            end = line.find("*/", start + 2)
-            if end == -1:
-                line = line[:start]
-                in_block_comment = True
-                break
-            line = line[:start] + line[end + 2 :]
-        # Drop // line comments, but respect a naive string-literal
-        # skip so we don't accidentally chop an http URL embedded in a
-        # string. Our route only has plain `//` comments, so the simple
-        # rule is sufficient.
-        if "//" in line and '"' not in line.split("//", 1)[0]:
-            line = line.split("//", 1)[0]
-        code_only_lines.append(line)
-    code_only = "\n".join(code_only_lines)
-
-    assert "x-forwarded-host" not in code_only.lower(), (
-        "cli-handoff route still reads x-forwarded-host in executable "
-        "code — that header is attacker-controllable and must not feed "
-        "into the handoff URL."
+    # The vulnerable rewrite (finding #4) read an attacker-controllable
+    # header and interpolated it into the handoff URL. Guard against:
+    #
+    #   (a) the exact vulnerable expression (``https://${forwardedHost}``),
+    #   (b) any ``request.headers.get(...)`` call whose argument is a
+    #       forwarding / host header, anywhere in the file — comments
+    #       included. That's a deliberately strict check: a comment that
+    #       legitimately needs to reference the old pattern should
+    #       rephrase it (e.g. "the previous code read x-forwarded-host
+    #       from request.headers") rather than dropping a call-syntax
+    #       fragment a future reviewer might cargo-cult.
+    #
+    # This replaces an earlier hand-rolled TS-comment stripper that had
+    # two obvious edge-case holes ( ``/*`` inside a string literal, and
+    # trailing ``//`` comments on lines containing ``"``). The
+    # substring-only version covers the same attack surface with
+    # zero parser surface.
+    # x-forwarded-for is intentionally NOT in this list: line 56 reads
+    # it for rate-limit IP extraction, which doesn't feed into any URL
+    # and isn't a host-header-poisoning vector.
+    banned_header_calls = (
+        'request.headers.get("x-forwarded-host")',
+        'request.headers.get("x-forwarded-proto")',
+        'request.headers.get("forwarded")',
+        'request.headers.get("host")',
+        'request.headers.get("x-original-host")',
     )
-    assert "forwardedHost" not in code_only, (
-        "cli-handoff route still references a forwardedHost variable "
-        "in executable code — host header poisoning regression."
+    for needle in banned_header_calls:
+        assert needle not in src, (
+            f"cli-handoff route contains `{needle}` — forwarded / host "
+            "headers are attacker-controllable and must not feed into "
+            "the handoff URL or any siteUrl derivation. Rephrase any "
+            "prose reference in a comment to avoid literal call syntax."
+        )
+
+    assert "`https://${forwardedHost}`" not in src, (
+        "cli-handoff route still interpolates a forwardedHost into a "
+        "`https://...` template literal — host header poisoning regression."
+    )
+    assert "`http://${forwardedHost}`" not in src, (
+        "cli-handoff route still interpolates a forwardedHost into a "
+        "`http://...` template literal — host header poisoning regression."
     )
 
 

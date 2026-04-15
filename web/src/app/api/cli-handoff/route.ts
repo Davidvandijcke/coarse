@@ -130,16 +130,19 @@ export async function POST(request: NextRequest) {
   // (e.g. Codex cloud). For local dev with remote CLIs, set
   // NEXT_PUBLIC_SITE_URL in .env.local to a tunnel URL.
   //
-  // Security note: an earlier version of this route rewrote a localhost
-  // origin to `https://${request.headers.get("x-forwarded-host")}` to
-  // make desktop-spawned CLIs reach the dev server. That header is
+  // Security note: an earlier version of this route rewrote a
+  // localhost origin by reading the x-forwarded-host request header
+  // and interpolating it into an https URL, so desktop-spawned CLIs
+  // could reach the dev server through a proxy. That header is
   // attacker-controllable in most proxy setups, and the downstream
-  // `/h/<token>` bundle includes a 3h signed PDF URL plus the
+  // /h/<token> bundle includes a 3h signed PDF URL plus the
   // single-use finalize token — so a poisoned host would let an
   // attacker intercept the paper and write the generated review to
   // Supabase. Remote-CLI dev flows now go through NEXT_PUBLIC_SITE_URL
   // (or a tunnel URL) exclusively; the warning below points operators
-  // at the right env var.
+  // at the right env var. Do NOT reintroduce any forwarding-header
+  // read here — tests/test_web_security_invariants.py will fail the
+  // build if you do.
   const siteUrl = getSiteOriginForRequest(request.url);
 
   // Vercel preview deployments sit behind Deployment Protection (Tier 0),
@@ -159,9 +162,9 @@ export async function POST(request: NextRequest) {
   const isPreview = process.env.VERCEL_ENV === "preview";
   const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? "";
   const warnings: string[] = [];
-  if (siteUrl.includes("localhost")) {
+  if (siteUrl.includes("localhost") || siteUrl.includes("127.0.0.1")) {
     warnings.push(
-      "Handoff URL uses localhost — the CLI must run on this same machine. For remote CLIs, set NEXT_PUBLIC_SITE_URL to a public URL.",
+      "Handoff URL uses a loopback address — the CLI must run on this same machine. For remote CLIs, set NEXT_PUBLIC_SITE_URL to a public URL.",
     );
   }
   if (isPreview && !bypassSecret) {
