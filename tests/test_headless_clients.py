@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from pydantic import BaseModel
 
@@ -10,6 +12,7 @@ from coarse.headless_clients import (
     ClaudeCodeClient,
     CodexClient,
     GeminiClient,
+    _classify_cli_error,
     _clean_subprocess_env,
 )
 
@@ -347,3 +350,192 @@ def test_subscription_billing_keys_list_includes_all_three_hosts() -> None:
     assert "OPENAI_API_KEY" in _SUBSCRIPTION_BILLING_KEYS
     assert "GOOGLE_API_KEY" in _SUBSCRIPTION_BILLING_KEYS
     assert "GEMINI_API_KEY" in _SUBSCRIPTION_BILLING_KEYS
+
+
+# ─────────────────────────────────────────────────────────────────
+# Commit 1 fixes: UTF-8, missing binary, auth detection
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_run_decodes_utf8_subprocess_output_without_crashing() -> None:
+    """Windows non-UTF-8 locale regression: academic papers contain
+    Greek letters, math symbols, and em-dashes. Without explicit
+    `encoding="utf-8"` in subprocess.run, Python decodes stdout with
+    `locale.getpreferredencoding(False)` which is cp1252 on default
+    Windows and crashes on any non-ASCII byte. This test verifies
+    the _run path passes those characters through cleanly.
+    """
+    _mark_claude_effort_supported(True)
+    client = ClaudeCodeClient(claude_bin="claude")
+
+    unicode_stdout = "Section review: uses λ, ∫, and — in theorem 3. 🎓"
+    fake_proc = MagicMock()
+    fake_proc.returncode = 0
+    fake_proc.stdout = unicode_stdout
+    fake_proc.stderr = ""
+
+    with patch("coarse.headless_clients.subprocess.run", return_value=fake_proc) as mock_run:
+        result = client._run("some prompt with ∂ and π")
+
+    assert result == unicode_stdout
+    # The subprocess.run call must pass encoding="utf-8" so Windows
+    # non-UTF-8 locales don't crash here.
+    kwargs = mock_run.call_args.kwargs
+    assert kwargs.get("encoding") == "utf-8"
+    assert kwargs.get("errors") == "replace"
+
+
+def test_clean_subprocess_env_forces_utf8_locale_on_unix(monkeypatch) -> None:
+    """Force `LANG=C.UTF-8` / `LC_ALL=C.UTF-8` (or en_US.UTF-8 on
+    macOS) so Node-based child CLIs write UTF-8 to stdout regardless
+    of the user's shell locale. On Windows this is a no-op.
+    """
+    monkeypatch.delenv("LANG", raising=False)
+    monkeypatch.delenv("LC_ALL", raising=False)
+
+    env = _clean_subprocess_env()
+
+    import os as _os
+
+    if _os.name == "nt":
+        # Windows path — Node picks up the console codepage, so we
+        # don't need to set these. Just verify we don't crash.
+        pytest.skip("LANG/LC_ALL forcing is Unix-only")
+    assert "UTF-8" in env.get("LANG", "")
+    assert "UTF-8" in env.get("LC_ALL", "")
+
+
+def test_clean_subprocess_env_preserves_caller_lang_override(monkeypatch) -> None:
+    """Don't stomp on a LANG the user deliberately set. Our default
+    only kicks in when LANG is unset."""
+    monkeypatch.setenv("LANG", "fr_FR.UTF-8")
+    monkeypatch.delenv("LC_ALL", raising=False)
+
+    env = _clean_subprocess_env()
+
+    import os as _os
+
+    if _os.name == "nt":
+        pytest.skip("LANG/LC_ALL forcing is Unix-only")
+    assert env["LANG"] == "fr_FR.UTF-8"
+
+
+def test_run_raises_friendly_error_when_claude_binary_missing() -> None:
+    """If `claude` isn't on PATH, subprocess.run raises
+    FileNotFoundError. Users should see an install hint, not an
+    opaque traceback buried 10 pipeline stages deep.
+    """
+    _mark_claude_effort_supported(True)
+    client = ClaudeCodeClient(claude_bin="claude")
+
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        side_effect=FileNotFoundError(2, "No such file or directory", "claude"),
+    ):
+        with pytest.raises(RuntimeError, match="claude -p binary not found"):
+            client._run("any prompt")
+
+
+def test_run_missing_binary_error_includes_install_hint() -> None:
+    """The error must name the install command so users can fix it
+    without grepping the docs."""
+    _mark_claude_effort_supported(True)
+    client = ClaudeCodeClient(claude_bin="claude")
+
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        side_effect=FileNotFoundError(2, "No such file or directory", "claude"),
+    ):
+        try:
+            client._run("any prompt")
+        except RuntimeError as exc:
+            assert "npm install -g @anthropic-ai/claude-code" in str(exc)
+        else:
+            pytest.fail("RuntimeError not raised")
+
+
+def test_run_missing_binary_error_is_per_host() -> None:
+    """Each client returns the right install hint — codex points at
+    @openai/codex, gemini at @google/gemini-cli."""
+    _mark_codex_config_override_supported(True)
+    _mark_gemini_flags_supported(approval_mode=True, output_format=True)
+
+    codex = CodexClient(codex_bin="codex")
+    gemini = GeminiClient(gemini_bin="gemini")
+
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        side_effect=FileNotFoundError(2, "missing", "codex"),
+    ):
+        try:
+            codex._run("x")
+        except RuntimeError as exc:
+            assert "@openai/codex" in str(exc)
+
+    with patch(
+        "coarse.headless_clients.subprocess.run",
+        side_effect=FileNotFoundError(2, "missing", "gemini"),
+    ):
+        try:
+            gemini._run("x")
+        except RuntimeError as exc:
+            assert "@google/gemini-cli" in str(exc)
+
+
+def test_run_detects_auth_expiry_from_stderr() -> None:
+    """When `claude -p` exits non-zero with 'not authenticated' in
+    stderr, the wrapper prepends a friendly 'Run claude login'
+    message instead of surfacing the raw exit code."""
+    _mark_claude_effort_supported(True)
+    client = ClaudeCodeClient(claude_bin="claude")
+
+    fake_proc = MagicMock()
+    fake_proc.returncode = 1
+    fake_proc.stdout = ""
+    fake_proc.stderr = "Error: not authenticated. Please log in with `claude login`."
+
+    with patch("coarse.headless_clients.subprocess.run", return_value=fake_proc):
+        with pytest.raises(RuntimeError) as excinfo:
+            client._run("any prompt")
+
+    msg = str(excinfo.value)
+    assert "auth failure" in msg
+    assert "claude login" in msg
+    # Raw stderr should still be included for debugging.
+    assert "not authenticated" in msg
+
+
+def test_classify_cli_error_recognizes_common_auth_patterns() -> None:
+    """The classifier is substring-based, not regex — loose matching
+    tolerates version drift in stderr formatting."""
+    assert _classify_cli_error("Error: not authenticated") is not None
+    assert _classify_cli_error("unauthorized request") is not None
+    assert _classify_cli_error("Session expired. Please log in again.") is not None
+    assert _classify_cli_error("Run `codex login` to continue") is not None
+    assert _classify_cli_error("gemini auth required") is not None
+    # False-positive guard: don't match arbitrary errors.
+    assert _classify_cli_error("ENOENT: file not found") is None
+    assert _classify_cli_error("") is None
+    assert _classify_cli_error("rate limit exceeded") is None
+
+
+def test_run_preserves_generic_errors_without_auth_hint() -> None:
+    """Non-auth failures fall through to the normal RuntimeError
+    path — no spurious 'Run login' hint."""
+    _mark_claude_effort_supported(True)
+    client = ClaudeCodeClient(claude_bin="claude")
+
+    fake_proc = MagicMock()
+    fake_proc.returncode = 2
+    fake_proc.stdout = ""
+    fake_proc.stderr = "Syntax error in prompt template"
+
+    with patch("coarse.headless_clients.subprocess.run", return_value=fake_proc):
+        with pytest.raises(RuntimeError) as excinfo:
+            client._run("any")
+
+    msg = str(excinfo.value)
+    assert "exited 2" in msg
+    assert "Syntax error" in msg
+    # No auth hint should be injected.
+    assert "login" not in msg.lower()

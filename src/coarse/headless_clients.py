@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 import threading
 from typing import Any
 
@@ -92,6 +93,8 @@ def _probe_cli_help(bin_name: str, *subcommand: str) -> str:
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             check=False,
             env=_clean_subprocess_env(),
@@ -99,6 +102,51 @@ def _probe_cli_help(bin_name: str, *subcommand: str) -> str:
         return (result.stdout or "") + (result.stderr or "")
     except (subprocess.SubprocessError, OSError):
         return ""
+
+
+# Auth-error patterns per host CLI. Substring-match only, not regex,
+# because CLI auth error messages are unstructured text that changes
+# shape between versions. Loose matching catches common cases; misses
+# fall through to the raw stderr in the RuntimeError, which is no
+# worse than today.
+_AUTH_ERROR_PATTERNS: tuple[tuple[str, str], ...] = (
+    # (substring to match in stderr (lowercased), user-facing hint)
+    (
+        "not authenticated",
+        "Run `claude login` / `codex login` / `gemini auth login` to re-authenticate.",
+    ),
+    ("unauthorized", "Run the host CLI's login command to re-authenticate."),
+    ("please log in", "Run the host CLI's login command to re-authenticate."),
+    ("please login", "Run the host CLI's login command to re-authenticate."),
+    ("session expired", "Your subscription session expired. Run the host CLI's login command."),
+    ("session has expired", "Your subscription session expired. Run the host CLI's login command."),
+    ("claude login", "Run `claude login` to re-authenticate."),
+    ("codex login", "Run `codex login` to re-authenticate."),
+    ("gemini login", "Run `gemini auth login` to re-authenticate."),
+    ("gemini auth", "Run `gemini auth login` to re-authenticate."),
+    ("not signed in", "Run the host CLI's login command to re-authenticate."),
+    ("no active session", "Run the host CLI's login command to re-authenticate."),
+    ("authentication required", "Run the host CLI's login command to re-authenticate."),
+    ("authentication failed", "Run the host CLI's login command to re-authenticate."),
+)
+
+
+def _classify_cli_error(stderr: str) -> str | None:
+    """Return a user-facing fix hint if ``stderr`` matches a known
+    auth-failure pattern, or ``None`` otherwise.
+
+    Used by ``_HeadlessCLIClient._run`` to prepend a ``"Run
+    <host> login"`` hint to the generic nonzero-exit RuntimeError.
+    Matches are case-insensitive substring checks — regex is overkill
+    for a stderr classifier that needs to tolerate version drift.
+    """
+    if not stderr:
+        return None
+    lowered = stderr.lower()
+    for needle, hint in _AUTH_ERROR_PATTERNS:
+        if needle in lowered:
+            return hint
+    return None
 
 
 # Env vars each host CLI sets when spawning subprocesses. Stripping them
@@ -172,6 +220,19 @@ def _clean_subprocess_env() -> dict[str, str]:
         env.pop(var, None)
     for var in _SUBSCRIPTION_BILLING_KEYS:
         env.pop(var, None)
+    # Force UTF-8 everywhere in the child CLI subprocess. Node.js-based
+    # CLIs (claude, codex, gemini) honor `LANG` / `LC_ALL` for stdout
+    # encoding; without these set, a user with a cp1252 / ISO-8859-1
+    # system locale can get garbled bytes in the subprocess stdout
+    # that then crash our `text=True` decode. Setting `C.UTF-8` is a
+    # portable standard on modern glibc and musl; on macOS we fall
+    # back to `en_US.UTF-8` because `C.UTF-8` isn't shipped there.
+    # On Windows these variables are no-ops — Node picks up the
+    # console codepage via `chcp` — so this is a Unix-only override.
+    if os.name != "nt":
+        _default_utf8 = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
+        env["LANG"] = env.get("LANG") or _default_utf8
+        env["LC_ALL"] = env.get("LC_ALL") or _default_utf8
     return env
 
 
@@ -324,6 +385,12 @@ class _HeadlessCLIClient:
     def _build_cmd(self) -> list[str]:
         raise NotImplementedError
 
+    def _install_hint(self) -> str:
+        """Return a one-line install command users can paste into a
+        shell when the host CLI binary is missing. Subclasses override
+        this with the host-specific package install command."""
+        return "install the host CLI and make sure it is on your PATH"
+
     def _prepare_prompt(self, prompt: str) -> str:
         """Allow subclasses to inject host-specific prompt hints."""
         return prompt
@@ -336,16 +403,44 @@ class _HeadlessCLIClient:
                 input=prompt,
                 capture_output=True,
                 text=True,
+                # Force UTF-8 decode regardless of the user's locale.
+                # Without this Python falls back to
+                # `locale.getpreferredencoding(False)` — cp1252 on
+                # default Windows — and crashes with UnicodeDecodeError
+                # the first time a claude/codex/gemini response
+                # contains a Greek letter, math symbol, em-dash, or
+                # emoji. `errors="replace"` keeps us alive on the rare
+                # truly invalid byte instead of crashing the whole
+                # 25-minute review. See also the `LANG`/`LC_ALL` forcing
+                # in `_clean_subprocess_env` which makes the child CLI
+                # write UTF-8 in the first place.
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout or self._timeout,
                 check=False,
                 env=_clean_subprocess_env(),
             )
+        except FileNotFoundError as exc:
+            # The host CLI binary isn't on PATH. Surface an
+            # actionable install hint instead of letting the opaque
+            # `[Errno 2] No such file or directory: 'claude'` bubble
+            # up through 10 pipeline stages of logs.
+            raise RuntimeError(
+                f"{self.display_name} binary not found on PATH. "
+                f"Install it with: {self._install_hint()}"
+            ) from exc
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
                 f"{self.display_name} timed out after {timeout or self._timeout}s"
             ) from exc
         if proc.returncode != 0:
-            raise RuntimeError(f"{self.display_name} exited {proc.returncode}: {proc.stderr[:500]}")
+            stderr = proc.stderr or ""
+            auth_hint = _classify_cli_error(stderr)
+            if auth_hint:
+                raise RuntimeError(
+                    f"{self.display_name} auth failure. {auth_hint} Raw error: {stderr[:300]}"
+                )
+            raise RuntimeError(f"{self.display_name} exited {proc.returncode}: {stderr[:500]}")
         return proc.stdout
 
     def complete(
@@ -445,6 +540,9 @@ class ClaudeCodeClient(_HeadlessCLIClient):
         self._claude_model = claude_model
         self._effort = effort
 
+    def _install_hint(self) -> str:
+        return "npm install -g @anthropic-ai/claude-code@latest (or https://claude.ai/download)"
+
     def _ensure_effort_probed(self) -> None:
         """Probe whether ``claude -p --help`` mentions ``--effort``,
         caching the result on the class so every subsequent client in
@@ -534,6 +632,9 @@ class CodexClient(_HeadlessCLIClient):
         self._codex_bin = codex_bin
         self._codex_model = codex_model
         self._effort = effort
+
+    def _install_hint(self) -> str:
+        return "npm install -g @openai/codex@latest (or https://developers.openai.com/codex/cli)"
 
     def _ensure_config_override_probed(self) -> None:
         """Probe whether ``codex exec --help`` mentions ``-c`` config
@@ -639,6 +740,9 @@ class GeminiClient(_HeadlessCLIClient):
         self._gemini_model = gemini_model
         self._effort = effort
         self._approval_mode = approval_mode
+
+    def _install_hint(self) -> str:
+        return "npm install -g @google/gemini-cli@latest (or https://github.com/google-gemini/gemini-cli)"
 
     def _ensure_flags_probed(self) -> None:
         cls = type(self)
