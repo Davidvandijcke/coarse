@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextvars
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -51,6 +52,31 @@ _OCR_MAX_RETRIES = 9
 _OCR_BACKOFF_BASE = 2.0
 _OCR_MAX_BACKOFF = 32.0
 _OCR_LOG_TRUNCATE = 500
+
+
+def _get_ocr_max_retries() -> int:
+    """Return the OCR retry ceiling, honoring ``COARSE_OCR_MAX_RETRIES``.
+
+    The module-level default (``_OCR_MAX_RETRIES = 9``, i.e. 10 total
+    attempts) is calibrated for the full-review batch path where the
+    user isn't watching the extraction stage in real time and we'd
+    rather absorb a transient Mistral wobble than fall through to the
+    weaker pdf-text extractor. Any caller that wants the opposite
+    calibration — e.g. a spinner-watching handoff path where ~160s of
+    exponential backoff would look like a hang — can set
+    ``COARSE_OCR_MAX_RETRIES=<n>`` in the environment before invoking
+    extraction, and the retry loop will cap itself at ``n`` retries for
+    that process. Invalid / empty / negative values fall back to the
+    default so a malformed env var can never make the pipeline *more*
+    fragile than the default.
+    """
+    raw = os.environ.get("COARSE_OCR_MAX_RETRIES")
+    if not raw:
+        return _OCR_MAX_RETRIES
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return _OCR_MAX_RETRIES
 
 
 def _scrub_secrets(msg: str) -> str:
@@ -233,41 +259,47 @@ def _post_openrouter_ocr(
     def _wait_for(attempt: int) -> float:
         return min(_OCR_BACKOFF_BASE**attempt, _OCR_MAX_BACKOFF)
 
+    # Resolve the ceiling once at call time so a single request can't
+    # observe a changing env var mid-loop, and so callers that set
+    # ``COARSE_OCR_MAX_RETRIES`` right before invoking extraction see
+    # their cap honored. See ``_get_ocr_max_retries`` for the rationale.
+    max_retries = _get_ocr_max_retries()
+
     last_network_exc: Exception | None = None
-    for attempt in range(_OCR_MAX_RETRIES + 1):
+    for attempt in range(max_retries + 1):
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
         except requests.RequestException as exc:
             last_network_exc = exc
-            if attempt < _OCR_MAX_RETRIES:
+            if attempt < max_retries:
                 wait = _wait_for(attempt)
                 logger.warning(
                     "OpenRouter OCR network error (attempt %d/%d), retrying in %.1fs: %s",
                     attempt + 1,
-                    _OCR_MAX_RETRIES + 1,
+                    max_retries + 1,
                     wait,
                     exc,
                 )
                 time.sleep(wait)
                 continue
             raise ExtractionError(
-                f"OpenRouter OCR network error after {_OCR_MAX_RETRIES + 1} attempts: {exc}"
+                f"OpenRouter OCR network error after {max_retries + 1} attempts: {exc}"
             ) from exc
 
-        if resp.status_code in _OCR_RETRY_STATUSES and attempt < _OCR_MAX_RETRIES:
+        if resp.status_code in _OCR_RETRY_STATUSES and attempt < max_retries:
             wait = _wait_for(attempt)
             logger.warning(
                 "OpenRouter OCR returned %d (attempt %d/%d), retrying in %.1fs",
                 resp.status_code,
                 attempt + 1,
-                _OCR_MAX_RETRIES + 1,
+                max_retries + 1,
                 wait,
             )
             time.sleep(wait)
             continue
 
         body_code = _body_retry_code(resp)
-        if body_code is not None and attempt < _OCR_MAX_RETRIES:
+        if body_code is not None and attempt < max_retries:
             if _response_was_billed(resp):
                 logger.warning(
                     "OpenRouter OCR returned 200 with body error code %d AND "
@@ -281,7 +313,7 @@ def _post_openrouter_ocr(
                 "(attempt %d/%d), retrying in %.1fs",
                 body_code,
                 attempt + 1,
-                _OCR_MAX_RETRIES + 1,
+                max_retries + 1,
                 wait,
             )
             time.sleep(wait)

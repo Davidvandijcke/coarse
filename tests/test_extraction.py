@@ -400,6 +400,54 @@ def test_openrouter_ocr_gives_up_after_max_retries(minimal_pdf: Path) -> None:
                         extract_text(minimal_pdf, use_cache=False)
 
 
+def test_openrouter_ocr_honors_env_override_retries() -> None:
+    """COARSE_OCR_MAX_RETRIES must cap the retry count at call time.
+
+    Regression guard for the 2e17317 refactor, which hard-coded the
+    ceiling against a module constant and silently ignored the env var.
+    Any spinner-watching caller (e.g. a future handoff path) needs to be
+    able to short-circuit the default 10-attempt/~160s budget, or Modal
+    workers get tied up retrying flaky Mistral upstreams instead of
+    falling through to the next extractor.
+    """
+    import requests as _r
+
+    from coarse.extraction_openrouter import _post_openrouter_ocr
+
+    call_count = {"n": 0}
+
+    def always_fails(*args, **kwargs):
+        call_count["n"] += 1
+        raise _r.ConnectionError("down")
+
+    with patch("requests.post", side_effect=always_fails):
+        with patch("time.sleep"):
+            with patch.dict(os.environ, {"COARSE_OCR_MAX_RETRIES": "2"}):
+                with pytest.raises(ExtractionError, match="network error after 3"):
+                    _post_openrouter_ocr(
+                        url="https://example.invalid/api/v1/chat/completions",
+                        headers={},
+                        payload={},
+                        timeout=1,
+                    )
+    # 2 retries + initial attempt = 3 total posts
+    assert call_count["n"] == 3, f"env override should cap at 3 posts, got {call_count['n']}"
+
+
+def test_openrouter_ocr_invalid_env_override_falls_back_to_default() -> None:
+    """A malformed COARSE_OCR_MAX_RETRIES value must fall back to the default."""
+    from coarse.extraction_openrouter import _OCR_MAX_RETRIES, _get_ocr_max_retries
+
+    with patch.dict(os.environ, {"COARSE_OCR_MAX_RETRIES": "not-an-int"}):
+        assert _get_ocr_max_retries() == _OCR_MAX_RETRIES
+    with patch.dict(os.environ, {"COARSE_OCR_MAX_RETRIES": ""}):
+        assert _get_ocr_max_retries() == _OCR_MAX_RETRIES
+    with patch.dict(os.environ, {"COARSE_OCR_MAX_RETRIES": "-5"}):
+        # Negative values clamp to 0, not the default — that's the only
+        # safe way to let a caller ask for "no retries at all".
+        assert _get_ocr_max_retries() == 0
+
+
 def test_openrouter_ocr_retries_on_503(
     minimal_pdf: Path,
     mock_ocr_pages,
