@@ -225,34 +225,41 @@ After the project is ready, collect three strings from
 - `SUPABASE_SERVICE_KEY` — the `service_role` key (server-side only,
   never expose to client)
 
-### Step 1.2 — Apply schema + migrations to preview Supabase
+### Step 1.2 — Apply schema + bootstrap tracking table
 
 **Supabase dashboard → SQL Editor**
 
-Run, in this order. As of 2026-04-13, a fresh preview mirror needs all
-of these SQL files:
+Only two files need a manual paste:
 
 1. `deploy/supabase_schema.sql` — baseline schema + storage bucket.
-2. `deploy/migrate_review_secrets.sql` — review secret escrow table /
-   policies expected by the current presign + submit flow.
-3. `deploy/migrate_rate_limit.sql` — `check_rate_limit` RPC and related
-   indexes used by the web API routes.
-4. `deploy/migrate_email_phase1.sql` — first half of the Resend-backed
-   email persistence flow.
-5. `deploy/migrate_email_phase2.sql` — second half of the Resend
-   rollout. Safe on a fresh preview DB after phase 1.
-6. `deploy/migrate_mcp_handoff.sql` — MCP handoff tables, widened
-   review status check, `reviews.taxonomy`, cleanup RPCs.
-7. `deploy/migrate_review_access_security.sql` — signed review access
-   tokens / access gating columns.
-8. `deploy/migrate_active_review_capacity.sql` — the
-   `count_active_submitted_reviews` RPC used by `/api/status` and
-   `/api/submit`.
+   Creates every table, RLS policy, and RPC the v1.3.0+ web app
+   expects, including the `count_active_submitted_reviews` RPC and
+   the `reviews_status_check` constraint widened to the seven current
+   statuses (`queued, running, extracting, extracted, done, failed,
+   cancelled`).
+2. `deploy/bootstrap_schema_migrations.sql` — creates the
+   `schema_migrations` tracking table used by
+   `scripts/apply_migrations.sh` and seeds it with every historical
+   migration already absorbed by the current `supabase_schema.sql`.
+   This prevents the CI migration runner from trying to replay
+   destructive historical migrations like `migrate_email_phase2.sql`
+   (which drops `reviews.email`) on an already-correct fresh DB.
 
-After each migration, run `select * from reviews limit 0;` in the
-SQL editor to confirm the table exists with the expected columns.
-A clean preview DB should have zero rows in every table at this
-point.
+After both run, confirm with `select * from schema_migrations;` — you
+should see six rows. Every new migration added to `deploy/migrate_*.sql`
+from here on will be picked up automatically by the
+`supabase-migrate-preview.yml` workflow on the next `dev` push and
+applied exactly once per project.
+
+**Why this is now two files instead of eight:** before the migration
+runner landed, every fresh preview mirror required pasting 8 SQL files
+in order, and the dev branch's baseline had drifted enough that some
+of those migrations were actively destructive against a fresh DB. The
+new pattern keeps `supabase_schema.sql` authoritative for fresh
+projects, uses the `schema_migrations` tracking table to decouple
+"what CI should apply" from "what the baseline already contains", and
+adds new migrations as additive files the runner picks up on its own.
+See `CHANGELOG.md` under Unreleased for the migration runner entry.
 
 ### Step 1.3 — Create the `papers` storage bucket
 
@@ -320,11 +327,23 @@ should use the **same names** with **preview values**.
 - Add environment secrets:
   - `PREVIEW_MODAL_TOKEN_ID`
   - `PREVIEW_MODAL_TOKEN_SECRET`
-- Prefer a dedicated Modal service user for these credentials. If
-  Modal RBAC is enabled in the workspace, restrict that service user to
-  the Modal `preview` environment only. Without environment-restricted
-  Modal credentials, preview CI is still useful but is not a hard
-  production-isolation boundary.
+  - `PREVIEW_SUPABASE_DB_URL` — the preview Supabase project's
+    Connection String from **Supabase dashboard → Settings → Database
+    → Connection string → URI**. Used by
+    `.github/workflows/supabase-migrate-preview.yml` to auto-apply any
+    new `deploy/migrate_*.sql` against preview before the Modal
+    preview deploy runs. Set once via:
+    ```
+    gh secret set PREVIEW_SUPABASE_DB_URL \
+      --env preview-modal \
+      --repo Davidvandijcke/coarse \
+      --body "<paste connection string here>"
+    ```
+- Prefer a dedicated Modal service user for the Modal credentials.
+  If Modal RBAC is enabled in the workspace, restrict that service
+  user to the Modal `preview` environment only. Without
+  environment-restricted Modal credentials, preview CI is still
+  useful but is not a hard production-isolation boundary.
 
 Important: `coarse-mcp`'s `run_extract` function also uses
 `coarse-supabase` + `coarse-webhook`. Preview is not isolated unless
