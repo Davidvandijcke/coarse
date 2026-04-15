@@ -38,6 +38,68 @@ _CTRL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _JSON_ESCAPE_CHARS = frozenset('"\\/bfnrtu')
 _HEX_RE = re.compile(r"^[0-9a-fA-F]{4}$")
 
+# Shared effort-to-guidance map used by the text-level fallback when a
+# host CLI's native effort flag isn't available on the installed
+# version. Each value is a single sentence appended to the prompt via
+# ``_effort_text_prefix``; the language mirrors what Gemini Client has
+# always injected directly since Gemini CLI never exposed a flag.
+_EFFORT_TEXT_GUIDANCE = {
+    "low": "Keep internal reasoning brief and answer directly.",
+    "medium": "Use a moderate amount of internal reasoning before answering.",
+    "high": "Use thorough internal reasoning before answering.",
+    "max": "Use your deepest available internal reasoning before answering.",
+}
+
+
+def _effort_text_prefix(effort: str) -> str:
+    """Return a one-line effort-guidance block to prepend to a prompt
+    when the host CLI's native effort flag isn't supported on the
+    installed version.
+
+    Kept identical in shape across all three clients so old-version
+    fallback behavior is predictable — users running
+    ``claude -p`` without ``--effort``, ``codex exec`` without a ``-c``
+    config override, or ``gemini -p`` (which never had a native flag)
+    all receive the same ``[SYSTEM] Reasoning effort: …`` preamble.
+    """
+    guidance = _EFFORT_TEXT_GUIDANCE.get(effort, _EFFORT_TEXT_GUIDANCE["high"])
+    return f"[SYSTEM]\nReasoning effort: {effort}. {guidance}\n\n"
+
+
+def _probe_cli_help(bin_name: str, *subcommand: str) -> str:
+    """Run ``<bin> [subcommand...] --help`` and return combined
+    stdout + stderr as a single string, or ``""`` on any failure.
+
+    Used to detect whether a host CLI on the user's machine exposes a
+    given flag on the installed version. The callers check for
+    substring membership in the returned text to decide whether to
+    use a native flag or fall back to text-level injection.
+
+    Returning an empty string on failure (missing binary, timeout,
+    permission error, nonzero exit) makes the caller's
+    ``"--effort" in help_text`` check default to False — i.e., if we
+    can't probe, assume the old version and use the text-level
+    fallback. This is the safe direction: false negatives degrade
+    gracefully, false positives would crash the pipeline.
+
+    Timeout is short (5s) because ``--help`` should never hang on a
+    healthy CLI, and the whole probe runs once per class per process
+    so a 5s worst case is negligible.
+    """
+    cmd: list[str] = [bin_name, *subcommand, "--help"]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            env=_clean_subprocess_env(),
+        )
+        return (result.stdout or "") + (result.stderr or "")
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
 
 # Env vars each host CLI sets when spawning subprocesses. Stripping them
 # before spawning a sibling/child CLI keeps nested sessions from seeing
@@ -346,9 +408,26 @@ class _HeadlessCLIClient:
 
 
 class ClaudeCodeClient(_HeadlessCLIClient):
-    """LLMClient replacement backed by the ``claude -p`` CLI."""
+    """LLMClient replacement backed by the ``claude -p`` CLI.
+
+    ``--effort`` is version-gated. Older Claude Code versions reject
+    the flag with ``error: unknown option '--effort'`` and die before
+    running anything. We probe ``claude -p --help`` once per class on
+    first use and either use the native flag (new versions) or fall
+    back to text-level guidance injected via ``_prepare_prompt``
+    (old versions). A real user hit this — #132's coauthor review
+    caught it after a v1.3.0 preview-testing session died on every
+    pipeline stage with a subprocess exit code 2.
+    """
 
     display_name = "claude -p"
+
+    #: Class-level cache for the ``--help`` probe result. First
+    #: instantiated client probes; all subsequent clients in the same
+    #: process reuse the result. Reset between tests via the
+    #: ``reset_headless_probe_cache`` fixture in conftest.
+    _effort_flag_probed: bool = False
+    _effort_flag_supported: bool = False
 
     def __init__(
         self,
@@ -366,19 +445,47 @@ class ClaudeCodeClient(_HeadlessCLIClient):
         self._claude_model = claude_model
         self._effort = effort
 
+    def _ensure_effort_probed(self) -> None:
+        """Probe whether ``claude -p --help`` mentions ``--effort``,
+        caching the result on the class so every subsequent client in
+        the same process reuses it."""
+        cls = type(self)
+        if cls._effort_flag_probed:
+            return
+        help_text = _probe_cli_help(self._claude_bin, "-p")
+        cls._effort_flag_supported = "--effort" in help_text
+        cls._effort_flag_probed = True
+        if not cls._effort_flag_supported:
+            logger.warning(
+                "Claude Code on this machine does not expose --effort "
+                "(old version). Falling back to text-level effort "
+                "injection. Upgrade Claude Code for native reasoning-"
+                "effort control: npm install -g @anthropic-ai/claude-code@latest"
+            )
+
     def _build_cmd(self) -> list[str]:
         # Claude Code already exposes the same low/medium/high/max scale we
-        # want at the coarse layer, so pass it through unchanged.
-        return [
+        # want at the coarse layer, so pass it through unchanged when the
+        # installed version supports --effort; otherwise drop the flag and
+        # let _prepare_prompt inject the guidance as text.
+        self._ensure_effort_probed()
+        cmd = [
             self._claude_bin,
             "-p",
             "--model",
             self._claude_model,
-            "--effort",
-            self._effort,
             "--output-format",
             "text",
         ]
+        if type(self)._effort_flag_supported:
+            cmd += ["--effort", self._effort]
+        return cmd
+
+    def _prepare_prompt(self, prompt: str) -> str:
+        self._ensure_effort_probed()
+        if type(self)._effort_flag_supported:
+            return prompt
+        return _effort_text_prefix(self._effort) + prompt
 
 
 class CodexClient(_HeadlessCLIClient):
@@ -388,9 +495,19 @@ class CodexClient(_HeadlessCLIClient):
     override (minimal / low / medium / high). We pass it via ``-c
     model_reasoning_effort=<level>`` per call so the choice is
     ephemeral and doesn't mutate the user's ``~/.codex/config.toml``.
+
+    The ``-c KEY=VALUE`` flag itself is version-gated — older Codex
+    builds (pre-``exec`` subcommand overhaul) didn't ship it. We
+    probe ``codex exec --help`` once per class and fall back to
+    text-level effort injection if ``-c`` isn't mentioned. Symmetric
+    with the ``ClaudeCodeClient`` pattern.
     """
 
     display_name = "codex exec"
+
+    #: Probe cache — see ``ClaudeCodeClient._effort_flag_probed``.
+    _config_override_probed: bool = False
+    _config_override_supported: bool = False
 
     # coarse-level effort name → codex model_reasoning_effort value.
     # Avoid "minimal" because current Codex builds reject web_search under
@@ -418,15 +535,55 @@ class CodexClient(_HeadlessCLIClient):
         self._codex_model = codex_model
         self._effort = effort
 
+    def _ensure_config_override_probed(self) -> None:
+        """Probe whether ``codex exec --help`` mentions ``-c`` config
+        override support, caching the result on the class."""
+        cls = type(self)
+        if cls._config_override_probed:
+            return
+        help_text = _probe_cli_help(self._codex_bin, "exec")
+        # Look for any of the canonical forms Codex uses to document the
+        # config override flag across versions. The probe is generous
+        # because different Codex releases format --help differently;
+        # we'd rather match too loosely and occasionally send -c to a
+        # version that ignores unknown keys than miss a version that
+        # does support it.
+        cls._config_override_supported = any(
+            marker in help_text
+            for marker in (
+                "-c <KEY=VALUE>",
+                "-c KEY=VALUE",
+                "-c key=value",
+                "--config <KEY=VALUE>",
+                "--config KEY=VALUE",
+            )
+        )
+        cls._config_override_probed = True
+        if not cls._config_override_supported:
+            logger.warning(
+                "Codex on this machine does not expose `-c KEY=VALUE` "
+                "config override (old version). Falling back to text-"
+                "level effort injection. Upgrade Codex for native "
+                "reasoning-effort control: npm install -g @openai/codex@latest"
+            )
+
     def _build_cmd(self) -> list[str]:
+        self._ensure_config_override_probed()
         cmd = [self._codex_bin, "exec"]
         if self._codex_model:
             cmd += ["-m", self._codex_model]
-        mapped = self._EFFORT_MAP.get(self._effort, self._effort)
-        cmd += ["-c", f"model_reasoning_effort={mapped!r}"]
+        if type(self)._config_override_supported:
+            mapped = self._EFFORT_MAP.get(self._effort, self._effort)
+            cmd += ["-c", f"model_reasoning_effort={mapped!r}"]
         # Read prompt from stdin by passing '-' as the positional arg.
         cmd.append("-")
         return cmd
+
+    def _prepare_prompt(self, prompt: str) -> str:
+        self._ensure_config_override_probed()
+        if type(self)._config_override_supported:
+            return prompt
+        return _effort_text_prefix(self._effort) + prompt
 
 
 class GeminiClient(_HeadlessCLIClient):
@@ -435,9 +592,28 @@ class GeminiClient(_HeadlessCLIClient):
     Gemini CLI does not expose a native reasoning-effort flag. We still
     honor coarse's low/medium/high/max selector by prepending an explicit
     effort instruction with increasing advisory thinking budgets.
+
+    Two flags on Gemini CLI are version-gated:
+
+    1. ``--approval-mode yolo`` (newer) vs. the legacy ``--yolo``
+       toggle (older). Both do the same thing — auto-approve every
+       tool call — but older Gemini CLI versions reject the newer
+       name with "unknown argument".
+    2. ``--output-format text`` was added when Gemini CLI grew JSON
+       output support. Older versions don't have it and default to
+       text output, so dropping the flag is a safe fallback.
+
+    The class probes ``gemini --help`` once per process and picks the
+    right flag set. Effort-level injection is already text-only and
+    needs no probing.
     """
 
     display_name = "gemini -p"
+
+    #: Probe cache — separate flags for the two version-gated knobs.
+    _flag_probed: bool = False
+    _approval_mode_flag_supported: bool = False
+    _output_format_flag_supported: bool = False
 
     _EFFORT_BUDGET = {
         "low": 0,
@@ -464,14 +640,33 @@ class GeminiClient(_HeadlessCLIClient):
         self._effort = effort
         self._approval_mode = approval_mode
 
+    def _ensure_flags_probed(self) -> None:
+        cls = type(self)
+        if cls._flag_probed:
+            return
+        help_text = _probe_cli_help(self._gemini_bin)
+        cls._approval_mode_flag_supported = "--approval-mode" in help_text
+        cls._output_format_flag_supported = "--output-format" in help_text
+        cls._flag_probed = True
+        if not cls._approval_mode_flag_supported:
+            logger.warning(
+                "Gemini CLI on this machine does not expose --approval-mode "
+                "(old version). Falling back to the legacy --yolo flag. "
+                "Upgrade Gemini CLI for the full flag set: npm install -g "
+                "@google/gemini-cli@latest"
+            )
+
     def _build_cmd(self) -> list[str]:
-        cmd = [
-            self._gemini_bin,
-            "--approval-mode",
-            self._approval_mode,
-            "--output-format",
-            "text",
-        ]
+        self._ensure_flags_probed()
+        cls = type(self)
+        cmd: list[str] = [self._gemini_bin]
+        if cls._approval_mode_flag_supported:
+            cmd += ["--approval-mode", self._approval_mode]
+        else:
+            # Legacy toggle — same semantics, just the older name.
+            cmd.append("--yolo")
+        if cls._output_format_flag_supported:
+            cmd += ["--output-format", "text"]
         if self._gemini_model:
             cmd += ["--model", self._gemini_model]
         return cmd

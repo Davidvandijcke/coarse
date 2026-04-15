@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from pydantic import BaseModel
 
 from coarse.headless_clients import (
@@ -11,6 +12,49 @@ from coarse.headless_clients import (
     GeminiClient,
     _clean_subprocess_env,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_probe_caches():
+    """Reset the per-class probe caches between tests.
+
+    Each client caches its ``--help`` probe result on the class so it
+    runs once per process. Tests set the cache directly to simulate
+    old/new CLI versions, which would otherwise leak between tests
+    and break later cases that expect a clean probe slate.
+    """
+    ClaudeCodeClient._effort_flag_probed = False
+    ClaudeCodeClient._effort_flag_supported = False
+    CodexClient._config_override_probed = False
+    CodexClient._config_override_supported = False
+    GeminiClient._flag_probed = False
+    GeminiClient._approval_mode_flag_supported = False
+    GeminiClient._output_format_flag_supported = False
+    yield
+    ClaudeCodeClient._effort_flag_probed = False
+    ClaudeCodeClient._effort_flag_supported = False
+    CodexClient._config_override_probed = False
+    CodexClient._config_override_supported = False
+    GeminiClient._flag_probed = False
+    GeminiClient._approval_mode_flag_supported = False
+    GeminiClient._output_format_flag_supported = False
+
+
+def _mark_claude_effort_supported(supported: bool) -> None:
+    """Skip the real probe by pre-setting the class cache."""
+    ClaudeCodeClient._effort_flag_probed = True
+    ClaudeCodeClient._effort_flag_supported = supported
+
+
+def _mark_codex_config_override_supported(supported: bool) -> None:
+    CodexClient._config_override_probed = True
+    CodexClient._config_override_supported = supported
+
+
+def _mark_gemini_flags_supported(approval_mode: bool, output_format: bool) -> None:
+    GeminiClient._flag_probed = True
+    GeminiClient._approval_mode_flag_supported = approval_mode
+    GeminiClient._output_format_flag_supported = output_format
 
 
 class _ResponseModel(BaseModel):
@@ -67,6 +111,7 @@ def test_complete_keeps_valid_json_escapes(monkeypatch) -> None:
 
 
 def test_codex_low_effort_avoids_minimal_mode() -> None:
+    _mark_codex_config_override_supported(True)
     client = CodexClient(codex_bin="codex", codex_model="gpt-5.4-mini", effort="low")
 
     cmd = client._build_cmd()
@@ -77,6 +122,7 @@ def test_codex_low_effort_avoids_minimal_mode() -> None:
 
 
 def test_codex_high_effort_maps_directly_to_high() -> None:
+    _mark_codex_config_override_supported(True)
     client = CodexClient(codex_bin="codex", codex_model="gpt-5.4-mini", effort="high")
 
     cmd = client._build_cmd()
@@ -85,6 +131,7 @@ def test_codex_high_effort_maps_directly_to_high() -> None:
 
 
 def test_codex_medium_effort_maps_directly_to_medium() -> None:
+    _mark_codex_config_override_supported(True)
     client = CodexClient(codex_bin="codex", codex_model="gpt-5.4-mini", effort="medium")
 
     cmd = client._build_cmd()
@@ -93,6 +140,7 @@ def test_codex_medium_effort_maps_directly_to_medium() -> None:
 
 
 def test_codex_max_effort_caps_at_high() -> None:
+    _mark_codex_config_override_supported(True)
     client = CodexClient(codex_bin="codex", codex_model="gpt-5.4-mini", effort="max")
 
     cmd = client._build_cmd()
@@ -100,7 +148,24 @@ def test_codex_max_effort_caps_at_high() -> None:
     assert "model_reasoning_effort='high'" in cmd
 
 
+def test_codex_old_version_drops_config_override_and_injects_text() -> None:
+    """Old Codex versions without ``-c KEY=VALUE`` get text-level effort."""
+    _mark_codex_config_override_supported(False)
+    client = CodexClient(codex_bin="codex", codex_model="gpt-5.4-mini", effort="high")
+
+    cmd = client._build_cmd()
+    prompt = client._prepare_prompt("[USER]\nReview.")
+
+    # No -c flag in cmd.
+    assert "-c" not in cmd
+    assert not any("model_reasoning_effort" in part for part in cmd)
+    # Text injection instead.
+    assert "Reasoning effort: high." in prompt
+    assert prompt.endswith("[USER]\nReview.")
+
+
 def test_claude_effort_passes_through_unchanged() -> None:
+    _mark_claude_effort_supported(True)
     client = ClaudeCodeClient(claude_bin="claude", claude_model="claude-opus-4-6", effort="max")
 
     cmd = client._build_cmd()
@@ -110,14 +175,59 @@ def test_claude_effort_passes_through_unchanged() -> None:
         "-p",
         "--model",
         "claude-opus-4-6",
-        "--effort",
-        "max",
         "--output-format",
         "text",
+        "--effort",
+        "max",
     ]
 
 
+def test_claude_old_version_drops_effort_flag_and_injects_text() -> None:
+    """Old Claude Code versions without ``--effort`` get text-level
+    effort guidance injected into the prompt instead.
+
+    This is the Florian-v1.3.0-preview bug: pre-``--effort`` Claude
+    Code versions die with ``error: unknown option '--effort'`` on
+    every pipeline stage and produce no review.
+    """
+    _mark_claude_effort_supported(False)
+    client = ClaudeCodeClient(claude_bin="claude", claude_model="claude-opus-4-6", effort="max")
+
+    cmd = client._build_cmd()
+    prompt = client._prepare_prompt("[USER]\nReview.")
+
+    # Cmd must NOT contain --effort at all, so old claude doesn't choke.
+    assert "--effort" not in cmd
+    assert cmd == [
+        "claude",
+        "-p",
+        "--model",
+        "claude-opus-4-6",
+        "--output-format",
+        "text",
+    ]
+    # Text-level guidance instead.
+    assert "Reasoning effort: max." in prompt
+    assert "deepest" in prompt
+    assert prompt.endswith("[USER]\nReview.")
+
+
+def test_claude_probe_caches_result_across_instances() -> None:
+    """Two clients in the same process share the probe result so
+    ``--help`` only runs once per process.
+    """
+    _mark_claude_effort_supported(False)
+    first = ClaudeCodeClient(claude_bin="claude")
+    second = ClaudeCodeClient(claude_bin="claude")
+
+    assert "--effort" not in first._build_cmd()
+    assert "--effort" not in second._build_cmd()
+    # The probe cache persists on the class, not the instance.
+    assert ClaudeCodeClient._effort_flag_probed is True
+
+
 def test_gemini_effort_injects_advisory_prompt_budget() -> None:
+    _mark_gemini_flags_supported(approval_mode=True, output_format=True)
     client = GeminiClient(gemini_bin="gemini", gemini_model="gemini-3.1-pro-preview", effort="max")
 
     prompt = client._prepare_prompt("[USER]\nReview this section.")
@@ -125,6 +235,46 @@ def test_gemini_effort_injects_advisory_prompt_budget() -> None:
     assert "Reasoning effort: max." in prompt
     assert "32768-token thinking budget" in prompt
     assert prompt.endswith("[USER]\nReview this section.")
+
+
+def test_gemini_new_version_uses_approval_mode_and_output_format() -> None:
+    _mark_gemini_flags_supported(approval_mode=True, output_format=True)
+    client = GeminiClient(gemini_bin="gemini", gemini_model="gemini-3.1-pro-preview", effort="high")
+
+    cmd = client._build_cmd()
+
+    assert cmd[:5] == ["gemini", "--approval-mode", "yolo", "--output-format", "text"]
+    assert "--model" in cmd
+    assert "--yolo" not in cmd
+
+
+def test_gemini_old_version_falls_back_to_legacy_yolo_flag() -> None:
+    """Old Gemini CLI without --approval-mode uses the legacy
+    ``--yolo`` toggle and drops --output-format entirely."""
+    _mark_gemini_flags_supported(approval_mode=False, output_format=False)
+    client = GeminiClient(gemini_bin="gemini", gemini_model="gemini-3.1-pro-preview", effort="high")
+
+    cmd = client._build_cmd()
+
+    assert cmd == ["gemini", "--yolo", "--model", "gemini-3.1-pro-preview"]
+    assert "--approval-mode" not in cmd
+    assert "--output-format" not in cmd
+
+
+def test_gemini_mixed_version_uses_new_approval_but_no_output_format() -> None:
+    """Some intermediate Gemini CLI versions have --approval-mode but
+    not --output-format. Pick each flag independently based on the
+    probe, not in a lockstep all-or-nothing.
+    """
+    _mark_gemini_flags_supported(approval_mode=True, output_format=False)
+    client = GeminiClient(gemini_bin="gemini", gemini_model="gemini-3.1-pro-preview", effort="high")
+
+    cmd = client._build_cmd()
+
+    assert "--approval-mode" in cmd
+    assert "yolo" in cmd
+    assert "--output-format" not in cmd
+    assert "--yolo" not in cmd
 
 
 def test_clean_subprocess_env_strips_anthropic_api_key(monkeypatch) -> None:
