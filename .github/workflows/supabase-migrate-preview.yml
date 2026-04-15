@@ -1,0 +1,68 @@
+name: supabase-migrate-preview
+
+# Apply deploy/migrate_*.sql to the preview Supabase project on every dev
+# push that touches a migration file. Idempotent via a schema_migrations
+# tracking table maintained by scripts/apply_migrations.sh — once a file is
+# applied it is skipped on every subsequent run.
+#
+# Requires a `preview-modal` GitHub Environment secret called
+# `PREVIEW_SUPABASE_DB_URL`. Use the "Connection string" from the preview
+# Supabase project dashboard → Settings → Database → "URI" (session-mode
+# pooler is fine, `?pgbouncer=true` is tolerated). Set once:
+#
+#   gh secret set PREVIEW_SUPABASE_DB_URL \
+#     --env preview-modal \
+#     --repo Davidvandijcke/coarse \
+#     --body "postgresql://postgres.lowgmgubjnevafigxcyn:<password>@...supabase.com:6543/postgres"
+#
+# The workflow runs BEFORE the Modal preview deploy in concurrency terms, so
+# preview workers never boot against an unmigrated DB. If a migration fails,
+# the Modal deploy is blocked until it is fixed.
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'deploy/migrate_*.sql'
+      - 'scripts/apply_migrations.sh'
+      - '.github/workflows/supabase-migrate-preview.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-migrate-preview
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: preview-modal
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install psql
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Validate preview DB credentials
+        env:
+          DATABASE_URL: ${{ secrets.PREVIEW_SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::PREVIEW_SUPABASE_DB_URL must be set as a secret on the preview-modal environment."
+            echo ""
+            echo "Set it once with:"
+            echo "  gh secret set PREVIEW_SUPABASE_DB_URL --env preview-modal --repo Davidvandijcke/coarse"
+            exit 1
+          fi
+
+      - name: Apply migrations to preview Supabase
+        env:
+          DATABASE_URL: ${{ secrets.PREVIEW_SUPABASE_DB_URL }}
+        run: scripts/apply_migrations.sh
