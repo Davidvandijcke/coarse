@@ -201,6 +201,13 @@ def test_preview_middleware_exempts_handoff_routes() -> None:
     assert '"/api/mcp-finalize"' in middleware
     assert '"/review/"' in middleware
     assert '"/api/review/"' in middleware
+    # /api/submit must ALSO be exempt. The frontend sends
+    # ``Authorization: Bearer <accessToken>`` to authenticate this
+    # route via ``hasValidReviewAccessToken``, which collides with
+    # the preview Basic Auth gate (both consume the ``Authorization``
+    # header). Without this exemption, the browser loops on the
+    # Basic Auth prompt forever on every paper submission.
+    assert '"/api/submit"' in middleware
     assert "function isHandoffExemptPath" in middleware
     # Drift guard: the retired MCP routes must NOT reappear in the
     # exempt list. They were deleted along with their route handlers
@@ -329,6 +336,14 @@ def test_preview_middleware_exempt_match_semantics() -> None:
         "/review/00000000-0000-0000-0000-000000000000",
         "/review/abc-def",
         "/api/review/00000000-0000-0000-0000-000000000000",
+        # Review submission. Uses a Bearer access token on the
+        # Authorization header, which collides with the preview
+        # Basic Auth gate's `header.startsWith("Basic ")` check.
+        # Handler-level ``hasValidReviewAccessToken`` is the real
+        # gate; an attacker still needs to hit ``/api/presign``
+        # (which IS gated) to mint the access token in the first
+        # place.
+        "/api/submit",
     ):
         assert is_exempt(exempt_path), (
             f"expected {exempt_path!r} to be exempt from the preview "
@@ -344,7 +359,6 @@ def test_preview_middleware_exempt_match_semantics() -> None:
         "/status/12345",
         "/api/cli-handoff",
         "/api/presign",
-        "/api/submit",
         "/api/status",
         "/api/delete",
         "/api/cancel",
@@ -352,6 +366,7 @@ def test_preview_middleware_exempt_match_semantics() -> None:
         "/health",
         "/hqueue",
         "/reviews",  # must not false-match the `/review` prefix
+        "/api/submitted",  # must not false-match the `/api/submit` prefix
     ):
         assert not is_exempt(protected_path), (
             f"expected {protected_path!r} to be GATED by the preview "

@@ -102,7 +102,7 @@ function previewAuthChallenge(pathname: string) {
 }
 
 // Token-based endpoints that enforce their own auth downstream and
-// should therefore skip the preview Basic Auth gate. Three categories:
+// should therefore skip the preview Basic Auth gate. Four categories:
 //
 //   1. **Subscription-handoff routes** (`/h/`, `/api/mcp-finalize`) —
 //      the local `coarse-review --handoff` CLI hits these without a
@@ -121,7 +121,24 @@ function previewAuthChallenge(pathname: string) {
 //      it again behind Basic Auth just blocks the intended recipient
 //      from opening the finished review on a preview deploy.
 //
-//   3. Vercel's edge-level Deployment Protection (Tier 0.2) is a
+//   3. **Review submission** (`/api/submit`) — the frontend sends
+//      ``Authorization: Bearer <accessToken>`` on this POST to
+//      authenticate to ``hasValidReviewAccessToken`` in the handler.
+//      Since HTTP only allows one ``Authorization`` header per
+//      request, the Bearer token OVERRIDES the browser's cached
+//      Basic Auth credential, which makes the middleware's
+//      ``header.startsWith("Basic ")`` check fail and return 401 +
+//      WWW-Authenticate. The browser then pops a credential prompt
+//      on every retry and loops forever because the frontend keeps
+//      re-setting ``Authorization: Bearer``. Exempting ``/api/submit``
+//      from the middleware lets the Bearer token reach the handler,
+//      where its own signed-access-token check is the authoritative
+//      gate. The user can't even reach this route without first
+//      hitting ``/api/presign`` (which IS behind the preview gate)
+//      to mint the ``accessToken``, so exempting ``/api/submit`` does
+//      NOT open a public write path to the database.
+//
+//   4. Vercel's edge-level Deployment Protection (Tier 0.2) is a
 //      separate gate addressed by the `x-vercel-protection-bypass`
 //      query params appended via `appendPreviewBypassQuery` in
 //      `/api/cli-handoff` and `/h/[token]`. Exempting these routes
@@ -141,6 +158,7 @@ const HANDOFF_EXEMPT_PREFIXES = [
   "/api/mcp-finalize",
   "/review/",
   "/api/review/",
+  "/api/submit",
 ];
 
 function isHandoffExemptPath(pathname: string): boolean {
