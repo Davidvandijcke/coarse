@@ -6,14 +6,15 @@ name: supabase-migrate-preview
 # applied it is skipped on every subsequent run.
 #
 # Requires a `preview-modal` GitHub Environment secret called
-# `PREVIEW_SUPABASE_DB_URL`. Use the "Connection string" from the preview
-# Supabase project dashboard → Settings → Database → "URI" (session-mode
-# pooler is fine, `?pgbouncer=true` is tolerated). Set once:
+# `PREVIEW_SUPABASE_DB_URL` containing the preview project's Postgres
+# connection URL. Pull it from the Supabase dashboard: Settings →
+# Database → Connection string → URI tab (session-mode pooler is fine,
+# a `?pgbouncer=true` query string is tolerated). Set it once without
+# pasting the value into shell history by piping from a temp file:
 #
-#   gh secret set PREVIEW_SUPABASE_DB_URL \
-#     --env preview-modal \
-#     --repo Davidvandijcke/coarse \
-#     --body "postgresql://postgres.lowgmgubjnevafigxcyn:<password>@...supabase.com:6543/postgres"
+#   pbpaste > /tmp/db_url && gh secret set PREVIEW_SUPABASE_DB_URL \
+#     --env preview-modal --repo Davidvandijcke/coarse < /tmp/db_url \
+#     && rm /tmp/db_url
 #
 # The workflow runs BEFORE the Modal preview deploy in concurrency terms, so
 # preview workers never boot against an unmigrated DB. If a migration fails,
