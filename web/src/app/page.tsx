@@ -752,10 +752,29 @@ export default function Home() {
 
     try {
       // Step 1: presign + upload (same path as the OpenRouter flow).
+      // `/api/presign` enforces Turnstile server-side and returns 403
+      // "Human check failed..." on a missing or invalid token, so the
+      // handoff path has to feed through the same widget-ready check +
+      // token handoff as `handleSubmit`. This mirrors `handleSubmit`'s
+      // Turnstile block verbatim so the two paths stay aligned.
+      const turnstileToken = turnstileTokenRef.current;
+      if (turnstileSiteKey && !turnstileToken) {
+        if (turnstileStatus === "failed") {
+          throw new Error(
+            "Our human-check widget couldn't load — a browser extension " +
+              "(Brave Shields, uBlock Origin, Firefox ETP strict) is most " +
+              "likely blocking challenges.cloudflare.com. Try disabling it " +
+              `for ${siteHost}, or run coarse locally: uvx coarse-ink review paper.pdf`,
+          );
+        }
+        throw new Error(
+          "Still waiting for the human check to load — give it a second and try again.",
+        );
+      }
       const presignResp = await fetch("/api/presign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name }),
+        body: JSON.stringify({ filename: file.name, turnstile_token: turnstileToken }),
       });
       if (!presignResp.ok) {
         throw new Error(await readApiError(presignResp, "Failed to prepare upload"));
@@ -794,6 +813,13 @@ export default function Home() {
       const msg = err instanceof Error ? err.message : "Handoff failed";
       setError(msg);
       setHandoffMessage("");
+    } finally {
+      // Turnstile tokens are single-use per siteverify call — same
+      // contract as the OpenRouter submit path — so reset after every
+      // attempt so the widget can auto-refresh a fresh token for the
+      // next click. Without this the second handoff click would 403
+      // with "Human check failed".
+      resetTurnstile();
     }
   }
 
@@ -888,10 +914,11 @@ export default function Home() {
   // user's local `coarse-review` command reads its own key from
   // ~/.coarse/config.toml or .env. It also does NOT require an email —
   // the review comes back via the /review/<id> URL printed by the CLI
-  // at the end. Turnstile is not required for the handoff path either
-  // because the browser never uploads API keys to our servers on that path.
+  // at the end. Turnstile IS required because `handleMcpHandoff`
+  // POSTs to `/api/presign`, which enforces the token server-side.
   const handoffBusy = handoffPhase === "extracting";
-  const canHandoff = !!file && !handoffBusy && !submitting && accepting;
+  const canHandoff =
+    !!file && !handoffBusy && !submitting && accepting && turnstileReadyForSubmit;
 
   return (
     <div style={{ background: "var(--board)", minHeight: "100vh" }}>
