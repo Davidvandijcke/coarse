@@ -8,7 +8,41 @@ import ModelPicker from "@/components/ModelPicker";
 import OpenRouterLoginButton from "@/components/OpenRouterLoginButton";
 import { estimateTokensFromPdf, estimateTokensFromText, estimateTokensFromDocx, estimateTokensFromEpub, getModelPricing, estimateReviewCost } from "@/lib/estimateCost";
 import { beginLogin, completeLogin, loadStoredKey, saveStoredKey, clearStoredKey } from "@/lib/openrouterAuth";
+import {
+  type ChatHost,
+  type CliHandoffBundle,
+  type EffortLevel,
+  HOST_LABELS,
+  HOST_GLYPHS,
+  HOST_CLI_NAME,
+  HOST_DEFAULT_MODELS,
+  HOST_INSTALL_URL,
+  HOST_LAUNCH_LABEL,
+  HOST_LAUNCH_HINT,
+  buildLaunchUrl,
+  EFFORT_LEVELS,
+  mintCliHandoff,
+  buildCliCommands,
+  buildAgentPrompt,
+} from "@/lib/mcpHandoff";
 import { buildReviewPath, parseReviewLocator } from "@/lib/reviewAccess";
+import { getVisibleSiteHost } from "@/lib/siteOrigin";
+
+/* ── Desktop-app platform detection ─────────────────────────
+ * The handoff modal's "Open {Host}" buttons dispatch custom URL
+ * schemes (claude://, codex://new?prompt=...). Those only work when
+ * the *desktop* app is installed and has registered the protocol
+ * handler. Linux users with CLI-only installs, mobile visitors, and
+ * anyone in a headless browser hit silent failures — the button just
+ * does nothing with no feedback. Render the button conditionally: mac
+ * and windows only.
+ */
+function isDesktopAppPlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return false;
+  return /Macintosh|Mac OS X|Windows/i.test(ua);
+}
 
 /* ── Turnstile window API type + helper ───────────────────── */
 type TurnstileApi = {
@@ -80,6 +114,65 @@ function SplitFlap() {
     >
       {display}
     </span>
+  );
+}
+
+/* ── Copy-to-clipboard code block ────────────────────────── */
+function CodeBlock({ text, maxHeight }: { text: string; maxHeight?: string }) {
+  const [copied, setCopied] = useState(false);
+  // Wrap the scroll area in a relative container so the copy button
+  // can be absolutely positioned over the top-right and stay visible
+  // regardless of scroll position.
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }).catch(() => {});
+        }}
+        style={{
+          position: "absolute",
+          top: "0.4rem",
+          right: "0.4rem",
+          zIndex: 2,
+          background: copied ? "var(--yellow-chalk)" : "var(--tray)",
+          color: copied ? "var(--board)" : "var(--chalk-bright)",
+          border: "none",
+          borderRadius: "2px",
+          padding: "0.2rem 0.55rem",
+          fontSize: "0.92rem",
+          fontFamily: "var(--font-chalk)",
+          cursor: "pointer",
+          transition: "background 0.15s, color 0.15s",
+        }}
+      >
+        {copied ? "copied ✓" : "copy"}
+      </button>
+      <div
+        style={{
+          background: "var(--board)",
+          border: "1px solid var(--tray)",
+          borderLeft: "2px solid var(--yellow-chalk)",
+          borderRadius: "2px",
+          padding: "0.65rem 0.85rem",
+          paddingRight: "4.5rem",
+          fontFamily: "var(--font-space-mono), monospace",
+          fontSize: "0.9rem",
+          color: "var(--chalk-bright)",
+          lineHeight: 1.5,
+          maxHeight: maxHeight ?? undefined,
+          overflowY: maxHeight ? "auto" : undefined,
+          overflowX: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}
+      >
+        {text}
+      </div>
+    </div>
   );
 }
 
@@ -181,6 +274,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 /* ── Page ──────────────────────────────────────────────────── */
 export default function Home() {
   const router = useRouter();
+  const siteHost = getVisibleSiteHost();
   const [file, setFile] = useState<File | null>(null);
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -188,6 +282,7 @@ export default function Home() {
   const [authorNotes, setAuthorNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [keyNotice, setKeyNotice] = useState<string | null>(null);
   const [lookupKey, setLookupKey] = useState("");
   const [costEstimate, setCostEstimate] = useState<number | null>(null);
   const [costLoading, setCostLoading] = useState(false);
@@ -212,11 +307,69 @@ export default function Home() {
     accepting: boolean; banner: string | null; activeReviews: number; capacity: number;
     emailCapacityReached?: boolean;
   } | null>(null);
-
-  // Fetch system capacity status on mount
-  useEffect(() => {
-    fetch("/api/status").then(r => r.json()).then(setSystemStatus).catch(() => {});
+  const refreshSystemStatus = useCallback(() => {
+    fetch("/api/status", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        // Shape-guard the response before committing to state. On preview
+        // deploys behind the password gate, an unauthenticated 401 from
+        // the middleware returns `{error: "Preview is password-protected..."}`
+        // — a different shape from the expected `{accepting, message, ...}`
+        // body. Without this guard, the banner gate downstream reads
+        // `!data.accepting` as `true` (because `undefined !== false`) and
+        // renders a bogus "Submissions are temporarily paused" message.
+        if (data && typeof data.accepting === "boolean") {
+          setSystemStatus(data);
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  // CLI handoff state machine:
+  //
+  //   idle → extracting → ready
+  //           │
+  //           └─► failed
+  //
+  //  - idle: user hasn't clicked the subscription button yet
+  //  - extracting: presign + upload + /api/cli-handoff in flight
+  //  - ready: clipboard prompt and host launch affordances are ready
+  //  - failed: upload or handoff errored; show error in form
+  type HandoffPhase = "idle" | "extracting" | "ready" | "failed";
+  const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
+  const [handoffPhase, setHandoffPhase] = useState<HandoffPhase>("idle");
+  const [handoffState, setHandoffState] = useState<{
+    paperId: string; host: ChatHost;
+  } | null>(null);
+  const [handoffMessage, setHandoffMessage] = useState<string>("");
+  const [handoffBundle, setHandoffBundle] = useState<CliHandoffBundle | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>("");
+  const [selectedEffort, setSelectedEffort] = useState<EffortLevel>("high");
+  const [launchStatus, setLaunchStatus] = useState<string>("");
+
+  // Refresh system capacity state on mount and when the tab becomes active.
+  useEffect(() => {
+    refreshSystemStatus();
+
+    const handleFocus = () => {
+      refreshSystemStatus();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshSystemStatus();
+      }
+    };
+    const intervalId = window.setInterval(refreshSystemStatus, 30000);
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshSystemStatus]);
 
   // Render the Cloudflare Turnstile widget once its script has loaded. The
   // <Script strategy="afterInteractive"> tag in layout.tsx pulls the API
@@ -345,11 +498,17 @@ export default function Home() {
     }
   }, []);
 
-  // Hydrate OpenRouter key from localStorage and handle OAuth callback (?code=...)
+  // Hydrate a tab-scoped OpenRouter key and handle OAuth callback (?code=...).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
-    const stored = loadStoredKey();
+    const { key: stored, migratedFromLocalStorage } = loadStoredKey();
+
+    if (migratedFromLocalStorage) {
+      setKeyNotice(
+        "Moved your saved OpenRouter key into tab-only storage. It will clear when you close this tab.",
+      );
+    }
 
     if (!code) {
       if (stored) setApiKey(stored);
@@ -364,11 +523,12 @@ export default function Home() {
     completeLogin(code)
       .then((key) => {
         setApiKey(key);
+        setKeyNotice(null);
         try {
           saveStoredKey(key);
         } catch {
           setError(
-            "Logged in, but couldn't save the key to your browser. You'll need to log in again next visit.",
+            "Logged in, but couldn't keep the key in this tab. You'll need to paste it again if this page reloads.",
           );
         }
       })
@@ -447,8 +607,53 @@ export default function Home() {
     maxFiles: 1,
   });
 
+  /**
+   * Extract a user-readable error message from a non-2xx Response.
+   *
+   * Assumes JSON by convention (every /api/* route returns JSON on
+   * error) but falls back to text if the body isn't valid JSON. Most
+   * importantly, this never throws a SyntaxError on the caller: when
+   * a middleware layer returns a plain-text 401 (preview Basic Auth
+   * on an unauthenticated fetch, for example) the old code crashed
+   * with "Unexpected token A in JSON" and surfaced that cryptic
+   * message as the submit error. Now we pick a clean human-readable
+   * fallback keyed on the status code.
+   */
+  async function readApiError(resp: Response, fallback: string): Promise<string> {
+    const rawBody = await resp.text().catch(() => "");
+    if (rawBody) {
+      try {
+        const parsed = JSON.parse(rawBody) as { error?: unknown };
+        if (parsed && typeof parsed.error === "string" && parsed.error.trim()) {
+          return parsed.error;
+        }
+      } catch {
+        // Body wasn't JSON — fall through to the plain-text path.
+      }
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      return (
+        "Authentication failed. On preview deploys this usually means the " +
+        "browser's cached Basic Auth credentials didn't get sent on the " +
+        "form submit. Refresh the tab (Cmd/Ctrl+Shift+R), sign in again at " +
+        "the password prompt, and retry."
+      );
+    }
+    if (resp.status === 503) {
+      // Every app-emitted 503 is JSON with an `error` field and is
+      // handled by the earlier branch. This fallback fires only on
+      // infra-level 503s (Vercel edge, CDN interstitial), where the
+      // body is an HTML error page or a stack trace. We don't want
+      // to render raw HTML in an error message, so return a fixed
+      // string instead of exposing `rawBody`.
+      return "Service temporarily unavailable — please try again in a minute.";
+    }
+    return `${fallback} (HTTP ${resp.status})`;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (handoffPhase !== "idle") return;
     if (!file || !apiKey) return;
     if (!email && !(systemStatus?.emailCapacityReached === true)) return;
     setSubmitting(true);
@@ -462,7 +667,7 @@ export default function Home() {
             "Our human-check widget couldn't load — a browser extension " +
               "(Brave Shields, uBlock Origin, Firefox ETP strict) is most " +
               "likely blocking challenges.cloudflare.com. Try disabling it " +
-              "for coarse.ink, or run coarse locally: uvx coarse-ink review paper.pdf",
+              `for ${siteHost}, or run coarse locally: uvx coarse-ink review paper.pdf`,
           );
         }
         throw new Error(
@@ -475,10 +680,9 @@ export default function Home() {
         body: JSON.stringify({ filename: file.name, turnstile_token: turnstileToken }),
       });
       if (!presignResp.ok) {
-        const data = await presignResp.json();
-        throw new Error(data.error || "Failed to prepare upload");
+        throw new Error(await readApiError(presignResp, "Failed to prepare upload"));
       }
-      const { id, storagePath, signedUrl, token, accessToken } = await presignResp.json();
+      const { id, storagePath, signedUrl, token, handoffSecret, accessToken } = await presignResp.json();
 
       // Step 2: Upload file directly to Supabase Storage (bypasses Vercel 4.5MB limit)
       const uploadResp = await fetch(signedUrl, {
@@ -507,11 +711,11 @@ export default function Home() {
           model,
           storage_path: storagePath,
           author_notes: authorNotes || undefined,
+          handoff_secret: handoffSecret,
         }),
       });
       if (!submitResp.ok) {
-        const data = await submitResp.json();
-        throw new Error(data.error || "Submission failed");
+        throw new Error(await readApiError(submitResp, "Submission failed"));
       }
       router.push(buildReviewPath("status", id, accessToken));
     } catch (err) {
@@ -523,6 +727,146 @@ export default function Home() {
       // it runs exactly once per submit regardless of which step threw.
       resetTurnstile();
     }
+  }
+
+  /**
+   * Route this review to one of the user's local coding-agent hosts using the
+   * CLI handoff flow.
+   *
+   * The browser uploads the source file, receives a paper-scoped handoff URL,
+   * copies the review prompt to the clipboard, and then lets the local
+   * `coarse-review --handoff ...` command do extraction and finalization on the
+   * user's machine with the user's own OpenRouter key and coding-agent
+   * subscription.
+   */
+  async function handleMcpHandoff(host: ChatHost) {
+    if (!file) return;
+    if (handoffPhase === "extracting") return;
+    // Reset any previous handoff so the user can switch hosts.
+    resetHandoff();
+    setError(null);
+    setMcpPickerOpen(false);
+    setHandoffPhase("extracting");
+    setHandoffMessage("Uploading paper...");
+    setHandoffBundle(null);
+
+    try {
+      // Step 1: presign + upload (same path as the OpenRouter flow).
+      const presignResp = await fetch("/api/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      if (!presignResp.ok) {
+        throw new Error(await readApiError(presignResp, "Failed to prepare upload"));
+      }
+      const { id, signedUrl, handoffSecret } = await presignResp.json();
+
+      const uploadResp = await fetch(signedUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "x-upsert": "true",
+        },
+        body: file,
+      });
+      if (!uploadResp.ok) {
+        throw new Error("File upload failed — please try again");
+      }
+
+      // Step 2: mint CLI handoff token. No server-side extraction — the
+      // user's local `coarse-review` command downloads the raw PDF and
+      // does Mistral OCR locally with their own OpenRouter key, then
+      // POSTs the rendered review back to /api/mcp-finalize.
+      setHandoffMessage("Preparing handoff...");
+      const bundle = await mintCliHandoff(id, host, handoffSecret);
+
+      // Step 3: defaults for the modal dropdowns.
+      setSelectedModel(HOST_DEFAULT_MODELS[host][0]);
+      setSelectedEffort("high");
+
+      setHandoffBundle(bundle);
+      setHandoffState({ paperId: id, host });
+      setHandoffPhase("ready");
+      setHandoffMessage("");
+    } catch (err) {
+      setHandoffPhase("failed");
+      const msg = err instanceof Error ? err.message : "Handoff failed";
+      setError(msg);
+      setHandoffMessage("");
+    }
+  }
+
+  /**
+   * Primary launch action: copy the run command to the clipboard,
+   * then open the host's web interface (if it has one) in a new tab.
+   *
+   * The clipboard write MUST happen synchronously inside the click
+   * handler or browsers will block it. The new-tab open then fires
+   * after the clipboard write; if it fails (popup blocker, no web
+   * equivalent) we fall back silently — the clipboard copy still
+   * worked, which is the actually-important part.
+   */
+  async function handleLaunch() {
+    if (!handoffBundle || !handoffState) return;
+    const host = handoffState.host;
+    const { setupCmd, runCmd, attachCmd, logFile } = buildCliCommands({
+      handoffUrl: handoffBundle.handoff_url,
+      host,
+      model: selectedModel,
+      effort: selectedEffort,
+      paperId: handoffState.paperId,
+    });
+
+    // Copy the full prompt to clipboard (fallback for hosts that can't
+    // receive prompts via URL scheme — currently Claude Code and Gemini).
+    const fullPrompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile });
+    try {
+      await navigator.clipboard.writeText(fullPrompt);
+    } catch (err) {
+      console.error("clipboard write failed", err);
+    }
+
+    // Custom URL schemes (claude://, codex://...) fail silently when the
+    // desktop handler isn't registered. The browser gives no feedback and
+    // the button appears to do nothing. Detect this with a 2.5s visibility
+    // timer: if the OS never switches focus to another app, the scheme
+    // didn't resolve and we swap in a "didn't work — paste the commands
+    // instead" hint so the user isn't stuck.
+    const launchUrl = buildLaunchUrl({ host, runCmd, setupCmd, attachCmd, logFile });
+    if (!launchUrl) {
+      setLaunchStatus("Command copied to clipboard. Paste it into your terminal.");
+      return;
+    }
+
+    let becameHidden = false;
+    const onVis = () => {
+      if (document.visibilityState === "hidden") becameHidden = true;
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.location.href = launchUrl;
+    setLaunchStatus(
+      host === "codex"
+        ? "Opening Codex desktop app — the composer should pre-fill. Hit send."
+        : `Opening ${HOST_LABELS[host]} — paste the prompt from your clipboard (⌘V / Ctrl+V).`,
+    );
+    setTimeout(() => {
+      document.removeEventListener("visibilitychange", onVis);
+      if (!becameHidden) {
+        setLaunchStatus(
+          `${HOST_LABELS[host]} desktop app didn't open. If you only have the CLI ` +
+            `version installed, paste the commands above into your terminal instead.`,
+        );
+      }
+    }, 2500);
+  }
+
+  function resetHandoff() {
+    setHandoffPhase("idle");
+    setHandoffBundle(null);
+    setHandoffState(null);
+    setHandoffMessage("");
+    setLaunchStatus("");
   }
 
   const accepting = systemStatus?.accepting !== false;
@@ -537,8 +881,17 @@ export default function Home() {
     !!apiKey &&
     !submitting &&
     accepting &&
+    handoffPhase === "idle" &&
     (emailDisabled || !!email) &&
     turnstileReadyForSubmit;
+  // CLI handoff does NOT require an OpenRouter key on the web form — the
+  // user's local `coarse-review` command reads its own key from
+  // ~/.coarse/config.toml or .env. It also does NOT require an email —
+  // the review comes back via the /review/<id> URL printed by the CLI
+  // at the end. Turnstile is not required for the handoff path either
+  // because the browser never uploads API keys to our servers on that path.
+  const handoffBusy = handoffPhase === "extracting";
+  const canHandoff = !!file && !handoffBusy && !submitting && accepting;
 
   return (
     <div style={{ background: "var(--board)", minHeight: "100vh" }}>
@@ -858,7 +1211,7 @@ export default function Home() {
               }}
             >
               <div>
-                <FieldLabel>Email</FieldLabel>
+                <FieldLabel>Email <span style={{ color: "var(--dust)", fontWeight: 400 }}>(for web review only)</span></FieldLabel>
                 <input
                   type="email"
                   required={!emailDisabled}
@@ -880,7 +1233,7 @@ export default function Home() {
                 >
                   {emailDisabled
                     ? "Email delivery is temporarily down. Save your review key when you submit and check back in about an hour."
-                    : <>We&apos;ll email you when it&apos;s done.</>}
+                    : <>We&apos;ll email you when it&apos;s done. Check your spam folder if you don&apos;t see it.</>}
                 </p>
               </div>
 
@@ -910,6 +1263,7 @@ export default function Home() {
                     onLogout={() => {
                       clearStoredKey();
                       setApiKey("");
+                      setKeyNotice(null);
                     }}
                   />
                 </div>
@@ -942,8 +1296,20 @@ export default function Home() {
                     marginTop: "0.4rem",
                   }}
                 >
-                  Stored on your device only. Never saved on our servers.
+                  OAuth keys stay in this tab only and clear when you close it. Never saved on our servers.
                 </p>
+                {keyNotice && (
+                  <p
+                    style={{
+                      fontFamily: "var(--font-chalk)",
+                      fontSize: "1rem",
+                      color: "var(--blue-chalk)",
+                      marginTop: "0.35rem",
+                    }}
+                  >
+                    {keyNotice}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1020,7 +1386,8 @@ export default function Home() {
                   >
                     <p style={{ margin: "0 0 0.6rem" }}>
                       Our human check couldn&apos;t load. A browser privacy
-                      extension is most likely blocking{" "}
+                      extension or a Turnstile hostname mismatch is most
+                      likely blocking{" "}
                       <code style={{ fontFamily: "var(--font-space-mono), monospace" }}>
                         challenges.cloudflare.com
                       </code>{" "}
@@ -1030,9 +1397,12 @@ export default function Home() {
                     <p style={{ margin: "0 0 0.6rem" }}>
                       Try disabling the extension for{" "}
                       <code style={{ fontFamily: "var(--font-space-mono), monospace" }}>
-                        coarse.ink
+                        {siteHost}
                       </code>{" "}
-                      and refreshing, or use a different browser.
+                      and refreshing, or use a different browser. If
+                      you&apos;re on a preview URL, the deployment may also need
+                      that hostname added to the Cloudflare Turnstile widget
+                      allowlist.
                     </p>
                     <p style={{ margin: 0 }}>
                       Or run coarse locally with your own OpenRouter key:{" "}
@@ -1061,34 +1431,385 @@ export default function Home() {
             )}
 
             <div>
-              <button
-                type="submit"
-                disabled={!canSubmit}
-                style={{
-                  background: canSubmit ? "var(--yellow-chalk)" : "var(--tray)",
-                  color: canSubmit ? "var(--board)" : "var(--dust)",
-                  border: "none",
-                  padding: "0.9375rem 2.5rem",
-                  fontFamily: "var(--font-chalk)",
-                  fontSize: "1.1rem",
-                  fontWeight: 600,
-                  cursor: canSubmit ? "pointer" : "not-allowed",
-                  transition: "background 0.2s, color 0.2s",
-                  borderRadius: "2px",
-                }}
-              >
-                {submitting ? "Submitting..." : "Review my paper"}
-              </button>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "center" }}>
+                <button
+                  type="submit"
+                  disabled={!canSubmit}
+                  style={{
+                    background: canSubmit ? "var(--yellow-chalk)" : "var(--tray)",
+                    color: canSubmit ? "var(--board)" : "var(--dust)",
+                    border: "none",
+                    padding: "0.9375rem 2.5rem",
+                    fontFamily: "var(--font-chalk)",
+                    fontSize: "1.1rem",
+                    fontWeight: 600,
+                    cursor: canSubmit ? "pointer" : "not-allowed",
+                    transition: "background 0.2s, color 0.2s",
+                    borderRadius: "2px",
+                  }}
+                >
+                  {submitting ? "Submitting..." : "Review my paper"}
+                </button>
+
+                <span
+                  style={{
+                    fontFamily: "var(--font-chalk)",
+                    fontSize: "1.05rem",
+                    color: "var(--dust)",
+                  }}
+                >
+                  or
+                </span>
+
+                <div style={{ position: "relative" }}>
+                  <button
+                    type="button"
+                    disabled={!canHandoff}
+                    onClick={() => setMcpPickerOpen((v) => !v)}
+                    style={{
+                      background: "transparent",
+                      color: canHandoff ? "var(--chalk-bright)" : "var(--dust)",
+                      border: `1.5px solid ${canHandoff ? "var(--yellow-chalk)" : "var(--tray)"}`,
+                      padding: "0.875rem 1.75rem",
+                      fontFamily: "var(--font-chalk)",
+                      fontSize: "1.1rem",
+                      fontWeight: 600,
+                      cursor: canHandoff ? "pointer" : "not-allowed",
+                      transition: "border-color 0.2s, color 0.2s",
+                      borderRadius: "2px",
+                    }}
+                    aria-expanded={mcpPickerOpen}
+                    aria-haspopup="listbox"
+                  >
+                    {handoffBusy ? "Preparing..." : "Review with my subscription ▾"}
+                  </button>
+
+                  {handoffBusy && handoffMessage && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "calc(100% + 0.6rem)",
+                        left: 0,
+                        minWidth: "340px",
+                        padding: "0.65rem 0.9rem",
+                        background: "var(--board-surface)",
+                        border: "1px solid var(--tray)",
+                        borderLeft: "3px solid var(--yellow-chalk)",
+                        borderRadius: "2px",
+                        fontFamily: "var(--font-chalk)",
+                        fontSize: "1rem",
+                        color: "var(--chalk)",
+                        lineHeight: 1.4,
+                        zIndex: 9,
+                      }}
+                    >
+                      <span style={{ color: "var(--yellow-chalk)" }}>⏳</span>{" "}
+                      {handoffMessage}
+                    </div>
+                  )}
+
+                  {mcpPickerOpen && canHandoff && (
+                    <div
+                      role="listbox"
+                      style={{
+                        position: "absolute",
+                        top: "calc(100% + 0.4rem)",
+                        left: 0,
+                        minWidth: "320px",
+                        background: "var(--board-surface)",
+                        border: "1px solid var(--tray)",
+                        borderRadius: "2px",
+                        padding: "0.5rem 0",
+                        boxShadow: "0 6px 18px rgba(0,0,0,0.35)",
+                        zIndex: 10,
+                      }}
+                    >
+                      {(["claude-code", "codex", "gemini-cli"] as ChatHost[]).map((h) => (
+                        <button
+                          key={h}
+                          type="button"
+                          onClick={() => handleMcpHandoff(h)}
+                          role="option"
+                          aria-selected="false"
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "0.7rem 1rem",
+                            background: "transparent",
+                            border: "none",
+                            color: "var(--chalk-bright)",
+                            fontFamily: "var(--font-chalk)",
+                            fontSize: "1.05rem",
+                            cursor: "pointer",
+                            transition: "background 0.15s",
+                            borderRadius: 0,
+                          }}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.background = "var(--tray)";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                          }}
+                        >
+                          <span style={{ color: "var(--yellow-chalk)", marginRight: "0.6rem" }}>
+                            {HOST_GLYPHS[h]}
+                          </span>
+                          {HOST_LABELS[h]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <p
                 style={{
                   fontFamily: "var(--font-chalk)",
                   fontSize: "1.1rem",
                   color: "var(--dust)",
                   marginTop: "0.9rem",
+                  maxWidth: "620px",
+                  lineHeight: 1.5,
                 }}
               >
-                File deleted after processing. No provider trains on it. Review key works for 90 days. Usually under $2.
+                <strong style={{ color: "var(--chalk)" }}>Review my paper:</strong>
+                {" "}OpenRouter handles everything end-to-end. File deleted after processing. Review key works for 90 days. Usually under $2.
               </p>
+              <p
+                style={{
+                  fontFamily: "var(--font-chalk)",
+                  fontSize: "1.1rem",
+                  color: "var(--dust)",
+                  marginTop: "0.3rem",
+                  maxWidth: "620px",
+                  lineHeight: 1.5,
+                }}
+              >
+                <strong style={{ color: "var(--chalk)" }}>Review with my subscription:</strong>
+                {" "}we hand you a shell command that runs the full coarse pipeline
+                locally using <em>your</em>{" "}
+                <a href="https://claude.ai/download" target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue-chalk)", textDecoration: "none" }}>Claude Code</a>,{" "}
+                <a href="https://github.com/openai/codex" target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue-chalk)", textDecoration: "none" }}>Codex</a>, or{" "}
+                <a href="https://github.com/google-gemini/gemini-cli" target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue-chalk)", textDecoration: "none" }}>Gemini CLI</a>{" "}
+                subscription for the LLM reasoning. You only pay ~$0.10 for the
+                local Mistral OCR step (with your own OpenRouter key). Review
+                shows up on this page when done.
+              </p>
+              <p
+                style={{
+                  fontFamily: "var(--font-chalk)",
+                  fontSize: "0.95rem",
+                  color: "var(--dust)",
+                  margin: "0.55rem 0 0",
+                  maxWidth: "620px",
+                  lineHeight: 1.5,
+                }}
+              >
+                Runs locally on your machine using your own Claude Code, Codex,
+                or Gemini CLI account. coarse.ink does not receive or store your
+                provider login, and your provider&apos;s terms, usage limits, and
+                organization policies apply. coarse.ink is not affiliated with
+                Anthropic, OpenAI, or Google.
+              </p>
+
+              {handoffBundle && handoffState && (() => {
+                const host = handoffState.host;
+                const { setupCmd, runCmd, attachCmd, logFile } = buildCliCommands({
+                  handoffUrl: handoffBundle.handoff_url,
+                  host,
+                  model: selectedModel,
+                  effort: selectedEffort,
+                  paperId: handoffState.paperId,
+                });
+                return (
+                  <div
+                    style={{
+                      marginTop: "1.5rem",
+                      padding: "1.25rem 1.5rem",
+                      borderLeft: "3px solid var(--yellow-chalk)",
+                      background: "var(--board-surface)",
+                      borderRadius: "2px",
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontFamily: "var(--font-chalk)",
+                        fontSize: "1.15rem",
+                        color: "var(--chalk-bright)",
+                        margin: "0 0 0.75rem",
+                      }}
+                    >
+                      <span style={{ color: "var(--yellow-chalk)" }}>
+                        {HOST_GLYPHS[host]}
+                      </span>{" "}
+                      Review with <strong>{HOST_LABELS[host]}</strong>
+                    </p>
+
+                    {/* Model + effort dropdowns */}
+                    <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+                      <label style={{ fontFamily: "var(--font-chalk)", fontSize: "0.95rem", color: "var(--dust)" }}>
+                        model{" "}
+                        <select
+                          value={selectedModel}
+                          onChange={(e) => setSelectedModel(e.target.value)}
+                          style={{ marginLeft: "0.25rem", padding: "0.25rem 0.5rem", background: "var(--board)", color: "var(--chalk)", border: "1px solid var(--tray)", borderRadius: "2px", fontFamily: "monospace", fontSize: "0.92rem" }}
+                        >
+                          {HOST_DEFAULT_MODELS[host].map((m) => (<option key={m} value={m}>{m}</option>))}
+                        </select>
+                      </label>
+                      <label style={{ fontFamily: "var(--font-chalk)", fontSize: "0.95rem", color: "var(--dust)" }}>
+                        effort{" "}
+                        <select
+                          value={selectedEffort}
+                          onChange={(e) => setSelectedEffort(e.target.value as EffortLevel)}
+                          style={{ marginLeft: "0.25rem", padding: "0.25rem 0.5rem", background: "var(--board)", color: "var(--chalk)", border: "1px solid var(--tray)", borderRadius: "2px", fontFamily: "monospace", fontSize: "0.92rem" }}
+                        >
+                          {EFFORT_LEVELS.map((e) => (<option key={e} value={e}>{e}</option>))}
+                        </select>
+                      </label>
+                    </div>
+
+                    {/* PRIMARY: always-visible prompt. Uniform across
+                        all three hosts — no collapsibles, no host-
+                        specific reveals. Users paste this into their
+                        terminal and it works regardless of whether any
+                        desktop-app deep-link fires. */}
+                    <div style={{ marginTop: "0.25rem" }}>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-chalk)",
+                          fontSize: "0.95rem",
+                          color: "var(--yellow-chalk)",
+                          marginBottom: "0.5rem",
+                        }}
+                      >
+                        Paste this prompt into your {HOST_LABELS[host]} terminal:
+                      </div>
+                      <CodeBlock
+                        text={buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile })}
+                        maxHeight="160px"
+                      />
+                      <p
+                        style={{
+                          fontFamily: "var(--font-chalk)",
+                          fontSize: "0.92rem",
+                          color: "var(--dust)",
+                          margin: "0.5rem 0 0",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        The agent will refresh the coarse-review skill, run
+                        the full review locally, and take 10&ndash;25 minutes.
+                        Your provider login stays on your machine.
+                      </p>
+                      <p
+                        style={{
+                          fontFamily: "var(--font-chalk)",
+                          fontSize: "0.92rem",
+                          color: "var(--yellow-chalk)",
+                          margin: "0.5rem 0 0",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Your OpenRouter key needs to be on your machine first
+                        — export <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>OPENROUTER_API_KEY</code>,
+                        or put it in <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>.env</code>{" "}
+                        or <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>~/.coarse/config.toml</code>.
+                        We don&apos;t pass it through the browser because the
+                        handoff URL ends up in your agent&apos;s chat log. If
+                        it&apos;s missing, the agent will ask.
+                      </p>
+                    </div>
+
+                    {/* Review URL */}
+                    <p
+                      style={{
+                        fontFamily: "Georgia, serif",
+                        fontSize: "1rem",
+                        color: "var(--chalk)",
+                        margin: "1rem 0 0",
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      When the review finishes, it will appear at:
+                    </p>
+                    <a
+                      href={`/review/${handoffState.paperId}`}
+                      style={{
+                        display: "inline-block",
+                        marginTop: "0.35rem",
+                        fontFamily: "var(--font-space-mono), monospace",
+                        fontSize: "0.95rem",
+                        color: "var(--blue-chalk)",
+                        textDecoration: "underline",
+                        textUnderlineOffset: "2px",
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      /review/{handoffState.paperId}
+                    </a>
+
+                    {/* SECONDARY: desktop-app launch button. Hidden on
+                        Linux/mobile (no desktop handlers) and for Gemini
+                        (no documented URL scheme). When the scheme
+                        fires successfully the user gets a nice one-click
+                        handoff; when it silently fails the 2.5s timer in
+                        handleLaunch swaps the hint to "didn't open".
+                        Either way, the commands above are always the
+                        guaranteed path. */}
+                    {host !== "gemini-cli" && isDesktopAppPlatform() && (
+                      <div style={{ marginTop: "1.25rem" }}>
+                        <button
+                          type="button"
+                          onClick={handleLaunch}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            padding: "0.8rem 1.25rem",
+                            background: "var(--board-surface)",
+                            color: "var(--yellow-chalk)",
+                            border: "1.5px solid var(--yellow-chalk)",
+                            borderRadius: "2px",
+                            fontFamily: "var(--font-chalk)",
+                            fontSize: "1.08rem",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            transition: "background 0.15s",
+                          }}
+                        >
+                          {HOST_LAUNCH_LABEL[host]}
+                        </button>
+                        <p
+                          style={{
+                            fontFamily: "var(--font-chalk)",
+                            fontSize: "0.88rem",
+                            color: "var(--dust)",
+                            margin: "0.4rem 0 0",
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {launchStatus || HOST_LAUNCH_HINT[host]}
+                        </p>
+                      </div>
+                    )}
+
+                    <p
+                      style={{
+                        fontFamily: "var(--font-chalk)",
+                        fontSize: "0.92rem",
+                        color: "var(--dust)",
+                        margin: "1rem 0 0",
+                      }}
+                    >
+                      Don&apos;t have {HOST_LABELS[host]} yet?{" "}
+                      <a href={HOST_INSTALL_URL[host]} target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue-chalk)", textDecoration: "none" }}>
+                        install it →
+                      </a>
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
           </form>
         </section>
@@ -1188,6 +1909,17 @@ export default function Home() {
             }}
           >
             terms
+          </a>
+          <a
+            href="mailto:dvdijcke@umich.edu"
+            style={{
+              fontFamily: "var(--font-chalk)",
+              fontSize: "1.05rem",
+              color: "var(--dust)",
+              textDecoration: "none",
+            }}
+          >
+            contact
           </a>
         </footer>
       </main>

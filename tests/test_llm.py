@@ -1,18 +1,24 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from instructor.core.exceptions import FailedAttempt, InstructorRetryException
 from pydantic import BaseModel, ValidationError
 
 from coarse.config import CoarseConfig
 from coarse.llm import (
     LLMClient,
     _inject_openrouter_privacy,
+    _is_openrouter_kimi_model,
+    _prepare_openrouter_kimi_structured_kwargs,
     _sanitized_completion,
+    _select_fallback_instructor_mode,
+    _select_instructor_mode,
     estimate_call_cost,
     estimate_reasoning_overhead_tokens,
     model_cost_per_token,
 )
 from coarse.models import REASONING_EFFORT_DEFAULT, REASONING_MAX_TOKENS_MULTIPLIER
+from coarse.types import OverviewFeedback
 
 TEST_MODEL = "test/mock-model"
 
@@ -26,6 +32,16 @@ def _make_mock_completion():
     completion.usage.prompt_tokens = 100
     completion.usage.completion_tokens = 50
     completion.model = "openai/gpt-4o"
+    return completion
+
+
+def _completion_with_content(content: str):
+    completion = _make_mock_completion()
+    message = MagicMock()
+    message.content = content
+    choice = MagicMock()
+    choice.message = message
+    completion.choices = [choice]
     return completion
 
 
@@ -92,7 +108,9 @@ def test_estimate_call_cost():
     assert abs(result - expected) < 1e-12
 
 
-def test_client_uses_config_model(mock_instructor_client):
+def test_client_uses_config_model(mock_instructor_client, monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     cfg = CoarseConfig(default_model="anthropic/claude-3-5-sonnet")
     client = LLMClient(config=cfg)
     assert client.model == "anthropic/claude-3-5-sonnet"
@@ -713,3 +731,433 @@ def test_complete_instructor_validation_error(mock_instructor_client):
             messages=[{"role": "user", "content": "bad"}],
             response_model=_SimpleModel,
         )
+
+
+def test_select_instructor_mode_openrouter_kimi_prefers_json():
+    mode = _select_instructor_mode("openrouter/moonshotai/kimi-k2.5")
+    assert mode.name == "JSON"
+
+
+def test_select_fallback_mode_openrouter_kimi_uses_md_json():
+    fallback = _select_fallback_instructor_mode(
+        "openrouter/moonshotai/kimi-k2.5",
+        _select_instructor_mode("openrouter/moonshotai/kimi-k2.5"),
+    )
+    assert fallback is not None
+    assert fallback.name == "MD_JSON"
+
+
+def test_prepare_openrouter_kimi_structured_kwargs_adds_healing_and_require_parameters():
+    prepared = _prepare_openrouter_kimi_structured_kwargs({})
+    assert prepared["extra_body"]["provider"]["require_parameters"] is True
+    assert prepared["extra_body"]["plugins"] == [{"id": "response-healing"}]
+
+
+def test_prepare_openrouter_kimi_structured_kwargs_preserves_existing_plugin_and_override():
+    prepared = _prepare_openrouter_kimi_structured_kwargs(
+        {
+            "extra_body": {
+                "provider": {"require_parameters": False},
+                "plugins": [{"id": "response-healing"}],
+            }
+        }
+    )
+    assert prepared["extra_body"]["provider"]["require_parameters"] is False
+    assert prepared["extra_body"]["plugins"] == [{"id": "response-healing"}]
+
+
+def test_prepare_openrouter_kimi_structured_kwargs_appends_without_clobbering_other_plugins():
+    prepared = _prepare_openrouter_kimi_structured_kwargs(
+        {
+            "extra_body": {
+                "plugins": [{"id": "foo-plugin"}],
+            }
+        }
+    )
+    assert prepared["extra_body"]["plugins"] == [
+        {"id": "foo-plugin"},
+        {"id": "response-healing"},
+    ]
+
+
+def test_is_openrouter_kimi_model():
+    assert _is_openrouter_kimi_model("openrouter/moonshotai/kimi-k2.5")
+    assert not _is_openrouter_kimi_model("moonshotai/kimi-k2.5")
+    assert not _is_openrouter_kimi_model("openrouter/qwen/qwen3.5-plus-02-15")
+
+
+def test_complete_openrouter_kimi_retries_md_json_on_route_rejection():
+    primary_client = MagicMock()
+    fallback_client = MagicMock()
+    primary_client.chat.completions.create_with_completion.side_effect = RuntimeError(
+        "No endpoints found that support all parameters in your request"
+    )
+    expected = _SimpleModel(value="ok")
+    mock_completion = _make_mock_completion()
+    fallback_client.chat.completions.create_with_completion.return_value = (
+        expected,
+        mock_completion,
+    )
+
+    with (
+        patch(
+            "coarse.llm.instructor.from_litellm",
+            side_effect=[primary_client, fallback_client],
+        ),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(model="openrouter/moonshotai/kimi-k2.5", config=CoarseConfig())
+        result = client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+        )
+
+    assert result == expected
+    primary_kwargs = primary_client.chat.completions.create_with_completion.call_args.kwargs
+    assert primary_kwargs["extra_body"]["provider"]["require_parameters"] is True
+    assert {"id": "response-healing"} in primary_kwargs["extra_body"]["plugins"]
+    fallback_client.chat.completions.create_with_completion.assert_called_once()
+
+
+def test_complete_openrouter_kimi_salvages_fallback_md_json_retry_error():
+    primary_client = MagicMock()
+    fallback_client = MagicMock()
+    primary_client.chat.completions.create_with_completion.side_effect = RuntimeError(
+        "No endpoints found that support all parameters in your request"
+    )
+
+    content = (
+        "```json\n"
+        "{\n"
+        '  "summary": "Short summary.",\n'
+        '  "assessment": "Short assessment.",\n'
+        '  "issues": [\n'
+        "    {\n"
+        '      "title": "Issue one",\n'
+        '      "body": "Body one."\n'
+        "    },\n"
+        "    {\n"
+        '      "title": "Issue two",\n'
+        '      "body": "Body two'
+    )
+    completion = _completion_with_content(content)
+    fallback_client.chat.completions.create_with_completion.side_effect = InstructorRetryException(
+        "structured output failed",
+        last_completion=completion,
+        n_attempts=3,
+        total_usage=150,
+        create_kwargs={"model": "openrouter/moonshotai/kimi-k2.5"},
+        failed_attempts=[
+            FailedAttempt(
+                attempt_number=1,
+                exception=ValueError("Invalid JSON: EOF while parsing a list"),
+                completion=completion,
+            )
+        ],
+    )
+
+    with (
+        patch(
+            "coarse.llm.instructor.from_litellm",
+            side_effect=[primary_client, fallback_client],
+        ),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(model="openrouter/moonshotai/kimi-k2.5", config=CoarseConfig())
+        result = client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=OverviewFeedback,
+        )
+
+    assert result.summary == "Short summary."
+    assert [issue.title for issue in result.issues] == ["Issue one"]
+
+
+def test_complete_openrouter_kimi_salvages_json_retry_without_md_json_fallback():
+    primary_client = MagicMock()
+    fallback_client = MagicMock()
+    content = (
+        "```json\n"
+        "{\n"
+        '  "summary": "This paper has an ambitious framework.",\n'
+        '  "assessment": "The question matters, but the central result rests on '
+        'strong assumptions.",\n'
+        '  "issues": [\n'
+        "    {\n"
+        '      "title": "Dynamic asymmetry is assumed rather than derived",\n'
+        '      "body": "The paper compares slow gains to fast losses, but the '
+        "different speeds come from imposed adjustment processes rather than a "
+        'single dynamic optimization problem."\n'
+        "    }\n"
+    )
+    completion = _completion_with_content(content)
+    exc = InstructorRetryException(
+        "structured output failed",
+        last_completion=completion,
+        n_attempts=3,
+        total_usage=150,
+        create_kwargs={"model": "openrouter/moonshotai/kimi-k2.5"},
+        failed_attempts=[
+            FailedAttempt(
+                attempt_number=1,
+                exception=ValueError(
+                    "1 validation error for OverviewFeedback\n"
+                    "Invalid JSON: EOF while parsing a list at line 12 column 5 "
+                    "[type=json_invalid]"
+                ),
+                completion=completion,
+            )
+        ],
+    )
+    primary_client.chat.completions.create_with_completion.side_effect = exc
+
+    with (
+        patch(
+            "coarse.llm.instructor.from_litellm",
+            side_effect=[primary_client, fallback_client],
+        ),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(model="openrouter/moonshotai/kimi-k2.5", config=CoarseConfig())
+        result = client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=OverviewFeedback,
+        )
+
+    assert len(result.issues) == 1
+    assert result.issues[0].title == "Dynamic asymmetry is assumed rather than derived"
+    fallback_client.chat.completions.create_with_completion.assert_not_called()
+
+
+def test_complete_openrouter_kimi_surfaces_fallback_failure():
+    primary_client = MagicMock()
+    fallback_client = MagicMock()
+    primary_client.chat.completions.create_with_completion.side_effect = RuntimeError(
+        "No endpoints found that support all parameters in your request"
+    )
+    fallback_client.chat.completions.create_with_completion.side_effect = RuntimeError(
+        "fallback also failed"
+    )
+
+    with patch(
+        "coarse.llm.instructor.from_litellm",
+        side_effect=[primary_client, fallback_client],
+    ):
+        client = LLMClient(model="openrouter/moonshotai/kimi-k2.5", config=CoarseConfig())
+        with pytest.raises(RuntimeError, match="fallback also failed"):
+            client.complete(
+                messages=[{"role": "user", "content": "x"}],
+                response_model=_SimpleModel,
+            )
+
+
+def test_complete_salvages_truncated_overview_json(mock_instructor_client):
+    """Recover complete OverviewIssue objects from a truncated markdown-JSON reply.
+
+    Regression for the Modal production failure where Kimi returned a fenced
+    JSON object, stopped mid-issue, and instructor exhausted retries on
+    `OverviewFeedback` with `Invalid JSON: EOF while parsing a list`.
+    """
+    content = (
+        "```json\n"
+        "{\n"
+        '  "summary": "This paper has an ambitious framework.",\n'
+        '  "assessment": "The question matters, but the central result rests on '
+        'strong assumptions.",\n'
+        '  "issues": [\n'
+        "    {\n"
+        '      "title": "Dynamic asymmetry is assumed rather than derived",\n'
+        '      "body": "The paper compares slow gains to fast losses, but the '
+        "different speeds come from imposed adjustment processes rather than a "
+        'single dynamic optimization problem."\n'
+        "    },\n"
+        "    {\n"
+        '      "title": "Equilibrium selection is unresolved",\n'
+        '      "body": "The network adoption block has multiple equilibria, yet '
+        "the paper does not explain how expectations coordinate on one "
+        'equilibrium rather than another."\n'
+        "    },\n"
+        "    {\n"
+        '      "title": "Cascade robustness is unverified",\n'
+        '      "body": "The multiplier relies on strong complementarity assumptions\n'
+    )
+    completion = _completion_with_content(content)
+    exc = InstructorRetryException(
+        "structured output failed",
+        last_completion=completion,
+        n_attempts=3,
+        total_usage=150,
+        create_kwargs={"model": "moonshotai/kimi-k2.5"},
+        failed_attempts=[
+            FailedAttempt(
+                attempt_number=1,
+                exception=ValueError(
+                    "1 validation error for OverviewFeedback\n"
+                    "Invalid JSON: EOF while parsing a list at line 12 column 5 "
+                    "[type=json_invalid]"
+                ),
+                completion=completion,
+            )
+        ],
+    )
+    mock_instructor_client.chat.completions.create_with_completion.side_effect = exc
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.001):
+        client = LLMClient(model="moonshotai/kimi-k2.5", config=CoarseConfig())
+        result = client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=OverviewFeedback,
+        )
+
+    assert result.summary == "This paper has an ambitious framework."
+    assert result.assessment.startswith("The question matters")
+    assert [issue.title for issue in result.issues] == [
+        "Dynamic asymmetry is assumed rather than derived",
+        "Equilibrium selection is unresolved",
+    ]
+    assert result.recommendation == ""
+    assert result.revision_targets == []
+    assert abs(client.cost_usd - 0.001) < 1e-9
+
+
+def test_complete_does_not_salvage_non_overview_retry_errors(mock_instructor_client):
+    """Keep the recovery path tightly scoped to malformed OverviewFeedback JSON."""
+    completion = _completion_with_content('{"value": "missing brace"')
+    exc = InstructorRetryException(
+        "structured output failed",
+        last_completion=completion,
+        n_attempts=3,
+        total_usage=150,
+        create_kwargs={"model": TEST_MODEL},
+        failed_attempts=[
+            FailedAttempt(
+                attempt_number=1,
+                exception=ValueError("Invalid JSON: EOF while parsing an object"),
+                completion=completion,
+            )
+        ],
+    )
+    mock_instructor_client.chat.completions.create_with_completion.side_effect = exc
+
+    client = LLMClient(model=TEST_MODEL, config=CoarseConfig())
+    with pytest.raises(InstructorRetryException):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Regression: eagerly-resolved api_key is forwarded on every call.
+#
+# Background: production Modal runs were landing on OpenRouter with
+# "Missing Authentication header" (401) even though OPENROUTER_API_KEY was
+# set in os.environ at the moment `review_paper()` ran. The old pipeline
+# relied on `_inject_openrouter_privacy` reading `resolve_api_key(...)` at
+# call time inside `_sanitized_completion` — that read was either racing a
+# concurrent env-var reset or being shadowed somewhere inside litellm's
+# openrouter handler. The fix stashes the key at `LLMClient.__init__` time
+# into `self._api_key` and threads it into every `call_kwargs` so it is
+# always present at the litellm boundary regardless of what happens to the
+# process env after construction.
+# ---------------------------------------------------------------------------
+
+
+def test_llmclient_stashes_api_key_from_env(monkeypatch, mock_instructor_client):
+    """__init__ resolves the OpenRouter key once via resolve_api_key and stores it."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-fake-construction-time")
+    client = LLMClient(model="openrouter/anthropic/claude-opus-4.6", config=CoarseConfig())
+    assert client._api_key == "sk-or-v1-fake-construction-time"
+
+
+def test_complete_forwards_stashed_api_key(monkeypatch, mock_instructor_client):
+    """`api_key=` shows up in the instructor call even if env is wiped post-__init__."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-stashed")
+    client = LLMClient(model="openrouter/anthropic/claude-opus-4.6", config=CoarseConfig())
+
+    # Simulate the bad production state: env gets cleared between __init__
+    # and the actual LLM call. If the fix works, the stashed api_key is
+    # still forwarded into the kwargs because it was captured at __init__.
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    expected = _SimpleModel(value="ok")
+    mock_instructor_client.chat.completions.create_with_completion.return_value = (
+        expected,
+        _make_mock_completion(),
+    )
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.001):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+        )
+
+    call_kwargs = mock_instructor_client.chat.completions.create_with_completion.call_args.kwargs
+    assert call_kwargs.get("api_key") == "sk-or-v1-stashed"
+
+
+def test_complete_caller_api_key_overrides_stashed(monkeypatch, mock_instructor_client):
+    """An explicit api_key= kwarg from the caller wins over the stashed one."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-stashed")
+    client = LLMClient(model="openrouter/anthropic/claude-opus-4.6", config=CoarseConfig())
+    mock_instructor_client.chat.completions.create_with_completion.return_value = (
+        _SimpleModel(value="ok"),
+        _make_mock_completion(),
+    )
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            api_key="sk-or-v1-caller-override",
+        )
+
+    call_kwargs = mock_instructor_client.chat.completions.create_with_completion.call_args.kwargs
+    assert call_kwargs.get("api_key") == "sk-or-v1-caller-override"
+
+
+def test_complete_text_forwards_stashed_api_key(monkeypatch):
+    """_complete_text_primary (used by Perplexity search) also threads api_key through."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-text-path")
+    monkeypatch.setenv("PERPLEXITY_API_KEY", "pplx-fake-should-not-be-used")
+
+    captured: dict = {}
+
+    def fake_sanitized_completion(*args, **kwargs):
+        captured.update(kwargs)
+        return _completion_with_content("perplexity text response")
+
+    with (
+        patch("coarse.llm._sanitized_completion", side_effect=fake_sanitized_completion),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(model="openrouter/perplexity/sonar-pro-search", config=CoarseConfig())
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        client.complete_text(messages=[{"role": "user", "content": "x"}])
+
+    assert captured.get("api_key") == "sk-or-v1-text-path"
+
+
+def test_sanitized_completion_falls_back_to_positional_model():
+    """If a caller passes model positionally, _inject_openrouter_privacy still sees it.
+
+    The privacy/auth injector used to read model exclusively via
+    `kwargs.get("model", "")`. If anything upstream (a future wrapper, a
+    test double, a different instructor version) routed the model through
+    the positional `args[0]` slot instead, the injector silently no-opped
+    and the api_key branch never fired. This guard makes the injector
+    tolerant of either shape.
+    """
+    captured: dict = {}
+
+    def fake_litellm_completion(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return _completion_with_content("ok")
+
+    with (
+        patch("coarse.llm.litellm.completion", side_effect=fake_litellm_completion),
+        patch("coarse.llm.resolve_api_key", return_value="sk-or-v1-fallback-positional"),
+    ):
+        _sanitized_completion("openrouter/anthropic/claude-opus-4.6", messages=[])
+
+    # api_key must be injected even though model arrived as args[0].
+    assert captured["kwargs"].get("api_key") == "sk-or-v1-fallback-positional"

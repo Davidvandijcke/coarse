@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         DetailedComment,
         DomainCalibration,
         OverviewFeedback,
+        PaperStructure,
         SectionInfo,
     )
 
@@ -280,7 +281,7 @@ def _strip_fence_tags(text: str) -> str:
     variants.
     """
     if not text:
-        return text
+        return ""
     return _FENCE_TAG_RE.sub("", text)
 
 
@@ -480,9 +481,13 @@ def metadata_user(first_page: str, abstract: str, headings: str) -> str:
 # Domain calibration
 # ---------------------------------------------------------------------------
 
-CALIBRATION_SYSTEM = """\
+CALIBRATION_SYSTEM = (
+    """\
 You are an expert academic reviewer. Given a paper's title, domain, abstract, \
 and section structure, produce a domain-specific review calibration.
+"""
+    + _CONTENT_BOUNDARY_NOTICE
+    + """
 
 For each field, provide 3-5 concise items tailored to this paper's specific domain \
 and methodology:
@@ -491,17 +496,33 @@ and methodology:
 3. what_not_to_check: What is irrelevant for this paper type
 4. evaluation_standards: What a top-tier journal in this field expects
 """
+)
 
 
 def calibration_user(title: str, domain: str, abstract: str, section_titles: str) -> str:
     """User prompt for domain calibration."""
+    safe_title = _strip_fence_tags(title)
+    safe_domain = _strip_fence_tags(domain)
+    safe_abstract = _strip_fence_tags(abstract)
+    safe_sections = _strip_fence_tags(section_titles)
     return f"""\
 Produce a domain-specific review calibration for the following paper.
 
-**Title**: {title}
-**Domain**: {domain}
-**Abstract**: {abstract}
-**Sections**: {section_titles}
+**Paper Metadata**:
+<paper_content>
+**Title**: {safe_title}
+**Domain**: {safe_domain}
+</paper_content>
+
+**Abstract**:
+<paper_abstract>
+{safe_abstract}
+</paper_abstract>
+
+**Sections**:
+<paper_sections>
+{safe_sections}
+</paper_sections>
 """
 
 
@@ -932,31 +953,41 @@ def completeness_user(
     contribution_context: "ContributionContext | None" = None,
 ) -> str:
     """User prompt for completeness assessment."""
+    safe_title = _strip_fence_tags(title)
+    safe_abstract = _strip_fence_tags(abstract)
+    safe_sections = _strip_fence_tags(sections_text)
     cal_block = ""
     if calibration:
-        cal_block = "\n" + _format_calibration(calibration) + "\n"
+        cal_block = "\n" + _strip_fence_tags(_format_calibration(calibration)) + "\n"
 
     contrib_block = ""
     if contribution_context:
-        contrib_block = "\n" + _format_contribution_context(contribution_context) + "\n"
+        contrib_block = (
+            "\n" + _strip_fence_tags(_format_contribution_context(contribution_context)) + "\n"
+        )
 
-    overview_block = "\n".join(f"- **{issue.title}**: {issue.body}" for issue in overview.issues)
+    overview_block = "\n".join(
+        f"- **{_strip_fence_tags(issue.title)}**: {_strip_fence_tags(issue.body)}"
+        for issue in overview.issues
+    )
 
     return f"""\
 Assess the completeness of the following paper. Identify structural gaps — content \
 that is missing but needed for the paper to deliver on its claims.
 
-**Title**: {title}
+<paper_content>
+**Title**: {safe_title}
 
 **Abstract**:
-{abstract}
+{safe_abstract}
 {cal_block}{contrib_block}
-**Overview issues already identified** (do NOT repeat these — focus on what they miss):
-{overview_block}
-
-<paper_content>
-{sections_text}
+{safe_sections}
 </paper_content>
+
+**Overview issues already identified** (do NOT repeat these — focus on what they miss):
+<first_pass_review>
+{overview_block}
+</first_pass_review>
 
 Identify 0-4 structural gaps where the paper is missing content it needs to be a \
 complete, publishable contribution. Focus on missing demonstrations, examples, \
@@ -1542,22 +1573,30 @@ def cross_section_user(
     abstract: str = "",
 ) -> str:
     """User prompt for cross-section synthesis."""
+    safe_results_title = _strip_fence_tags(results_section.title)
+    safe_results_text = _strip_fence_tags(results_section.text)
+    safe_discussion_title = _strip_fence_tags(discussion_section.title)
+    safe_discussion_text = _strip_fence_tags(discussion_section.text)
     abstract_block = ""
-    if abstract:
-        abstract_block = f"\n**Paper Abstract**:\n{abstract[:2000]}\n"
+    if abstract and abstract.strip():
+        safe_abstract = _strip_fence_tags(abstract)
+        safe_abstract = safe_abstract[:2000]
+        abstract_block = (
+            f"\n**Paper Abstract**:\n<paper_abstract>\n{safe_abstract}\n</paper_abstract>\n"
+        )
 
     return f"""\
-Check whether the discussion/implications in "{paper_title}" are supported by \
+Check whether the discussion/implications in the provided paper are supported by \
 the formal results.
 {abstract_block}
-**Formal Results Section ({results_section.number}: {results_section.title})**:
+**Formal Results Section ({results_section.number}: {safe_results_title})**:
 <paper_content>
-{results_section.text}
+{safe_results_text}
 </paper_content>
 
-**Discussion/Implications Section ({discussion_section.number}: {discussion_section.title})**:
+**Discussion/Implications Section ({discussion_section.number}: {safe_discussion_title})**:
 <paper_content>
-{discussion_section.text}
+{safe_discussion_text}
 </paper_content>
 
 Identify 0-3 cases where the discussion claims something the formal results do \
@@ -1569,10 +1608,14 @@ not actually establish.
 # Math section detection (cheap LLM call during structure analysis)
 # ---------------------------------------------------------------------------
 
-MATH_DETECTION_SYSTEM = """\
+MATH_DETECTION_SYSTEM = (
+    """\
 You are an expert academic paper analyst. Given a list of paper sections with \
 brief text previews, identify which sections contain mathematical content that \
 requires formal verification during peer review.
+"""
+    + _CONTENT_BOUNDARY_NOTICE
+    + """
 
 A section needs mathematical verification if it contains ANY of:
 - Proofs (formal or informal), derivations, or proof sketches
@@ -1593,19 +1636,24 @@ Respond with only the structured output. Do not include any analysis, \
 reasoning, or explanation before the structured response — emit the \
 indices directly.\
 """
+)
 
 
 def math_detection_user(sections: "list[SectionInfo]") -> str:
     """User prompt for math section detection."""
     lines = []
     for i, s in enumerate(sections):
-        preview = s.text[:200].replace("\n", " ").strip()
+        safe_title = _strip_fence_tags(s.title)
+        preview = _strip_fence_tags(s.text.replace("\n", " ").strip())
+        preview = preview[:200]
         if len(s.text) > 200:
             preview += "..."
-        lines.append(f"[{i}] **{s.title}** ({s.section_type.value}): {preview}")
+        lines.append(f"[{i}] **{safe_title}** ({s.section_type.value}): {preview}")
     return (
         "Identify which sections contain mathematical content needing verification.\n\n"
+        + "<paper_sections>\n"
         + "\n".join(lines)
+        + "\n</paper_sections>"
     )
 
 
@@ -2062,6 +2110,87 @@ reordered, renumbered set of comments.
 """
 
 
+# Quote repair (batched salvage for near-miss dropped quotes)
+# ---------------------------------------------------------------------------
+
+QUOTE_REPAIR_SYSTEM = (
+    """\
+You repair dropped review quotes by selecting a better verbatim anchor from the \
+candidate passages already retrieved from the paper.
+"""
+    + _CONTENT_BOUNDARY_NOTICE
+    + """
+For each item:
+- Read the comment title, feedback, original dropped quote, and candidate passages.
+- If the underlying comment still appears to point at a real passage in the \
+document, return a SHORTER, CLEANER verbatim quote copied directly from one \
+candidate passage.
+- You may shorten the quote to the minimum contiguous span needed to anchor the \
+comment.
+- NEVER paraphrase, normalize, or rewrite the text.
+- NEVER combine text from multiple passages.
+- NEVER invent a quote that is not character-for-character present in one \
+candidate passage.
+- If no candidate passage contains a clean anchor for the comment, return an \
+empty string for that item.
+
+Prefer:
+- 1-3 full sentences for prose claims
+- a complete displayed equation or one contiguous equation sentence for math
+- contiguous full table rows for table comments
+
+Return one repair record per input item, preserving the original item number.
+"""
+)
+
+
+def quote_repair_user(items: list[dict[str, object]]) -> str:
+    """User prompt for batched quote-repair salvage."""
+    blocks: list[str] = []
+    for item in items:
+        number = item["number"]
+        title = _strip_fence_tags(str(item["title"]))
+        feedback = _strip_fence_tags(str(item["feedback"]))
+        original_quote = _strip_fence_tags(str(item["original_quote"]))
+        candidate_passages = item.get("candidate_passages", [])
+        ratio = item.get("ratio", 0.0)
+        threshold = item.get("threshold", 0.0)
+
+        candidate_block = "\n\n".join(
+            f"<candidate_{idx + 1}>\n{_strip_fence_tags(str(passage))}\n</candidate_{idx + 1}>"
+            for idx, passage in enumerate(candidate_passages)
+        )
+        if not candidate_block:
+            candidate_block = "<candidate_1>\n\n</candidate_1>"
+
+        blocks.append(
+            f"""### Item {number}: {title}
+**Original quote**:
+{original_quote}
+
+**Feedback**:
+{feedback}
+
+**Verifier score**: ratio={ratio:.2f}, threshold={threshold:.2f}
+
+**Candidate passages**:
+{candidate_block}
+"""
+        )
+
+    joined = "\n\n".join(blocks)
+    return f"""\
+Repair the dropped quotes below.
+
+<first_pass_review>
+{joined}
+</first_pass_review>
+
+Return one repaired quote per item number. Use an empty string when no clean \
+verbatim anchor exists in the candidates.
+"""
+
+
 # ---------------------------------------------------------------------------
 # Assumption checker (theory-vs-empirics consistency)
 # ---------------------------------------------------------------------------
@@ -2238,3 +2367,87 @@ Score 0.0-0.4: Tangentially related or irrelevant.
 
 Also suggest 0-3 refinement queries if important areas of related work are missing.
 """
+
+
+# ---------------------------------------------------------------------------
+# MCP-facing stage-prompt dispatcher
+# ---------------------------------------------------------------------------
+
+_MCP_STAGES = ("overview", "section", "crossref", "critique")
+
+
+def get_prompt(
+    stage: str,
+    *,
+    structure: "PaperStructure | None" = None,
+    section: "SectionInfo | None" = None,
+    all_sections: "list[SectionInfo] | None" = None,
+    focus: str = "general",
+    overview: "OverviewFeedback | None" = None,
+    comments: "list[DetailedComment] | None" = None,
+    title: str = "",
+    abstract: str = "",
+    document_form: str = "manuscript",
+) -> tuple[str, str]:
+    """Return ``(system, user)`` prompt strings for an MCP-driven review stage."""
+
+    def _with_form_notice(system_prompt: str) -> str:
+        notice = document_form_notice(document_form)
+        return system_prompt if not notice else f"{system_prompt}{notice}"
+
+    if stage == "overview":
+        if structure is None:
+            raise ValueError("stage='overview' requires structure")
+        parts: list[str] = []
+        for sec in structure.sections:
+            if not sec.text:
+                parts.append(f"## {sec.number}. {sec.title} ({sec.section_type.value})\n(empty)")
+                continue
+            parts.append(f"## {sec.number}. {sec.title} ({sec.section_type.value})\n{sec.text}")
+        sections_text = "\n\n".join(parts)
+        return (
+            _with_form_notice(OVERVIEW_SYSTEM),
+            overview_user(
+                structure.title,
+                structure.abstract,
+                sections_text,
+                calibration=None,
+                literature_context="",
+                cache_mode=False,
+            ),
+        )
+
+    if stage == "section":
+        if section is None:
+            raise ValueError("stage='section' requires section")
+        base_system = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
+        return (
+            _with_form_notice(base_system),
+            section_user(
+                paper_title=title,
+                section=section,
+                overview=overview,
+                calibration=None,
+                literature_context="",
+                all_sections=all_sections,
+                abstract=abstract,
+            ),
+        )
+
+    if stage == "crossref":
+        if overview is None or comments is None:
+            raise ValueError("stage='crossref' requires overview and comments")
+        return (
+            _with_form_notice(crossref_system()),
+            crossref_user(overview, comments, title=title, abstract=abstract),
+        )
+
+    if stage == "critique":
+        if overview is None or comments is None:
+            raise ValueError("stage='critique' requires overview and comments")
+        return (
+            _with_form_notice(critique_system()),
+            critique_user(overview, comments, title=title, abstract=abstract),
+        )
+
+    raise ValueError(f"unknown stage {stage!r}; expected one of {_MCP_STAGES}")

@@ -163,7 +163,7 @@ def test_review_paper_calls_stages_in_order():
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", side_effect=fake_render),
     ):
@@ -220,8 +220,8 @@ def test_review_paper_skips_references_section():
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.review_stages.CrossrefAgent") as MockCrossref,
+        patch("coarse.review_stages.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -338,7 +338,7 @@ def test_review_paper_forwards_author_notes_to_all_review_agents():
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
         patch("coarse.pipeline.CrossSectionAgent") as MockCrossSection,
-        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -411,9 +411,9 @@ def test_review_paper_forwards_author_notes_to_fallback_crossref_and_critique():
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
-        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.review_stages.CrossrefAgent") as MockCrossref,
+        patch("coarse.review_stages.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -450,8 +450,8 @@ def test_review_paper_date_format():
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.review_stages.CrossrefAgent") as MockCrossref,
+        patch("coarse.review_stages.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
         patch("coarse.pipeline.datetime") as mock_dt,
@@ -480,8 +480,8 @@ def _patch_pipeline_deps(overview: OverviewFeedback):
     mock_ov = stack.enter_context(patch("coarse.pipeline.OverviewAgent"))
     mock_sec = stack.enter_context(patch("coarse.pipeline.SectionAgent"))
     mock_vf = stack.enter_context(patch("coarse.pipeline.ProofVerifyAgent"))
-    mock_cr = stack.enter_context(patch("coarse.pipeline.CrossrefAgent"))
-    mock_ct = stack.enter_context(patch("coarse.pipeline.CritiqueAgent"))
+    mock_cr = stack.enter_context(patch("coarse.review_stages.CrossrefAgent"))
+    mock_ct = stack.enter_context(patch("coarse.review_stages.CritiqueAgent"))
     stack.enter_context(patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c))
     stack.enter_context(patch("coarse.pipeline.render_review", return_value="md"))
 
@@ -526,8 +526,8 @@ def test_review_paper_returns_review_and_markdown():
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.review_stages.CrossrefAgent") as MockCrossref,
+        patch("coarse.review_stages.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value=expected_markdown),
     ):
@@ -582,7 +582,7 @@ def test_review_paper_section_comments_flattened():
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.EditorialAgent") as MockEditorial,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -596,6 +596,64 @@ def test_review_paper_section_comments_flattened():
         review_paper("paper.pdf", skip_cost_gate=True, config=config)
 
     assert len(editorial_received) == 6
+
+
+def test_review_paper_verifies_section_quotes_before_editorial_handoff():
+    """Editorial should receive the quote-verified section comments rather than
+    the raw LLM output from section agents."""
+    config = _make_config()
+    structure = _make_structure(sections=[_make_section(1), _make_section(2)])
+    overview = _make_overview()
+    editorial_received: list[DetailedComment] = []
+
+    def fake_verify(comments, _paper_text, drop_unverified=True):
+        return [c.model_copy(update={"quote": f"verified: {c.quote}"}) for c in comments]
+
+    def fake_editorial_run(
+        paper_text,
+        overview,
+        comments,
+        comment_target=None,
+        title="",
+        abstract="",
+        contribution_context=None,
+        document_form="manuscript",
+        author_notes=None,
+    ):
+        editorial_received.extend(comments)
+        return comments
+
+    # Patch targets live on `coarse.review_stages` after the pipeline
+    # refactor (#87) — EditorialAgent, _review_section, calibrate_domain,
+    # extract_contribution, and verify_quotes all resolved in that module's
+    # namespace at import time, and pipeline.py just re-imports the
+    # helpers. Patching `coarse.pipeline.X` for these would no-op against
+    # the call sites inside review_stages.
+    with (
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.review_stages.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.review_stages.extract_contribution", return_value=None),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.review_stages.verify_quotes", side_effect=fake_verify),
+        patch("coarse.pipeline.verify_quotes", side_effect=fake_verify),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.return_value = overview
+        MockCompleteness.return_value.run.return_value = []
+        MockSection.return_value.run.return_value = [_make_comment(1)]
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockEditorial.return_value.run.side_effect = fake_editorial_run
+
+        review_paper("paper.pdf", skip_cost_gate=True, config=config)
+
+    assert editorial_received
+    assert all(comment.quote.startswith("verified: ") for comment in editorial_received)
 
 
 def test_review_paper_uses_provided_config():
@@ -619,8 +677,8 @@ def test_review_paper_uses_provided_config():
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.SectionAgent") as MockSection,
         patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.pipeline.CrossrefAgent") as MockCrossref,
-        patch("coarse.pipeline.CritiqueAgent") as MockCritique,
+        patch("coarse.review_stages.CrossrefAgent") as MockCrossref,
+        patch("coarse.review_stages.CritiqueAgent") as MockCritique,
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
@@ -697,6 +755,7 @@ def test_review_section_chains_verify_for_proof():
         section_agent,
         verify_agent,
         section,
+        "Some verbatim quote from the paper text.",
         "Paper",
         overview=None,
         calibration=None,
@@ -730,6 +789,7 @@ def test_review_section_skips_verify_for_non_proof():
         section_agent,
         verify_agent,
         section,
+        "Some verbatim quote from the paper text.",
         "Paper",
         overview=None,
         calibration=None,
@@ -742,6 +802,88 @@ def test_review_section_skips_verify_for_non_proof():
     section_agent.run.assert_called_once()
     verify_agent.run.assert_not_called()
     assert result == comments
+
+
+def test_review_section_verifies_quotes_before_verify_and_on_return():
+    """Proof verification should receive verified first-pass comments, and
+    the returned comments should also be re-verified before leaving the helper."""
+    section_agent = MagicMock()
+    verify_agent = MagicMock()
+    section = _make_section(1).model_copy(update={"math_content": True})
+    first_pass = [_make_comment(1)]
+    verified_pass = [_make_comment(2)]
+
+    section_agent.run.return_value = first_pass
+    verify_agent.run.return_value = verified_pass
+
+    call_count = {"n": 0}
+
+    drop_flags: list[bool] = []
+
+    def fake_verify(comments, _paper_text, drop_unverified=True):
+        drop_flags.append(drop_unverified)
+        call_count["n"] += 1
+        prefix = f"verified-{call_count['n']}"
+        return [c.model_copy(update={"quote": f"{prefix}: {c.quote}"}) for c in comments]
+
+    # _review_section lives in coarse.review_stages after the pipeline
+    # refactor (#87), and that's where `verify_quotes` is imported at
+    # module load time. Patching `coarse.pipeline.verify_quotes` no-ops
+    # against the helper's actual lookup.
+    with patch("coarse.review_stages.verify_quotes", side_effect=fake_verify):
+        result = _review_section(
+            section_agent,
+            verify_agent,
+            section,
+            "Full paper markdown.",
+            "Paper",
+            overview=None,
+            calibration=None,
+            focus="proof",
+            literature_context="",
+            all_sections=[],
+            abstract="abstract",
+        )
+
+    verify_agent.run.assert_called_once()
+    verify_input = verify_agent.run.call_args.args[2]
+    assert drop_flags == [False, False]
+    assert verify_input[0].quote.startswith("verified-1:")
+    assert result[0].quote.startswith("verified-2:")
+
+
+def test_review_section_marks_approximate_quotes_instead_of_dropping_them():
+    """Intermediate verification should preserve recall by keeping comments
+    and marking their quotes approximate instead of dropping them."""
+    section_agent = MagicMock()
+    verify_agent = MagicMock()
+    section = _make_section(1)
+    comments = [_make_comment(1)]
+    section_agent.run.return_value = comments
+
+    approximate = comments[0].model_copy(update={"quote": "[approximate] " + comments[0].quote})
+
+    def fake_verify(_comments, _paper_text, drop_unverified=True):
+        assert drop_unverified is False
+        return [approximate]
+
+    with patch("coarse.review_stages.verify_quotes", side_effect=fake_verify):
+        result = _review_section(
+            section_agent,
+            verify_agent,
+            section,
+            "Full paper markdown.",
+            "Paper",
+            overview=None,
+            calibration=None,
+            focus="general",
+            literature_context="",
+            all_sections=[],
+            abstract="",
+        )
+
+    verify_agent.run.assert_not_called()
+    assert result == [approximate]
 
 
 # ---------------------------------------------------------------------------
@@ -826,6 +968,7 @@ def test_review_section_skips_verify_when_threshold_fails():
         section_agent,
         verify_agent,
         section,
+        "Some verbatim quote from the paper text.",
         "Paper",
         overview=None,
         calibration=None,

@@ -24,9 +24,26 @@ _TEMPERATURE = 0.3
 
 
 class _SectionComments(BaseModel):
-    """Instructor response envelope for section-level detailed comments."""
+    """Instructor response envelope for section-level detailed comments.
 
-    comments: list[DetailedComment] = Field(min_length=1)
+    ``comments`` is allowed to be empty: a given section may legitimately
+    have zero issues worth flagging, and every other agent envelope in
+    this package (``_VerifiedComments``, ``_CheckedComments``,
+    ``_RevisedComments``, ``_CrossSectionComments``,
+    ``_ConsolidatedComments``, ``_EditorialComments``) already uses the
+    same zero-or-more contract. Before the constraint was dropped, cheap
+    models running at ``--effort low`` would occasionally return an
+    empty list three times in a row, the schema would reject it as
+    ``List should have at least 1 item``, the retry loop in
+    ``headless_clients.py`` (and instructor on the hosted path) would
+    exhaust after 3 attempts, and the pipeline would skip the entire
+    section's comments instead of treating ``[]`` as a valid no-op.
+    See ``review_stages._review_section`` — it already guards proof
+    verification with ``if ... and comments and ...`` so the downstream
+    path tolerates an empty list without any other changes.
+    """
+
+    comments: list[DetailedComment] = Field(default_factory=list)
 
 
 class SectionAgent(ReviewAgent):

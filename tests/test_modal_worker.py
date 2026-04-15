@@ -24,67 +24,74 @@ _MODAL_WORKER = _REPO_ROOT / "deploy" / "modal_worker.py"
 
 
 def _install_stubs() -> None:
-    """Install minimal stand-ins for `modal` and `fastapi` in sys.modules."""
-    if "modal" not in sys.modules:
-        modal_stub = types.ModuleType("modal")
+    """Install minimal stand-ins for `modal` and `fastapi` in sys.modules.
 
-        class _App:
-            def __init__(self, *_a, **_kw):
-                pass
+    Unconditionally replaces `sys.modules['modal']` and
+    `sys.modules['fastapi']` so this test file always sees a known
+    no-op Modal + FastAPI surface regardless of what's already in
+    `sys.modules`. The old MCP server test suite had an import-order
+    dependency that bit every time tests ran in a certain order;
+    unconditional stubbing kills the dependency. (The MCP server
+    itself was removed in v1.3.0.)
+    """
+    modal_stub = types.ModuleType("modal")
 
-            def function(self, *_a, **_kw):
-                def _decorator(fn):
-                    return fn
+    class _App:
+        def __init__(self, *_a, **_kw):
+            pass
 
-                return _decorator
-
-        class _Image:
-            @staticmethod
-            def debian_slim(*_a, **_kw):
-                return _Image()
-
-            def apt_install(self, *_a, **_kw):
-                return self
-
-            def pip_install(self, *_a, **_kw):
-                return self
-
-            def add_local_dir(self, *_a, **_kw):
-                return self
-
-        class _Secret:
-            @staticmethod
-            def from_name(_name):
-                return object()
-
-        modal_stub.App = _App
-        modal_stub.Image = _Image
-        modal_stub.Secret = _Secret
-
-        def _fastapi_endpoint(*_a, **_kw):
+        def function(self, *_a, **_kw):
             def _decorator(fn):
                 return fn
 
             return _decorator
 
-        modal_stub.fastapi_endpoint = _fastapi_endpoint
-        sys.modules["modal"] = modal_stub
+    class _Image:
+        @staticmethod
+        def debian_slim(*_a, **_kw):
+            return _Image()
 
-    if "fastapi" not in sys.modules:
-        fastapi_stub = types.ModuleType("fastapi")
+        def apt_install(self, *_a, **_kw):
+            return self
 
-        class _HTTPException(Exception):
-            def __init__(self, status_code: int, detail: str = "") -> None:
-                super().__init__(detail)
-                self.status_code = status_code
-                self.detail = detail
+        def pip_install(self, *_a, **_kw):
+            return self
 
-        class _Request:  # noqa: D401
-            pass
+        def add_local_dir(self, *_a, **_kw):
+            return self
 
-        fastapi_stub.HTTPException = _HTTPException
-        fastapi_stub.Request = _Request
-        sys.modules["fastapi"] = fastapi_stub
+    class _Secret:
+        @staticmethod
+        def from_name(_name):
+            return object()
+
+    modal_stub.App = _App
+    modal_stub.Image = _Image
+    modal_stub.Secret = _Secret
+
+    def _fastapi_endpoint(*_a, **_kw):
+        def _decorator(fn):
+            return fn
+
+        return _decorator
+
+    modal_stub.fastapi_endpoint = _fastapi_endpoint
+    sys.modules["modal"] = modal_stub
+
+    fastapi_stub = types.ModuleType("fastapi")
+
+    class _HTTPException(Exception):
+        def __init__(self, status_code: int, detail: str = "") -> None:
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
+
+    class _Request:  # noqa: D401
+        pass
+
+    fastapi_stub.HTTPException = _HTTPException
+    fastapi_stub.Request = _Request
+    sys.modules["fastapi"] = fastapi_stub
 
 
 def _load_modal_worker():
@@ -223,6 +230,40 @@ def test_sanitize_error_instructor_envelope_keeps_secret_scrubbing(
     cleaned = modal_worker._sanitize_error(raw)
     assert "sk-or-v1-abcdef" not in cleaned
     assert "[key]" in cleaned
+
+
+# ---------------------------------------------------------------------------
+# _classify_hosted_key_error — issue #106 wrong-key-type guidance
+# ---------------------------------------------------------------------------
+
+
+def test_classify_hosted_key_error_accepts_openrouter_key(modal_worker) -> None:
+    key = "sk-or-v1-abcdefghijklmnopqrstuvwxyz0123"  # security: ignore
+    assert modal_worker._classify_hosted_key_error(key) is None
+
+
+@pytest.mark.parametrize(
+    ("provider", "key"),
+    [
+        ("OpenAI", "sk-abcdefghijklmnopqrstuvwxyz0123"),  # security: ignore
+        ("Anthropic", "sk-ant-abcdefghijklmnopqrstuvwxyz0123"),  # security: ignore
+        ("Groq", "gsk_abcdefghijklmnopqrstuvwxyz0123"),  # security: ignore
+        ("Perplexity", "pplx-abcdefghijklmnopqrstuvwxyz"),  # security: ignore
+        ("Google", "AIzaSyabcdefghijklmnopqrstuvwxyz0123456789"),  # security: ignore
+    ],
+)
+def test_classify_hosted_key_error_flags_direct_provider_keys(
+    modal_worker, provider: str, key: str
+) -> None:
+    msg = modal_worker._classify_hosted_key_error(key)
+    assert msg is not None
+    assert provider in msg
+    assert "OpenRouter API key" in msg
+    assert "https://openrouter.ai/keys" in msg
+
+
+def test_classify_hosted_key_error_ignores_unknown_prefix(modal_worker) -> None:
+    assert modal_worker._classify_hosted_key_error("custom-key-format-123") is None
 
 
 # ---------------------------------------------------------------------------

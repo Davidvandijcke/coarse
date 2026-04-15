@@ -2,125 +2,55 @@
 
 Supports PDF, TXT, MD, DOCX, TEX/LATEX, HTML, and EPUB.
 
-PDF priority: Mistral OCR via OpenRouter → pdf-text via OpenRouter → Docling (offline).
-DOCX/HTML/TEX: Docling (if installed) → lightweight fallback (mammoth/markdownify/regex).
-TXT/MD: Direct read. EPUB: ebooklib + markdownify.
+Public API stays here; backend-specific helpers live in focused modules:
+- extraction_cache.py
+- extraction_openrouter.py
+- extraction_formats.py
 """
 
 from __future__ import annotations
 
 import html
-import json
 import logging
+import os
 import re
 from pathlib import Path
 
+from coarse import extraction_formats as _formats
+from coarse import extraction_openrouter as _openrouter
+from coarse.extraction_cache import _load_cache, _save_cache
 from coarse.garble import garble_ratio as compute_garble_ratio
 from coarse.garble import normalize_ocr_garble
 from coarse.types import ExtractionError, PaperText
 
 logger = logging.getLogger(__name__)
 
-PAGE_BREAK = "\n\n<!-- PAGE BREAK -->\n\n"
+_extract_docling = _formats._extract_docling
+_extract_docx_mammoth = _formats._extract_docx_mammoth
+_extract_epub = _formats._extract_epub
+_extract_html_markdownify = _formats._extract_html_markdownify
+_extract_latex_regex = _formats._extract_latex_regex
+_extract_plaintext = _formats._extract_plaintext
+_LATEX_HEADING_LEVEL = _formats._LATEX_HEADING_LEVEL
+_LATEX_HEADING_RE = _formats._LATEX_HEADING_RE
+
+_MAX_FILE_SIZE = _openrouter.MAX_FILE_SIZE
+_OCR_MAX_BACKOFF = _openrouter._OCR_MAX_BACKOFF
+_OCR_MAX_RETRIES = _openrouter._OCR_MAX_RETRIES
+_can_fall_through_api_error = _openrouter._can_fall_through_api_error
+_classify_api_error = _openrouter._classify_api_error
+_describe_api_error = _openrouter._describe_api_error
+_extract_mistral_openrouter = _openrouter._extract_mistral_openrouter
+_extract_pdftext_openrouter = _openrouter._extract_pdftext_openrouter
+_response_was_billed = _openrouter._response_was_billed
+_scrub_secrets = _openrouter._scrub_secrets
 
 
 def _strip_nul_bytes(text: str) -> str:
-    """Remove NUL bytes and literal \\u0000 escapes from an extracted string.
-
-    Postgres ``text`` columns reject the NUL byte (\\x00), and PostgREST's JSON
-    path also rejects the 6-char escape sequence ``\\u0000`` with SQLSTATE
-    22P05 when it tries to decode the insert body. Some OCR backends emit
-    NULs on edge-case scanned PDFs, and those failures surface at the very
-    end of the review pipeline — after the user has already paid for the
-    LLM work — which is the worst possible time to crash. Stripping here
-    is cheap, idempotent, and keeps the downstream Supabase write safe.
-    """
+    """Remove NUL bytes and literal \\u0000 escapes from an extracted string."""
     if not text:
         return text
     return text.replace("\x00", "").replace("\\u0000", "")
-
-
-# Secret-scrub patterns used on backend failure strings before they reach
-# logger.warning() or the raised ExtractionError. Kept as a small duplicate
-# of deploy/modal_worker.py::_sanitize_error — cross-importing between
-# src/ and deploy/ would be worse than 10 lines of duplication.
-_SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"Bearer\s+\S+", re.IGNORECASE), "Bearer [key]"),
-    (re.compile(r"sk-or-v1-[a-zA-Z0-9]{20,}"), "[key]"),
-    (re.compile(r"sk-ant-[a-zA-Z0-9_-]{20,}"), "[key]"),
-    (re.compile(r"sk-[a-zA-Z0-9-]{20,}"), "[key]"),
-    (re.compile(r"gsk_[a-zA-Z0-9_]{20,}"), "[key]"),
-    (re.compile(r"pplx-[a-zA-Z0-9]{20,}"), "[key]"),
-    (re.compile(r"AIza[a-zA-Z0-9_-]{30,}"), "[key]"),
-    (re.compile(r"eyJ[a-zA-Z0-9_-]{20,}"), "[key]"),
-)
-
-
-def _scrub_secrets(msg: str) -> str:
-    """Strip API keys and bearer tokens from an error string.
-
-    Applied to backend-failure strings before they are logged or embedded in
-    an ExtractionError. Without this, litellm-wrapped exceptions whose
-    stringification embeds request headers can surface Authorization
-    tokens to CLI users' terminals and logs.
-    """
-    for pattern, replacement in _SECRET_PATTERNS:
-        msg = pattern.sub(replacement, msg)
-    return msg
-
-
-def _get_api_error_status(exc: Exception) -> int | None:
-    """Extract HTTP status code from an API error, if present."""
-    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-    if isinstance(status, int):
-        return status
-    resp = getattr(exc, "response", None)
-    if resp is not None:
-        s = getattr(resp, "status_code", None)
-        if isinstance(s, int):
-            return s
-    return None
-
-
-def _classify_api_error(exc: Exception) -> str | None:
-    """Return a user-facing message if this is a user-actionable API error.
-
-    Returns None if the error is transient or backend-specific (should fall
-    through to the next extraction backend).
-    """
-    status = _get_api_error_status(exc)
-    msg = str(exc).lower()
-
-    if status == 401 or ("invalid" in msg and "key" in msg) or "unauthorized" in msg:
-        return "Invalid API key. Check that your key is correct and active."
-    if status == 402 or any(
-        kw in msg
-        for kw in (
-            "spend limit",
-            "insufficient",
-            "quota exceeded",
-            "payment required",
-            "billing",
-            "credits",
-            "exceeded your",
-        )
-    ):
-        return (
-            "API key spend limit reached. Add credits or raise your "
-            "limit in your provider dashboard."
-        )
-    if status == 403:
-        return (
-            "OpenRouter denied the PDF extraction request (HTTP 403). This "
-            "usually means your OpenRouter account has no credits, your "
-            "privacy settings block the provider we use for extraction, or "
-            "you haven't accepted that provider's terms. Add credits at "
-            "https://openrouter.ai/credits and review your privacy settings "
-            "at https://openrouter.ai/settings/privacy, then start a new "
-            "review."
-        )
-    # Don't classify 429 (rate limit) or 5xx here — those are transient.
-    return None
 
 
 SUPPORTED_EXTENSIONS = frozenset(
@@ -138,471 +68,38 @@ SUPPORTED_EXTENSIONS = frozenset(
 )
 
 
-def _cache_path(pdf_path: Path) -> Path:
-    """Return the cache file path for a given PDF."""
-    return pdf_path.with_suffix(".extraction_cache.json")
+# Minimum markdown length (in chars) below which we consider pymupdf4llm's
+# output "empty enough to fall through to OCR". Scanned PDFs with no text
+# layer tend to return <50 chars; real academic papers return much more.
+_PYMUPDF4LLM_MIN_CHARS = 200
 
 
-def _load_cache(pdf_path: Path) -> PaperText | None:
-    """Load cached extraction if it exists and is newer than the PDF."""
-    cache = _cache_path(pdf_path)
-    if not cache.exists():
-        return None
-    if cache.stat().st_mtime < pdf_path.stat().st_mtime:
-        logger.info("Cache stale (PDF modified since cache), re-extracting")
-        return None
+def _extract_pymupdf4llm(path: Path) -> str:
+    """Fast pure-Python PDF extraction for text-bearing PDFs."""
     try:
-        data = json.loads(cache.read_text(encoding="utf-8"))
-        paper_text = PaperText.model_validate(data)
-        logger.info("Loaded extraction cache from %s", cache.name)
-        return paper_text
-    except Exception:
-        logger.warning("Cache corrupt, re-extracting")
-        return None
-
-
-def _save_cache(pdf_path: Path, paper_text: PaperText) -> None:
-    """Save extraction result to cache file next to the PDF."""
-    cache = _cache_path(pdf_path)
-    # Prevent symlink-following writes (attacker could pre-create symlink)
-    if cache.is_symlink():
-        logger.warning("Cache path %s is a symlink, refusing to write", cache)
-        return
-    try:
-        cache.write_text(
-            paper_text.model_dump_json(indent=None),
-            encoding="utf-8",
-        )
-        cache.chmod(0o600)  # restrict to owner-only (contains paper text)
-        size_kb = cache.stat().st_size / 1024
-        logger.info("Saved extraction cache (%.1f KB) to %s", size_kb, cache.name)
-    except Exception:
-        logger.warning("Failed to write extraction cache, continuing without cache")
-
-
-# ---------------------------------------------------------------------------
-# Extraction backends
-# ---------------------------------------------------------------------------
-
-
-_MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
-
-# Retry config for transient OpenRouter failures. Only applied to idempotent
-# POSTs; network errors and these specific HTTP statuses are retried.
-_OCR_RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
-_OCR_MAX_RETRIES = 9  # total attempts = 1 + _OCR_MAX_RETRIES (10 total)
-_OCR_BACKOFF_BASE = 2.0  # seconds; actual wait = min(base ** attempt, _OCR_MAX_BACKOFF)
-_OCR_MAX_BACKOFF = 32.0  # cap per-retry wait so 10 attempts don't blow the timeout budget
-# Backoff sequence: 1 + 2 + 4 + 8 + 16 + 32 + 32 + 32 + 32 = 159s max across 9 retries.
-
-# Truncate diagnostic log output so a runaway response body doesn't flood logs.
-_OCR_LOG_TRUNCATE = 500
-
-
-def _response_was_billed(resp) -> bool:
-    """Return True if the response reports non-zero usage/cost.
-
-    OpenRouter normally reports zero usage when the file-parser plugin fails
-    upstream, so retrying an error body is free. This guard protects against
-    the edge case where a billed request also returned an error body — without
-    it, 10 retries could in principle multiply the user's API cost. If we
-    can't parse the response, we assume it wasn't billed (conservative only
-    in the sense that we'd rather retry once more than wrongly give up on a
-    response that was actually free).
-    """
-    try:
-        data = resp.json()
-    except (ValueError, AttributeError):
-        return False
-    if not isinstance(data, dict):
-        return False
-    usage = data.get("usage")
-    if not isinstance(usage, dict):
-        return False
-
-    # bool is a subclass of int in Python — reject it explicitly so a
-    # malformed `usage: {"total_cost": true}` can't trip the billing guard
-    # on an otherwise-free error response.
-    def _positive_number(val: object) -> bool:
-        return isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0
-
-    for key in ("total_cost", "cost"):
-        if _positive_number(usage.get(key)):
-            return True
-    if _positive_number(usage.get("total_tokens")):
-        return True
-    return False
-
-
-def _body_retry_code(resp) -> int | None:
-    """Return a retryable error code if the response body wraps one, else None.
-
-    OpenRouter's plugin layer (including the Mistral OCR file-parser) sometimes
-    returns HTTP 200 with an error body like
-    ``{"error": {"message": "Timed out parsing tmp.pdf", "code": 504}}``
-    when the upstream provider hiccups. Without checking the body, the transport-
-    level retry loop would see HTTP 200, return the response as "successful",
-    and then the parser would raise ExtractionError and the review would fall
-    through to Docling. We want to retry these just like a raw HTTP 504.
-    """
-    try:
-        data = resp.json()
-    except (ValueError, AttributeError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    err = data.get("error")
-    if not isinstance(err, dict):
-        return None
-    code = err.get("code")
-    if isinstance(code, int) and code in _OCR_RETRY_STATUSES:
-        return code
-    return None
-
-
-def _post_openrouter_ocr(
-    *,
-    url: str,
-    headers: dict,
-    payload: dict,
-    timeout: int,
-) -> "requests.Response":  # noqa: F821
-    """POST to OpenRouter with bounded retries on transient failures.
-
-    Retries on connection errors, read timeouts, and specific 5xx/429/408
-    statuses. Does NOT retry on 4xx (except 408, 429) since those are
-    user-actionable (bad key, content policy, etc.).
-
-    Raises ExtractionError with context if all attempts fail with network
-    errors. Otherwise returns the last Response (caller must still check
-    `raise_for_status()` and body).
-    """
-    import time
-
-    import requests
-
-    def _wait_for(attempt: int) -> float:
-        return min(_OCR_BACKOFF_BASE**attempt, _OCR_MAX_BACKOFF)
-
-    last_network_exc: Exception | None = None
-    for attempt in range(_OCR_MAX_RETRIES + 1):
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
-        except requests.RequestException as exc:
-            # RequestException is the base class for ConnectionError, Timeout,
-            # ChunkedEncodingError, ContentDecodingError, SSLError, etc. — all
-            # network-layer failures where retry is the right move.
-            last_network_exc = exc
-            if attempt < _OCR_MAX_RETRIES:
-                wait = _wait_for(attempt)
-                logger.warning(
-                    "OpenRouter OCR network error (attempt %d/%d), retrying in %.1fs: %s",
-                    attempt + 1,
-                    _OCR_MAX_RETRIES + 1,
-                    wait,
-                    exc,
-                )
-                time.sleep(wait)
-                continue
-            raise ExtractionError(
-                f"OpenRouter OCR network error after {_OCR_MAX_RETRIES + 1} attempts: {exc}"
-            ) from exc
-
-        if resp.status_code in _OCR_RETRY_STATUSES and attempt < _OCR_MAX_RETRIES:
-            wait = _wait_for(attempt)
-            logger.warning(
-                "OpenRouter OCR returned %d (attempt %d/%d), retrying in %.1fs",
-                resp.status_code,
-                attempt + 1,
-                _OCR_MAX_RETRIES + 1,
-                wait,
-            )
-            time.sleep(wait)
-            continue
-
-        # HTTP 200 with a retryable error body (e.g. {"error": {"code": 504}}).
-        # OpenRouter's plugin layer uses this shape when the upstream provider
-        # (Mistral OCR) times out or hiccups. Treat it the same as a raw HTTP
-        # status in _OCR_RETRY_STATUSES — but only if usage is zero. A billed
-        # error response means the request actually cost money, and retrying
-        # would double-charge the user; stop and let the caller fall through
-        # to the next extractor.
-        body_code = _body_retry_code(resp)
-        if body_code is not None and attempt < _OCR_MAX_RETRIES:
-            if _response_was_billed(resp):
-                logger.warning(
-                    "OpenRouter OCR returned 200 with body error code %d AND "
-                    "non-zero usage — not retrying to avoid double-billing the user",
-                    body_code,
-                )
-                return resp
-            wait = _wait_for(attempt)
-            logger.warning(
-                "OpenRouter OCR returned 200 with body error code %d "
-                "(attempt %d/%d), retrying in %.1fs",
-                body_code,
-                attempt + 1,
-                _OCR_MAX_RETRIES + 1,
-                wait,
-            )
-            time.sleep(wait)
-            continue
-
-        return resp
-
-    # Unreachable: the loop either returns on success or raises on final network error
-    raise ExtractionError(  # pragma: no cover
-        f"OpenRouter OCR retry loop exited unexpectedly (last exc: {last_network_exc})"
-    )
-
-
-def _parse_openrouter_ocr_response(resp: "requests.Response") -> str:  # noqa: F821
-    """Parse an OpenRouter OCR response into a single markdown string.
-
-    Handles several failure modes OpenRouter exposes:
-    - HTTP 200 with `{"error": {...}}` (plugin failed mid-request)
-    - HTTP 200 with empty `choices`
-    - Malformed annotation structure
-    - Empty content fallback
-    """
-    try:
-        data = resp.json()
-    except ValueError as exc:
+        import pymupdf4llm
+    except ImportError as exc:
         raise ExtractionError(
-            f"OpenRouter returned invalid JSON (HTTP {resp.status_code}): {exc}"
+            "pymupdf4llm is not installed. Install it with "
+            "`pip install pymupdf4llm` to enable the fast extraction path."
         ) from exc
 
-    if not isinstance(data, dict):
+    pymupdf4llm.use_layout(False)
+    markdown = pymupdf4llm.to_markdown(str(path))
+    if not isinstance(markdown, str):
         raise ExtractionError(
-            f"OpenRouter OCR response was not a JSON object: {type(data).__name__}"
+            f"pymupdf4llm.to_markdown returned {type(markdown).__name__}, expected str"
         )
-
-    # OpenRouter can return HTTP 200 with an error body (rate limit, plugin
-    # failure, content policy, etc.). Surface a clean error instead of
-    # crashing on KeyError: 'choices'.
-    if "error" in data and not data.get("choices"):
-        err = data["error"]
-        msg = err.get("message") if isinstance(err, dict) else None
-        logger.warning("OpenRouter OCR returned error body: %s", str(err)[:_OCR_LOG_TRUNCATE])
-        raise ExtractionError(f"OpenRouter OCR error: {msg or err}")
-
-    choices = data.get("choices")
-    if not choices:
-        logger.warning(
-            "OpenRouter OCR unexpected response (no choices): keys=%s body=%s",
-            sorted(data.keys()),
-            str(data)[:_OCR_LOG_TRUNCATE],
-        )
+    stripped = markdown.strip()
+    if len(stripped) < _PYMUPDF4LLM_MIN_CHARS:
         raise ExtractionError(
-            f"OpenRouter OCR returned no choices (response keys: {sorted(data.keys())})"
+            f"pymupdf4llm returned too little text ({len(stripped)} chars). "
+            f"This is usually a scanned / image-only PDF with no text layer. "
+            f"Falling through to the OCR cascade."
         )
-
-    first_choice = choices[0] if isinstance(choices, list) else {}
-    message = (first_choice or {}).get("message") or {}
-
-    # Try annotations first (raw OCR output, no model paraphrasing).
-    # File-parser's documented response shape (message.annotations):
-    #   [{"type": "file", "file": {"content":
-    #       [{"type": "text", "text": ...}, ...]}}]
-    annotations = message.get("annotations") or []
-    for ann in annotations:
-        if not isinstance(ann, dict) or ann.get("type") != "file":
-            continue
-        file_obj = ann.get("file") or {}
-        content_items = file_obj.get("content") or []
-        texts = [
-            item.get("text", "")
-            for item in content_items
-            if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
-        ]
-        if texts:
-            return PAGE_BREAK.join(texts)
-
-    # Fallback: model response (the prompt asks for verbatim text when the
-    # plugin output is unavailable or the model paraphrased anyway).
-    content = message.get("content")
-    if not content or not isinstance(content, str) or not content.strip():
-        logger.warning(
-            "OpenRouter OCR returned no usable content; message keys=%s",
-            sorted(message.keys()),
-        )
-        raise ExtractionError("OpenRouter OCR returned empty content")
-    return content
+    return markdown
 
 
-def _extract_openrouter_file_parser(path: Path, engine: str) -> str:
-    """Extract PDF text via OpenRouter's file-parser plugin.
-
-    engine:
-        "mistral-ocr" — vision-based OCR, best quality for LaTeX/math, paid,
-                        known to be flaky (upstream timeouts).
-        "pdf-text"    — native embedded-text extraction, free, fast, reliable.
-                        Won't work on scanned image-only PDFs.
-    """
-    import base64
-
-    from coarse.config import resolve_api_key
-    from coarse.models import OPENROUTER_EXTRACTION_MODEL
-    from coarse.prompts import OPENROUTER_EXTRACTION_PROMPT
-
-    api_key = resolve_api_key("openrouter/auto")
-    if not api_key:
-        raise ValueError("No OPENROUTER_API_KEY")
-
-    file_size = path.stat().st_size
-    if file_size > _MAX_FILE_SIZE:
-        raise ExtractionError(
-            f"File too large ({file_size / 1024 / 1024:.0f} MB). "
-            f"Maximum supported size is {_MAX_FILE_SIZE / 1024 / 1024:.0f} MB."
-        )
-
-    with open(path, "rb") as f:
-        pdf_b64 = base64.b64encode(f.read()).decode()
-
-    resp = _post_openrouter_ocr(
-        url="https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        payload={
-            "model": OPENROUTER_EXTRACTION_MODEL,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": OPENROUTER_EXTRACTION_PROMPT},
-                        {
-                            "type": "file",
-                            "file": {
-                                "filename": path.name,
-                                "file_data": f"data:application/pdf;base64,{pdf_b64}",
-                            },
-                        },
-                    ],
-                }
-            ],
-            "plugins": [{"id": "file-parser", "pdf": {"engine": engine}}],
-        },
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return _parse_openrouter_ocr_response(resp)
-
-
-def _extract_mistral_openrouter(path: Path) -> str:
-    """Extract via OpenRouter's Mistral OCR file-parser plugin."""
-    return _extract_openrouter_file_parser(path, engine="mistral-ocr")
-
-
-def _extract_pdftext_openrouter(path: Path) -> str:
-    """Extract via OpenRouter's native pdf-text file-parser plugin (free)."""
-    return _extract_openrouter_file_parser(path, engine="pdf-text")
-
-
-def _extract_docling(path: Path) -> str:
-    """Extract via Docling (free, offline). Supports PDF, DOCX, HTML, LaTeX."""
-    from docling.document_converter import DocumentConverter
-
-    converter = DocumentConverter()
-    result = converter.convert(str(path))
-    return result.document.export_to_markdown(page_break_placeholder="<!-- PAGE BREAK -->")
-
-
-# ---------------------------------------------------------------------------
-# Non-PDF extraction backends (lightweight fallbacks)
-# ---------------------------------------------------------------------------
-
-
-def _extract_plaintext(path: Path) -> str:
-    """Read a plain text or markdown file as-is."""
-    return path.read_text(encoding="utf-8")
-
-
-# LaTeX heading patterns: \section{...}, \subsection{...}, etc.
-_LATEX_HEADING_RE = re.compile(r"\\(section|subsection|subsubsection|paragraph)\*?\{([^}]*)\}")
-_LATEX_HEADING_LEVEL = {
-    "section": "#",
-    "subsection": "##",
-    "subsubsection": "###",
-    "paragraph": "####",
-}
-# Preamble lines to strip (noise for the reviewer)
-_LATEX_PREAMBLE_RE = re.compile(
-    r"^\\(documentclass|usepackage|title|author|date|maketitle"
-    r"|begin\{document\}|end\{document\})\b.*$",
-    re.MULTILINE,
-)
-
-
-def _extract_latex_regex(path: Path) -> str:
-    """Extract from LaTeX source with heading conversion to markdown.
-
-    Converts \\section{X} → # X, etc. Strips preamble noise.
-    Leaves math, environments, and all other content intact.
-    """
-    text = path.read_text(encoding="utf-8")
-    # Strip preamble lines
-    text = _LATEX_PREAMBLE_RE.sub("", text)
-    # Convert LaTeX headings to markdown headings
-    text = _LATEX_HEADING_RE.sub(lambda m: f"{_LATEX_HEADING_LEVEL[m.group(1)]} {m.group(2)}", text)
-    # Clean up excessive blank lines from stripping
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
-def _extract_html_markdownify(path: Path) -> str:
-    """Convert HTML to markdown via markdownify (lightweight fallback)."""
-    try:
-        import markdownify
-    except ImportError:
-        raise ExtractionError(
-            "HTML extraction requires markdownify: pip install coarse-ink[formats]"
-        )
-    html_str = path.read_text(encoding="utf-8")
-    return markdownify.markdownify(html_str, heading_style="ATX")
-
-
-def _extract_docx_mammoth(path: Path) -> str:
-    """Convert DOCX to markdown via mammoth (lightweight fallback)."""
-    try:
-        import mammoth
-    except ImportError:
-        raise ExtractionError("DOCX extraction requires mammoth: pip install coarse-ink[formats]")
-    with open(path, "rb") as f:
-        result = mammoth.convert_to_markdown(f)
-    return result.value
-
-
-def _extract_epub(path: Path) -> str:
-    """Extract EPUB chapters to markdown via ebooklib + markdownify."""
-    try:
-        import ebooklib
-        import markdownify
-        from ebooklib import epub
-    except ImportError:
-        raise ExtractionError(
-            "EPUB extraction requires ebooklib and markdownify: pip install coarse-ink[formats]"
-        )
-    book = epub.read_epub(str(path))
-    chapters = []
-    for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
-        html_content = item.get_content().decode("utf-8", errors="replace")
-        md = markdownify.markdownify(html_content, heading_style="ATX")
-        md = md.strip()
-        if md:
-            chapters.append(md)
-    if not chapters:
-        raise ExtractionError(f"No text content found in EPUB: {path}")
-    return "\n\n---\n\n".join(chapters)
-
-
-# ---------------------------------------------------------------------------
-# Garble detection and normalization
-# ---------------------------------------------------------------------------
-
-
-# Mistral OCR glyph[...] artifact → Unicode mapping
 _GLYPH_MAP: dict[str, str] = {
     "lscript": "ℓ",
     "epsilon1": "ε",
@@ -630,28 +127,8 @@ def normalize_mistral_artifacts(text: str) -> str:
     return result
 
 
-# ---------------------------------------------------------------------------
-# Main entry point
-# ---------------------------------------------------------------------------
-
-
 def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
-    """Extract text from a PDF file.
-
-    Tries Mistral OCR via OpenRouter's file-parser plugin for high-quality
-    LaTeX extraction, falling back to Docling for offline use.
-
-    Args:
-        pdf_path: Path to the PDF file.
-        use_cache: If True (default), use cached extraction when available.
-
-    Returns:
-        PaperText with full_markdown and token_estimate.
-
-    Raises:
-        FileNotFoundError: If the PDF file does not exist.
-        ValueError: If no extraction backend can convert the file.
-    """
+    """Extract text from a PDF file."""
     path = Path(pdf_path)
     if not path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
@@ -668,33 +145,55 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
     if magic != b"%PDF-":
         raise ExtractionError(f"File does not appear to be a PDF: {pdf_path}")
 
-    # Try loading from cache first
     if use_cache:
         cached = _load_cache(path)
         if cached is not None:
             return cached
 
-    # Priority: Mistral OCR (best LaTeX quality) → pdf-text (free, fast,
-    # reliable embedded-text extraction) → Docling (offline last resort).
-    # The pdf-text middle tier catches Mistral OCR upstream outages without
-    # paying Docling's torch/RapidOCR startup cost.
-    extractors = [
-        ("Mistral OCR (OpenRouter)", _extract_mistral_openrouter),
-        ("pdf-text (OpenRouter)", _extract_pdftext_openrouter),
-        ("Docling", _extract_docling),
-    ]
+    # Both modes keep Mistral OCR first. The fast path adds a local
+    # pymupdf4llm fallback for the live handoff workflow.
+    if os.environ.get("COARSE_EXTRACTION_FAST") == "1":
+        extractors = [
+            ("Mistral OCR (OpenRouter, chunked)", _extract_mistral_openrouter),
+            ("pymupdf4llm", _extract_pymupdf4llm),
+            ("pdf-text (OpenRouter)", _extract_pdftext_openrouter),
+        ]
+    else:
+        extractors = [
+            ("Mistral OCR (OpenRouter, chunked)", _extract_mistral_openrouter),
+            ("pdf-text (OpenRouter)", _extract_pdftext_openrouter),
+            ("Docling", _extract_docling),
+        ]
+
     full_markdown = None
     errors: list[str] = []
-    for name, fn in extractors:
+    for idx, (name, fn) in enumerate(extractors):
         try:
             full_markdown = fn(path)
             logger.info("Extracted via %s (%d chars)", name, len(full_markdown))
             break
         except Exception as exc:
-            # Surface user-actionable API errors immediately — don't mask
-            # them by falling through to the next backend.
             api_msg = _classify_api_error(exc)
             if api_msg:
+                summary = _describe_api_error(exc)
+                has_fallback = idx < len(extractors) - 1
+                if has_fallback and _can_fall_through_api_error(name, exc, api_msg):
+                    errors.append(f"{name}: {api_msg}")
+                    if summary:
+                        logger.warning(
+                            "%s returned a recoverable API denial; trying fallback backend. %s",
+                            name,
+                            summary,
+                        )
+                    else:
+                        logger.warning(
+                            "%s returned a recoverable API denial; trying fallback backend: %s",
+                            name,
+                            api_msg,
+                        )
+                    continue
+                if summary:
+                    logger.warning("%s failed with API error: %s", name, summary)
                 raise ExtractionError(api_msg) from exc
             scrubbed = _scrub_secrets(str(exc))
             errors.append(f"{name}: {scrubbed}")
@@ -704,19 +203,14 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
         detail = _scrub_secrets("; ".join(errors))
         raise ExtractionError(f"Cannot convert PDF: all extraction backends failed. {detail}")
 
-    # Normalize Mistral OCR artifacts unconditionally
     full_markdown = normalize_mistral_artifacts(full_markdown)
-
-    # Strip NUL bytes before anything downstream touches the text. See
-    # _strip_nul_bytes for the full rationale — short version: Postgres 22P05.
     full_markdown = _strip_nul_bytes(full_markdown)
 
-    # Detect and normalize OCR garble from older PDFs
     garble = compute_garble_ratio(full_markdown)
     if garble > 0.001:
         logger.info("Garble ratio %.4f detected, applying OCR normalization", garble)
         full_markdown = normalize_ocr_garble(full_markdown)
-        garble = compute_garble_ratio(full_markdown)  # recompute after normalization
+        garble = compute_garble_ratio(full_markdown)
 
     paper_text = PaperText(
         full_markdown=full_markdown,
@@ -724,7 +218,6 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
         garble_ratio=garble,
     )
 
-    # Cache for next time
     if use_cache:
         _save_cache(path, paper_text)
 
@@ -736,11 +229,6 @@ def _estimate_tokens(text: str) -> int:
     return len(text) // 4
 
 
-# ---------------------------------------------------------------------------
-# Multi-format entry point
-# ---------------------------------------------------------------------------
-
-# Formats where Docling gives best quality (try first, fall back to lightweight)
 _DOCLING_FORMATS = frozenset({".docx", ".html", ".htm", ".tex", ".latex"})
 _FALLBACKS = {
     ".docx": _extract_docx_mammoth,
@@ -752,19 +240,7 @@ _FALLBACKS = {
 
 
 def extract_file(file_path: str | Path, use_cache: bool = True) -> PaperText:
-    """Extract text from any supported file format.
-
-    For PDFs: Mistral OCR (direct) → OpenRouter → Docling.
-    For DOCX/HTML/TEX: Docling (if installed) → lightweight fallback.
-    For TXT/MD: direct read. For EPUB: ebooklib + markdownify.
-
-    Args:
-        file_path: Path to the file.
-        use_cache: If True (default), use cached extraction when available.
-
-    Returns:
-        PaperText with full_markdown and token_estimate.
-    """
+    """Extract text from any supported file format."""
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
@@ -782,17 +258,14 @@ def extract_file(file_path: str | Path, use_cache: bool = True) -> PaperText:
             f"Unsupported file format: {ext}. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
         )
 
-    # PDFs: existing Mistral OCR → OpenRouter → Docling pipeline
     if ext == ".pdf":
         return extract_text(path, use_cache=use_cache)
 
-    # Non-PDF: cache check
     if use_cache:
         cached = _load_cache(path)
         if cached is not None:
             return cached
 
-    # Formats where Docling gives best quality
     if ext in _DOCLING_FORMATS:
         try:
             full_markdown = _extract_docling(path)
@@ -802,11 +275,9 @@ def extract_file(file_path: str | Path, use_cache: bool = True) -> PaperText:
             full_markdown = _FALLBACKS[ext](path)
     elif ext == ".epub":
         full_markdown = _extract_epub(path)
-    else:  # .txt, .md
+    else:
         full_markdown = _extract_plaintext(path)
 
-    # Same NUL-strip as the PDF path — non-PDF extractors can also carry
-    # NULs (malformed TXT, Word docs with embedded binary).
     full_markdown = _strip_nul_bytes(full_markdown)
 
     paper_text = PaperText(

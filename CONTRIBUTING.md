@@ -27,29 +27,45 @@ make format  # auto-format
 
 ```
 src/coarse/
-├── cli.py              # Typer CLI, progress display
-├── config.py           # ~/.coarse/config.toml, API key management
-├── extraction.py       # PDF/TXT/MD/TeX/DOCX/HTML/EPUB -> markdown
-├── extraction_qa.py    # Vision LLM spot-check of extraction quality
-├── structure.py        # Markdown -> PaperStructure (sections, math detection, domain)
-├── pipeline.py         # review_paper() orchestrator
-├── synthesis.py        # Review -> markdown output
-├── quote_verify.py     # Fuzzy-match quotes against paper text (stricter for math)
-├── llm.py              # litellm wrapper, cost tracking
-├── models.py           # Model ID constants (single source of truth)
-├── prompts.py          # All LLM prompt templates
-├── types.py            # Pydantic models
-├── cost.py             # Cost estimation + user approval
-├── garble.py           # OCR garble detection and normalization
-├── quality.py          # Quality eval against reference review (dev only)
+├── cli.py                   # Typer CLI, progress display (rich)
+├── cli_review.py            # Standalone coarse-review CLI for headless local/handoff runs
+├── cli_attach.py            # --attach signal-driven wait mode (pidfile + log tail + heartbeat watcher)
+├── claude_code_client.py    # Back-compat re-export for headless Claude client helpers
+├── config.py                # ~/.coarse/config.toml, API key management
+├── cost.py                  # Cost estimation + user approval gate
+├── extraction.py            # PDF/TXT/MD/TeX/DOCX/HTML/EPUB → PaperText
+├── extraction_cache.py      # Extraction cache paths and cache read/write helpers
+├── extraction_formats.py    # Non-OpenRouter format-specific extraction backends
+├── extraction_openrouter.py # OpenRouter OCR/file-parser transport and response parsing
+├── extraction_qa.py         # Post-extraction QA via vision LLM (Gemini Flash)
+├── garble.py                # OCR garble detection and normalization
+├── headless_clients.py      # Claude/Codex/Gemini CLI-backed LLMClient replacements
+├── headless_review.py       # Shared entrypoint for headless CLI review runs
+├── llm.py                   # litellm wrapper, structured output, cost tracking
+├── models.py                # Single source of truth for every model ID
+├── pipeline.py              # review_paper() orchestrator
+├── pipeline_spec.py         # Shared stage manifest for runtime + cost estimators
+├── prompts.py               # All LLM prompt templates
+├── quality.py               # Quality eval against reference review (dev only)
+├── quote_verify.py          # Post-processing quote verification (stricter for math)
+├── recall.py                # Recall eval vs. ground-truth expert reviews (dev only)
+├── review_stages.py         # Stage-local review helpers used by pipeline.py
+├── structure.py             # PaperText → PaperStructure (heading parse + math + metadata)
+├── synthesis.py             # Review → markdown string
+├── types.py                 # Pydantic models (PaperText, Review, DetailedComment, …)
 └── agents/
-    ├── base.py             # ReviewAgent ABC + prompt caching support
-    ├── overview.py         # 3-judge panel overview (macro-level feedback)
-    ├── section.py          # Per-section detailed review
-    ├── crossref.py         # Cross-reference deduplication
-    ├── critique.py         # Self-critique quality gate
-    ├── verify.py           # Adversarial proof verification for math sections
-    └── literature.py       # Literature search (Perplexity Sonar Pro, arXiv fallback)
+    ├── base.py              # ReviewAgent ABC + _build_messages helper + prompt caching
+    ├── completeness.py      # Flags structural gaps and missing content
+    ├── contradiction.py     # Flags comments contradicting the paper's contribution (legacy)
+    ├── cross_section.py     # Cross-section synthesis: discussion claims vs formal results
+    ├── crossref.py          # Cross-reference consistency (legacy, superseded by editorial)
+    ├── critique.py          # Self-critique quality gate (legacy, superseded by editorial)
+    ├── editorial.py         # Merged filtering pass (dedup, contradiction, quality, ordering)
+    ├── literature.py        # Literature search (Perplexity Sonar Pro, arXiv fallback)
+    ├── overview.py          # Single-pass macro-level overview feedback
+    ├── quote_repair.py      # Batched near-miss quote re-anchoring before deterministic re-check
+    ├── section.py           # Per-section detailed review
+    └── verify.py            # Adversarial proof verification (math sections)
 ```
 
 ## How the pipeline works
@@ -62,14 +78,16 @@ paper.pdf (or .txt, .md, .tex, .docx, .html, .epub)
   -> calibrate_domain \
                        |  Parallel: domain-specific criteria + literature search
   -> search_literature /  (Perplexity Sonar Pro, arXiv fallback)
-  -> overview panel       3-judge panel with different personas -> synthesized OverviewFeedback
+  -> overview.py          Single overview agent -> OverviewFeedback
+  -> completeness.py      Structural-gap pass merged into overview
   -> section agents   \
                        |  Parallel: detailed comments + adversarial proof verification
   -> proof verify      /  (math sections only)
-  -> crossref agent      Deduplicate, validate quotes, consistency
-  -> quote_verify.py     Programmatic fuzzy-match quotes against text
-  -> critique agent      Self-critique quality gate, revise weak comments
-  -> quote_verify.py     Re-verify (critique can re-garble quotes via JSON)
+  -> cross_section.py     Results vs discussion synthesis (conditional)
+  -> editorial.py         Primary dedup/consistency/quality filter
+  -> crossref agent       Legacy fallback if editorial fails
+  -> critique agent      Legacy fallback if editorial fails
+  -> quote_verify.py      Programmatic fuzzy-match quotes against text
   -> synthesis.py        Deterministic render -> paper_review.md
 ```
 

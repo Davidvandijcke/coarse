@@ -141,7 +141,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
           href="/"
           style={{
             fontFamily: "var(--font-space-mono), monospace",
-            fontSize: "0.85rem",
+            fontSize: "0.92rem",
             letterSpacing: "0.12em",
             textTransform: "uppercase",
             color: "var(--yellow-chalk)",
@@ -195,7 +195,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
           href="/"
           style={{
             fontFamily: "var(--font-space-mono), monospace",
-            fontSize: "0.85rem",
+            fontSize: "0.92rem",
             letterSpacing: "0.12em",
             textTransform: "uppercase",
             color: "var(--yellow-chalk)",
@@ -293,7 +293,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
               href="/"
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.85rem",
+                fontSize: "0.92rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 color: "var(--yellow-chalk)",
@@ -347,7 +347,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
               href="/"
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.85rem",
+                fontSize: "0.92rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 color: "var(--yellow-chalk)",

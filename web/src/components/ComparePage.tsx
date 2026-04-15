@@ -463,7 +463,10 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
 
       {/* Top controls */}
       <section style={{ padding: "0.5rem 2.5rem 0" }}>
-        {/* Paper selector — chalk tabs + PDF download */}
+        {/* Paper selector — chalk tabs. The paper PDF download link
+            used to live here but was removed: the papers on this
+            comparison page are published through journal / preprint
+            servers whose terms prohibit re-hosted redistribution. */}
         <div style={{ display: "flex", gap: "1.5rem", alignItems: "baseline" }}>
           {(Object.keys(papers) as PaperId[]).map((pid) => (
             <button
@@ -478,22 +481,6 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
               {PAPER_LABELS[pid]}
             </button>
           ))}
-          <a
-            href={paper.pdfPath}
-            download
-            style={{
-              fontFamily: "var(--font-chalk)",
-              fontSize: "1rem",
-              color: "var(--dust)",
-              textDecoration: "none",
-              marginLeft: "auto",
-              transition: "color 0.2s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--chalk-bright)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--dust)")}
-          >
-            ↓ paper PDF
-          </a>
         </div>
 
         {/* Quality score + paper title */}
@@ -551,7 +538,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
                 ["Specificity", activeScores.specificity],
                 ["Depth", activeScores.depth],
               ] as const).map(([label, val]) => (
-                <span key={label} style={{ fontSize: "0.85rem" }}>
+                <span key={label} style={{ fontSize: "0.92rem" }}>
                   <span style={{ fontFamily: "var(--font-chalk)", color: "var(--dust)" }}>
                     {label}
                   </span>{" "}

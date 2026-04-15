@@ -80,9 +80,16 @@ def _enforce_deploy_branch() -> None:
     `_enforce_deploy_branch_at_import_time` which wraps this with the
     test / serverless-container short-circuits.
     """
+    # CI context: GitHub Actions sets `GITHUB_ACTIONS=true` and
+    # `GITHUB_REF_NAME` to the ref that triggered the workflow. The
+    # deploy workflow only triggers on `push` to `main`, so the ref
+    # should always be `main` here — but if a future workflow change
+    # accidentally triggers this file's import from a non-main ref,
+    # we fail loudly rather than shipping the wrong code.
     if os.environ.get("GITHUB_ACTIONS") == "true":
         branch = os.environ.get("GITHUB_REF_NAME", "")
     else:
+        # Local context: inspect the working tree.
         try:
             branch = subprocess.check_output(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -98,6 +105,9 @@ def _enforce_deploy_branch() -> None:
             subprocess.TimeoutExpired,
         ):
             # Not inside a git repo (PyPI install, sdist tarball, etc.).
+            # This shouldn't happen for `modal deploy` but we refuse to
+            # block a legitimate import just because the guard can't
+            # prove the branch.
             return
 
     if branch == "main":
@@ -135,13 +145,19 @@ def _enforce_deploy_branch_at_import_time() -> None:
     """Module-level entry point for the deploy-branch guard.
 
     Wraps `_enforce_deploy_branch` with short-circuits for contexts
-    where the check shouldn't fire: pytest sessions (tests load this
-    file via importlib on feature branches) and Modal serverless
-    containers at review-serving time (cold-starts re-import the
-    file, and blocking by branch would break every review).
+    where the check shouldn't fire:
 
-    Tests call `_enforce_deploy_branch` directly to exercise the real
-    branch-check logic without having to defeat the short-circuit.
+    - Inside a pytest session: `tests/test_modal_worker.py` imports
+      this file via `importlib.util.spec_from_file_location`, and
+      tests run on every branch. The short-circuit keys off both
+      `sys.modules["pytest"]` (present from the outer pytest runner)
+      and `PYTEST_CURRENT_TEST` (set per-test by pytest).
+    - Inside a Modal serverless container: `modal.is_local()` is
+      False there. Serverless cold-starts re-import this file, and
+      blocking on branch would break every review.
+
+    Tests can call `_enforce_deploy_branch` directly to exercise the
+    real branch-check logic without having to defeat the short-circuit.
     """
     if "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ:
         return
@@ -149,6 +165,8 @@ def _enforce_deploy_branch_at_import_time() -> None:
         if not modal.is_local():
             return
     except Exception:
+        # modal may not expose is_local() on some versions; fall
+        # through to the branch check rather than pinning a version.
         pass
     _enforce_deploy_branch()
 
@@ -171,7 +189,7 @@ image = (
     .pip_install(
         # Install deps only (coarse source is baked into image below)
         "litellm>=1.60",
-        "instructor>=1.7",
+        "instructor>=1.15.1",
         "pydantic>=2.0",
         "typer>=0.12",
         "rich>=13.0",
@@ -186,7 +204,8 @@ image = (
         "mammoth>=1.6",
         "markdownify>=0.12",
         "ebooklib>=0.18",
-        "docling>=2.0",
+        "docling>=2.86.0",
+        "transformers>=5.4,<6",
     )
     .add_local_dir(_repo_root / "src" / "coarse", remote_path="/root/coarse")
 )
@@ -323,6 +342,44 @@ def _sanitize_error(msg: str) -> str:
     return msg[:500]
 
 
+def _classify_hosted_key_error(api_key: str | None) -> str | None:
+    """Explain when coarse.ink receives a direct-provider key.
+
+    The hosted product always routes through OpenRouter, even when the chosen
+    model ID starts with `openai/`, `anthropic/`, and so on. A direct provider
+    key therefore fails later as a generic OpenRouter 401 unless we catch the
+    obvious prefixes here and tell the user what kind of key the site expects.
+
+    Keep this intentionally conservative: only classify well-known direct
+    provider prefixes so unknown future OpenRouter key formats are not rejected.
+    """
+    cleaned = (api_key or "").strip()
+    if not cleaned or cleaned.startswith("sk-or-v1-"):
+        return None
+
+    provider = None
+    if cleaned.startswith("sk-ant-"):
+        provider = "Anthropic"
+    elif cleaned.startswith("sk-"):
+        provider = "OpenAI"
+    elif cleaned.startswith("gsk_"):
+        provider = "Groq"
+    elif cleaned.startswith("pplx-"):
+        provider = "Perplexity"
+    elif cleaned.startswith("AIza"):
+        provider = "Google"
+
+    if provider is None:
+        return None
+
+    return (
+        "coarse.ink requires an OpenRouter API key (usually starts with "
+        f"sk-or-v1-), even when you pick a {provider} model. The key you "
+        f"pasted looks like a direct {provider} key. Get an OpenRouter key "
+        "at https://openrouter.ai/keys and resubmit."
+    )
+
+
 def _classify_api_error(exc: BaseException) -> str | None:
     """Return a clear, user-facing message for common API errors.
 
@@ -335,7 +392,7 @@ def _classify_api_error(exc: BaseException) -> str | None:
         status = getattr(resp, "status_code", None)
     msg = str(exc).lower()
 
-    if status == 401 or "invalid" in msg and "key" in msg or "unauthorized" in msg:
+    if status == 401 or ("invalid" in msg and "key" in msg) or "unauthorized" in msg:
         return "Invalid API key. Check that your key is correct and active."
     if status == 402 or any(
         kw in msg
@@ -484,7 +541,7 @@ def _get_review_status(db, job_id: str) -> str | None:
     # 4 GB: large PDFs + Docling's torch/RapidOCR stack can blow past 2 GB when
     # the OpenRouter OCR path fails and we fall through to offline extraction.
     memory=4096,
-    max_containers=20,
+    max_containers=40,
     # Explicit retries=0: _resolve_user_api_key consumes the review_secrets row
     # on first read, so a retry would find an empty row, fall back to an empty
     # req.user_api_key, and 401 on the first LLM call. If retries are ever
@@ -540,6 +597,15 @@ def do_review(req_dict: dict):
     # intentionally source-agnostic.
     original_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip() or None
     resolved_user_key = _resolve_user_api_key(db, req, job_id)
+    hosted_key_error = _classify_hosted_key_error(resolved_user_key)
+    if hosted_key_error is not None:
+        db.table("reviews").update(
+            {
+                "status": "failed",
+                "error_message": hosted_key_error,
+            }
+        ).eq("id", job_id).execute()
+        raise ValueError(hosted_key_error)
     if resolved_user_key:
         os.environ["OPENROUTER_API_KEY"] = resolved_user_key
 
@@ -554,24 +620,58 @@ def do_review(req_dict: dict):
         f.write(pdf_bytes)
         pdf_path = f.name
 
+    # Mint a short-lived Supabase signed URL for the same storage path
+    # so we can hand it to OpenRouter's file-parser plugin directly
+    # instead of base64-encoding the file into the request body. This
+    # bypasses OpenRouter's inline request-body limit (effective
+    # ~8-16 MB), which 400'd on any paper larger than ~12-15 MB before
+    # Mistral OCR ever saw it. 15 minutes of TTL is plenty of headroom
+    # for the retry loop in extraction_openrouter (~5-10 min max wall
+    # clock with exponential backoff) while keeping the URL short-
+    # lived enough that its leaking into logs isn't worth worrying
+    # about. Best-effort: if signed-URL minting fails for any reason
+    # we fall back to the base64 path by leaving the contextvar unset,
+    # matching the pre-v1.3.0 behaviour exactly.
+    openrouter_signed_url: str | None = None
+    try:
+        signed = db.storage.from_("papers").create_signed_url(pdf_storage_path, 900)
+        if isinstance(signed, dict):
+            candidate = signed.get("signedURL") or signed.get("signed_url")
+            if isinstance(candidate, str) and candidate.startswith("http"):
+                openrouter_signed_url = candidate
+    except Exception as signed_exc:
+        print(f"[{job_id}] signed URL mint failed ({signed_exc!r}) — falling back to base64")
+
     start = time.time()
     try:
         print(f"[{job_id}] Importing coarse...")
         from coarse import review_paper
         from coarse.config import CoarseConfig
+        from coarse.extraction_openrouter import signed_url_ctx
 
-        has_or_key = bool(resolved_user_key or original_key)
-        print(f"[{job_id}] Import OK — OPENROUTER_API_KEY={'set' if has_or_key else 'MISSING'}")
+        # Read os.environ directly — the previous version inferred from local
+        # variables, which could lie about the actual state reaching litellm
+        # if something between env set and pipeline start cleared the var.
+        env_or_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+        print(
+            f"[{job_id}] Import OK — OPENROUTER_API_KEY="
+            f"{'set' if env_or_key else 'MISSING'} "
+            f"(len={len(env_or_key)})"
+        )
         print(f"[{job_id}] Starting pipeline")
 
         config = CoarseConfig(extraction_qa=True)
-        review, markdown, paper_text = review_paper(
-            pdf_path,
-            model=model,
-            skip_cost_gate=True,
-            config=config,
-            author_notes=author_notes,
-        )
+        signed_url_token = signed_url_ctx.set(openrouter_signed_url)
+        try:
+            review, markdown, paper_text = review_paper(
+                pdf_path,
+                model=model,
+                skip_cost_gate=True,
+                config=config,
+                author_notes=author_notes,
+            )
+        finally:
+            signed_url_ctx.reset(signed_url_token)
         print(f"[{job_id}] Pipeline complete — {len(markdown)} chars")
 
         duration = int(time.time() - start)

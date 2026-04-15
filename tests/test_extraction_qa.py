@@ -1,10 +1,9 @@
 """Tests for coarse.extraction_qa — post-extraction QA via vision LLM."""
+
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from coarse.extraction_qa import (
     ExtractionQAResult,
@@ -17,7 +16,6 @@ from coarse.extraction_qa import (
 )
 from coarse.models import VISION_MODEL
 from coarse.types import PaperText
-
 
 # ---------------------------------------------------------------------------
 # Unit tests: _split_by_page
@@ -102,7 +100,7 @@ def test_select_qa_pages_large_pdf():
     # Should include page 1 (first), page 30 (last), and math/table pages
     assert 1 in result
     assert 30 in result
-    assert 6 in result   # chunks[5] has math → page 6
+    assert 6 in result  # chunks[5] has math → page 6
     assert 21 in result  # chunks[20] has latex → page 21
     assert len(result) <= 15
 
@@ -127,7 +125,7 @@ def test_select_qa_pages_garbled_formula_pages_prioritized():
     chunks[3] = "See glyph[lscript] and glyph[epsilon1] in this formula"
     chunks[15] = "The result is <!-- formula-not-decoded --> which simplifies"
     result = _select_qa_pages(20, chunks)
-    assert 4 in result   # chunks[3] → page 4
+    assert 4 in result  # chunks[3] → page 4
     assert 16 in result  # chunks[15] → page 16
 
 
@@ -231,7 +229,10 @@ def _make_paper_text(markdown: str) -> PaperText:
 
 @patch("coarse.config.resolve_api_key", return_value="fake-key")
 @patch("coarse.extraction_qa._get_page_count", return_value=3)
-@patch("coarse.extraction_qa.render_pdf_pages", return_value=[(1, "img1"), (2, "img2"), (3, "img3")])
+@patch(
+    "coarse.extraction_qa.render_pdf_pages",
+    return_value=[(1, "img1"), (2, "img2"), (3, "img3")],
+)
 def test_run_qa_good_quality_returns_original(mock_render, mock_pages, mock_key):
     from coarse.extraction_qa import run_extraction_qa
 
@@ -240,9 +241,7 @@ def test_run_qa_good_quality_returns_original(mock_render, mock_pages, mock_key)
 
     mock_client = MagicMock()
     mock_client._model = VISION_MODEL
-    mock_client.complete.return_value = ExtractionQAResult(
-        overall_quality="good", corrections=[]
-    )
+    mock_client.complete.return_value = ExtractionQAResult(overall_quality="good", corrections=[])
 
     result = run_extraction_qa(Path("/fake.pdf"), paper, mock_client)
     assert result.full_markdown == md
@@ -299,7 +298,9 @@ def test_run_qa_skips_when_prefilter_false(mock_pages, mock_key):
     from coarse.extraction_qa import run_extraction_qa
 
     # Clean text, no math/tables — pre-filter should skip
-    md = ("This is a clean social science paper with no math. " * 50 + "\n<!-- PAGE BREAK -->\n") * 4
+    md = (
+        "This is a clean social science paper with no math. " * 50 + "\n<!-- PAGE BREAK -->\n"
+    ) * 4
     md += "Final page of clean content. " * 20
     paper = _make_paper_text(md)
 
@@ -337,9 +338,7 @@ def test_run_qa_single_page_pdf(mock_render, mock_pages, mock_key):
 
     mock_client = MagicMock()
     mock_client._model = VISION_MODEL
-    mock_client.complete.return_value = ExtractionQAResult(
-        overall_quality="good", corrections=[]
-    )
+    mock_client.complete.return_value = ExtractionQAResult(overall_quality="good", corrections=[])
 
     result = run_extraction_qa(Path("/fake.pdf"), paper, mock_client)
     assert result.full_markdown == md
@@ -347,7 +346,10 @@ def test_run_qa_single_page_pdf(mock_render, mock_pages, mock_key):
 
 @patch("coarse.config.resolve_api_key", return_value="fake-key")
 @patch("coarse.extraction_qa._get_page_count", return_value=3)
-@patch("coarse.extraction_qa.render_pdf_pages", return_value=[(1, "img1"), (2, "img2"), (3, "img3")])
+@patch(
+    "coarse.extraction_qa.render_pdf_pages",
+    return_value=[(1, "img1"), (2, "img2"), (3, "img3")],
+)
 def test_run_qa_empty_corrections_list(mock_render, mock_pages, mock_key):
     from coarse.extraction_qa import run_extraction_qa
 

@@ -7,13 +7,24 @@ import {
 } from "@/lib/reviewAuth";
 import { buildReviewKey, buildReviewUrl } from "@/lib/reviewAccess";
 import { isEmailCapacityReached } from "@/lib/emailCapacity";
+import { consumeReviewHandoffSecret } from "@/lib/routeHandoffAuth";
 import { sendReviewEmail } from "@/lib/email";
+import {
+  buildModalWebhookHostSuffix,
+  getModalWebhookConfig,
+} from "@/lib/modalWebhook";
 import {
   getActiveReviewWindowStartIso,
   MAX_CONCURRENT_REVIEWS,
 } from "@/lib/reviewCapacity";
+import { getSubmissionPauseResponse } from "@/lib/systemStatus";
+import { getSiteOriginForRequest } from "@/lib/siteOrigin";
 
 export const maxDuration = 30;
+const MODAL_TRIGGER_TIMEOUT_MS = 10_000;
+const MODAL_WEBHOOK_HOST_SUFFIXES = [
+  buildModalWebhookHostSuffix("coarse-review", "run-review"),
+];
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -30,27 +41,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let modalWebhookConfig: { url: string; secret: string } | null = null;
+  try {
+    modalWebhookConfig = getModalWebhookConfig({
+      rawUrl: process.env.MODAL_FUNCTION_URL,
+      rawSecret: process.env.MODAL_WEBHOOK_SECRET,
+      allowedHostSuffixes: MODAL_WEBHOOK_HOST_SUFFIXES,
+      urlEnvVarName: "MODAL_FUNCTION_URL",
+    });
+  } catch (error) {
+    console.error("Invalid Modal webhook configuration", error);
+    return NextResponse.json({ error: "Server not configured to start review workers" }, { status: 503 });
+  }
+
   const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
 
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   const rateLimited = await checkRateLimit(supabaseAdmin, ip, "submit");
   if (rateLimited) return rateLimited;
-
-  // Check if submissions are paused (manual kill switch)
-  const { data: statusRow } = await supabaseAdmin
-    .from("system_status")
-    .select("accepting_reviews, banner_message")
-    .eq("id", 1)
-    .single();
-
-  if (statusRow && !statusRow.accepting_reviews) {
-    return NextResponse.json(
-      {
-        error: statusRow.banner_message || "Submissions are temporarily paused. Please try again later or use the CLI: pip install coarse-ink",
-      },
-      { status: 503 },
-    );
-  }
+  const paused = await getSubmissionPauseResponse(supabaseAdmin);
+  if (paused) return paused;
 
   // Parse JSON body (no file — file was uploaded directly to Supabase via presign)
   let id = "";
@@ -59,6 +69,7 @@ export async function POST(request: NextRequest) {
   let model = "";
   let storagePath = "";
   let authorNotes = "";
+  let handoffSecret = "";
 
   try {
     const body = await request.json();
@@ -68,6 +79,7 @@ export async function POST(request: NextRequest) {
     model = (body.model ?? "").trim();
     storagePath = (body.storage_path ?? "").trim();
     authorNotes = (body.author_notes ?? "").trim();
+    handoffSecret = (body.handoff_secret ?? "").trim();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -126,6 +138,58 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const handoffAuth = await consumeReviewHandoffSecret(supabaseAdmin, id, handoffSecret);
+  if (!handoffAuth.ok) {
+    if (handoffAuth.status === 403) {
+      // The handoff secret was already consumed — either a legitimate
+      // double-click (attempt 1 fully succeeded, attempt 2 is redundant)
+      // OR a retry after a mid-submit dispatch failure (attempt 1 inserted
+      // review_emails then failed at Modal dispatch and marked the review
+      // `status=failed`; attempt 2 arrives with no secret). The old code
+      // treated BOTH cases as success because only the email-row existence
+      // was checked, which lied to the client about its own failed review.
+      //
+      // Resolve the distinction by joining the review row's current status:
+      //   - status='failed'   → return 503 with the original error so the
+      //                         client sees the same error it would have
+      //                         seen on attempt 1 (not a fake 200).
+      //   - status='queued'   → attempt 1 is still in-flight, attempt 2 is
+      //   or 'running'          a double-click race — idempotent success.
+      //   - status='done'     → attempt 1 already finished — idempotent
+      //                         success.
+      //   - no review row     → falls through to the generic 403 below.
+      const { data: reviewState } = await supabaseAdmin
+        .from("reviews")
+        .select("status, error_message")
+        .eq("id", id)
+        .maybeSingle();
+      if (reviewState) {
+        if (reviewState.status === "failed") {
+          return NextResponse.json(
+            {
+              error:
+                reviewState.error_message ||
+                "Your previous submission failed before the review worker accepted it. Please try again.",
+            },
+            { status: 503 },
+          );
+        }
+        // Successful idempotent retry — the review is already in flight
+        // or complete, so claim success with the same shape as the
+        // happy-path response below.
+        const { data: existingEmail } = await supabaseAdmin
+          .from("review_emails")
+          .select("review_id")
+          .eq("review_id", id)
+          .maybeSingle();
+        if (existingEmail?.review_id) {
+          return NextResponse.json({ id, accessToken });
+        }
+      }
+    }
+    return NextResponse.json({ error: handoffAuth.error }, { status: handoffAuth.status });
+  }
+
   // Verify the review record exists
   const { data: reviewRow, error: fetchError } = await supabaseAdmin
     .from("reviews")
@@ -159,7 +223,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://coarse.ink";
+  const siteUrl = getSiteOriginForRequest(request.url);
   const statusUrl = buildReviewUrl(siteUrl, "status", id, accessToken);
   const reviewKey = buildReviewKey(id, accessToken);
 
@@ -224,9 +288,9 @@ export async function POST(request: NextRequest) {
 
   // Trigger Modal worker and fail closed if dispatch is unavailable. Returning
   // success before the worker accepts the job leaves reviews stuck in queued.
-  const modalUrl = process.env.MODAL_FUNCTION_URL?.trim() ?? "";
-  const modalSecret = process.env.MODAL_WEBHOOK_SECRET?.trim() ?? "";
-  if (!modalUrl || !modalSecret) {
+  // NOTE: user_api_key is intentionally NOT in the body — the worker resolves
+  // it from review_secrets, keeping the key out of the webhook payload.
+  if (!modalWebhookConfig) {
     await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
     await markFailed("Review worker is not configured");
     return NextResponse.json(
@@ -235,13 +299,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), MODAL_TRIGGER_TIMEOUT_MS);
   try {
-    const workerResp = await fetch(modalUrl, {
+    const workerResp = await fetch(modalWebhookConfig.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${modalSecret}`,
+        Authorization: `Bearer ${modalWebhookConfig.secret}`,
       },
+      signal: controller.signal,
       body: JSON.stringify({
         job_id: id,
         pdf_storage_path: storagePath,
@@ -266,12 +333,15 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
-    await markFailed("Failed to start review worker");
+    const isAbort = err instanceof Error && err.name === "AbortError";
+    const message = isAbort
+      ? "Review worker did not respond in time"
+      : "Failed to start review worker";
+    await markFailed(message);
     console.error(`[${id}] worker dispatch failed`, err);
-    return NextResponse.json(
-      { error: "Failed to start review worker" },
-      { status: 503 },
-    );
+    return NextResponse.json({ error: message }, { status: 503 });
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   // Send confirmation email (only when a real address was provided — the

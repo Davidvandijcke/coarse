@@ -5,6 +5,7 @@ import {
   getActiveReviewWindowStartIso,
   MAX_CONCURRENT_REVIEWS,
 } from "@/lib/reviewCapacity";
+import { DEFAULT_SUBMISSIONS_UNAVAILABLE_MESSAGE } from "@/lib/systemStatus";
 
 // TEMP banner shown while EMAIL_DELIVERY_DISABLED is true. Flip the kill
 // switch in `lib/emailCapacity.ts` to re-enable emails; this constant can
@@ -12,7 +13,7 @@ import {
 // `system_status.banner_message` still overrides it when an operator sets
 // an incident-specific notice.
 const EMAIL_DISABLED_BANNER =
-  "Email delivery is temporarily down — save your review key when you submit and check back at coarse.ink/status/<your-key> in about an hour.";
+  "Email delivery is temporarily down — save your review key when you submit and check back at /status/<your-key> in about an hour.";
 
 export const revalidate = 10; // ISR: revalidate every 10 seconds
 
@@ -21,10 +22,15 @@ export async function GET() {
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
+    console.error("[status] missing Supabase configuration", {
+      hasSupabaseUrl: Boolean(supabaseUrl),
+      hasSupabaseServiceKey: Boolean(supabaseKey),
+      vercelEnv: process.env.VERCEL_ENV ?? null,
+    });
     return NextResponse.json(
       {
         accepting: false,
-        banner: "Service temporarily unavailable.",
+        banner: DEFAULT_SUBMISSIONS_UNAVAILABLE_MESSAGE,
         activeReviews: 0,
         capacity: MAX_CONCURRENT_REVIEWS,
         emailCapacityReached: EMAIL_DELIVERY_DISABLED,
@@ -45,10 +51,19 @@ export async function GET() {
   ]);
 
   const activeCountError = activeResult.error;
-  const accepting = activeCountError
+  const statusUnavailable = Boolean(statusResult.error || !statusResult.data);
+  const serviceUnavailable = statusUnavailable || Boolean(activeCountError);
+  const statusRow = statusResult.data;
+  if (activeCountError) {
+    console.error("[status] count_active_submitted_reviews failed", activeCountError);
+  }
+  if (statusResult.error) {
+    console.error("[status] system_status lookup failed", statusResult.error);
+  }
+  const accepting = serviceUnavailable
     ? false
-    : (statusResult.data?.accepting_reviews ?? true);
-  const dbBanner = statusResult.data?.banner_message ?? null;
+    : (statusRow?.accepting_reviews ?? false);
+  const dbBanner = statusRow?.banner_message ?? null;
   const activeReviews = activeCountError
     ? MAX_CONCURRENT_REVIEWS
     : Number(activeResult.data ?? 0);
@@ -61,7 +76,7 @@ export async function GET() {
   // outage notice while the kill switch is on.
   const banner =
     dbBanner
-    ?? (activeCountError ? "Service temporarily unavailable." : null)
+    ?? (serviceUnavailable ? DEFAULT_SUBMISSIONS_UNAVAILABLE_MESSAGE : null)
     ?? (EMAIL_DELIVERY_DISABLED ? EMAIL_DISABLED_BANNER : null);
 
   return NextResponse.json(

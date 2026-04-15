@@ -238,7 +238,7 @@ def search_literature(
             logger.info("Literature search completed via Perplexity")
             return result
         except Exception:
-            logger.warning("Perplexity search failed, falling back to arXiv")
+            logger.warning("Perplexity search failed, falling back to arXiv", exc_info=True)
 
     return _search_arxiv_pipeline(title, abstract, client)
 

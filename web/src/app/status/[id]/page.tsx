@@ -303,7 +303,7 @@ export default function StatusPage() {
                 color: "var(--paper)",
                 padding: "0.5rem 1.5rem",
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.85rem",
+                fontSize: "0.92rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 cursor: cancelling ? "default" : "pointer",
@@ -321,7 +321,7 @@ export default function StatusPage() {
                 color: "var(--ink)",
                 padding: "0.5rem 1.5rem",
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.85rem",
+                fontSize: "0.92rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 cursor: cancelling ? "default" : "pointer",
@@ -365,7 +365,7 @@ export default function StatusPage() {
           <span
             style={{
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.85rem",
+              fontSize: "0.92rem",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
               color: "var(--muted)",
@@ -379,7 +379,7 @@ export default function StatusPage() {
             rel="noopener noreferrer"
             style={{
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.85rem",
+              fontSize: "0.92rem",
               letterSpacing: "0.12em",
               textTransform: "uppercase",
               color: "var(--ink)",
@@ -529,7 +529,7 @@ export default function StatusPage() {
               href="/"
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.85rem",
+                fontSize: "0.92rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 color: "var(--accent)",
@@ -548,7 +548,7 @@ export default function StatusPage() {
             <p
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.85rem",
+                fontSize: "0.92rem",
                 letterSpacing: "0.18em",
                 textTransform: "uppercase",
                 color: "var(--muted)",
@@ -577,7 +577,7 @@ export default function StatusPage() {
                 color: "var(--ink)",
                 padding: "0.4375rem 1.125rem",
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.85rem",
+                fontSize: "0.92rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 cursor: "pointer",
@@ -610,7 +610,7 @@ export default function StatusPage() {
                 border: "none",
                 padding: 0,
                 fontFamily: "var(--font-space-mono), monospace",
-                fontSize: "0.85rem",
+                fontSize: "0.92rem",
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 color: "var(--muted)",

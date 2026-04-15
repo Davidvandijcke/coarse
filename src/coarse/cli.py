@@ -12,6 +12,7 @@ import typer
 from rich.console import Console
 from rich.status import Status
 
+from coarse import __version__
 from coarse.config import (
     PROVIDER_ENV_VARS,
     CoarseConfig,
@@ -31,6 +32,13 @@ app = typer.Typer(
 )
 
 console = Console()
+
+
+def _version_callback(value: bool) -> None:
+    """Print version and exit before command parsing."""
+    if value:
+        console.print(__version__)
+        raise typer.Exit()
 
 
 def _pick_cheap_model(config: CoarseConfig) -> str | None:
@@ -82,6 +90,19 @@ def setup() -> None:
     """Interactive setup: configure default model and API keys."""
     config = load_config()
     _run_setup(config)
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show version and exit.",
+    ),
+) -> None:
+    """coarse command group."""
 
 
 @app.command()
@@ -178,7 +199,19 @@ def review(
 
     console.print(f"[bold]Reviewing[/bold] {pdf.name} with {resolved_model}")
 
-    with Status("Running review pipeline...", console=console):
+    # Keep the interactive cost prompt unobscured. The prompt currently lives
+    # inside review_paper(), so wrapping the whole call in a live Rich status
+    # makes the CLI look like it continued past confirmation when it is still
+    # waiting on stdin. The non-interactive `--yes` path keeps the spinner.
+    if yes:
+        with Status("Running review pipeline...", console=console):
+            review_obj, markdown, paper_text = review_paper(
+                pdf_path=pdf,
+                model=resolved_model,
+                skip_cost_gate=yes,
+                config=config,
+            )
+    else:
         review_obj, markdown, paper_text = review_paper(
             pdf_path=pdf,
             model=resolved_model,
@@ -232,3 +265,171 @@ def review(
             f"[green]Quality report written to {quality_path}[/green] "
             f"(overall: {report.overall_score:.2f}/5.0)"
         )
+
+
+# The `mcp-ingest` command was removed in v1.3.0 alongside the MCP
+# server retire. The subscription-handoff flow (via `/setup` on the
+# website, or `coarse-review --handoff <url>` on the CLI) is the
+# canonical way to run a review on a coding-agent subscription.
+
+
+# ---------------------------------------------------------------------------
+# install-skills — copy bundled skill files into ~/.<host>/skills/ for each
+# detected headless CLI (claude, codex, gemini). Source files ship inside
+# the wheel under src/coarse/_skills/.
+# ---------------------------------------------------------------------------
+
+_SKILL_HOSTS: dict[str, tuple[str, str]] = {
+    # (package-dir, install-dir-relative-to-$HOME)
+    "claude": ("claude_code", ".claude/skills/coarse-review"),
+    "codex": ("codex", ".codex/skills/coarse-review"),
+    "gemini": ("gemini_cli", ".gemini/skills/coarse-review"),
+}
+
+# Sentinel file written alongside SKILL.md at install time so the
+# next install can detect version drift. Users who installed an old
+# coarse-ink version months ago and upgraded to a newer one won't
+# otherwise know their local skill bundle is stale — install-skills
+# always overwrites, but without the sentinel there's no notice when
+# a replacement happens. Single ``__version__`` line, no structure.
+_SKILL_VERSION_FILE = ".coarse-version"
+
+
+def _read_skill_version(dest: Path) -> str | None:
+    """Return the coarse-ink version recorded in the skill bundle
+    at ``dest`` (if any), or ``None`` if the sentinel is missing or
+    unreadable."""
+    sentinel = dest / _SKILL_VERSION_FILE
+    if not sentinel.exists():
+        return None
+    try:
+        return sentinel.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def _bin_available(name: str) -> bool:
+    import shutil
+
+    return shutil.which(name) is not None
+
+
+@app.command("install-skills")
+def install_skills(
+    all_hosts: bool = typer.Option(
+        False,
+        "--all",
+        help="Install for all three hosts even if the CLI isn't on PATH.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite existing skill files without prompting.",
+    ),
+) -> None:
+    """Install the coarse-review skill for each detected headless CLI.
+
+    Copies the bundled SKILL.md + scripts into ``~/.claude/skills/``,
+    ``~/.codex/skills/``, and/or ``~/.gemini/skills/`` depending on
+    which of ``claude``, ``codex``, and ``gemini`` are on PATH.
+    """
+    from importlib.resources import files as resource_files
+
+    from coarse import __version__ as _current_version
+
+    try:
+        skills_root = resource_files("coarse") / "_skills"
+    except (ModuleNotFoundError, FileNotFoundError) as exc:
+        console.print(
+            f"[red]Could not locate bundled skills ({exc})[/red]. Is coarse-ink installed?"
+        )
+        raise typer.Exit(1) from exc
+
+    installed: list[str] = []
+    skipped: list[str] = []
+    for host, (pkg_dir, install_rel) in _SKILL_HOSTS.items():
+        bin_name = host  # "claude", "codex", "gemini"
+        if not all_hosts and not _bin_available(bin_name):
+            skipped.append(f"{host} (CLI not on PATH)")
+            continue
+
+        src = skills_root / pkg_dir
+        dest = Path.home() / install_rel
+
+        # Read the version sentinel from any prior install before we
+        # clobber it. Used to decide whether to log a replacement
+        # notice ("refreshed 1.3.0 -> 1.4.0") or a fresh install.
+        previous_version = _read_skill_version(dest)
+
+        if dest.exists() and not force:
+            # Compare existing SKILL.md — if it's identical, silently refresh.
+            try:
+                existing = (dest / "SKILL.md").read_text(encoding="utf-8")
+                bundled = (src / "SKILL.md").read_text(encoding="utf-8")
+                if existing == bundled:
+                    console.print(f"  [dim]✓ {host}: already up to date at {dest}[/dim]")
+                    installed.append(host)
+                    # Still (re)write the sentinel — previous versions of
+                    # install-skills didn't write it, so on the first run
+                    # after this commit the sentinel may be missing even
+                    # though SKILL.md is already current.
+                    (dest / _SKILL_VERSION_FILE).write_text(_current_version, encoding="utf-8")
+                    continue
+            except Exception:
+                pass
+            if not typer.confirm(f"  Overwrite existing skill at {dest}?", default=True):
+                skipped.append(f"{host} (user declined overwrite)")
+                continue
+
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "scripts").mkdir(exist_ok=True)
+
+        # Copy SKILL.md
+        (dest / "SKILL.md").write_text(
+            (src / "SKILL.md").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+        # Copy scripts/* if any are bundled (for now we rely on the
+        # coarse-review CLI entry point, so no scripts are shipped per-skill).
+        scripts_src = src / "scripts"
+        if scripts_src.is_dir():
+            for child in scripts_src.iterdir():
+                if child.is_file():
+                    (dest / "scripts" / child.name).write_text(
+                        child.read_text(encoding="utf-8"),
+                        encoding="utf-8",
+                    )
+
+        # Write the version sentinel last so its presence means
+        # "all prior files in this dir are from this version".
+        (dest / _SKILL_VERSION_FILE).write_text(_current_version, encoding="utf-8")
+
+        installed.append(host)
+        if previous_version and previous_version != _current_version:
+            console.print(
+                f"  [green]✓ {host}[/green] → {dest} "
+                f"[dim](replaced {previous_version} → {_current_version})[/dim]"
+            )
+        else:
+            console.print(f"  [green]✓ {host}[/green] → {dest}")
+
+    console.print()
+    if installed:
+        console.print(
+            "[bold green]Installed coarse-review skill for:[/bold green] " + ", ".join(installed)
+        )
+    if skipped:
+        console.print(f"[dim]Skipped: {', '.join(skipped)}[/dim]")
+    if not installed:
+        console.print(
+            "[yellow]No hosts installed.[/yellow] Pass [bold]--all[/bold] to "
+            "install for all three hosts regardless of which CLIs are on PATH."
+        )
+        raise typer.Exit(2)
+
+    console.print(
+        "\n[dim]Usage:[/dim]\n"
+        "  coarse-review <paper.pdf> [--host claude|codex|gemini] "
+        "[--model <id>] [--effort low|medium|high|max]\n"
+    )

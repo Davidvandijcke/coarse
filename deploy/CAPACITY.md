@@ -6,7 +6,27 @@ coarse runs on four free-tier services. This document explains what to do when a
 
 ## Emergency: Pause Submissions Immediately
 
-Run this in the **Supabase SQL Editor** (no deploy needed):
+Preferred operator path from the repo root:
+
+```bash
+make pause
+make pause-status
+make resume
+```
+
+`make pause` uses `scripts/kill_switch.py`, which PATCHes the singleton
+`system_status` row over PostgREST using either:
+
+- `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` from your shell, or
+- `web/.env.local` (`NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_KEY`) if the shell vars are unset.
+
+Override the pause banner when needed:
+
+```bash
+make pause MSG="Monthly capacity reached. Please use the CLI: pip install coarse-ink"
+```
+
+SQL fallback in the **Supabase SQL Editor** (no deploy needed):
 
 ```sql
 UPDATE system_status
@@ -40,7 +60,7 @@ WHERE id = 1;
 
 **Expand**: Add a payment method in the Modal dashboard. Modal charges per compute-second beyond the free tier — no plan upgrade needed.
 
-**Emergency**: Reduce `max_containers` from 20 to 10 (or lower) in `deploy/modal_worker.py` and redeploy (`modal deploy deploy/modal_worker.py`) to slow the burn rate. Also update `MAX_CONCURRENT_REVIEWS` in `web/src/app/api/status/route.ts` to match so the frontend busy banner is accurate. Or pause submissions via SQL above.
+**Emergency**: Reduce `max_containers` from 20 to 10 (or lower) in `deploy/modal_worker.py` and redeploy (`modal deploy deploy/modal_worker.py`) to slow the burn rate. Also update `MAX_CONCURRENT_REVIEWS` in `web/src/app/api/status/route.ts` to match so the frontend busy banner is accurate. Or pause submissions via `make pause` (SQL fallback above).
 
 ---
 
@@ -77,7 +97,7 @@ UPDATE reviews SET paper_markdown = null WHERE completed_at < now() - interval '
 
 **Expand**: Upgrade to Vercel Pro ($20/month) for 1 TB bandwidth and 60-second function timeout.
 
-**Emergency**: Pause submissions via SQL above. The CLI (`pip install coarse-ink`) works independently of the web app.
+**Emergency**: Pause submissions via `make pause` (SQL fallback above). The CLI (`pip install coarse-ink`) works independently of the web app.
 
 ---
 

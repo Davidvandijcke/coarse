@@ -114,7 +114,7 @@ export default function PaperPanel({
               color: "var(--dust)",
               cursor: "pointer",
               fontFamily: "var(--font-space-mono), monospace",
-              fontSize: "0.85rem",
+              fontSize: "0.92rem",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
               padding: "0.25rem",

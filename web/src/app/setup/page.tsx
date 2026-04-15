@@ -1,6 +1,10 @@
 "use client";
 
+import { useState } from "react";
+
 import { CharcoalRule } from "@/components/charcoal";
+
+type SetupTab = "openrouter" | "subscription";
 
 /* ── Header (matching landing page) ──────────────────────── */
 function Header() {
@@ -227,45 +231,91 @@ function Step({
   );
 }
 
-/* ── Page ──────────────────────────────────────────────────── */
-export default function SetupPage() {
+/* ── Tab switcher ────────────────────────────────────────── */
+function TabSwitcher({
+  active,
+  onChange,
+}: {
+  active: SetupTab;
+  onChange: (tab: SetupTab) => void;
+}) {
+  const tabStyle = (isActive: boolean): React.CSSProperties => ({
+    padding: "0.625rem 1.25rem",
+    fontFamily: "var(--font-chalk)",
+    fontSize: "1.1rem",
+    color: isActive ? "var(--yellow-chalk)" : "var(--dust)",
+    background: isActive ? "rgba(212, 168, 67, 0.08)" : "transparent",
+    border: isActive
+      ? "1.5px solid var(--yellow-chalk)"
+      : "1px solid var(--tray)",
+    borderRadius: "2px",
+    cursor: "pointer",
+    transition: "color 0.2s, background 0.2s, border-color 0.2s",
+  });
   return (
-    <div style={{ background: "var(--board)", minHeight: "100vh" }}>
-      <Header />
-
-      <main
-        style={{
-          maxWidth: "720px",
-          margin: "0 auto",
-          padding: "0 2.5rem 6rem",
-        }}
+    <div
+      role="tablist"
+      aria-label="Setup path"
+      style={{
+        display: "flex",
+        gap: "0.75rem",
+        flexWrap: "wrap",
+        marginTop: "3rem",
+        marginBottom: "0.5rem",
+      }}
+    >
+      <button
+        role="tab"
+        aria-selected={active === "openrouter"}
+        type="button"
+        onClick={() => onChange("openrouter")}
+        style={tabStyle(active === "openrouter")}
       >
-        <section style={{ padding: "3.5rem 0 2.5rem" }}>
-          <h1
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: "clamp(2rem, 5vw, 2.75rem)",
-              fontWeight: 400,
-              lineHeight: 1.15,
-              letterSpacing: "-0.02em",
-              margin: 0,
-              color: "var(--chalk-bright)",
-            }}
-          >
-            Get your OpenRouter key
-          </h1>
-          <p
-            style={{
-              marginTop: "1rem",
-              lineHeight: 1.6,
-              color: "var(--dust)",
-              fontFamily: "var(--font-chalk)",
-              fontSize: "1.05rem",
-            }}
-          >
-            Takes about 2 minutes. You&apos;ll need a credit card for ~$1 in
-            credits.
-          </p>
+        OpenRouter key
+      </button>
+      <button
+        role="tab"
+        aria-selected={active === "subscription"}
+        type="button"
+        onClick={() => onChange("subscription")}
+        style={tabStyle(active === "subscription")}
+      >
+        Use my subscription
+      </button>
+    </div>
+  );
+}
+
+/* ── OpenRouter tab (direct key flow) ────────────────────── */
+function OpenRouterTab() {
+  return (
+    <>
+      <section style={{ padding: "1.5rem 0 2.5rem" }}>
+        <h1
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: "clamp(2rem, 5vw, 2.75rem)",
+            fontWeight: 400,
+            lineHeight: 1.15,
+            letterSpacing: "-0.02em",
+            margin: 0,
+            color: "var(--chalk-bright)",
+          }}
+        >
+          Get your OpenRouter key
+        </h1>
+        <p
+          style={{
+            marginTop: "1rem",
+            lineHeight: 1.6,
+            color: "var(--dust)",
+            fontFamily: "var(--font-chalk)",
+            fontSize: "1.05rem",
+          }}
+        >
+          Takes about 2 minutes. You&apos;ll need a credit card for ~$1 in
+          credits to get started &mdash; you&apos;ll top up to $20 in step 2.
+        </p>
           <div
             style={{
               marginTop: "1.25rem",
@@ -381,9 +431,12 @@ export default function SetupPage() {
               >
                 Settings → Credits
               </a>
-              . Add at least $10 — enough for ~10 reviews with an open-source
-              model or 2 reviews with Claude. Unused credits don&apos;t
-              expire.
+              . Add at least $20. Cheap open-source models cost
+              ~$0.25 per review; SOTA models like Claude Opus or GPT-5 can
+              run $5&ndash;$10 on a long paper. The cost estimate shown
+              before submission is a ballpark, not a ceiling. Leave headroom
+              or the review can exhaust the key halfway and fail. Unused
+              credits don&apos;t expire.
             </p>
 
             <ChalkSketch annotation="credits page">
@@ -407,7 +460,7 @@ export default function SetupPage() {
                       color: "var(--chalk)",
                     }}
                   >
-                    $10.00
+                    $20.00
                   </div>
                 </div>
                 <MockButton highlight>Add credits</MockButton>
@@ -539,12 +592,14 @@ export default function SetupPage() {
               </a>
               , click the{" "}
               <strong style={{ color: "var(--chalk-bright)" }}>&#8942;</strong>
-              {" "}menu next to your new key and choose &ldquo;Edit&rdquo;.
-              Again, we recommend setting a credit limit of{" "}
-              <strong style={{ color: "var(--chalk-bright)" }}>at least $10</strong>
-              . The key stops working once the limit is hit — zero risk of
-              surprise charges — but set it high enough that a single review
-              doesn&apos;t exhaust it, or the review will fail mid-run.
+              {" "}menu next to your new key, choose &ldquo;Edit&rdquo;, and
+              set the credit limit to{" "}
+              <strong style={{ color: "var(--chalk-bright)" }}>
+                at least $20
+              </strong>
+              . The key stops working once the limit is hit, so surprise
+              charges are impossible. But set it too tight and a single
+              expensive review can exhaust it mid-run.
             </p>
 
             <ChalkSketch annotation="key menu">
@@ -620,7 +675,7 @@ export default function SetupPage() {
                       width: "80px",
                     }}
                   >
-                    $10.00
+                    $20.00
                   </div>
                   <MockButton highlight>Save</MockButton>
                 </div>
@@ -689,14 +744,12 @@ export default function SetupPage() {
                 <strong style={{ color: "var(--chalk-bright)" }}>
                   A note on cost estimates:
                 </strong>{" "}
-                coarse shows an approximate cost before each review (typically
-                $0.25&ndash;$2). That&apos;s a heuristic with a ~15% buffer, not
-                a hard ceiling. Actual cost can run up to ~2&times; the estimate
-                on complex papers depending on how much the model reasons,
-                how the critique agent rewrites comments, and whether
-                proof-verification kicks in for math-heavy sections. If your
-                per-key limit is set right at the estimate, a single review can
-                drain it and fail mid-run. Leave headroom.
+                the estimate shown before submission is a heuristic with a
+                ~15% buffer, not a hard ceiling. Actual cost on SOTA models
+                with long papers can run up to ~2&times; the estimate once
+                proof-verification and critique rewrites kick in. If the
+                per-key cap sits right at the estimate, one tough review can
+                drain it and fail mid-run. Always leave headroom.
               </p>
             </div>
           </Step>
@@ -749,21 +802,592 @@ export default function SetupPage() {
           </Step>
         </div>
 
-        <CharcoalRule />
+      <CharcoalRule />
 
-        <section style={{ padding: "2.5rem 0 0", textAlign: "center" }}>
-          <a
-            href="/"
+      <section style={{ padding: "2.5rem 0 0", textAlign: "center" }}>
+        <a
+          href="/"
+          style={{
+            fontFamily: "var(--font-chalk)",
+            fontSize: "1.2rem",
+            color: "var(--yellow-chalk)",
+            textDecoration: "none",
+          }}
+        >
+          Ready? Review your paper →
+        </a>
+      </section>
+    </>
+  );
+}
+
+/* ── Subscription tab (Claude Code / Codex / Gemini CLI) ─── */
+function SubscriptionTab() {
+  return (
+    <>
+      <section style={{ padding: "1.5rem 0 2.5rem" }}>
+        <h1
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: "clamp(2rem, 5vw, 2.75rem)",
+            fontWeight: 400,
+            lineHeight: 1.15,
+            letterSpacing: "-0.02em",
+            margin: 0,
+            color: "var(--chalk-bright)",
+          }}
+        >
+          Use your coding-agent subscription
+        </h1>
+        <p
+          style={{
+            marginTop: "1rem",
+            lineHeight: 1.6,
+            color: "var(--dust)",
+            fontFamily: "var(--font-chalk)",
+            fontSize: "1.05rem",
+          }}
+        >
+          For users already paying for Claude Code, Codex, or Gemini CLI.
+          The review runs on your subscription and bills there. You only
+          pay OpenRouter ~$0.15 for the OCR pass.
+        </p>
+        <p
+          style={{
+            marginTop: "1rem",
+            fontFamily: "var(--font-chalk)",
+            fontSize: "0.95rem",
+            color: "var(--dust)",
+            lineHeight: 1.55,
+            maxWidth: "620px",
+          }}
+        >
+          Runs locally on your machine using your own Claude Code, Codex,
+          or Gemini CLI account. coarse.ink does not receive or store your
+          provider login. Your provider&apos;s terms and usage limits still
+          apply. coarse.ink is not affiliated with Anthropic, OpenAI, or
+          Google.
+        </p>
+      </section>
+
+      <CharcoalRule />
+
+      <div style={{ paddingTop: "2.5rem" }}>
+        {/* Step 1 */}
+        <Step number={1} title="Install a coding agent">
+          <p
             style={{
-              fontFamily: "var(--font-chalk)",
-              fontSize: "1.2rem",
-              color: "var(--yellow-chalk)",
-              textDecoration: "none",
+              fontFamily: "Georgia, serif",
+              fontSize: "1.1rem",
+              lineHeight: 1.7,
+              color: "var(--chalk)",
+              margin: "0 0 0.75rem",
             }}
           >
-            Ready? Review your paper →
-          </a>
-        </section>
+            Pick whichever one you pay for. Gemini CLI has a free tier if
+            you don&apos;t. Install it from the vendor&apos;s own page &mdash;
+            their docs stay up to date.
+          </p>
+
+          <div
+            style={{
+              display: "grid",
+              gap: "0.75rem",
+              marginTop: "1rem",
+            }}
+          >
+            <AgentCard
+              name="Claude Code"
+              price="Anthropic Pro or Max"
+              installHref="https://docs.claude.com/en/docs/claude-code/setup"
+              installLabel="Install instructions ↗"
+              loginCmd="claude login"
+              testCmd="claude -p 'say hi'"
+            />
+            <AgentCard
+              name="Codex"
+              price="ChatGPT Plus, Pro, or Business"
+              installHref="https://developers.openai.com/codex/cli"
+              installLabel="Install instructions ↗"
+              loginCmd="codex login"
+              testCmd="codex exec 'say hi'"
+            />
+            <AgentCard
+              name="Gemini CLI"
+              price="Free tier works for most papers"
+              installHref="https://github.com/google-gemini/gemini-cli#quickstart"
+              installLabel="Install instructions ↗"
+              loginCmd="gemini"
+              testCmd="gemini -p 'say hi'"
+            />
+          </div>
+
+          <p
+            style={{
+              marginTop: "1.25rem",
+              fontFamily: "Georgia, serif",
+              fontSize: "1.05rem",
+              lineHeight: 1.7,
+              color: "var(--chalk)",
+            }}
+          >
+            Run the test command to verify install + login. If it prints a
+            response, you&apos;re set.
+          </p>
+        </Step>
+
+        {/* Step 2 */}
+        <Step number={2} title="Put an OpenRouter key on your machine">
+          <p
+            style={{
+              fontFamily: "Georgia, serif",
+              fontSize: "1.1rem",
+              lineHeight: 1.7,
+              color: "var(--chalk)",
+              margin: "0 0 0.75rem",
+            }}
+          >
+            coarse still needs OpenRouter for the OCR step (~$0.10 per
+            paper). Follow the{" "}
+            <strong style={{ color: "var(--chalk-bright)" }}>
+              OpenRouter key
+            </strong>{" "}
+            tab to create an account, add $1 of credit, and set a $2
+            per-key limit. The $20 buffer from the OpenRouter-only path
+            isn&apos;t needed here because the review itself runs on
+            your coding-agent subscription.
+          </p>
+          <p
+            style={{
+              fontFamily: "Georgia, serif",
+              fontSize: "1.1rem",
+              lineHeight: 1.7,
+              color: "var(--chalk)",
+              margin: 0,
+            }}
+          >
+            Then put the key on your own machine: run{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              export OPENROUTER_API_KEY=sk-or-v1-...
+            </code>
+            , drop it in a{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              .env
+            </code>
+            , or save it to{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              ~/.coarse/config.toml
+            </code>
+            . Your CLI reads it locally when it runs the extraction;
+            coarse.ink never sees it.
+          </p>
+        </Step>
+
+        {/* Step 3 */}
+        <Step number={3} title="Upload your paper and pick a CLI">
+          <p
+            style={{
+              fontFamily: "Georgia, serif",
+              fontSize: "1.1rem",
+              lineHeight: 1.7,
+              color: "var(--chalk)",
+              margin: 0,
+            }}
+          >
+            On the{" "}
+            <a
+              href="/"
+              style={{
+                color: "var(--blue-chalk)",
+                textDecoration: "underline",
+                textUnderlineOffset: "2px",
+              }}
+            >
+              main page
+            </a>
+            , drop your PDF onto the form, then click the{" "}
+            <strong style={{ color: "var(--chalk-bright)" }}>
+              Review with my subscription ▾
+            </strong>{" "}
+            dropdown and pick your CLI. coarse uploads the file, mints a
+            handoff token, and shows the prompt you&apos;ll paste in the
+            next step. You don&apos;t paste your OpenRouter key on the
+            form here; the CLI reads it from your machine (step 2).
+          </p>
+        </Step>
+
+        {/* Step 4 */}
+        <Step number={4} title="Paste the prompt into your CLI">
+          <p
+            style={{
+              fontFamily: "Georgia, serif",
+              fontSize: "1.1rem",
+              lineHeight: 1.7,
+              color: "var(--chalk)",
+              margin: "0 0 0.75rem",
+            }}
+          >
+            coarse gives you one natural-language prompt. Copy it from
+            the panel, paste it into your{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              claude -p
+            </code>
+            ,{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              codex exec
+            </code>
+            , or{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              gemini -p
+            </code>{" "}
+            session, and hit send. The agent refreshes its skill bundle,
+            runs the full coarse pipeline on its own subprocess calls,
+            and prints a{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-space-mono), monospace",
+                fontSize: "0.95rem",
+                color: "var(--chalk-bright)",
+              }}
+            >
+              view:
+            </code>{" "}
+            URL when it&apos;s done. 10&ndash;25 minutes. Click the URL
+            to open the finished review on coarse.ink.
+          </p>
+
+          <div
+            style={{
+              marginTop: "1rem",
+              padding: "0.75rem 1rem",
+              background: "rgba(224, 201, 112, 0.06)",
+              borderLeft: "3px solid var(--yellow-chalk)",
+              borderRadius: "0 2px 2px 0",
+            }}
+          >
+            <p
+              style={{
+                fontFamily: "Georgia, serif",
+                fontSize: "1rem",
+                lineHeight: 1.6,
+                color: "var(--chalk)",
+                margin: 0,
+              }}
+            >
+              <strong style={{ color: "var(--chalk-bright)" }}>
+                If you&apos;re pasting into a coding agent
+              </strong>{" "}
+              (not a plain terminal), bump its bash-tool timeout to at
+              least 45 min before you send the prompt. Default agent
+              timeouts can be as low as 2 min, way under the 10&ndash;25
+              min review runtime.
+            </p>
+          </div>
+        </Step>
+
+        {/* Step 5 — Troubleshooting */}
+        <Step number={5} title="If something goes wrong">
+          <Trouble
+            symptom="The &ldquo;Try opening Claude Code / Codex&rdquo; button does nothing."
+            fix={
+              <>
+                The button only works if you have the desktop app
+                installed. With a CLI-only install, the browser
+                can&apos;t launch a terminal for you. Copy the prompt
+                from the panel and paste it into your CLI manually.
+              </>
+            }
+          />
+          <Trouble
+            symptom="&ldquo;No such command &lsquo;install-skills&rsquo;&rdquo; inside the agent run."
+            fix={
+              <>
+                Safe to ignore. The skill bundle still loads directly
+                through{" "}
+                <code
+                  style={{
+                    fontFamily: "var(--font-space-mono), monospace",
+                    fontSize: "0.95rem",
+                    color: "var(--chalk-bright)",
+                  }}
+                >
+                  uvx --from
+                </code>
+                ; the agent will continue to the review step.
+              </>
+            }
+          />
+          <Trouble
+            symptom="My Anthropic / OpenAI / Google bill went up after a review."
+            fix={
+              <>
+                Check for{" "}
+                <code
+                  style={{
+                    fontFamily: "var(--font-space-mono), monospace",
+                    fontSize: "0.95rem",
+                    color: "var(--chalk-bright)",
+                  }}
+                >
+                  ANTHROPIC_API_KEY
+                </code>
+                ,{" "}
+                <code
+                  style={{
+                    fontFamily: "var(--font-space-mono), monospace",
+                    fontSize: "0.95rem",
+                    color: "var(--chalk-bright)",
+                  }}
+                >
+                  OPENAI_API_KEY
+                </code>
+                , or{" "}
+                <code
+                  style={{
+                    fontFamily: "var(--font-space-mono), monospace",
+                    fontSize: "0.95rem",
+                    color: "var(--chalk-bright)",
+                  }}
+                >
+                  GOOGLE_API_KEY
+                </code>{" "}
+                in your shell environment. If set, the host CLI bills the
+                API account instead of your subscription. v1.3.0+ strips
+                these automatically, but older versions didn&apos;t.
+              </>
+            }
+          />
+          <Trouble
+            symptom="Fewer comments than usual (~10 instead of 15&ndash;25)."
+            fix={
+              <>
+                A section hit the 30-min timeout and got dropped. Rare on
+                default effort, more common with{" "}
+                <code
+                  style={{
+                    fontFamily: "var(--font-space-mono), monospace",
+                    fontSize: "0.95rem",
+                    color: "var(--chalk-bright)",
+                  }}
+                >
+                  --effort max
+                </code>{" "}
+                on long papers. Re-run; drop effort one notch if it
+                happens twice.
+              </>
+            }
+          />
+        </Step>
+      </div>
+
+      <CharcoalRule />
+
+      <section style={{ padding: "2.5rem 0 0", textAlign: "center" }}>
+        <a
+          href="/"
+          style={{
+            fontFamily: "var(--font-chalk)",
+            fontSize: "1.2rem",
+            color: "var(--yellow-chalk)",
+            textDecoration: "none",
+          }}
+        >
+          Ready? Review your paper →
+        </a>
+      </section>
+    </>
+  );
+}
+
+/* ── Helpers for the subscription tab ────────────────────── */
+function AgentCard({
+  name,
+  price,
+  installHref,
+  installLabel,
+  loginCmd,
+  testCmd,
+}: {
+  name: string;
+  price: string;
+  installHref: string;
+  installLabel: string;
+  loginCmd: string;
+  testCmd: string;
+}) {
+  return (
+    <div
+      style={{
+        background: "var(--board-surface)",
+        border: "1px dashed var(--tray)",
+        borderRadius: "2px",
+        padding: "1rem 1.25rem",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: "1rem",
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: "1.2rem",
+              color: "var(--chalk-bright)",
+            }}
+          >
+            {name}
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-chalk)",
+              fontSize: "1rem",
+              color: "var(--dust)",
+              marginTop: "0.2rem",
+            }}
+          >
+            {price}
+          </div>
+        </div>
+        <a
+          href={installHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            fontFamily: "var(--font-chalk)",
+            fontSize: "1rem",
+            color: "var(--blue-chalk)",
+            textDecoration: "none",
+            border: "1px solid var(--tray)",
+            borderRadius: "2px",
+            padding: "0.25rem 0.6rem",
+          }}
+        >
+          {installLabel}
+        </a>
+      </div>
+      <div
+        style={{
+          marginTop: "0.75rem",
+          display: "flex",
+          gap: "1.5rem",
+          flexWrap: "wrap",
+          fontFamily: "var(--font-space-mono), monospace",
+          fontSize: "0.95rem",
+          color: "var(--chalk)",
+        }}
+      >
+        <div>
+          <span style={{ color: "var(--dust)" }}>login: </span>
+          {loginCmd}
+        </div>
+        <div>
+          <span style={{ color: "var(--dust)" }}>test: </span>
+          {testCmd}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Trouble({
+  symptom,
+  fix,
+}: {
+  symptom: string;
+  fix: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        marginTop: "0.9rem",
+        padding: "0.75rem 1rem",
+        background: "var(--board-surface)",
+        border: "1px dashed var(--tray)",
+        borderRadius: "2px",
+      }}
+    >
+      <div
+        style={{
+          fontFamily: "var(--font-chalk)",
+          fontSize: "1.05rem",
+          color: "var(--red-chalk)",
+          marginBottom: "0.35rem",
+        }}
+      >
+        {symptom}
+      </div>
+      <div
+        style={{
+          fontFamily: "Georgia, serif",
+          fontSize: "1rem",
+          lineHeight: 1.6,
+          color: "var(--chalk)",
+        }}
+      >
+        {fix}
+      </div>
+    </div>
+  );
+}
+
+/* ── Page ──────────────────────────────────────────────────── */
+export default function SetupPage() {
+  const [tab, setTab] = useState<SetupTab>("openrouter");
+  return (
+    <div style={{ background: "var(--board)", minHeight: "100vh" }}>
+      <Header />
+
+      <main
+        style={{
+          maxWidth: "720px",
+          margin: "0 auto",
+          padding: "0 2.5rem 6rem",
+        }}
+      >
+        <TabSwitcher active={tab} onChange={setTab} />
+        {tab === "openrouter" ? <OpenRouterTab /> : <SubscriptionTab />}
       </main>
     </div>
   );

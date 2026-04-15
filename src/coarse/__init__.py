@@ -1,3 +1,3 @@
-__version__ = "1.2.2"
+__version__ = "1.3.0"
 
-from coarse.pipeline import review_paper  # noqa: F401
+from coarse.pipeline import extract_and_structure, review_paper  # noqa: F401

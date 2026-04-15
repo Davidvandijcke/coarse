@@ -64,6 +64,16 @@ SKIP_DIRS = {
     "reviews",
     "data",
     ".extraction_cache",
+    # Claude Code ephemeral worktrees created by /worktree-start. Each
+    # worktree has its own .claude/settings.local.json that records
+    # every bash command the agent approved, including occasional
+    # `export OPENROUTER_API_KEY=sk-or-v1-...` lines. The whole
+    # `.claude/worktrees/` tree is gitignored (see .gitignore line
+    # `.claude/*` + explicit allowlist), so secrets in those files
+    # cannot reach git — but the scanner was walking them anyway and
+    # blocking unrelated commits. Skip at the directory-name level so
+    # any `worktrees/` subtree in the repo is ignored.
+    "worktrees",
 }
 
 # Extensions worth opening.

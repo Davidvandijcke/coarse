@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
+import coarse
 from coarse.cli import app
 from coarse.config import CoarseConfig
 from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
@@ -234,6 +235,13 @@ def test_main_module_entrypoint():
     assert "coarse" in result.output.lower() or "review" in result.output.lower()
 
 
+def test_version_flag_prints_version():
+    """Global --version prints package version and exits cleanly."""
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert coarse.__version__ in result.output
+
+
 # ---------------------------------------------------------------------------
 # test_init_exports
 # ---------------------------------------------------------------------------
@@ -261,6 +269,66 @@ def test_review_nonexistent_pdf():
     """Invoking review with a nonexistent PDF exits with non-zero code."""
     result = runner.invoke(app, ["review", "/nonexistent/path/paper.pdf"])
     assert result.exit_code != 0
+
+
+def test_review_interactive_path_does_not_enter_status(tmp_path):
+    """Interactive runs leave the cost prompt unobscured by Rich Status."""
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+
+    entered: list[bool] = []
+
+    class _FakeStatus:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            entered.append(True)
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    with (
+        patch("coarse.cli.Status", _FakeStatus),
+        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.review_paper", _fake_review_paper),
+    ):
+        result = runner.invoke(app, ["review", str(pdf)])
+
+    assert result.exit_code == 0, result.output
+    assert entered == []
+
+
+def test_review_yes_path_enters_status(tmp_path):
+    """Non-interactive --yes runs keep the Rich status spinner."""
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+
+    entered: list[bool] = []
+
+    class _FakeStatus:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            entered.append(True)
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    with (
+        patch("coarse.cli.Status", _FakeStatus),
+        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.review_paper", _fake_review_paper),
+    ):
+        result = runner.invoke(app, ["review", str(pdf), "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert entered == [True]
 
 
 # ---------------------------------------------------------------------------
@@ -302,3 +370,65 @@ def test_review_eval_flag_saves_quality_report(tmp_path):
     assert result.exit_code == 0, result.output
     assert len(written_paths) == 1
     assert "quality" in written_paths[0].name
+
+
+# ---------------------------------------------------------------------------
+# install-skills version sentinel
+# ---------------------------------------------------------------------------
+
+
+def test_install_skills_writes_version_sentinel(tmp_path: Path, monkeypatch) -> None:
+    """install-skills writes a ``.coarse-version`` sentinel file next
+    to the SKILL.md so a future invocation can detect version drift."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    result = runner.invoke(app, ["install-skills", "--all", "--force"])
+
+    assert result.exit_code == 0, result.output
+    # All three hosts get a sentinel file with the current version.
+    for host_dir in ("claude", "codex", "gemini"):
+        dest = fake_home / f".{host_dir}/skills/coarse-review"
+        sentinel = dest / ".coarse-version"
+        assert sentinel.exists(), f"missing sentinel for {host_dir}: {sentinel}"
+        assert sentinel.read_text(encoding="utf-8").strip() == coarse.__version__
+
+
+def test_install_skills_logs_version_replacement(tmp_path: Path, monkeypatch) -> None:
+    """A second install with a different __version__ logs a
+    'replaced X → Y' notice so users know their skill bundle changed."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    # Pre-seed each skill dir with a sentinel from a fake older version.
+    for host_dir in (".claude", ".codex", ".gemini"):
+        skill_dir = fake_home / f"{host_dir}/skills/coarse-review"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / ".coarse-version").write_text("0.0.1-fake-old", encoding="utf-8")
+        # Also drop a stale SKILL.md so the "identical file" fast-path
+        # doesn't trigger — we want the replacement branch.
+        (skill_dir / "SKILL.md").write_text("stale content", encoding="utf-8")
+
+    result = runner.invoke(app, ["install-skills", "--all", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert "replaced 0.0.1-fake-old" in result.output
+    # All sentinels updated to the current version.
+    for host_dir in (".claude", ".codex", ".gemini"):
+        sentinel = fake_home / f"{host_dir}/skills/coarse-review/.coarse-version"
+        assert sentinel.read_text(encoding="utf-8").strip() == coarse.__version__
+
+
+def test_install_skills_no_replacement_notice_on_first_install(tmp_path: Path, monkeypatch) -> None:
+    """A fresh install with no prior sentinel shouldn't print
+    'replaced X → Y'."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    result = runner.invoke(app, ["install-skills", "--all", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert "replaced" not in result.output
