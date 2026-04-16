@@ -231,11 +231,15 @@ def test_review_paper_reports_progress_for_completed_stages():
         "literature_search",
         "contribution_extraction",
     }
-    assert completed_keys[5:] == [
+    assert completed_keys[5:7] == [
         "overview",
         "completeness",
+    ]
+    assert set(completed_keys[7:9]) == {
         "section_1",
         "section_2",
+    }
+    assert completed_keys[9:] == [
         "editorial",
         "quote_verification",
         "synthesis",
@@ -293,6 +297,58 @@ def test_review_paper_advances_parallel_progress_as_futures_finish():
     completed_keys = [event.stage_key for event in progress_events if event.event == "completed"]
     assert completed_keys.index("literature_search") < completed_keys.index("calibration")
     assert completed_keys.index("contribution_extraction") < completed_keys.index("calibration")
+
+
+def test_review_paper_advances_section_progress_as_futures_finish():
+    """Section progress should advance as soon as faster sections complete."""
+    config = CoarseConfig(default_model=TEST_MODEL, extraction_qa=False)
+    paper_text = _make_paper_text()
+    structure = _make_structure()
+    overview = _make_overview()
+    progress_events: list[PipelineProgress] = []
+
+    def fake_review_section(
+        _section_agent,
+        _verify_agent,
+        section,
+        *_args,
+        **_kwargs,
+    ):
+        if section.number == 1:
+            time.sleep(0.03)
+        else:
+            time.sleep(0.01)
+        return [_make_comment(section.number)]
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=paper_text),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline._review_section", side_effect=fake_review_section),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.SectionAgent"),
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.return_value = overview
+        MockCompleteness.return_value.run.return_value = []
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockEditorial.return_value.run.return_value = [_make_comment(1)]
+
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            progress_callback=progress_events.append,
+        )
+
+    completed_keys = [event.stage_key for event in progress_events if event.event == "completed"]
+    assert completed_keys.index("section_2") < completed_keys.index("section_1")
 
 
 def test_review_paper_skips_references_section():

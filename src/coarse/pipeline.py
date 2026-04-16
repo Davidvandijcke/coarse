@@ -542,10 +542,10 @@ def review_paper(
     if non_ref_sections:
         progress.start("sections", "Reviewing sections", client.cost_usd)
     with ThreadPoolExecutor(max_workers=10) as executor:
-        section_futures = []
+        section_futures: dict = {}
         # Only pass literature context to sections that benefit from it
         _LIT_RELEVANT = {SectionType.INTRODUCTION, SectionType.RELATED_WORK}
-        for section in non_ref_sections:
+        for i, section in enumerate(non_ref_sections, start=1):
             focus = _detect_section_focus(section)
             sec_lit = (
                 literature_context
@@ -553,7 +553,7 @@ def review_paper(
                 else ""
             )
             sec_abstract = structure.abstract
-            section_futures.append(
+            section_futures[
                 executor.submit(
                     _review_section,
                     section_agent,
@@ -570,19 +570,21 @@ def review_paper(
                     document_form=structure.document_form,
                     author_notes=author_notes,
                 )
-            )
+            ] = (i, section.title)
 
         section_comments: list[DetailedComment] = []
-        for i, future in enumerate(section_futures):
-            sec_title = non_ref_sections[i].title if i < len(non_ref_sections) else "?"
-            stage_label = f"Reviewed section {i + 1}/{len(non_ref_sections)}: {sec_title}"
+        for future in as_completed(section_futures):
+            section_index, sec_title = section_futures[future]
+            stage_label = f"Reviewed section {section_index}/{len(non_ref_sections)}: {sec_title}"
             try:
-                comments = future.result(timeout=900)
+                comments = future.result()
                 section_comments.extend(comments)
             except Exception:
                 logger.warning("Section agent failed for '%s', skipping", sec_title, exc_info=True)
-                stage_label = f"Skipped section {i + 1}/{len(non_ref_sections)}: {sec_title}"
-            progress.complete(f"section_{i + 1}", stage_label, client.cost_usd)
+                stage_label = (
+                    f"Skipped section {section_index}/{len(non_ref_sections)}: {sec_title}"
+                )
+            progress.complete(f"section_{section_index}", stage_label, client.cost_usd)
 
     if not section_comments:
         logger.error("All section agents failed — review will have no detailed comments")
@@ -597,11 +599,11 @@ def review_paper(
         progress.start("cross_section", "Running cross-section synthesis", client.cost_usd)
         cross_section_agent = CrossSectionAgent(client)
         main_results = results_sections[0]
-        cross_section_futures = []
         selected_discussion_sections = discussion_sections[:3]
         with ThreadPoolExecutor(max_workers=3) as executor:
-            for disc_sec in selected_discussion_sections:
-                cross_section_futures.append(
+            future_to_discussion = {}
+            for i, disc_sec in enumerate(selected_discussion_sections, start=1):
+                future_to_discussion[
                     executor.submit(
                         cross_section_agent.run,
                         structure.title,
@@ -611,12 +613,12 @@ def review_paper(
                         document_form=structure.document_form,
                         author_notes=author_notes,
                     )
-                )
-            for i, future in enumerate(cross_section_futures):
-                disc_sec = selected_discussion_sections[i]
+                ] = (i, disc_sec)
+            for future in as_completed(future_to_discussion):
+                i, disc_sec = future_to_discussion[future]
                 stage_label = f"Cross-checked results vs {disc_sec.title}"
                 try:
-                    cross_comments = future.result(timeout=900)
+                    cross_comments = future.result()
                     cross_comments = _verify_with_fallback(
                         cross_comments,
                         paper_text.full_markdown,
@@ -627,7 +629,7 @@ def review_paper(
                 except Exception:
                     logger.warning("Cross-section synthesis failed, skipping", exc_info=True)
                     stage_label = f"Skipped cross-check vs {disc_sec.title}"
-                progress.complete(f"cross_section_{i + 1}", stage_label, client.cost_usd)
+                progress.complete(f"cross_section_{i}", stage_label, client.cost_usd)
 
     # --- Phase 3: Editorial filter (single pass — dedup + contradiction + quality) ---
     # The editorial agent receives full paper text for quote/absence verification.
