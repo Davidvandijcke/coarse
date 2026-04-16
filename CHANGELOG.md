@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Blank Docling `.tex` extraction now falls back to the LaTeX regex backend instead of propagating an empty document into the review pipeline.** `extract_file()` used to accept Docling output for non-PDF formats even when it was only whitespace, which let `.tex` reviews reach the extraction quality gate with `full_markdown=""` and fail later with a misleading "no sections found" error. The non-PDF Docling path now treats empty/whitespace output as unusable and immediately falls back to the existing extension-specific extractor, and the cache loader now ignores previously saved empty extraction payloads so stale pre-fix `.extraction_cache.json` files do not keep reproducing the bug. Regression coverage added in `tests/test_extraction.py` and `tests/test_extraction_cache.py`.
+
 ## v1.3.0 — 2026-04-15
 
 ### Security

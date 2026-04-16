@@ -41,6 +41,17 @@ def test_load_cache_returns_none_for_corrupt_json(tmp_path: Path) -> None:
     assert _load_cache(source) is None
 
 
+def test_load_cache_returns_none_for_empty_markdown(tmp_path: Path) -> None:
+    source = tmp_path / "paper.txt"
+    source.write_text("hello")
+    source.with_suffix(".extraction_cache.json").write_text(
+        '{"full_markdown":"","token_estimate":0,"garble_ratio":0.0}',
+        encoding="utf-8",
+    )
+
+    assert _load_cache(source) is None
+
+
 def test_save_cache_skips_symlink_path(tmp_path: Path) -> None:
     source = tmp_path / "paper.txt"
     source.write_text("hello")
