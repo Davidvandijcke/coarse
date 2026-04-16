@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import time
 from unittest.mock import MagicMock, patch
 
 from coarse.config import CoarseConfig
@@ -221,12 +222,16 @@ def test_review_paper_reports_progress_for_completed_stages():
         )
 
     completed_keys = [event.stage_key for event in progress_events if event.event == "completed"]
-    assert completed_keys == [
+    assert completed_keys[:2] == [
         "extraction",
         "structure",
+    ]
+    assert set(completed_keys[2:5]) == {
         "calibration",
         "literature_search",
         "contribution_extraction",
+    }
+    assert completed_keys[5:] == [
         "overview",
         "completeness",
         "section_1",
@@ -236,6 +241,58 @@ def test_review_paper_reports_progress_for_completed_stages():
         "synthesis",
     ]
     assert progress_events[-1].completed_stages == progress_events[-1].total_stages
+
+
+def test_review_paper_advances_parallel_progress_as_futures_finish():
+    """Parallel setup progress should advance on the first completed future."""
+    config = CoarseConfig(default_model=TEST_MODEL, extraction_qa=False)
+    paper_text = _make_paper_text()
+    structure = _make_structure()
+    overview = _make_overview()
+    progress_events: list[PipelineProgress] = []
+
+    def slow_calibration(*args, **kwargs):
+        time.sleep(0.03)
+        return None
+
+    def fast_literature(*args, **kwargs):
+        time.sleep(0.01)
+        return ""
+
+    def medium_contribution(*args, **kwargs):
+        time.sleep(0.02)
+        return None
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=paper_text),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", side_effect=slow_calibration),
+        patch("coarse.pipeline.search_literature", side_effect=fast_literature),
+        patch("coarse.pipeline.extract_contribution", side_effect=medium_contribution),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.return_value = overview
+        MockCompleteness.return_value.run.return_value = []
+        MockSection.return_value.run.return_value = [_make_comment(1)]
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockEditorial.return_value.run.return_value = [_make_comment(1)]
+
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            progress_callback=progress_events.append,
+        )
+
+    completed_keys = [event.stage_key for event in progress_events if event.event == "completed"]
+    assert completed_keys.index("literature_search") < completed_keys.index("calibration")
+    assert completed_keys.index("contribution_extraction") < completed_keys.index("calibration")
 
 
 def test_review_paper_skips_references_section():

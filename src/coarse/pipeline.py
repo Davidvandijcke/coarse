@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from coarse.agents.completeness import CompletenessAgent
@@ -473,22 +473,41 @@ def review_paper(
         client.cost_usd,
     )
     with ThreadPoolExecutor(max_workers=3) as executor:
-        cal_future = executor.submit(calibrate_domain, structure, client)
-        lit_future = executor.submit(search_literature, structure.title, structure.abstract, client)
-        contrib_future = executor.submit(extract_contribution, structure, client)
+        future_map = {
+            executor.submit(calibrate_domain, structure, client): "calibration",
+            executor.submit(
+                search_literature, structure.title, structure.abstract, client
+            ): "literature_search",
+            executor.submit(extract_contribution, structure, client): "contribution_extraction",
+        }
 
-        calibration = cal_future.result(timeout=900)
-        progress.complete("calibration", "Completed domain calibration", client.cost_usd)
-        try:
-            literature_context = lit_future.result(timeout=900)
-        except Exception:
-            logger.warning("Literature search failed, skipping", exc_info=True)
-            literature_context = ""
-        progress.complete("literature_search", "Completed literature search", client.cost_usd)
-        contribution_context = contrib_future.result(timeout=900)
-        progress.complete(
-            "contribution_extraction", "Completed contribution extraction", client.cost_usd
-        )
+        calibration = None
+        literature_context = ""
+        contribution_context = None
+
+        for future in as_completed(future_map, timeout=900):
+            stage_key = future_map[future]
+
+            if stage_key == "calibration":
+                calibration = future.result()
+                progress.complete("calibration", "Completed domain calibration", client.cost_usd)
+                continue
+
+            if stage_key == "literature_search":
+                try:
+                    literature_context = future.result()
+                except Exception:
+                    logger.warning("Literature search failed, skipping", exc_info=True)
+                    literature_context = ""
+                progress.complete(
+                    "literature_search", "Completed literature search", client.cost_usd
+                )
+                continue
+
+            contribution_context = future.result()
+            progress.complete(
+                "contribution_extraction", "Completed contribution extraction", client.cost_usd
+            )
 
     overview_agent = OverviewAgent(client)
     section_agent = SectionAgent(client)
