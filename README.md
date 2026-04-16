@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Davidvandijcke/coarse/actions/workflows/ci.yml/badge.svg)](https://github.com/Davidvandijcke/coarse/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/coarse-ink)](https://pypi.org/project/coarse-ink/)
-[![Downloads](https://img.shields.io/pepy/dt/coarse-ink)](https://pepy.tech/project/coarse-ink)
+[![Downloads](https://img.shields.io/pypi/dm/coarse-ink)](https://pypistats.org/packages/coarse-ink)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/github/license/Davidvandijcke/coarse)](LICENSE)
 
