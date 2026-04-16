@@ -36,13 +36,15 @@ import { NextResponse } from "next/server";
 const PYPI_PACKAGE = "coarse-ink";
 const PYPISTATS_URL = `https://pypistats.org/api/packages/${PYPI_PACKAGE}/recent`;
 
-// Edge > Node for this since we're just proxying one fetch. Less cold-start
-// overhead, faster responses, and Vercel's CDN edge cache pairs cleanly.
-export const runtime = "edge";
-// Explicit - this route is meant to be cached by Vercel's CDN, not Next.js's
-// data cache (which would swallow 429s and serve stale responses at the route
-// level instead). We handle SWR via response headers below.
-export const dynamic = "force-dynamic";
+// Use Next.js ISR — the response rebuilds at most every 6h and Vercel's CDN
+// serves the cached rendering to everyone else. On ISR revalidation failure
+// (e.g. pypistats throttles us), Vercel serves the stale-but-valid cache.
+//
+// We deliberately do NOT use `dynamic = "force-dynamic"` or the edge runtime:
+// both strip the `s-maxage` + `stale-while-revalidate` directives we rely on
+// for graceful-degradation. Default Node runtime + explicit `revalidate` gives
+// Next.js full control of edge caching.
+export const revalidate = 21600;
 
 type ShieldsEndpoint = {
   schemaVersion: 1;
@@ -76,18 +78,21 @@ export async function GET() {
   let count: number;
   try {
     const resp = await fetch(PYPISTATS_URL, {
-      // Bypass Next.js fetch cache - we want Vercel CDN edge cache (below),
-      // not Next.js's in-route cache which behaves differently on errors.
-      cache: "no-store",
+      // Match the route-level revalidate so Next.js and Vercel agree
+      // on the cache window for the pypistats call itself. Avoids a
+      // conflict with `revalidate = 21600` above (setting cache:
+      // "no-store" on the fetch would force the route dynamic).
+      next: { revalidate: 21600 },
       headers: {
         // pypistats honors a User-Agent; identify ourselves so they can
         // contact us if we misbehave.
-        "User-Agent": "coarse-downloads-badge (+https://github.com/Davidvandijcke/coarse)",
+        "User-Agent":
+          "coarse-downloads-badge (+https://github.com/Davidvandijcke/coarse)",
       },
     });
     if (!resp.ok) {
-      // 429, 5xx, anything non-2xx. Throw so the CDN keeps serving the
-      // last successful response via stale-while-revalidate.
+      // 429, 5xx, anything non-2xx. Throw so Next.js/Vercel keep
+      // serving the last successful render via stale-while-revalidate.
       throw new Error(`pypistats ${resp.status}`);
     }
     const data = (await resp.json()) as {
@@ -100,27 +105,32 @@ export async function GET() {
     count = monthly;
   } catch (err) {
     // Return 500 so Vercel's CDN falls back to serving the last stale
-    // cache entry (stale-while-revalidate=7d). If there's no cache yet
-    // (very first request after deploy), shields.io will render its own
-    // generic error - one-off cosmetic blip, next call recovers.
+    // cache entry (stale-while-revalidate=7d). The no-store header
+    // keeps the error itself out of cache; any previously-cached 2xx
+    // keeps serving until either pypistats recovers or 7 days pass.
+    // If there's no cache yet (very first request after deploy),
+    // shields.io will render its own generic error — one-off cosmetic
+    // blip, next call recovers.
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "upstream unreachable" },
-      {
-        status: 500,
-        headers: {
-          // Don't let the error response poison the CDN cache.
-          "Cache-Control": "no-store",
-        },
-      },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
 
+  // Explicit Cache-Control belt-and-braces for the Vercel CDN layer.
+  // Next.js' route-level `revalidate` sets similar semantics but
+  // making them explicit protects against silent framework changes
+  // and tells downstream caches (shields.io's own proxy) exactly
+  // what we expect.
   return NextResponse.json(badge(count), {
     headers: {
       "Cache-Control":
-        "public, s-maxage=21600, stale-while-revalidate=604800, max-age=0",
-      // Tell shields.io its own cache TTL.
+        "public, s-maxage=21600, stale-while-revalidate=604800",
       "Content-Type": "application/json; charset=utf-8",
+      // CDN-Cache-Control targets Vercel's edge specifically, which
+      // honors it even when Cache-Control is also present.
+      "CDN-Cache-Control":
+        "public, s-maxage=21600, stale-while-revalidate=604800",
     },
   });
 }
