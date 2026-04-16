@@ -28,6 +28,9 @@ def _load_cache(pdf_path: Path) -> PaperText | None:
     try:
         data = json.loads(cache.read_text(encoding="utf-8"))
         paper_text = PaperText.model_validate(data)
+        if not paper_text.full_markdown.strip():
+            logger.warning("Cache empty, re-extracting")
+            return None
         logger.info("Loaded extraction cache from %s", cache.name)
         return paper_text
     except Exception:
