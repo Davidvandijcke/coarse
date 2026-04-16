@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Blank Docling `.tex` extraction now falls back to the LaTeX regex backend instead of propagating an empty document into the review pipeline.** `extract_file()` used to accept Docling output for non-PDF formats even when it was only whitespace, which let `.tex` reviews reach the extraction quality gate with `full_markdown=""` and fail later with a misleading "no sections found" error. The non-PDF Docling path now treats empty/whitespace output as unusable and immediately falls back to the existing extension-specific extractor, and the cache loader now ignores previously saved empty extraction payloads so stale pre-fix `.extraction_cache.json` files do not keep reproducing the bug. Regression coverage added in `tests/test_extraction.py` and `tests/test_extraction_cache.py`.
+
+### Changed
+
+- **Default review filenames now include the review model ID.** Auto-generated output paths from both `coarse review` and `coarse-review` now use the pattern `<paper_stem>_review_<model>.md` instead of `<paper_stem>_review.md`, making repeated runs against the same paper easier to distinguish when comparing different models. Explicit user-provided output paths are unchanged. Regression coverage added in `tests/test_cli.py`, `tests/test_cli_review.py`, and `tests/test_models.py`.
 ## v1.3.0 — 2026-04-15
 
 ### Security

@@ -244,7 +244,7 @@ def test_main_handoff_supports_markdown_source(tmp_path) -> None:
         "effort": "high",
         "pre_extracted": None,
     }
-    assert (out_dir / "paper_review.md").read_text(encoding="utf-8") == "# Review\n"
+    assert (out_dir / "paper_review_gpt-5.4.md").read_text(encoding="utf-8") == "# Review\n"
 
 
 def test_main_handoff_success_prints_absolute_local_and_view_lines(tmp_path, capsys) -> None:
@@ -292,7 +292,7 @@ def test_main_handoff_success_prints_absolute_local_and_view_lines(tmp_path, cap
     stdout = capsys.readouterr().out
     assert "PUBLISHED TO COARSE WEB" in stdout
     assert "  view:     https://example.test/review/123" in stdout
-    assert f"  local:    {(out_dir / 'paper_review.md').resolve()}" in stdout
+    assert f"  local:    {(out_dir / 'paper_review_gpt-5.4.md').resolve()}" in stdout
     assert "REVIEW COMPLETE" in stdout
 
 
@@ -341,7 +341,7 @@ def test_main_handoff_callback_failure_still_prints_local_footer(tmp_path, capsy
     stdout = capsys.readouterr().out
     assert "WEB CALLBACK FAILED" in stdout
     assert "  view:     unavailable" in stdout
-    assert f"  local:    {(out_dir / 'paper_review.md').resolve()}" in stdout
+    assert f"  local:    {(out_dir / 'paper_review_gpt-5.4.md').resolve()}" in stdout
     assert "REVIEW COMPLETE" in stdout
 
 
@@ -371,7 +371,7 @@ def test_main_local_mode_prints_absolute_local_footer(tmp_path, capsys) -> None:
     assert rc == 0
     stdout = capsys.readouterr().out
     assert "REVIEW COMPLETE" in stdout
-    assert f"  local:    {(out_dir / 'paper_review.md').resolve()}" in stdout
+    assert f"  local:    {(out_dir / 'paper_review_gpt-5.4.md').resolve()}" in stdout
 
 
 def test_main_loads_openrouter_key_from_headless_helper(tmp_path, monkeypatch) -> None:

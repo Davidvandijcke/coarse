@@ -88,7 +88,7 @@ paper.pdf (or .txt, .md, .tex, .docx, .html, .epub)
   -> crossref agent       Legacy fallback if editorial fails
   -> critique agent      Legacy fallback if editorial fails
   -> quote_verify.py      Programmatic fuzzy-match quotes against text
-  -> synthesis.py        Deterministic render -> paper_review.md
+  -> synthesis.py        Deterministic render -> paper_review_<model>.md
 ```
 
 ## Development rules

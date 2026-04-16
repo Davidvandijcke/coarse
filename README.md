@@ -20,7 +20,7 @@ Get an API key from [OpenRouter](https://openrouter.ai/keys) (free to sign up), 
 uvx coarse-ink review paper.pdf --api-key sk-or-v1-YOUR_KEY
 ```
 
-That's it. The review is written to `paper_review.md` in the current directory.
+That's it. The review is written to `paper_review_<model>.md` in the current directory.
 
 ### Prerequisites
 
@@ -81,7 +81,7 @@ paper.pdf (or .txt, .md, .tex, .docx, .html, .epub)
   -> Editorial filter                     Primary deduplication, contradiction, and quality pass
   -> Legacy crossref/critique fallback    Only used if the editorial pass fails
   -> Quote verification                   Fuzzy-match quotes against paper text (stricter for math)
-  -> Synthesis                            Render final paper_review.md
+  -> Synthesis                            Render final paper_review_<model>.md
 ```
 
 The pipeline extracts text, classifies the paper's domain and structure, then generates
