@@ -119,15 +119,24 @@ class _PipelineProgressDisplay:
             transient=False,
         )
         self._task_id: int | None = None
+        self._started = False
 
     def __enter__(self) -> "_PipelineProgressDisplay":
-        self._progress.__enter__()
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
+        if not self._started:
+            return False
         return self._progress.__exit__(exc_type, exc, tb)
 
+    def _ensure_started(self) -> None:
+        if self._started:
+            return
+        self._progress.__enter__()
+        self._started = True
+
     def callback(self, update: PipelineProgress) -> None:
+        self._ensure_started()
         spent = f"${update.actual_cost_usd:.4f}"
         if self._task_id is None:
             self._task_id = self._progress.add_task(

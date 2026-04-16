@@ -8,8 +8,9 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 import coarse
-from coarse.cli import app
+from coarse.cli import _PipelineProgressDisplay, app
 from coarse.config import CoarseConfig
+from coarse.progress import PipelineProgress
 from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
 
 # ---------------------------------------------------------------------------
@@ -343,6 +344,50 @@ def test_review_yes_path_enters_pipeline_progress_display(tmp_path):
     assert result.exit_code == 0, result.output
     assert entered == [True]
     assert captured["has_progress_callback"] is True
+
+
+def test_pipeline_progress_display_starts_lazily():
+    """The live renderer should stay inactive until the first progress update."""
+
+    entered: list[bool] = []
+    exited: list[bool] = []
+
+    class _FakeProgress:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+        def __enter__(self):
+            entered.append(True)
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            exited.append(True)
+            return False
+
+        def add_task(self, *args, **kwargs):
+            return 1
+
+        def update(self, *args, **kwargs):
+            return None
+
+    with patch("coarse.cli.Progress", _FakeProgress):
+        display = _PipelineProgressDisplay(MagicMock())
+        with display:
+            assert entered == []
+            display.callback(
+                PipelineProgress(
+                    event="completed",
+                    stage_key="structure",
+                    stage_label="Analyzed paper structure",
+                    completed_stages=1,
+                    total_stages=10,
+                    actual_cost_usd=0.1234,
+                )
+            )
+
+    assert entered == [True]
+    assert exited == [True]
 
 
 # ---------------------------------------------------------------------------
