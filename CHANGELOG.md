@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Web submit route: race condition between Modal webhook timeout and worker spawn caused ~21% of Modal-backed reviews to fail with `OPENROUTER_API_KEY=MISSING` after ~5 min of Docling OCR.** Modal's `run_review` webhook calls `do_review.spawn()` *before* sending the HTTP response, so a cold-start tail of 9–10s on the previous 10s Vercel `AbortController` caused the submit route's catch block to fire *after* the worker had already been queued. That catch block then deleted the just-inserted `review_secrets` row and called `markFailed()`, so the worker started with no `OPENROUTER_API_KEY` and every LLM call failed with a provider-specific auth error (`litellm.AuthenticationError: DeepseekException`, `Missing Anthropic API Key`, `BadRequestError: LLM Provider NOT provided`, etc.). Forensics from the last 24h of `modal app logs coarse-review`: 100 `do_review` invocations vs 74 logged `POST / -> 200 OK` responses (26 aborted-before-response); 21 `OPENROUTER_API_KEY=MISSING` entries; 9 of 14 affected users *also* had successful reviews (ruling out "never provided a key"). Fix in `web/src/app/api/submit/route.ts`: bump `MODAL_TRIGGER_TIMEOUT_MS` from 10s → 25s (2.5× the observed 9.78s cold-start tail, still 5s below the `maxDuration=30` ceiling); in the `catch` block, stop deleting `review_secrets` and stop calling `markFailed` — the worker unconditionally sets `status=running` on start, and genuinely orphaned rows are swept by the hourly `cleanup_review_secrets` cron + the 15-minute `sweep_stale_reviews` cron. The `!workerResp.ok` branch (Modal returned an explicit 4xx/5xx, so the spawn definitely did not happen) still cleans up. The route now returns 202 with `{id, accessToken, warning}` on timeout so the client's `submitResp.ok` check still passes and it redirects to the status page — which the user would reach anyway as the worker catches up.
+
 ## v1.3.0 — 2026-04-15
 
 ### Security
