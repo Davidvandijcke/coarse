@@ -45,6 +45,7 @@ src/coarse/
 ├── models.py                # Single source of truth for every model ID
 ├── pipeline.py              # review_paper() orchestrator
 ├── pipeline_spec.py         # Shared stage manifest for runtime + cost estimators
+├── progress.py              # Pipeline progress event types for live CLI reporting
 ├── prompts.py               # All LLM prompt templates
 ├── quality.py               # Quality eval against reference review (dev only)
 ├── quote_verify.py          # Post-processing quote verification (stricter for math)

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from coarse.agents.completeness import CompletenessAgent
@@ -21,7 +21,12 @@ from coarse.config import CoarseConfig, load_config
 from coarse.cost import run_cost_gate
 from coarse.extraction import extract_file
 from coarse.llm import LLMClient
-from coarse.pipeline_spec import MAX_REVIEWABLE_SECTIONS
+from coarse.pipeline_spec import (
+    MAX_REVIEWABLE_SECTIONS,
+    estimate_cross_section_count,
+    estimate_section_count,
+)
+from coarse.progress import PipelineProgress, PipelineProgressCallback
 from coarse.quote_verify import QuoteVerificationDrop, verify_quotes, verify_quotes_detailed
 from coarse.review_stages import (
     _detect_section_focus,
@@ -47,6 +52,9 @@ from coarse.types import (
 )
 
 logger = logging.getLogger(__name__)
+_PIPELINE_FIXED_PROGRESS_STAGES = 10
+_RESULTS_TYPES = {SectionType.METHODOLOGY, SectionType.RESULTS, SectionType.OTHER}
+_DISCUSSION_TYPES = {SectionType.DISCUSSION, SectionType.CONCLUSION}
 
 
 def _check_extraction_quality(structure: "PaperStructure") -> bool:
@@ -67,6 +75,93 @@ def _check_extraction_quality(structure: "PaperStructure") -> bool:
         return False
 
     return True
+
+
+def _estimated_pipeline_stage_total(paper_text: PaperText, *, is_pdf: bool, run_qa: bool) -> int:
+    """Return an initial stage total using the same section heuristics as the cost gate."""
+    estimated_sections = estimate_section_count(max(0, paper_text.token_estimate))
+    return (
+        _PIPELINE_FIXED_PROGRESS_STAGES
+        + int(is_pdf and run_qa)
+        + estimated_sections
+        + estimate_cross_section_count(estimated_sections)
+    )
+
+
+def _actual_cross_section_count(structure: PaperStructure) -> int:
+    """Return how many cross-section checks this paper will actually run."""
+    results_sections = [
+        s for s in structure.sections if s.section_type in _RESULTS_TYPES and s.math_content
+    ]
+    discussion_sections = [s for s in structure.sections if s.section_type in _DISCUSSION_TYPES]
+    if not results_sections or not discussion_sections:
+        return 0
+    return min(3, len(discussion_sections))
+
+
+def _actual_pipeline_stage_total(
+    *,
+    is_pdf: bool,
+    run_qa: bool,
+    section_count: int,
+    cross_section_count: int,
+) -> int:
+    """Return the final stage total after structure analysis resolves the paper shape."""
+    return (
+        _PIPELINE_FIXED_PROGRESS_STAGES
+        + int(is_pdf and run_qa)
+        + section_count
+        + cross_section_count
+    )
+
+
+class _PipelineProgressReporter:
+    """Best-effort adapter from pipeline milestones to callback events."""
+
+    def __init__(
+        self,
+        callback: PipelineProgressCallback | None,
+        *,
+        total_stages: int = 1,
+    ) -> None:
+        self._callback = callback
+        self._completed = 0
+        self._total = max(1, total_stages)
+        self._disabled = callback is None
+
+    def set_total(self, total_stages: int) -> None:
+        self._total = max(1, max(self._completed, total_stages))
+
+    def start(self, stage_key: str, stage_label: str, actual_cost_usd: float) -> None:
+        self._emit("started", stage_key, stage_label, actual_cost_usd)
+
+    def complete(self, stage_key: str, stage_label: str, actual_cost_usd: float) -> None:
+        self._completed += 1
+        self._emit("completed", stage_key, stage_label, actual_cost_usd)
+
+    def _emit(
+        self,
+        event: str,
+        stage_key: str,
+        stage_label: str,
+        actual_cost_usd: float,
+    ) -> None:
+        if self._disabled or self._callback is None:
+            return
+        try:
+            self._callback(
+                PipelineProgress(
+                    event=event,  # type: ignore[arg-type]
+                    stage_key=stage_key,
+                    stage_label=stage_label,
+                    completed_stages=self._completed,
+                    total_stages=self._total,
+                    actual_cost_usd=actual_cost_usd,
+                )
+            )
+        except Exception:
+            logger.debug("Pipeline progress callback failed; disabling it", exc_info=True)
+            self._disabled = True
 
 
 _QUOTE_REPAIR_RATIO_FLOOR = 0.65
@@ -239,6 +334,7 @@ def review_paper(
     skip_cost_gate: bool = False,
     config: CoarseConfig | None = None,
     author_notes: str | None = None,
+    progress_callback: PipelineProgressCallback | None = None,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
@@ -262,6 +358,8 @@ def review_paper(
             instructions that override the review rubric. Trimmed/truncated to
             2000 chars by ``author_notes_block`` in prompts.py. ``None`` or an
             empty/ whitespace-only string is a byte-identical no-op.
+        progress_callback: Optional callback receiving best-effort pipeline
+            progress updates, including cumulative actual token spend.
 
     Pipeline order:
     1. Extract file → PaperText (format-specific extraction)
@@ -280,8 +378,14 @@ def review_paper(
 
     resolved_model = model or config.default_model
     client = LLMClient(model=resolved_model, config=config)
+    progress = _PipelineProgressReporter(progress_callback)
+    run_qa = False
 
+    if skip_cost_gate:
+        progress.start("extraction", "Extracting paper text", client.cost_usd)
     paper_text = extract_file(pdf_path)
+    if skip_cost_gate:
+        progress.complete("extraction", "Extracted paper text", client.cost_usd)
 
     # Extraction QA only applies to PDFs (vision LLM compares rendered pages)
     is_pdf = Path(pdf_path).suffix.lower() == ".pdf"
@@ -311,43 +415,41 @@ def review_paper(
                 run_qa = False
 
         if run_qa:
+            if skip_cost_gate:
+                progress.start("extraction_qa", "Running extraction QA", client.cost_usd)
             vision_client = LLMClient(model=config.vision_model, config=config)
             corrected = run_extraction_qa(Path(pdf_path), paper_text, vision_client)
+            client.add_cost(vision_client.cost_usd)
             if corrected is not paper_text:
                 # QA applied corrections — update the cache so future runs skip QA
                 _save_cache(Path(pdf_path), corrected)
                 logger.info("Extraction cache updated with QA corrections")
             paper_text = corrected
+            if skip_cost_gate:
+                progress.complete("extraction_qa", "Completed extraction QA", client.cost_usd)
+
+    progress.set_total(_estimated_pipeline_stage_total(paper_text, is_pdf=is_pdf, run_qa=run_qa))
+    gate_config = config if run_qa == config.extraction_qa else config.model_copy(
+        update={"extraction_qa": run_qa}
+    )
 
     if not skip_cost_gate:
         # Pass resolved_model so a `--model` CLI override is reflected in
         # the quote, not just in the downstream LLMClient.
-        run_cost_gate(paper_text, config, is_pdf=is_pdf, model=resolved_model)
+        run_cost_gate(paper_text, gate_config, is_pdf=is_pdf, model=resolved_model)
+        progress.complete("extraction", "Extracted paper text", client.cost_usd)
+        if run_qa:
+            progress.complete("extraction_qa", "Completed extraction QA", client.cost_usd)
 
+    progress.start("structure", "Analyzing paper structure", client.cost_usd)
     structure = analyze_structure(paper_text, client)
     if not _check_extraction_quality(structure):
         raise ExtractionError(
             "Extraction failed: no sections found in markdown. "
             "The PDF may be scanned/image-only with no extractable text."
         )
+    progress.complete("structure", "Analyzed paper structure", client.cost_usd)
 
-    # Domain calibration + literature search + contribution extraction (parallel, all cheap)
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        cal_future = executor.submit(calibrate_domain, structure, client)
-        lit_future = executor.submit(search_literature, structure.title, structure.abstract, client)
-        contrib_future = executor.submit(extract_contribution, structure, client)
-
-        calibration = cal_future.result(timeout=900)
-        try:
-            literature_context = lit_future.result(timeout=900)
-        except Exception:
-            logger.warning("Literature search failed, skipping", exc_info=True)
-            literature_context = ""
-        contribution_context = contrib_future.result(timeout=900)
-
-    overview_agent = OverviewAgent(client)
-    section_agent = SectionAgent(client)
-    quote_repair_agent = QuoteRepairAgent(client)
     reviewable_sections = [
         s
         for s in structure.sections
@@ -355,14 +457,72 @@ def review_paper(
         and (s.section_type != SectionType.APPENDIX or len(s.text) >= _MIN_APPENDIX_CHARS)
     ]
     non_ref_sections = reviewable_sections[:MAX_REVIEWABLE_SECTIONS]
+    progress.set_total(
+        _actual_pipeline_stage_total(
+            is_pdf=is_pdf,
+            run_qa=run_qa,
+            section_count=len(non_ref_sections),
+            cross_section_count=_actual_cross_section_count(structure),
+        )
+    )
+
+    # Domain calibration + literature search + contribution extraction (parallel, all cheap)
+    progress.start(
+        "parallel_setup",
+        "Running calibration, literature search, and contribution extraction",
+        client.cost_usd,
+    )
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        future_map = {
+            executor.submit(calibrate_domain, structure, client): "calibration",
+            executor.submit(
+                search_literature, structure.title, structure.abstract, client
+            ): "literature_search",
+            executor.submit(extract_contribution, structure, client): "contribution_extraction",
+        }
+
+        calibration = None
+        literature_context = ""
+        contribution_context = None
+
+        for future in as_completed(future_map, timeout=900):
+            stage_key = future_map[future]
+
+            if stage_key == "calibration":
+                calibration = future.result()
+                progress.complete("calibration", "Completed domain calibration", client.cost_usd)
+                continue
+
+            if stage_key == "literature_search":
+                try:
+                    literature_context = future.result()
+                except Exception:
+                    logger.warning("Literature search failed, skipping", exc_info=True)
+                    literature_context = ""
+                progress.complete(
+                    "literature_search", "Completed literature search", client.cost_usd
+                )
+                continue
+
+            contribution_context = future.result()
+            progress.complete(
+                "contribution_extraction", "Completed contribution extraction", client.cost_usd
+            )
+
+    overview_agent = OverviewAgent(client)
+    section_agent = SectionAgent(client)
+    quote_repair_agent = QuoteRepairAgent(client)
 
     # --- Phase 1: Overview (single-pass, full paper text) ---
+    progress.start("overview", "Generating overview", client.cost_usd)
     overview = overview_agent.run(
         structure, calibration, literature_context, author_notes=author_notes
     )
+    progress.complete("overview", "Generated overview", client.cost_usd)
 
     # --- Phase 1b: Completeness assessment (runs after overview, before sections) ---
     completeness_agent = CompletenessAgent(client)
+    progress.start("completeness", "Checking completeness", client.cost_usd)
     try:
         completeness_issues = completeness_agent.run(
             structure,
@@ -374,15 +534,18 @@ def review_paper(
         overview = merge_overview(overview, completeness_issues, max_total=12)
     except Exception:
         logger.warning("Completeness agent failed, skipping", exc_info=True)
+    progress.complete("completeness", "Checked completeness", client.cost_usd)
 
     # --- Phase 2: Section agents (parallel, with verification for proof sections) ---
     verify_agent = ProofVerifyAgent(client)
 
+    if non_ref_sections:
+        progress.start("sections", "Reviewing sections", client.cost_usd)
     with ThreadPoolExecutor(max_workers=10) as executor:
-        section_futures = []
+        section_futures: dict = {}
         # Only pass literature context to sections that benefit from it
         _LIT_RELEVANT = {SectionType.INTRODUCTION, SectionType.RELATED_WORK}
-        for section in non_ref_sections:
+        for i, section in enumerate(non_ref_sections, start=1):
             focus = _detect_section_focus(section)
             sec_lit = (
                 literature_context
@@ -390,7 +553,7 @@ def review_paper(
                 else ""
             )
             sec_abstract = structure.abstract
-            section_futures.append(
+            section_futures[
                 executor.submit(
                     _review_section,
                     section_agent,
@@ -407,36 +570,40 @@ def review_paper(
                     document_form=structure.document_form,
                     author_notes=author_notes,
                 )
-            )
+            ] = (i, section.title)
 
         section_comments: list[DetailedComment] = []
-        for i, future in enumerate(section_futures):
+        for future in as_completed(section_futures):
+            section_index, sec_title = section_futures[future]
+            stage_label = f"Reviewed section {section_index}/{len(non_ref_sections)}: {sec_title}"
             try:
-                comments = future.result(timeout=900)
+                comments = future.result()
                 section_comments.extend(comments)
             except Exception:
-                sec_title = non_ref_sections[i].title if i < len(non_ref_sections) else "?"
                 logger.warning("Section agent failed for '%s', skipping", sec_title, exc_info=True)
+                stage_label = (
+                    f"Skipped section {section_index}/{len(non_ref_sections)}: {sec_title}"
+                )
+            progress.complete(f"section_{section_index}", stage_label, client.cost_usd)
 
     if not section_comments:
         logger.error("All section agents failed — review will have no detailed comments")
 
     # --- Phase 2b: Cross-section synthesis (results ↔ discussion) ---
-    _RESULTS_TYPES = {SectionType.METHODOLOGY, SectionType.RESULTS, SectionType.OTHER}
-    _DISCUSSION_TYPES = {SectionType.DISCUSSION, SectionType.CONCLUSION}
-
     results_sections = [
         s for s in structure.sections if s.section_type in _RESULTS_TYPES and s.math_content
     ]
     discussion_sections = [s for s in structure.sections if s.section_type in _DISCUSSION_TYPES]
 
     if results_sections and discussion_sections:
+        progress.start("cross_section", "Running cross-section synthesis", client.cost_usd)
         cross_section_agent = CrossSectionAgent(client)
         main_results = results_sections[0]
-        cross_section_futures = []
+        selected_discussion_sections = discussion_sections[:3]
         with ThreadPoolExecutor(max_workers=3) as executor:
-            for disc_sec in discussion_sections[:3]:
-                cross_section_futures.append(
+            future_to_discussion = {}
+            for i, disc_sec in enumerate(selected_discussion_sections, start=1):
+                future_to_discussion[
                     executor.submit(
                         cross_section_agent.run,
                         structure.title,
@@ -446,10 +613,12 @@ def review_paper(
                         document_form=structure.document_form,
                         author_notes=author_notes,
                     )
-                )
-            for future in cross_section_futures:
+                ] = (i, disc_sec)
+            for future in as_completed(future_to_discussion):
+                i, disc_sec = future_to_discussion[future]
+                stage_label = f"Cross-checked results vs {disc_sec.title}"
                 try:
-                    cross_comments = future.result(timeout=900)
+                    cross_comments = future.result()
                     cross_comments = _verify_with_fallback(
                         cross_comments,
                         paper_text.full_markdown,
@@ -459,9 +628,12 @@ def review_paper(
                     section_comments.extend(cross_comments)
                 except Exception:
                     logger.warning("Cross-section synthesis failed, skipping", exc_info=True)
+                    stage_label = f"Skipped cross-check vs {disc_sec.title}"
+                progress.complete(f"cross_section_{i}", stage_label, client.cost_usd)
 
     # --- Phase 3: Editorial filter (single pass — dedup + contradiction + quality) ---
     # The editorial agent receives full paper text for quote/absence verification.
+    progress.start("editorial", "Running editorial filter", client.cost_usd)
     filtered_comments = run_editorial_pass(
         client,
         paper_text.full_markdown,
@@ -473,13 +645,16 @@ def review_paper(
         document_form=structure.document_form,
         author_notes=author_notes,
     )
+    progress.complete("editorial", "Completed editorial filter", client.cost_usd)
 
     # Programmatic quote verification against full paper text
+    progress.start("quote_verification", "Verifying quotes", client.cost_usd)
     final_comments = _verify_with_repair_fallback(
         filtered_comments,
         paper_text.full_markdown,
         repair_agent=quote_repair_agent,
     )
+    progress.complete("quote_verification", "Verified quotes", client.cost_usd)
 
     # Ensure sequential numbering 1..N
     final_comments = _renumber_comments(final_comments)
@@ -493,5 +668,7 @@ def review_paper(
         detailed_comments=final_comments,
     )
 
+    progress.start("synthesis", "Rendering final markdown", client.cost_usd)
     markdown = render_review(review)
+    progress.complete("synthesis", "Rendered final markdown", client.cost_usd)
     return review, markdown, paper_text

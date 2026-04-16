@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import os
 import sys
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 from rich.status import Status
 
 from coarse import __version__
@@ -24,6 +35,7 @@ from coarse.config import (
 from coarse.extraction import SUPPORTED_EXTENSIONS
 from coarse.models import CHEAP_MODELS, QUALITY_MODEL
 from coarse.pipeline import review_paper
+from coarse.progress import PipelineProgress
 
 app = typer.Typer(
     name="coarse",
@@ -83,6 +95,66 @@ def _run_setup(config: CoarseConfig) -> CoarseConfig:
     save_config(config)
     console.print("\n[green]Configuration saved to ~/.coarse/config.toml[/green]\n")
     return config
+
+
+def _supports_pipeline_progress() -> bool:
+    """Return True when the current terminal can render a live progress bar."""
+    return console.is_terminal
+
+
+class _PipelineProgressDisplay:
+    """Render live pipeline progress, ETA, and cumulative actual spend."""
+
+    def __init__(self, console: Console) -> None:
+        self._progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            TextColumn("spent {task.fields[spent]}"),
+            console=console,
+            transient=False,
+        )
+        self._task_id: int | None = None
+        self._started = False
+
+    def __enter__(self) -> "_PipelineProgressDisplay":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        if not self._started:
+            return False
+        return self._progress.__exit__(exc_type, exc, tb)
+
+    def _ensure_started(self) -> None:
+        if self._started:
+            return
+        self._progress.__enter__()
+        self._started = True
+
+    def callback(self, update: PipelineProgress) -> None:
+        self._ensure_started()
+        spent = f"${update.actual_cost_usd:.4f}"
+        if self._task_id is None:
+            self._task_id = self._progress.add_task(
+                update.stage_label,
+                total=max(1, update.total_stages),
+                completed=update.completed_stages,
+                spent=spent,
+            )
+            return
+
+        self._progress.update(
+            self._task_id,
+            description=update.stage_label,
+            total=max(1, update.total_stages),
+            completed=update.completed_stages,
+            spent=spent,
+            refresh=True,
+        )
 
 
 @app.command()
@@ -199,24 +271,17 @@ def review(
 
     console.print(f"[bold]Reviewing[/bold] {pdf.name} with {resolved_model}")
 
-    # Keep the interactive cost prompt unobscured. The prompt currently lives
-    # inside review_paper(), so wrapping the whole call in a live Rich status
-    # makes the CLI look like it continued past confirmation when it is still
-    # waiting on stdin. The non-interactive `--yes` path keeps the spinner.
-    if yes:
-        with Status("Running review pipeline...", console=console):
-            review_obj, markdown, paper_text = review_paper(
-                pdf_path=pdf,
-                model=resolved_model,
-                skip_cost_gate=yes,
-                config=config,
-            )
-    else:
+    progress_context = (
+        _PipelineProgressDisplay(console) if _supports_pipeline_progress() else nullcontext(None)
+    )
+    with progress_context as progress_display:
+        progress_callback = None if progress_display is None else progress_display.callback
         review_obj, markdown, paper_text = review_paper(
             pdf_path=pdf,
             model=resolved_model,
             skip_cost_gate=yes,
             config=config,
+            progress_callback=progress_callback,
         )
 
     out_path.write_text(markdown, encoding="utf-8")
