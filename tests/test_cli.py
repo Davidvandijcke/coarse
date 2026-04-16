@@ -39,7 +39,13 @@ def _make_review() -> Review:
     )
 
 
-def _fake_review_paper(pdf_path, model=None, skip_cost_gate=False, config=None):
+def _fake_review_paper(
+    pdf_path,
+    model=None,
+    skip_cost_gate=False,
+    config=None,
+    progress_callback=None,
+):
     from coarse.types import PaperText
 
     return _make_review(), "# Test Paper\n", PaperText(full_markdown="", token_estimate=0)
@@ -99,7 +105,7 @@ def test_review_command_custom_output_path(tmp_path):
     pdf.write_bytes(b"%PDF-1.4 fake")
     out = tmp_path / "out.md"
 
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None):
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, progress_callback=None):
         from coarse.types import PaperText
 
         return _make_review(), "# Custom Output\n", PaperText(full_markdown="", token_estimate=0)
@@ -128,7 +134,7 @@ def test_review_yes_flag_skips_cost_gate(tmp_path):
 
     captured: dict = {}
 
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None):
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, progress_callback=None):
         captured["skip_cost_gate"] = skip_cost_gate
         from coarse.types import PaperText
 
@@ -271,46 +277,41 @@ def test_review_nonexistent_pdf():
     assert result.exit_code != 0
 
 
-def test_review_interactive_path_does_not_enter_status(tmp_path):
-    """Interactive runs leave the cost prompt unobscured by Rich Status."""
+def test_review_path_skips_pipeline_progress_when_terminal_support_missing(tmp_path):
+    """When live rendering is unavailable, the CLI should not pass a progress callback."""
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
-    entered: list[bool] = []
+    captured: dict = {}
 
-    class _FakeStatus:
-        def __init__(self, *args, **kwargs):
-            pass
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, progress_callback=None):
+        captured["has_progress_callback"] = progress_callback is not None
+        from coarse.types import PaperText
 
-        def __enter__(self):
-            entered.append(True)
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
+        return _make_review(), "# Test\n", PaperText(full_markdown="", token_estimate=0)
 
     with (
-        patch("coarse.cli.Status", _FakeStatus),
         patch("coarse.cli.resolve_api_key", return_value="sk-test"),
         patch("coarse.cli.load_config", return_value=CoarseConfig()),
-        patch("coarse.cli.review_paper", _fake_review_paper),
+        patch("coarse.cli.review_paper", side_effect=fake),
+        patch("coarse.cli._supports_pipeline_progress", return_value=False),
     ):
         result = runner.invoke(app, ["review", str(pdf)])
 
     assert result.exit_code == 0, result.output
-    assert entered == []
+    assert captured["has_progress_callback"] is False
 
 
-def test_review_yes_path_enters_status(tmp_path):
-    """Non-interactive --yes runs keep the Rich status spinner."""
+def test_review_yes_path_enters_pipeline_progress_display(tmp_path):
+    """TTY runs should enter the live progress display and pass its callback."""
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
     entered: list[bool] = []
 
-    class _FakeStatus:
-        def __init__(self, *args, **kwargs):
-            pass
+    class _FakeDisplay:
+        def __init__(self, console):
+            self.console = console
 
         def __enter__(self):
             entered.append(True)
@@ -319,16 +320,29 @@ def test_review_yes_path_enters_status(tmp_path):
         def __exit__(self, exc_type, exc, tb):
             return False
 
+        def callback(self, update):
+            return None
+
+    captured: dict = {}
+
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, progress_callback=None):
+        captured["has_progress_callback"] = callable(progress_callback)
+        from coarse.types import PaperText
+
+        return _make_review(), "# Test\n", PaperText(full_markdown="", token_estimate=0)
+
     with (
-        patch("coarse.cli.Status", _FakeStatus),
         patch("coarse.cli.resolve_api_key", return_value="sk-test"),
         patch("coarse.cli.load_config", return_value=CoarseConfig()),
-        patch("coarse.cli.review_paper", _fake_review_paper),
+        patch("coarse.cli.review_paper", side_effect=fake),
+        patch("coarse.cli._supports_pipeline_progress", return_value=True),
+        patch("coarse.cli._PipelineProgressDisplay", _FakeDisplay),
     ):
         result = runner.invoke(app, ["review", str(pdf), "--yes"])
 
     assert result.exit_code == 0, result.output
     assert entered == [True]
+    assert captured["has_progress_callback"] is True
 
 
 # ---------------------------------------------------------------------------
