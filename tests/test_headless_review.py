@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from coarse.headless_review import _find_openrouter_key, _make_client_factory
+from coarse.headless_review import _find_openrouter_key, _make_client_factory, main
+from coarse.models import HEADLESS_DEFAULT_MODELS, model_filename_slug
 
 
 def test_find_openrouter_key_reads_api_keys_config(tmp_path, monkeypatch) -> None:
@@ -50,3 +52,26 @@ def test_client_factory_accepts_pipeline_style_kwargs() -> None:
             factory("overview", "ignored-positional", extra=1)
 
             assert fake_client.call_count == 3
+
+
+def test_main_writes_review_filename_with_default_model_slug(tmp_path, capsys) -> None:
+    paper = tmp_path / "paper.pdf"
+    paper.write_bytes(b"%PDF-1.4 fake")
+    out_dir = tmp_path / "out"
+
+    review = SimpleNamespace(detailed_comments=[])
+
+    expected = out_dir / f"paper_review_{model_filename_slug(HEADLESS_DEFAULT_MODELS['codex'])}.md"
+
+    with (
+        patch("coarse.headless_review._require_openrouter_key"),
+        patch(
+            "coarse.headless_review.run_headless_review",
+            return_value=(review, "# Review\n", object()),
+        ),
+    ):
+        rc = main(["--host", "codex", str(paper), ".", str(out_dir)])
+
+    assert rc == 0
+    assert expected.read_text(encoding="utf-8") == "# Review\n"
+    assert str(expected) in capsys.readouterr().out

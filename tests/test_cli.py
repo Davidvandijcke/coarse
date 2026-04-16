@@ -50,8 +50,9 @@ def _fake_review_paper(pdf_path, model=None, skip_cost_gate=False, config=None):
 # ---------------------------------------------------------------------------
 
 
-def test_review_command_invokes_pipeline(tmp_path):
+def test_review_command_invokes_pipeline(tmp_path, monkeypatch):
     """review command calls pipeline.review_paper and writes output file."""
+    monkeypatch.chdir(tmp_path)
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
@@ -71,7 +72,7 @@ def test_review_command_invokes_pipeline(tmp_path):
 
 
 def test_review_command_default_output_path(tmp_path, monkeypatch):
-    """Output file defaults to <pdf_stem>_review.md in cwd."""
+    """Output file defaults to <pdf_stem>_review_<model>.md in cwd."""
     monkeypatch.chdir(tmp_path)
     pdf = tmp_path / "myresearch.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
@@ -84,7 +85,7 @@ def test_review_command_default_output_path(tmp_path, monkeypatch):
         result = runner.invoke(app, ["review", str(pdf), "--yes"])
 
     assert result.exit_code == 0, result.output
-    expected = tmp_path / "myresearch_review.md"
+    expected = tmp_path / "myresearch_review_qwen_qwen3.5-plus-02-15.md"
     assert expected.exists()
 
 
@@ -116,13 +117,35 @@ def test_review_command_custom_output_path(tmp_path):
     assert out.read_text() == "# Custom Output\n"
 
 
+def test_review_command_default_output_path_uses_explicit_model_slug(tmp_path, monkeypatch):
+    """Explicit --model should flow into the default output filename."""
+    monkeypatch.chdir(tmp_path)
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+
+    with (
+        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.review_paper", _fake_review_paper),
+    ):
+        result = runner.invoke(
+            app,
+            ["review", str(pdf), "--model", "anthropic/claude-sonnet-4-6", "--yes"],
+        )
+
+    assert result.exit_code == 0, result.output
+    expected = tmp_path / "paper_review_anthropic_claude-sonnet-4-6.md"
+    assert expected.exists()
+
+
 # ---------------------------------------------------------------------------
 # test_review_yes_flag_skips_cost_gate
 # ---------------------------------------------------------------------------
 
 
-def test_review_yes_flag_skips_cost_gate(tmp_path):
+def test_review_yes_flag_skips_cost_gate(tmp_path, monkeypatch):
     """--yes passes skip_cost_gate=True to review_paper."""
+    monkeypatch.chdir(tmp_path)
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
@@ -271,8 +294,9 @@ def test_review_nonexistent_pdf():
     assert result.exit_code != 0
 
 
-def test_review_interactive_path_does_not_enter_status(tmp_path):
+def test_review_interactive_path_does_not_enter_status(tmp_path, monkeypatch):
     """Interactive runs leave the cost prompt unobscured by Rich Status."""
+    monkeypatch.chdir(tmp_path)
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
@@ -301,8 +325,9 @@ def test_review_interactive_path_does_not_enter_status(tmp_path):
     assert entered == []
 
 
-def test_review_yes_path_enters_status(tmp_path):
+def test_review_yes_path_enters_status(tmp_path, monkeypatch):
     """Non-interactive --yes runs keep the Rich status spinner."""
+    monkeypatch.chdir(tmp_path)
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
@@ -336,10 +361,11 @@ def test_review_yes_path_enters_status(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_review_eval_flag_saves_quality_report(tmp_path):
+def test_review_eval_flag_saves_quality_report(tmp_path, monkeypatch):
     """--eval runs quality evaluation and writes a quality report file."""
     from coarse.quality import DimensionScore, QualityReport
 
+    monkeypatch.chdir(tmp_path)
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
     ref = tmp_path / "reference.md"

@@ -40,7 +40,7 @@ from coarse.cli_attach import (
     write_pidfile,
 )
 from coarse.extraction import SUPPORTED_EXTENSIONS
-from coarse.models import HEADLESS_DEFAULT_MODELS
+from coarse.models import HEADLESS_DEFAULT_MODELS, model_filename_slug
 
 _DETACHED_ENV = "COARSE_REVIEW_DETACHED"
 # Informational only: must match FINALIZE_TOKEN_TTL_MINUTES in
@@ -722,7 +722,7 @@ def main(argv: list[str] | None = None) -> int:
         # `cp1252` encoding crashes on those. `PYTHONUTF8=1` in the
         # detached child also covers this, but the explicit encoding
         # makes the non-detached path safe too.
-        review_md_path = out_dir / f"{paper_path.stem}_review.md"
+        review_md_path = out_dir / f"{paper_path.stem}_review_{model_filename_slug(model)}.md"
         review_md_path.write_text(md_text, encoding="utf-8")
         logger.info("Wrote %d-char review to %s", len(md_text), review_md_path)
 

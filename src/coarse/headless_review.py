@@ -8,7 +8,7 @@ Usage:
 - ``<paper_path>``: PDF, MD, TeX, DOCX, HTML, or EPUB.
 - ``<pre_extracted_md>``: optional pre-extracted markdown — skips OCR,
   saves ~$0.05-0.15 and ~30 seconds.
-- ``<output_dir>``: where to write ``<stem>_review.md``. Default:
+- ``<output_dir>``: where to write ``<stem>_review_<model>.md``. Default:
   ``./coarse-output/``.
 
 Environment:
@@ -29,7 +29,7 @@ import os
 import sys
 from pathlib import Path
 
-from coarse.models import HEADLESS_DEFAULT_MODELS
+from coarse.models import HEADLESS_DEFAULT_MODELS, model_filename_slug
 
 
 def _find_openrouter_key() -> str | None:
@@ -306,7 +306,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 4
 
-    out_path = out_dir / f"{paper_path.stem}_review.md"
+    resolved_model = args.model or HEADLESS_DEFAULT_MODELS[args.host]
+    out_path = out_dir / f"{paper_path.stem}_review_{model_filename_slug(resolved_model)}.md"
     out_path.write_text(markdown, encoding="utf-8")
     logger.info("Wrote %d-char review to %s", len(markdown), out_path)
 

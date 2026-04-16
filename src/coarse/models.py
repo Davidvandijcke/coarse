@@ -7,6 +7,8 @@ this module. Verify IDs against OpenRouter before changing:
 Last verified: 2026-03-04
 """
 
+import re
+
 # Primary review model (routed via OpenRouter for non-direct providers)
 DEFAULT_MODEL = "qwen/qwen3.5-plus-02-15"
 
@@ -140,6 +142,8 @@ REASONING_MAX_TOKENS_MULTIPLIER: int = 8
 # reasoning_effort explicitly in kwargs.
 REASONING_EFFORT_DEFAULT: str = "medium"
 
+_MODEL_FILENAME_SLUG_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
 
 def is_reasoning_model(model_id: str) -> bool:
     """Return True if the model uses hidden reasoning tokens that count
@@ -154,3 +158,10 @@ def is_reasoning_model(model_id: str) -> bool:
         if lower.startswith(prefix):
             return True
     return any(substring in lower for substring in REASONING_MODEL_SUBSTRINGS)
+
+
+def model_filename_slug(model_id: str) -> str:
+    """Return a filesystem-friendly slug for a model identifier."""
+    slug = _MODEL_FILENAME_SLUG_RE.sub("_", model_id.strip())
+    slug = slug.strip("._")
+    return slug or "model"
