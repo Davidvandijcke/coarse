@@ -849,7 +849,7 @@ export default function Home() {
     // awaiting an async clipboard write can consume user activation and
     // cause codex:// / claude:// launches to be blocked.
     const fullPrompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile });
-    const clipboardWrite = navigator.clipboard.writeText(fullPrompt).catch((err) => {
+    navigator.clipboard.writeText(fullPrompt).catch((err) => {
       console.error("clipboard write failed", err);
     });
 
@@ -885,7 +885,6 @@ export default function Home() {
         );
       }
     }, 2500);
-    await clipboardWrite;
   }
 
   function resetHandoff() {
