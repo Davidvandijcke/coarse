@@ -844,14 +844,14 @@ export default function Home() {
       paperId: handoffState.paperId,
     });
 
-    // Copy the full prompt to clipboard (fallback for hosts that can't
-    // receive prompts via URL scheme — currently Claude Code and Gemini).
+    // Kick off clipboard copy first, but don't await it before launching
+    // the custom URL scheme. On some browsers (notably on Windows),
+    // awaiting an async clipboard write can consume user activation and
+    // cause codex:// / claude:// launches to be blocked.
     const fullPrompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile });
-    try {
-      await navigator.clipboard.writeText(fullPrompt);
-    } catch (err) {
+    const clipboardWrite = navigator.clipboard.writeText(fullPrompt).catch((err) => {
       console.error("clipboard write failed", err);
-    }
+    });
 
     // Custom URL schemes (claude://, codex://...) fail silently when the
     // desktop handler isn't registered. The browser gives no feedback and
@@ -885,6 +885,7 @@ export default function Home() {
         );
       }
     }, 2500);
+    await clipboardWrite;
   }
 
   function resetHandoff() {
