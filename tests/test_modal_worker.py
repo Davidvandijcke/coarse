@@ -634,6 +634,129 @@ def test_resolve_user_api_key_strips_whitespace_from_review_secrets(modal_worker
 
 
 # ---------------------------------------------------------------------------
+# _download_pdf_with_retry — Supabase Storage download with retry
+# ---------------------------------------------------------------------------
+
+
+class _FakeStorageDownload:
+    """Callable-styled storage stub: each entry in ``responses`` is either a
+    bytes payload to return or a BaseException instance to raise."""
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = 0
+
+    def from_(self, _bucket):
+        return self
+
+    def download(self, _path):
+        self.calls += 1
+        if not self._responses:
+            raise RuntimeError("_FakeStorageDownload exhausted responses")
+        nxt = self._responses.pop(0)
+        # `isinstance(nxt, BaseException)` catches both Exception and the
+        # BaseException-but-not-Exception types (KeyboardInterrupt,
+        # SystemExit, GeneratorExit) which is important for the
+        # propagation test.
+        if isinstance(nxt, BaseException):
+            raise nxt
+        return nxt
+
+
+class _FakeDBWithStorage:
+    def __init__(self, storage):
+        self.storage = storage
+
+
+def test_download_pdf_with_retry_returns_on_first_success(modal_worker, monkeypatch) -> None:
+    """Happy path: first call succeeds, no sleeping, no retry logs."""
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+    storage = _FakeStorageDownload([b"pdf-bytes"])
+    db = _FakeDBWithStorage(storage)
+
+    out = modal_worker._download_pdf_with_retry(db, "papers/test.pdf", "job-1")
+    assert out == b"pdf-bytes"
+    assert storage.calls == 1
+
+
+def test_download_pdf_with_retry_recovers_from_transient_read_timeout(
+    modal_worker, monkeypatch
+) -> None:
+    """A single transient httpx ReadTimeout should be absorbed silently."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+
+    import httpx
+
+    storage = _FakeStorageDownload(
+        [
+            httpx.ReadTimeout("simulated transient timeout"),
+            b"pdf-bytes-2",
+        ]
+    )
+    db = _FakeDBWithStorage(storage)
+
+    out = modal_worker._download_pdf_with_retry(db, "papers/test.pdf", "job-2")
+    assert out == b"pdf-bytes-2"
+    assert storage.calls == 2
+    # One 1-second backoff between attempt 1 and attempt 2.
+    assert sleeps == [1]
+
+
+def test_download_pdf_with_retry_gives_up_after_max_attempts(modal_worker, monkeypatch) -> None:
+    """Four back-to-back failures should raise RuntimeError with chained cause
+    and have slept 1+2+4 seconds total between attempts."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+
+    import httpx
+
+    last_exc = httpx.ReadTimeout("final attempt")
+    storage = _FakeStorageDownload(
+        [
+            httpx.ReadTimeout("attempt 1"),
+            httpx.ReadTimeout("attempt 2"),
+            httpx.ReadTimeout("attempt 3"),
+            last_exc,
+        ]
+    )
+    db = _FakeDBWithStorage(storage)
+
+    with pytest.raises(RuntimeError, match="failed after 4 attempts"):
+        modal_worker._download_pdf_with_retry(db, "papers/test.pdf", "job-3")
+    assert storage.calls == 4
+    # Sleep between attempts 1->2, 2->3, 3->4 (no sleep after final failure).
+    assert sleeps == [1, 2, 4]
+
+
+def test_download_pdf_with_retry_rejects_empty_bytes(modal_worker, monkeypatch) -> None:
+    """Supabase returning empty bytes is treated as a retryable failure — the
+    old code raised `ValueError` without retry on this, so behaviour is now
+    explicit: empty → retry → eventual RuntimeError if it keeps happening."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+
+    storage = _FakeStorageDownload([b"", b"", b"", b""])  # 4 empty downloads
+    db = _FakeDBWithStorage(storage)
+
+    with pytest.raises(RuntimeError, match="failed after 4 attempts"):
+        modal_worker._download_pdf_with_retry(db, "papers/test.pdf", "job-4")
+    assert storage.calls == 4
+
+
+def test_download_pdf_with_retry_propagates_keyboardinterrupt(modal_worker, monkeypatch) -> None:
+    """BaseException-but-not-Exception must propagate — KeyboardInterrupt /
+    SystemExit / GeneratorExit should not be swallowed by the retry loop."""
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+    storage = _FakeStorageDownload([KeyboardInterrupt("user pressed ctrl-c")])
+    db = _FakeDBWithStorage(storage)
+
+    with pytest.raises(KeyboardInterrupt):
+        modal_worker._download_pdf_with_retry(db, "papers/test.pdf", "job-5")
+    assert storage.calls == 1  # no retry
+
+
+# ---------------------------------------------------------------------------
 # do_review — integration test for key installation into os.environ
 # ---------------------------------------------------------------------------
 
@@ -644,23 +767,17 @@ def test_do_review_installs_resolved_key_into_environ(modal_worker, monkeypatch)
     refactor that reorders the env-var install or drops it entirely.
 
     Stubs supabase.create_client so do_review can build a `db` object, then
-    captures the env var inside a fake `storage.download` call that raises to
-    short-circuit the rest of the pipeline before review_paper() runs."""
+    stubs _download_pdf_with_retry itself to capture the env var at the
+    earliest point after key resolution and raise to short-circuit the rest
+    of the pipeline before review_paper() runs. Stubbing the retry helper
+    (rather than the underlying storage.download call) avoids sitting
+    through 7s of exponential-backoff sleeps and keeps the test insulated
+    from the retry-contract details."""
     import os as _os
     import sys as _sys
 
     resolved = "sk-or-v1-fromferryintegrationtest12345"  # security: ignore
     captured: dict[str, str | None] = {}
-
-    class _FakeDownload:
-        def from_(self, _bucket):
-            return self
-
-        def download(self, _path):
-            # Capture env var state at the earliest point after key resolution,
-            # before the finally block restores the original key.
-            captured["env"] = _os.environ.get("OPENROUTER_API_KEY")
-            raise RuntimeError("short-circuit before review_paper")
 
     class _FakeReviewsTable:
         def update(self, _data):
@@ -673,9 +790,6 @@ def test_do_review_installs_resolved_key_into_environ(modal_worker, monkeypatch)
             return types.SimpleNamespace(data=[])
 
     class _FakeDB:
-        def __init__(self):
-            self.storage = _FakeDownload()
-
         def table(self, _name):
             return _FakeReviewsTable()
 
@@ -692,11 +806,21 @@ def test_do_review_installs_resolved_key_into_environ(modal_worker, monkeypatch)
     # review_secrets path — the unit tests above already cover that.
     monkeypatch.setattr(modal_worker, "_resolve_user_api_key", lambda _db, _req, _job: resolved)
 
+    # Stub the retry helper — captures env right after the key install, then
+    # short-circuits with a BaseException subclass (SystemExit) so the
+    # helper's `except Exception` never swallows us on a hypothetical
+    # retry-path regression.
+    def _fake_download(_db, _path, _job, **_kwargs):
+        captured["env"] = _os.environ.get("OPENROUTER_API_KEY")
+        raise SystemExit("short-circuit before review_paper")
+
+    monkeypatch.setattr(modal_worker, "_download_pdf_with_retry", _fake_download)
+
     monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-service-key")
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
-    with pytest.raises(RuntimeError, match="short-circuit before review_paper"):
+    with pytest.raises(SystemExit, match="short-circuit before review_paper"):
         modal_worker.do_review(
             {
                 "job_id": "integration-test-job",
@@ -720,14 +844,6 @@ def test_do_review_skips_environ_write_when_no_key_resolved(modal_worker, monkey
 
     captured: dict[str, str | None] = {}
 
-    class _FakeDownload:
-        def from_(self, _bucket):
-            return self
-
-        def download(self, _path):
-            captured["env"] = _os.environ.get("OPENROUTER_API_KEY", "<unset>")
-            raise RuntimeError("short-circuit before review_paper")
-
     class _FakeReviewsTable:
         def update(self, _data):
             return self
@@ -739,9 +855,6 @@ def test_do_review_skips_environ_write_when_no_key_resolved(modal_worker, monkey
             return types.SimpleNamespace(data=[])
 
     class _FakeDB:
-        def __init__(self):
-            self.storage = _FakeDownload()
-
         def table(self, _name):
             return _FakeReviewsTable()
 
@@ -751,11 +864,20 @@ def test_do_review_skips_environ_write_when_no_key_resolved(modal_worker, monkey
 
     monkeypatch.setattr(modal_worker, "_resolve_user_api_key", lambda _db, _req, _job: None)
 
+    # Stub the retry helper (see companion test for rationale). Use
+    # SystemExit so a future retry regression can't swallow us and hide
+    # the assertion.
+    def _fake_download(_db, _path, _job, **_kwargs):
+        captured["env"] = _os.environ.get("OPENROUTER_API_KEY", "<unset>")
+        raise SystemExit("short-circuit before review_paper")
+
+    monkeypatch.setattr(modal_worker, "_download_pdf_with_retry", _fake_download)
+
     monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-service-key")
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
-    with pytest.raises(RuntimeError, match="short-circuit before review_paper"):
+    with pytest.raises(SystemExit, match="short-circuit before review_paper"):
         modal_worker.do_review(
             {
                 "job_id": "no-key-test-job",
