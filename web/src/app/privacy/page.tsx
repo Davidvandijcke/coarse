@@ -130,7 +130,6 @@ export default function PrivacyPage() {
               <li>Your email address (to notify you when the review is done)</li>
               <li>Your uploaded paper (processed and then deleted)</li>
               <li>The generated review (stored for 90 days)</li>
-              <li>Standard web analytics via Google Analytics (GA4)</li>
             </ul>
           </div>
 
@@ -214,9 +213,10 @@ export default function PrivacyPage() {
           <div style={sectionStyle}>
             <h2 style={h2Style}>Analytics</h2>
             <p style={pStyle}>
-              We use Google Analytics 4 to understand how people use the site
-              (page views, traffic sources). No personally identifiable
-              information is sent to Google Analytics.
+              We do not run third-party analytics, tracking pixels, or
+              advertising scripts on this site. No cookies beyond those
+              strictly necessary to run the review flow (bot gate, session,
+              hosting edge) are set, so we do not ask for a cookie consent.
             </p>
           </div>
 
@@ -226,7 +226,7 @@ export default function PrivacyPage() {
               <li><strong style={{ color: "var(--chalk-bright)" }}>Supabase</strong> &mdash; database and file storage (EU/US)</li>
               <li><strong style={{ color: "var(--chalk-bright)" }}>OpenRouter</strong> &mdash; LLM API (your own key, your own account; routed with <code style={{ fontFamily: "var(--font-mono, monospace)" }}>data_collection: deny</code>)</li>
               <li><strong style={{ color: "var(--chalk-bright)" }}>Vercel</strong> &mdash; website hosting</li>
-              <li><strong style={{ color: "var(--chalk-bright)" }}>Google Analytics</strong> &mdash; web analytics</li>
+              <li><strong style={{ color: "var(--chalk-bright)" }}>Cloudflare Turnstile</strong> &mdash; bot gate on the submit form (strictly necessary)</li>
             </ul>
           </div>
 
