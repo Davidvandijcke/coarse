@@ -154,3 +154,42 @@ def is_reasoning_model(model_id: str) -> bool:
         if lower.startswith(prefix):
             return True
     return any(substring in lower for substring in REASONING_MODEL_SUBSTRINGS)
+
+
+# ---------------------------------------------------------------------------
+# Temperature-support detection
+# ---------------------------------------------------------------------------
+#
+# Some models' providers reject the ``temperature`` parameter outright and
+# return HTTP 400. Anthropic's Claude Opus 4.7 is the first such model in
+# this codebase: it's a reasoning-first release that dropped the
+# temperature knob, and both the direct Anthropic API and OpenRouter's
+# Anthropic route 400 on any request that carries one (issue #162).
+#
+# ``litellm.drop_params=True`` can't catch this because litellm's
+# per-provider "supported_openai_params" table is indexed on provider
+# family (Anthropic), not on specific model IDs — the Anthropic family
+# still lists temperature as supported, so the drop gate never fires for
+# 4.7. Verified against OpenRouter /api/v1/models on 2026-04-19:
+#
+#     curl -s https://openrouter.ai/api/v1/models \
+#       | jq '.data[] | select(.id=="anthropic/claude-opus-4.7") | .supported_parameters'
+#
+# returns ['include_reasoning', 'max_tokens', 'reasoning', 'response_format',
+# 'stop', 'structured_outputs', 'tool_choice', 'tools', 'verbosity'] — no
+# temperature. The matching 4.6 entry does list it.
+#
+# Keep this tuple tight — only add a model once a passed-temperature
+# request is confirmed to fail.
+TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = ("anthropic/claude-opus-4.7",)
+
+
+def supports_temperature(model_id: str) -> bool:
+    """Return False if the provider rejects the ``temperature`` parameter
+    for this model.
+
+    Strips an optional ``openrouter/`` prefix so direct-provider and
+    OpenRouter-routed variants of the same model resolve the same way.
+    """
+    lower = model_id.lower().removeprefix("openrouter/")
+    return not any(lower.startswith(prefix) for prefix in TEMPERATURE_UNSUPPORTED_PREFIXES)
