@@ -8,7 +8,6 @@ const scriptSrc = [
   "'self'",
   "'unsafe-inline'",
   isDev ? "'unsafe-eval'" : null,
-  "https://www.googletagmanager.com",
   "https://cdnjs.cloudflare.com",
   // Cloudflare Turnstile api.js. Without this, the CSP silently
   // blocks the widget from loading and every user hits the "please
@@ -29,7 +28,7 @@ const cspDirectives = [
   // blob: entry, so cost estimation silently errors on strict browsers.
   "worker-src 'self' blob:",
   "font-src 'self'",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://www.google-analytics.com https://analytics.google.com",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://openrouter.ai",
   // Turnstile renders its challenge UI inside an iframe served from
   // challenges.cloudflare.com; default-src 'self' would otherwise
   // block it, leaving a blank box in the form.
