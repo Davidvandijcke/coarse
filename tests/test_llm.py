@@ -514,6 +514,103 @@ def test_estimate_call_cost_reasoning_is_more_expensive_than_regular():
     assert reasoning_cost >= naive_cost * 1.2
 
 
+# ---------------------------------------------------------------------------
+# Temperature gating (issue #162 — anthropic/claude-opus-4.7 rejects it)
+# ---------------------------------------------------------------------------
+
+
+def _build_client(model_id: str, mock_instructor_client) -> LLMClient:
+    """Same shape as ``_reasoning_client``; kept separate for readability
+    in the temperature-gating tests where the model is not reasoning."""
+    expected = _SimpleModel(value="ok")
+    mock_completion = _make_mock_completion()
+    mock_instructor_client.chat.completions.create_with_completion.return_value = (
+        expected,
+        mock_completion,
+    )
+    return LLMClient(model=model_id, config=CoarseConfig())
+
+
+def test_complete_omits_temperature_for_opus_4_7(mock_instructor_client):
+    """Opus 4.7 rejects the temperature parameter — must be omitted entirely,
+    not sent as None. Anthropic's /v1/messages validates 'null' as a bad
+    request, so send-None is not a safe shortcut."""
+    client = _build_client("anthropic/claude-opus-4.7", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=256,
+            temperature=0.5,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert "temperature" not in call.kwargs
+
+
+def test_complete_omits_temperature_for_openrouter_opus_4_7(mock_instructor_client):
+    """Same behavior through the OpenRouter route — 4.7 is rejected there too."""
+    client = _build_client("openrouter/anthropic/claude-opus-4.7", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=256,
+            temperature=0.5,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert "temperature" not in call.kwargs
+
+
+def test_complete_forwards_temperature_for_opus_4_6(mock_instructor_client):
+    """Opus 4.6 still accepts temperature — make sure we don't over-strip."""
+    client = _build_client("anthropic/claude-opus-4.6", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=256,
+            temperature=0.5,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert call.kwargs["temperature"] == 0.5
+
+
+def test_complete_text_omits_temperature_for_opus_4_7():
+    """Unstructured path (complete_text) must also omit temperature for 4.7."""
+    captured: dict[str, object] = {}
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        msg = MagicMock()
+        msg.content = "hello"
+        msg.reasoning_content = None
+        choice = MagicMock()
+        choice.message = msg
+        resp = MagicMock()
+        resp.choices = [choice]
+        resp.usage.prompt_tokens = 10
+        resp.usage.completion_tokens = 5
+        return resp
+
+    with (
+        patch("coarse.llm.litellm.completion", side_effect=fake_completion),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        client = LLMClient(model="anthropic/claude-opus-4.7", config=CoarseConfig())
+        client.complete_text(
+            messages=[{"role": "user", "content": "x"}],
+            temperature=0.7,
+        )
+
+    assert "temperature" not in captured
+
+
 def _sanitizer_response_with(content: str):
     """Build a minimal litellm-style response object for _sanitized_completion."""
     msg = MagicMock()

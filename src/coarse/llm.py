@@ -31,6 +31,7 @@ from coarse.models import (
     REASONING_EFFORT_DEFAULT,
     REASONING_MAX_TOKENS_MULTIPLIER,
     is_reasoning_model,
+    supports_temperature,
 )
 
 logger = logging.getLogger(__name__)
@@ -414,7 +415,6 @@ class LLMClient:
         messages: list[dict],
         response_model: type[BaseModel],
         max_tokens: int,
-        temperature: float,
         timeout: int,
         call_kwargs: dict,
     ) -> tuple[BaseModel, object]:
@@ -423,6 +423,12 @@ class LLMClient:
         Centralizes the malformed-JSON salvage path so both the primary JSON-mode
         call and the MD_JSON fallback recover partial `OverviewFeedback` the same
         way instead of only the first branch doing so.
+
+        ``temperature`` is carried on ``call_kwargs`` (set by ``complete()``
+        only when the target model supports it) rather than as an explicit
+        parameter here — Anthropic's Claude Opus 4.7 rejects the parameter
+        outright and the wrapper must be able to omit it entirely, not
+        just send ``None``.
         """
         try:
             return client.chat.completions.create_with_completion(
@@ -430,7 +436,6 @@ class LLMClient:
                 messages=messages,
                 response_model=response_model,
                 max_tokens=max_tokens,
-                temperature=temperature,
                 timeout=timeout,
                 max_retries=3,
                 **call_kwargs,
@@ -498,6 +503,12 @@ class LLMClient:
         # request boundary never has to reach for os.environ mid-flight.
         if self._api_key and "api_key" not in call_kwargs:
             call_kwargs["api_key"] = self._api_key
+        # Temperature is omitted entirely (not sent as None) for models
+        # whose providers reject it outright — e.g. Anthropic's Claude
+        # Opus 4.7, which 400s on temperature. See
+        # ``supports_temperature`` in ``coarse.models`` for the allowlist.
+        if supports_temperature(self._model):
+            call_kwargs.setdefault("temperature", temperature)
 
         try:
             response, completion = self._complete_with_client(
@@ -505,7 +516,6 @@ class LLMClient:
                 messages,
                 response_model,
                 clamped,
-                temperature,
                 timeout,
                 call_kwargs,
             )
@@ -524,7 +534,6 @@ class LLMClient:
                     messages,
                     response_model,
                     clamped,
-                    temperature,
                     timeout,
                     call_kwargs,
                 )
@@ -566,11 +575,14 @@ class LLMClient:
         # landing "Missing Authentication header" 401s in prod).
         if self._api_key and "api_key" not in call_kwargs:
             call_kwargs["api_key"] = self._api_key
+        # Omit temperature entirely for providers that reject it (see
+        # ``supports_temperature`` in ``coarse.models``).
+        if supports_temperature(self._model):
+            call_kwargs.setdefault("temperature", temperature)
         response = _sanitized_completion(
             model=self._model,
             messages=messages,
             max_tokens=clamped,
-            temperature=temperature,
             timeout=timeout,
             **call_kwargs,
         )
