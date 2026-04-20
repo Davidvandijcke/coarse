@@ -83,7 +83,7 @@ export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 // The variable is still called `DEFAULT_MCP_UVX_FROM` for backward
 // compatibility with the `test_release_blocker_pin_is_coupled_to_unreleased_version`
 // drift test that enforces the pin matches `__version__`.
-const DEFAULT_MCP_UVX_FROM = "coarse-ink==1.4.0";
+const DEFAULT_MCP_UVX_FROM = "coarse-ink==1.4.1";
 
 export function resolvePinnedUvFrom(): string {
   const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();

@@ -23,6 +23,39 @@ def test_classify_api_error_maps_spend_limit_message() -> None:
     assert "spend limit" in (_classify_api_error(exc) or "")
 
 
+def test_classify_api_error_detects_management_key_user_not_found() -> None:
+    """OpenRouter returns 401 + body 'User not found' for provisioning keys.
+
+    Generic 'Invalid API key' copy doesn't help the user — they need to
+    know it's the wrong *kind* of key. Reproduces the friend's
+    2026-04-20 submission where a pasted management key hit the inference
+    endpoint.
+    """
+    resp = MagicMock()
+    resp.status_code = 401
+    resp.json.return_value = {"error": {"message": "User not found.", "code": 401}}
+    exc = RuntimeError(
+        "401 Client Error: Unauthorized for url: https://openrouter.ai/api/v1/chat/completions"
+    )
+    exc.response = resp  # type: ignore[attr-defined]
+
+    msg = _classify_api_error(exc) or ""
+    assert "provisioning" in msg.lower() or "management" in msg.lower()
+    assert "openrouter.ai/settings/keys" in msg
+
+
+def test_classify_api_error_keeps_generic_401_message_without_user_not_found() -> None:
+    """A plain 401 with no 'User not found' body keeps the existing copy."""
+    resp = MagicMock()
+    resp.status_code = 401
+    resp.json.return_value = {"error": {"message": "Unauthorized", "code": 401}}
+    exc = RuntimeError("401 Unauthorized")
+    exc.response = resp  # type: ignore[attr-defined]
+
+    msg = _classify_api_error(exc) or ""
+    assert msg == "Invalid API key. Check that your key is correct and active."
+
+
 def test_can_fall_through_api_error_for_openrouter_403() -> None:
     exc = RuntimeError("forbidden")
     exc.status_code = 403  # type: ignore[attr-defined]
