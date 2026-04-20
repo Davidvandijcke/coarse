@@ -13,8 +13,10 @@ from coarse.models import (
     REASONING_MAX_TOKENS_MULTIPLIER,
     REASONING_MODEL_PREFIXES,
     REASONING_MODEL_SUBSTRINGS,
+    TEMPERATURE_UNSUPPORTED_PREFIXES,
     VISION_MODEL,
     is_reasoning_model,
+    supports_temperature,
 )
 
 
@@ -159,3 +161,45 @@ def test_reasoning_max_tokens_multiplier_sensible():
 
 def test_reasoning_effort_default_is_recognized_value():
     assert REASONING_EFFORT_DEFAULT in {"low", "medium", "high"}
+
+
+# ---------------------------------------------------------------------------
+# supports_temperature — issue #162
+# ---------------------------------------------------------------------------
+
+
+def test_supports_temperature_false_for_opus_4_7():
+    assert supports_temperature("anthropic/claude-opus-4.7") is False
+
+
+def test_supports_temperature_false_for_openrouter_opus_4_7():
+    """Direct and OpenRouter-routed variants must resolve the same."""
+    assert supports_temperature("openrouter/anthropic/claude-opus-4.7") is False
+
+
+def test_supports_temperature_true_for_opus_4_6():
+    assert supports_temperature("anthropic/claude-opus-4.6") is True
+
+
+def test_supports_temperature_true_for_default_model():
+    assert supports_temperature(DEFAULT_MODEL) is True
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "openai/gpt-5.4",
+        "openai/gpt-5-mini",
+        "google/gemini-3-flash-preview",
+        "moonshotai/kimi-k2.5",
+        "x-ai/grok-4.1-fast",
+        "openrouter/anthropic/claude-sonnet-4.6",
+    ],
+)
+def test_supports_temperature_true_for_common_models(model_id):
+    assert supports_temperature(model_id) is True
+
+
+def test_temperature_unsupported_prefixes_are_lowercase():
+    for p in TEMPERATURE_UNSUPPORTED_PREFIXES:
+        assert p == p.lower(), f"unsupported-temperature prefix not lowercase: {p}"
