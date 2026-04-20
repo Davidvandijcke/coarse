@@ -278,7 +278,7 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("anthropic/claude-opus-4.6");
+  const [model, setModel] = useState("anthropic/claude-opus-4.7");
   const [authorNotes, setAuthorNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
