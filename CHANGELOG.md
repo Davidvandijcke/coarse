@@ -4,7 +4,7 @@
 
 ### Added
 
-- **README section documenting the subscription-backed review path.** `coarse-review` and the bundled `claude` / `codex` / `gemini` headless clients have shipped since v1.3.0, but the README never mentioned them — the only user-facing documentation lived on the `coarse.vercel.app/setup` "Use my subscription" tab and the bundled SKILL.md files, so anyone landing on the GitHub page saw only the OpenRouter pay-per-token flow and would never learn they could run reviews on an existing Claude Max / ChatGPT Pro / Google AI Pro subscription. New "Use your coding-agent subscription" section between the API-key setup and the format list gives the one-line pitch (subscription billing via `claude -p` / `codex exec` / `gemini -p`, OpenRouter only needed for OCR), a two-line `coarse-review` usage block, and a pointer to `coarse install-skills` for triggering reviews from inside the coding agent itself. Matches the density of "Supported formats" and "Model selection"; per-CLI install commands intentionally left to vendor docs and the website setup page so the README stays scannable.
+- **README now documents the subscription-backed review path.** `coarse-review` and the bundled `claude` / `codex` / `gemini` headless clients have shipped since v1.3.0 but were only covered on `coarse.vercel.app/setup` and in the SKILL.md files, so GitHub visitors saw only the OpenRouter pay-per-token flow. Adds a short "Use your coding-agent subscription" section pointing at `coarse-review paper.pdf` and `coarse install-skills`.
 
 ### Removed
 
