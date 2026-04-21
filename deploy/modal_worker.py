@@ -448,16 +448,22 @@ class ReviewRequest(BaseModel):
     author_notes: str | None = None
 
 
-def _fetch_and_consume_user_key(db, job_id: str) -> str | None:
-    """Read the user's OpenRouter key from review_secrets and delete the row.
+def _fetch_user_key(db, job_id: str) -> str | None:
+    """Read the user's OpenRouter key from review_secrets without deleting.
 
-    One-shot: after this returns, the row is gone. Returns None if no row exists
-    (which is the normal path when the caller is still using the backward-compat
-    spawn() payload — _resolve_user_api_key then falls back to req.user_api_key).
+    Historically this helper did SELECT + DELETE in one shot, but that assumed
+    each ``.spawn()`` call maps to exactly one function execution. Modal
+    preemption breaks that premise: it restarts the function on the same input
+    when a worker gets evicted (spot reclamation, scheduler eviction), so the
+    retry would find an empty row and the pipeline would fail half-extracted
+    (issue #175). DELETE was moved out of this function — the caller runs it
+    only after a terminal status (done / failed) is written, so preemption
+    retries still have a key to read.
 
-    Never raises. A SELECT or DELETE failure is logged through _sanitize_error
-    and the function returns None so the caller's backward-compat path still
-    runs.
+    Returns None if no row exists (the normal case once the backward-compat
+    ``req.user_api_key`` path is exercised). Never raises: a SELECT failure is
+    logged through _sanitize_error and the function returns None so the
+    caller's backward-compat path still runs.
     """
     try:
         result = (
@@ -480,8 +486,21 @@ def _fetch_and_consume_user_key(db, job_id: str) -> str | None:
     if not key:
         return None
 
-    # Delete the row immediately so the key doesn't linger in the DB. A failure
-    # here is non-fatal — the TTL cleanup cron will sweep stragglers.
+    return key
+
+
+def _delete_user_key(db, job_id: str) -> None:
+    """Delete the review_secrets row for ``job_id``. Idempotent and best-effort.
+
+    Called only after the worker has written a terminal ``reviews.status``
+    (``done`` or ``failed``), so a Modal preemption retry mid-review still
+    finds a usable key in review_secrets. On ``SystemExit`` paths (preemption,
+    Modal timeout) this is deliberately NOT called — the ``cleanup_review_secrets``
+    cron (3h TTL) sweeps rows that outlive all attempts.
+
+    Never raises. A DELETE failure is logged and swallowed — the cron will
+    sweep the straggler.
+    """
     try:
         db.table("review_secrets").delete().eq("review_id", job_id).execute()
     except Exception as exc:
@@ -490,17 +509,16 @@ def _fetch_and_consume_user_key(db, job_id: str) -> str | None:
             f"(non-fatal, TTL cron will sweep): {_sanitize_error(str(exc))}"
         )
 
-    return key
-
 
 def _resolve_user_api_key(db, req: "ReviewRequest", job_id: str) -> str | None:
     """Resolve the user's OpenRouter key from either source, preferring review_secrets.
 
-    Preferred path: `review_secrets` side-table (one-shot read-and-delete via
-    `_fetch_and_consume_user_key`). The key never rode through Modal's managed
-    queue, which is the point of task 3(a).
+    Preferred path: ``review_secrets`` side-table (SELECT via ``_fetch_user_key``;
+    the DELETE is deferred to terminal status so Modal preemption retries still
+    find a key). The key never rode through Modal's managed queue, which is the
+    point of the side-table design.
 
-    Backward-compat fallback: `req.user_api_key` from the spawn() payload. Still
+    Backward-compat fallback: ``req.user_api_key`` from the spawn() payload. Still
     honored so any in-flight job spawned before the frontend was updated keeps
     working across the rollout window. After the frontend rollout completes, the
     backward-compat branch is effectively dead and can be removed in a follow-up.
@@ -509,9 +527,7 @@ def _resolve_user_api_key(db, req: "ReviewRequest", job_id: str) -> str | None:
     no-key failure path (it surfaces as a 401 from OpenRouter on the first
     LLM call and is handled by the existing _classify_api_error logic).
     """
-    # Preferred path first. Any key found here has already been deleted from
-    # review_secrets by _fetch_and_consume_user_key.
-    fetched = _fetch_and_consume_user_key(db, job_id)
+    fetched = _fetch_user_key(db, job_id)
     cleaned = (fetched or "").strip() or None
     if cleaned is not None:
         return cleaned
@@ -748,6 +764,13 @@ def do_review(req_dict: dict):
             }
         ).eq("id", job_id).execute()
 
+        # Terminal success → the user's OpenRouter key is no longer needed. The
+        # DELETE used to happen at worker start, but Modal preemption retries
+        # re-run the function on the same input and would find an empty row,
+        # orphaning the review (issue #175). Deferring the DELETE until now
+        # means preemption retries mid-review still get a usable key.
+        _delete_user_key(db, job_id)
+
         # Delete the PDF from Supabase Storage on success only. Failed reviews
         # keep their PDF so Modal's infrastructure-level retries (or a manual
         # resubmit of the same job_id) can find it. The cleanup_papers cron
@@ -780,8 +803,8 @@ def do_review(req_dict: dict):
 
     except BaseException as e:
         duration = int(time.time() - start)
-        # BaseException catches SystemExit (Modal SIGTERM on timeout) and
-        # KeyboardInterrupt, not just Exception subclasses.
+        # BaseException catches SystemExit (Modal SIGTERM on timeout OR
+        # preemption) and KeyboardInterrupt, not just Exception subclasses.
         if isinstance(e, SystemExit):
             error_msg = "Review timed out"
         else:
@@ -795,6 +818,17 @@ def do_review(req_dict: dict):
                     "duration_seconds": duration,
                 }
             ).eq("id", job_id).execute()
+        # Terminal failure → the key isn't needed again and we can free the
+        # row immediately. EXCEPT when the BaseException is a SystemExit:
+        # Modal raises SystemExit for both 2h timeouts AND mid-review
+        # preemption, and preemption is followed by an automatic restart
+        # with the same input. If we delete here on the preemption path,
+        # the restart finds an empty row and fails (the exact regression
+        # this fix exists to prevent — issue #175). For SystemExit, leave
+        # the row for the Modal retry to consume, or for the 3h
+        # cleanup_review_secrets cron to sweep if no retry ever fires.
+        if not isinstance(e, SystemExit):
+            _delete_user_key(db, job_id)
         raise
     finally:
         # Restore original API key to prevent leaking user keys across container reuses.

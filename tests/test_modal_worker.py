@@ -408,7 +408,8 @@ def test_run_review_accepts_valid_token(modal_worker, monkeypatch) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _fetch_and_consume_user_key — issue #49 (review_secrets ferry)
+# _fetch_user_key / _delete_user_key — issue #49 (review_secrets ferry),
+# split idempotently in #175 so Modal preemption retries still find a key.
 # ---------------------------------------------------------------------------
 
 
@@ -485,74 +486,73 @@ class _FakeSupabase:
         return self._table_stub
 
 
-def test_fetch_and_consume_user_key_returns_key_and_deletes_row(modal_worker) -> None:
-    """Happy path: SELECT returns a row, DELETE runs, key is returned."""
+def test_fetch_user_key_returns_key_without_deleting_row(modal_worker) -> None:
+    """Happy path: SELECT returns a row; DELETE is NOT called (issue #175). The
+    row stays around so a Modal preemption retry can read the same key."""
     table = _FakeSupabaseTable(
         row={"user_api_key": "sk-or-v1-fakefakefakefakefakefakefake"}  # security: ignore
     )
     db = _FakeSupabase(table)
 
-    key = modal_worker._fetch_and_consume_user_key(db, "job-1")
+    key = modal_worker._fetch_user_key(db, "job-1")
     assert key == "sk-or-v1-fakefakefakefakefakefakefake"  # security: ignore
-    assert db.table_names == ["review_secrets", "review_secrets"]
-    # Delete was called with the matching filter
-    assert table.deleted == [("review_id", "job-1")]
+    # SELECT only — no DELETE call on the fetch path.
+    assert db.table_names == ["review_secrets"]
+    assert table.deleted == []
 
 
-def test_fetch_and_consume_user_key_returns_none_when_row_missing(modal_worker) -> None:
+def test_fetch_user_key_returns_none_when_row_missing(modal_worker) -> None:
     """No row → return None → caller falls back to req.user_api_key."""
     table = _FakeSupabaseTable(row=None)
     db = _FakeSupabase(table)
 
-    key = modal_worker._fetch_and_consume_user_key(db, "job-missing")
+    key = modal_worker._fetch_user_key(db, "job-missing")
     assert key is None
-    # Delete should NOT run when there was nothing to read
     assert table.deleted == []
 
 
-def test_fetch_and_consume_user_key_returns_none_on_select_error(modal_worker) -> None:
+def test_fetch_user_key_returns_none_on_select_error(modal_worker) -> None:
     """SELECT failure is swallowed; caller still falls back to backward-compat."""
     table = _FakeSupabaseTable(row=None, raise_on="select")
     db = _FakeSupabase(table)
 
-    key = modal_worker._fetch_and_consume_user_key(db, "job-boom")
+    key = modal_worker._fetch_user_key(db, "job-boom")
     assert key is None
     assert table.deleted == []
 
 
-def test_fetch_and_consume_user_key_tolerates_delete_failure(modal_worker) -> None:
-    """DELETE failure is non-fatal — the key is still returned for the pipeline.
-    The TTL cleanup cron sweeps the orphaned row."""
+def test_delete_user_key_deletes_row(modal_worker) -> None:
+    """Happy path: DELETE fires against the matching review_id filter."""
     table = _FakeSupabaseTable(
-        row={"user_api_key": "sk-or-v1-abcdefghijklmnopqrstuvwx"},  # security: ignore
-        raise_on="delete",
+        row={"user_api_key": "sk-or-v1-irrelevantforthiscase012345"}  # security: ignore
     )
     db = _FakeSupabase(table)
 
-    key = modal_worker._fetch_and_consume_user_key(db, "job-retry-ok")
-    # Key is returned despite the delete failing
-    assert key == "sk-or-v1-abcdefghijklmnopqrstuvwx"  # security: ignore
+    modal_worker._delete_user_key(db, "job-done")
+    assert table.deleted == [("review_id", "job-done")]
 
 
-def test_fetch_and_consume_does_not_leak_key_into_log_on_delete_failure(
-    modal_worker, capsys
-) -> None:
+def test_delete_user_key_tolerates_delete_failure(modal_worker) -> None:
+    """DELETE failure is non-fatal — swallowed so a flaky Postgres hop doesn't
+    crash the worker's terminal-status path. The TTL cron sweeps the orphan."""
+    table = _FakeSupabaseTable(row=None, raise_on="delete")
+    db = _FakeSupabase(table)
+
+    # Must not raise — the sentinel to look for is "did not propagate".
+    modal_worker._delete_user_key(db, "job-delete-boom")
+
+
+def test_delete_user_key_does_not_leak_key_into_log_on_failure(modal_worker, capsys) -> None:
     """A delete failure whose exception message literally contains the key is
-    still scrubbed before it reaches stdout/stderr. This verifies that
-    _sanitize_error is actually applied on the log path, not just trivially."""
+    still scrubbed before it reaches stdout/stderr. Ported from the old
+    _fetch_and_consume test — the log-sanitization contract lives with the
+    DELETE, which is now in _delete_user_key."""
     secret = "sk-or-v1-supersecretkey1234567890abcdef"  # security: ignore
-    # Inject the secret into the fake exception message so the test actually
-    # exercises _sanitize_error (rather than trivially passing because the
-    # fake message doesn't contain the key).
     leaky_message = f"upstream 500: Authorization: Bearer {secret}"
-    table = _FakeSupabaseTable(
-        row={"user_api_key": secret},
-        raise_on="delete",
-        raise_message=leaky_message,
-    )
+    table = _FakeSupabaseTable(row=None, raise_on="delete", raise_message=leaky_message)
     db = _FakeSupabase(table)
 
-    modal_worker._fetch_and_consume_user_key(db, "job-log-test")
+    modal_worker._delete_user_key(db, "job-log-test")
     captured = capsys.readouterr()
     combined = captured.out + captured.err
     # The raw key must never reach stdout/stderr, even though it was in the
@@ -579,7 +579,11 @@ def _make_review_request(modal_worker, user_api_key: str | None = None):
 
 
 def test_resolve_user_api_key_prefers_review_secrets(modal_worker) -> None:
-    """When BOTH sources have a key, review_secrets wins and the row is consumed."""
+    """When BOTH sources have a key, review_secrets wins.
+
+    The row is NOT deleted by resolve (#175 — DELETE is deferred to terminal
+    status so preemption retries still find a key).
+    """
     ferried = "sk-or-v1-ferried123456789012345678901234"  # security: ignore
     backward = "sk-or-v1-backcompat12345678901234567890"  # security: ignore
     table = _FakeSupabaseTable(row={"user_api_key": ferried})
@@ -588,8 +592,9 @@ def test_resolve_user_api_key_prefers_review_secrets(modal_worker) -> None:
 
     result = modal_worker._resolve_user_api_key(db, req, "j1")
     assert result == ferried
-    # The review_secrets row was consumed (DELETE was called).
-    assert table.deleted == [("review_id", "j1")]
+    # The DELETE no longer fires on the resolve path — it's wired into the
+    # do_review terminal-status paths instead.
+    assert table.deleted == []
 
 
 def test_resolve_user_api_key_falls_back_to_req_user_api_key(modal_worker) -> None:
@@ -616,11 +621,13 @@ def test_resolve_user_api_key_returns_none_when_both_sources_empty(modal_worker)
 
 
 def test_resolve_user_api_key_strips_whitespace_from_review_secrets(modal_worker) -> None:
-    """A whitespace-only review_secrets value should NOT be returned (it would
-    yield an empty Bearer header). Fall through to req.user_api_key instead.
+    """A whitespace-only review_secrets value is rejected (it would yield an
+    empty Bearer header) and resolve falls back to req.user_api_key.
 
-    The whitespace row IS still deleted by _fetch_and_consume_user_key before
-    the strip-check fires, so a stray row can't rot until the TTL cron."""
+    The whitespace row is NOT deleted by resolve (#175 — DELETE is deferred
+    to terminal status). If the review ultimately completes it'll get deleted
+    then; if it never does, the 3 h cleanup_review_secrets cron sweeps.
+    """
     backward = "sk-or-v1-backcompat56565656565656565656"  # security: ignore
     table = _FakeSupabaseTable(row={"user_api_key": "   \n"})
     db = _FakeSupabase(table)
@@ -629,8 +636,8 @@ def test_resolve_user_api_key_strips_whitespace_from_review_secrets(modal_worker
     result = modal_worker._resolve_user_api_key(db, req, "j1")
     # Whitespace-only DB value is rejected; falls back to req payload.
     assert result == backward
-    # But the row was still consumed (the TTL cron doesn't need to clean it up).
-    assert table.deleted == [("review_id", "j1")]
+    # The row is NOT deleted here — the terminal-status path or the cron handles it.
+    assert table.deleted == []
 
 
 # ---------------------------------------------------------------------------
@@ -887,6 +894,219 @@ def test_do_review_skips_environ_write_when_no_key_resolved(modal_worker, monkey
 
     # Env var was NOT set to "" — it stays unset.
     assert captured["env"] == "<unset>"
+
+
+# ---------------------------------------------------------------------------
+# do_review — preemption-safe key-delete gating (issue #175).
+#
+# Modal's worker preemption restarts the function on the same input
+# regardless of retries=0. The worker used to SELECT + DELETE review_secrets
+# at startup, which left preemption retries with an empty row and a broken
+# review. The fix defers DELETE to terminal status paths and skips it on
+# SystemExit so Modal's automatic restart still finds a usable key.
+# ---------------------------------------------------------------------------
+
+
+def _install_do_review_stubs(
+    modal_worker, monkeypatch, *, resolved: str | None, delete_calls: list
+) -> None:
+    """Shared scaffolding for the three preemption-safety tests below.
+
+    Stubs supabase.create_client, the key-resolve helper, and the
+    _delete_user_key helper so the test can assert how many times DELETE
+    fired under different do_review exit paths. Each caller still stubs
+    _download_pdf_with_retry or review_paper to drive the specific branch
+    (SystemExit, regular exception, or success)."""
+    import sys as _sys
+
+    class _FakeReviewsTable:
+        def update(self, _data):
+            return self
+
+        def eq(self, _col, _val):
+            return self
+
+        def execute(self):
+            return types.SimpleNamespace(data=[])
+
+    class _FakeDB:
+        def table(self, _name):
+            return _FakeReviewsTable()
+
+        # Storage surface used by do_review on the success path for
+        # ``db.storage.from_("papers").remove([...])``. No-op here.
+        class _FakeStorage:
+            def from_(self, _bucket):
+                return self
+
+            def remove(self, _paths):
+                return None
+
+            def create_signed_url(self, _path, _ttl):
+                return {"signedURL": "https://example.invalid/signed"}
+
+            def download(self, _path):
+                return b"%PDF-1.4\nstub\n"
+
+        storage = _FakeStorage()
+
+    supabase_stub = types.ModuleType("supabase")
+    supabase_stub.create_client = lambda _u, _k: _FakeDB()
+    monkeypatch.setitem(_sys.modules, "supabase", supabase_stub)
+
+    monkeypatch.setattr(modal_worker, "_resolve_user_api_key", lambda _db, _req, _job: resolved)
+
+    def _tracking_delete(_db, job_id):
+        delete_calls.append(job_id)
+
+    monkeypatch.setattr(modal_worker, "_delete_user_key", _tracking_delete)
+
+    monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-service-key")
+    monkeypatch.setenv("REVIEW_ACCESS_SECRET", "fake-review-access-secret-32-chars")
+
+
+def _install_coarse_stubs(monkeypatch, *, review_paper_behavior) -> None:
+    """Stub the coarse submodules that ``do_review`` imports inside its try
+    block. ``review_paper_behavior`` is a callable invoked as
+    ``review_paper(*args, **kwargs)`` — return a triple for success, or raise
+    to exercise the except-branch.
+
+    The except-BaseException branch in do_review only catches exceptions
+    raised from INSIDE its try block (which begins at `from coarse import
+    review_paper`). A download failure before that try block propagates
+    straight through, so the preemption / failure / success tests have to
+    drive the branch via review_paper itself.
+    """
+    import sys as _sys
+
+    coarse_stub = types.ModuleType("coarse")
+    coarse_stub.review_paper = review_paper_behavior
+    monkeypatch.setitem(_sys.modules, "coarse", coarse_stub)
+
+    config_stub = types.ModuleType("coarse.config")
+
+    class _CoarseConfig:
+        def __init__(self, **_kwargs):
+            pass
+
+    config_stub.CoarseConfig = _CoarseConfig
+    monkeypatch.setitem(_sys.modules, "coarse.config", config_stub)
+
+    extraction_stub = types.ModuleType("coarse.extraction_openrouter")
+
+    class _StubCtx:
+        def set(self, _value):
+            return object()
+
+        def reset(self, _token):
+            return None
+
+    extraction_stub.signed_url_ctx = _StubCtx()
+    monkeypatch.setitem(_sys.modules, "coarse.extraction_openrouter", extraction_stub)
+
+
+def test_do_review_skips_delete_on_systemexit_for_preemption(modal_worker, monkeypatch) -> None:
+    """Preemption manifests as SystemExit (Modal SIGTERMs the container). The
+    DELETE must NOT fire on that path — Modal will restart on the same input
+    and needs the review_secrets row intact (issue #175)."""
+    resolved = "sk-or-v1-preemptiontest12345678901234"  # security: ignore
+    delete_calls: list[str] = []
+    _install_do_review_stubs(
+        modal_worker, monkeypatch, resolved=resolved, delete_calls=delete_calls
+    )
+
+    def _preempt(*_args, **_kwargs):
+        raise SystemExit("simulate modal preemption SIGTERM")
+
+    _install_coarse_stubs(monkeypatch, review_paper_behavior=_preempt)
+    monkeypatch.setattr(
+        modal_worker, "_download_pdf_with_retry", lambda *_a, **_kw: b"%PDF-1.4\nstub\n"
+    )
+    monkeypatch.setattr(modal_worker, "_get_review_status", lambda _db, _job: "running")
+
+    with pytest.raises(SystemExit, match="simulate modal preemption"):
+        modal_worker.do_review(
+            {
+                "job_id": "preempt-test-job",
+                "pdf_storage_path": "papers/test.pdf",
+            }
+        )
+
+    assert delete_calls == [], (
+        "DELETE fired on SystemExit — this will orphan the Modal preemption retry"
+    )
+
+
+def test_do_review_deletes_on_non_systemexit_failure(modal_worker, monkeypatch) -> None:
+    """A regular Exception is a terminal failure — Modal will NOT restart it
+    (retries=0). The DELETE should fire so the key isn't left to age out via
+    the 3 h TTL cron."""
+    resolved = "sk-or-v1-regularfailuretest1234567890"  # security: ignore
+    delete_calls: list[str] = []
+    _install_do_review_stubs(
+        modal_worker, monkeypatch, resolved=resolved, delete_calls=delete_calls
+    )
+
+    def _explode(*_args, **_kwargs):
+        raise RuntimeError("simulate pipeline failure")
+
+    _install_coarse_stubs(monkeypatch, review_paper_behavior=_explode)
+    monkeypatch.setattr(
+        modal_worker, "_download_pdf_with_retry", lambda *_a, **_kw: b"%PDF-1.4\nstub\n"
+    )
+    monkeypatch.setattr(modal_worker, "_get_review_status", lambda _db, _job: "running")
+
+    with pytest.raises(RuntimeError, match="simulate pipeline failure"):
+        modal_worker.do_review(
+            {
+                "job_id": "fail-test-job",
+                "pdf_storage_path": "papers/test.pdf",
+            }
+        )
+
+    assert delete_calls == ["fail-test-job"], (
+        "DELETE did not fire on a terminal non-SystemExit failure; the key will "
+        "linger until the 3 h cleanup cron sweeps it"
+    )
+
+
+def test_do_review_deletes_on_success(modal_worker, monkeypatch) -> None:
+    """Happy path: DELETE fires after the status=done write. This is the only
+    path where we positively consume the key, matching the pre-#175 behavior
+    for non-preempted reviews."""
+    resolved = "sk-or-v1-successpathtest12345678901234"  # security: ignore
+    delete_calls: list[str] = []
+    _install_do_review_stubs(
+        modal_worker, monkeypatch, resolved=resolved, delete_calls=delete_calls
+    )
+
+    class _FakeReview:
+        title = "Stub Paper"
+        domain = "social_sciences"
+
+    class _FakePaperText:
+        full_markdown = "# stub"
+
+    def _happy_review_paper(*_args, **_kwargs):
+        return _FakeReview(), "## stub review", _FakePaperText()
+
+    _install_coarse_stubs(monkeypatch, review_paper_behavior=_happy_review_paper)
+    monkeypatch.setattr(
+        modal_worker, "_download_pdf_with_retry", lambda *_a, **_kw: b"%PDF-1.4\nstub\n"
+    )
+    monkeypatch.setattr(modal_worker, "_get_review_status", lambda _db, _job: "running")
+
+    modal_worker.do_review(
+        {
+            "job_id": "success-test-job",
+            "pdf_storage_path": "papers/test.pdf",
+        }
+    )
+
+    assert delete_calls == ["success-test-job"], (
+        "DELETE did not fire on success; the key will linger until the cron"
+    )
 
 
 # ---------------------------------------------------------------------------
