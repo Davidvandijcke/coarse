@@ -103,8 +103,23 @@ def _classify_api_error(exc: Exception) -> str | None:
     """Return a user-facing message if this is a user-actionable API error."""
     status = _get_api_error_status(exc)
     msg = str(exc).lower()
+    summary = (_describe_api_error(exc) or "").lower()
 
     if status == 401 or ("invalid" in msg and "key" in msg) or "unauthorized" in msg:
+        # OpenRouter returns 401 with body "User not found" when a
+        # provisioning/management key is presented on the inference
+        # endpoint — those keys create/list API keys but don't identify
+        # an inference user, so /v1/chat/completions rejects them before
+        # billing. Match against the parsed body (summary) since the
+        # plain exception string never carries provider error text.
+        if "user not found" in summary:
+            return (
+                "OpenRouter rejected this key with 'User not found' — that "
+                "fires when a provisioning/management key is used on the "
+                "inference endpoint. Create a regular API key at "
+                "https://openrouter.ai/settings/keys (the 'Create Key' "
+                "button, not the provisioning section) and paste that one."
+            )
         return "Invalid API key. Check that your key is correct and active."
     if status == 402 or any(
         kw in msg

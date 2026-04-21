@@ -267,6 +267,64 @@ def test_classify_hosted_key_error_ignores_unknown_prefix(modal_worker) -> None:
 
 
 # ---------------------------------------------------------------------------
+# _classify_api_error — worker-side terminal classifier
+# ---------------------------------------------------------------------------
+#
+# This is the classifier that writes into reviews.error_message on the
+# status page (see do_review's except BaseException branch). It must
+# stay in lockstep with coarse.extraction_openrouter._classify_api_error
+# because one catches the error at the extraction stage and the other
+# catches it at the Modal worker's outer boundary — a fix in only one
+# leaves the user-facing message wrong on the status page.
+
+
+def test_classify_api_error_detects_management_key_user_not_found(modal_worker) -> None:
+    """Worker classifier must match the extraction-side management-key
+    detection. Regression guard for PR #173's two-classifier split."""
+    from unittest.mock import MagicMock
+
+    resp = MagicMock()
+    resp.status_code = 401
+    resp.json.return_value = {"error": {"message": "User not found.", "code": 401}}
+    exc = RuntimeError("401 Unauthorized")
+    exc.response = resp  # type: ignore[attr-defined]
+
+    msg = modal_worker._classify_api_error(exc) or ""
+    assert "provisioning" in msg.lower() or "management" in msg.lower()
+    assert "openrouter.ai/settings/keys" in msg
+
+
+def test_classify_api_error_generic_401_keeps_invalid_key_message(modal_worker) -> None:
+    """Plain 401s without 'User not found' still return the generic copy."""
+    from unittest.mock import MagicMock
+
+    resp = MagicMock()
+    resp.status_code = 401
+    resp.json.return_value = {"error": {"message": "Unauthorized", "code": 401}}
+    exc = RuntimeError("401 Unauthorized")
+    exc.response = resp  # type: ignore[attr-defined]
+
+    msg = modal_worker._classify_api_error(exc) or ""
+    assert msg == "Invalid API key. Check that your key is correct and active."
+
+
+def test_classify_api_error_survives_unparseable_body(modal_worker) -> None:
+    """resp.json() raising must not crash the classifier — falls through
+    to the generic branch."""
+    from unittest.mock import MagicMock
+
+    resp = MagicMock()
+    resp.status_code = 401
+    resp.json.side_effect = ValueError("not JSON")
+    resp.text = "<html>Bad Gateway</html>"
+    exc = RuntimeError("401 Unauthorized")
+    exc.response = resp  # type: ignore[attr-defined]
+
+    msg = modal_worker._classify_api_error(exc) or ""
+    assert msg == "Invalid API key. Check that your key is correct and active."
+
+
+# ---------------------------------------------------------------------------
 # _strip_nul_bytes — Postgres 22P05 defense (#62)
 # ---------------------------------------------------------------------------
 
