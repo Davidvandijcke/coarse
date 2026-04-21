@@ -110,8 +110,9 @@ def _classify_api_error(exc: Exception) -> str | None:
         # provisioning/management key is presented on the inference
         # endpoint — those keys create/list API keys but don't identify
         # an inference user, so /v1/chat/completions rejects them before
-        # billing. Point the operator at the right key type.
-        if "user not found" in summary or "user not found" in msg:
+        # billing. Match against the parsed body (summary) since the
+        # plain exception string never carries provider error text.
+        if "user not found" in summary:
             return (
                 "OpenRouter rejected this key with 'User not found' — that "
                 "fires when a provisioning/management key is used on the "

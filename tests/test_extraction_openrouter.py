@@ -56,6 +56,56 @@ def test_classify_api_error_keeps_generic_401_message_without_user_not_found() -
     assert msg == "Invalid API key. Check that your key is correct and active."
 
 
+def test_setup_page_warns_about_provisioning_keys() -> None:
+    """The setup page must surface the same guidance the Python
+    classifier points users to.
+
+    ``_classify_api_error``'s management-key branch tells the user to
+    create a regular API key at openrouter.ai/settings/keys; the setup
+    page's Step 3 must echo that guidance so a user who hits the error
+    in Modal sees matching UI copy. A future edit that drops either
+    half breaks the cross-reference silently — this test pins both the
+    name of the wrong key type and the exact error string the
+    classifier returns, so the drift surfaces at CI time rather than
+    in a confused user's status page.
+    """
+    setup = Path(__file__).resolve().parents[1] / "web" / "src" / "app" / "setup" / "page.tsx"
+    assert setup.exists(), "web/src/app/setup/page.tsx must exist"
+    src = setup.read_text(encoding="utf-8")
+
+    assert "provisioning" in src.lower(), (
+        "setup page Step 3 must name the wrong key type ('provisioning' / "
+        "'management') so users can self-diagnose. See the classifier "
+        "message in src/coarse/extraction_openrouter.py."
+    )
+    assert "User not found" in src, (
+        "setup page Step 3 must quote the exact 'User not found' error "
+        "string users will see if they paste a provisioning key; drops "
+        "the cross-reference with _classify_api_error otherwise."
+    )
+
+
+def test_classify_api_error_does_not_leak_management_key_copy_on_403() -> None:
+    """A 403 with 'User not found' body must hit the 403 branch, not the
+    401 management-key branch.
+
+    Pins the scope of the management-key detection to 401 only so a
+    later edit that widens the outer ``if`` can't silently misroute a
+    legitimate forbidden response into provisioning-key remediation
+    copy.
+    """
+    resp = MagicMock()
+    resp.status_code = 403
+    resp.json.return_value = {"error": {"message": "User not found.", "code": 403}}
+    exc = RuntimeError("403 Forbidden")
+    exc.response = resp  # type: ignore[attr-defined]
+
+    msg = _classify_api_error(exc) or ""
+    assert "provisioning" not in msg.lower()
+    assert "management" not in msg.lower()
+    assert "403" in msg
+
+
 def test_can_fall_through_api_error_for_openrouter_403() -> None:
     exc = RuntimeError("forbidden")
     exc.status_code = 403  # type: ignore[attr-defined]

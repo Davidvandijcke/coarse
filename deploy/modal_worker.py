@@ -380,6 +380,33 @@ def _classify_hosted_key_error(api_key: str | None) -> str | None:
     )
 
 
+def _extract_response_body_message(exc: BaseException) -> str:
+    """Pull the provider-returned error body `message` field, lowercased.
+
+    Mirrors the body inspection that ``coarse.extraction_openrouter.
+    _describe_api_error`` does, minus the formatting — the worker-side
+    classifier needs the same signal but doesn't emit a scrubbed summary
+    line because the raw classifier output is what lands in
+    ``reviews.error_message`` on the status page.
+    """
+    resp = getattr(exc, "response", None)
+    if resp is None:
+        return ""
+    try:
+        body = resp.json()
+    except Exception:
+        return (getattr(resp, "text", "") or "").lower()
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            message = err.get("message")
+            if isinstance(message, str):
+                return message.lower()
+        elif isinstance(err, str):
+            return err.lower()
+    return ""
+
+
 def _classify_api_error(exc: BaseException) -> str | None:
     """Return a clear, user-facing message for common API errors.
 
@@ -391,8 +418,24 @@ def _classify_api_error(exc: BaseException) -> str | None:
     if resp is not None and not isinstance(status, int):
         status = getattr(resp, "status_code", None)
     msg = str(exc).lower()
+    body_msg = _extract_response_body_message(exc)
 
     if status == 401 or ("invalid" in msg and "key" in msg) or "unauthorized" in msg:
+        # OpenRouter returns 401 with body "User not found" when a
+        # provisioning/management key is presented on the inference
+        # endpoint — those keys create/list API keys but don't identify
+        # an inference user. This is the terminal classifier (see
+        # do_review's except BaseException) that writes the message
+        # into reviews.error_message, so it must stay in lockstep with
+        # the extraction-side fix in coarse/extraction_openrouter.py.
+        if "user not found" in body_msg:
+            return (
+                "OpenRouter rejected this key with 'User not found' — that "
+                "fires when a provisioning/management key is used on the "
+                "inference endpoint. Create a regular API key at "
+                "https://openrouter.ai/settings/keys (the 'Create Key' "
+                "button, not the provisioning section) and paste that one."
+            )
         return "Invalid API key. Check that your key is correct and active."
     if status == 402 or any(
         kw in msg
