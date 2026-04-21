@@ -518,6 +518,22 @@ function OpenRouterTab() {
             <p
               style={{
                 fontFamily: "Georgia, serif",
+                fontSize: "1.05rem",
+                lineHeight: 1.6,
+                color: "var(--dust)",
+                margin: "0 0 0.75rem",
+              }}
+            >
+              Make sure it&apos;s a regular API key — not a
+              provisioning/management key from the integrations section.
+              Provisioning keys can create and list other keys but
+              can&apos;t run inference, and coarse will fail with
+              &ldquo;User not found&rdquo; if you paste one.
+            </p>
+
+            <p
+              style={{
+                fontFamily: "Georgia, serif",
                 fontSize: "1.1rem",
                 lineHeight: 1.7,
                 color: "var(--red-chalk)",
