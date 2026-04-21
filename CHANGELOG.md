@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v1.4.1 — 2026-04-21
+
+### Fixed
+
+- **Unhelpful `Invalid API key` error when a user pastes an OpenRouter provisioning/management key into `coarse setup` or the web form.** OpenRouter exposes two key types: regular API keys (used to call `/v1/chat/completions`) and provisioning keys (used programmatically to create/list API keys). Pasting a provisioning key into coarse surfaces as a `401 Unauthorized` from OpenRouter with body `{"error":{"message":"User not found.","code":401}}` — but `src/coarse/extraction_openrouter.py::_classify_api_error` mapped every 401 to the generic `"Invalid API key. Check that your key is correct and active."` copy, which sends users to check-is-my-key-typed-correctly rather than the real issue. Diagnosed from Modal logs on 2026-04-20: three consecutive submissions for one user failed with exactly this pattern while their OpenRouter key length (73 chars, `sk-or-v1-…` prefix) looked correct to them. Fix: `_classify_api_error` now inspects the response body summary via the existing `_describe_api_error` helper and — when it contains `User not found` on a 401 — returns a management-key-specific message that names the problem and links to `https://openrouter.ai/settings/keys` with the exact button to click. Generic 401s without that body fragment keep the existing copy.
+
+### Changed
+
+- **`web/src/app/setup/page.tsx` Step 3 now warns against provisioning keys.** One-paragraph note under the "Create Key" instruction explaining that provisioning/management keys from the integrations section can create and list other keys but can't run inference, and that coarse will fail with `User not found` if pasted. Paired with the classifier fix above so users who hit the error in Modal get redirected to the same guidance that now lives on the setup page.
+
 ### Removed
 
 - **Google Analytics 4 dropped from coarse.ink (web-only hotfix).** The previous setup loaded `googletagmanager.com/gtag/js` unconditionally for every visitor in `web/src/app/layout.tsx` and set `_ga` / `_ga_*` cookies before any user interaction. Under EU/UK ePrivacy + GDPR this is a non-essential tracker that requires prior informed consent via a banner, and the site has no such banner. Rather than add a banner for an audience (academic / dev-tool users) where GA's data was never going to drive product decisions, GA is removed entirely: the two `<Script>` tags and the `GA_ID` constant deleted from `layout.tsx`, the `googletagmanager.com` origin dropped from the `script-src` CSP directive in `web/next.config.ts`, and `www.google-analytics.com` + `analytics.google.com` dropped from `connect-src` so the CSP stops whitelisting dead endpoints. `web/src/app/privacy/page.tsx` "What we collect", "Analytics", and "Third-party services" sections updated to reflect the new no-third-party-analytics posture and note that Turnstile is the only external JS (strictly necessary). No cookie banner needed as a result — the site now only sets strictly-necessary cookies (Cloudflare `__cf_bm`, Turnstile challenge, Vercel edge protection). Delivered as a hotfix directly on `main` per maintainer request; mirrored back to `dev` immediately after to prevent drift.
