@@ -27,3 +27,23 @@ def test_chatsession_loads_paper_and_review(fake_paper: Path, fake_review: Path)
     session = ChatSession(paper_path=fake_paper, review_path=fake_review, model="openai/gpt-4o-mini")
     assert "studies X" in session.paper_text
     assert "The paper is about X" in session.review_text
+
+
+def test_chatsession_builds_system_prompt(fake_paper: Path, fake_review: Path) -> None:
+    session = ChatSession(paper_path=fake_paper, review_path=fake_review, model="openai/gpt-4o-mini")
+    sys_prompt = session.system_prompt()
+    # Persona markers
+    assert "peer reviewer" in sys_prompt.lower()
+    # Literature-search sentinel must be documented
+    assert "<<SEARCH:" in sys_prompt
+    # Tone block fragment from coarse.prompts._TONE_BLOCK
+    assert "constructive but direct colleague" in sys_prompt
+
+
+def test_chatsession_initial_user_message_includes_paper_and_review(
+    fake_paper: Path, fake_review: Path
+) -> None:
+    session = ChatSession(paper_path=fake_paper, review_path=fake_review, model="openai/gpt-4o-mini")
+    initial = session.initial_user_message()
+    assert "studies X" in initial          # paper body
+    assert "The paper is about X" in initial  # review body
