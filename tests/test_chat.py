@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -47,3 +48,17 @@ def test_chatsession_initial_user_message_includes_paper_and_review(
     initial = session.initial_user_message()
     assert "studies X" in initial          # paper body
     assert "The paper is about X" in initial  # review body
+
+
+def test_ask_returns_model_reply(fake_paper: Path, fake_review: Path) -> None:
+    session = ChatSession(paper_path=fake_paper, review_path=fake_review, model="openai/gpt-4o-mini")
+
+    fake_client = MagicMock()
+    fake_client.complete_text.return_value = "Hello, author."
+
+    with patch("coarse.chat.LLMClient", return_value=fake_client):
+        reply = session.ask("What did you mean by section 3?")
+
+    assert reply == "Hello, author."
+    # Subsequent turns should reuse history — the message list grows.
+    assert len(session.history) >= 2  # initial user + assistant + new user + assistant
