@@ -8,7 +8,11 @@ from typing import Optional
 import typer
 from rich.console import Console
 
+from coarse.chat import ChatSession
+
 console = Console()
+
+_QUIT_COMMANDS = {"/quit", "/exit", "/q"}
 
 
 def chat(
@@ -27,4 +31,23 @@ def chat(
     ),
 ) -> None:
     """Chat with the reviewer about a paper and its prior review."""
-    console.print(f"[bold]chat stub[/bold]: paper={paper.name} review={review.name} model={model}")
+    session = ChatSession(paper_path=paper, review_path=review, model=model)
+    console.print(
+        f"[bold]coarse chat[/bold]  paper={paper.name}  review={review.name}\n"
+        f"[dim]Type {' or '.join(sorted(_QUIT_COMMANDS))} to exit.[/dim]\n"
+    )
+
+    while True:
+        try:
+            question = typer.prompt("you", prompt_suffix=" > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return
+
+        if not question:
+            continue
+        if question.lower() in _QUIT_COMMANDS:
+            return
+
+        reply = session.ask(question)
+        console.print(f"\n[bold]reviewer[/bold]:\n{reply}\n")
