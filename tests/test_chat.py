@@ -62,3 +62,37 @@ def test_ask_returns_model_reply(fake_paper: Path, fake_review: Path) -> None:
     assert reply == "Hello, author."
     # Subsequent turns should reuse history — the message list grows.
     assert len(session.history) >= 2  # initial user + assistant + new user + assistant
+
+
+def test_ask_intercepts_search_sentinel(fake_paper: Path, fake_review: Path) -> None:
+    """Model emits <<SEARCH: q>>, harness calls literature search, re-prompts."""
+    session = ChatSession(paper_path=fake_paper, review_path=fake_review, model="openai/gpt-4o-mini")
+
+    main_client = MagicMock()
+    # First call: model asks for a search. Second call: model gives the final answer.
+    main_client.complete_text.side_effect = [
+        "I should look this up.\n<<SEARCH: weighted Cohen's d for survey data>>",
+        "Based on the literature, here is the answer.",
+    ]
+
+    lit_client = MagicMock()
+    lit_client.complete_text.return_value = "MOCK_LIT_RESULTS"
+
+    def client_factory(model: str | None = None):
+        # First instantiation in ask() -> main client.
+        # Second instantiation (for literature search) -> lit client.
+        if model and "perplexity" in (model or "").lower():
+            return lit_client
+        return main_client
+
+    with patch("coarse.chat.LLMClient", side_effect=client_factory):
+        reply = session.ask("Why not a t-test?")
+
+    assert reply == "Based on the literature, here is the answer."
+    # Search was actually invoked
+    lit_client.complete_text.assert_called_once()
+    lit_call_args = lit_client.complete_text.call_args
+    lit_messages = lit_call_args.args[0] if lit_call_args.args else lit_call_args.kwargs["messages"]
+    assert any("weighted Cohen's d for survey data" in m["content"] for m in lit_messages)
+    # Search results were folded back into the main conversation
+    assert any("MOCK_LIT_RESULTS" in m["content"] for m in session.history if m["role"] == "user")
