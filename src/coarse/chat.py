@@ -8,12 +8,33 @@ for the REPL wrapper.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from coarse.extraction import extract_file
 from coarse.llm import LLMClient
-from coarse.prompts import CHAT_SYSTEM, chat_user_initial
+from coarse.models import LITERATURE_SEARCH_MODEL
+from coarse.prompts import CHAT_SYSTEM, PERPLEXITY_SYSTEM, chat_user_initial
+
+_SEARCH_SENTINEL_RE = re.compile(r"<<SEARCH:\s*(.+?)\s*>>", re.DOTALL)
+_MAX_SEARCHES_PER_TURN = 3
+
+
+def _extract_search_query(reply: str) -> str | None:
+    """Return the first <<SEARCH: ...>> query, or None."""
+    match = _SEARCH_SENTINEL_RE.search(reply)
+    return match.group(1).strip() if match else None
+
+
+def _run_literature_query(query: str) -> str:
+    """One-shot Perplexity Sonar Pro lookup. Returns the raw markdown reply."""
+    lit_client = LLMClient(model=LITERATURE_SEARCH_MODEL)
+    messages = [
+        {"role": "system", "content": PERPLEXITY_SYSTEM},
+        {"role": "user", "content": query},
+    ]
+    return lit_client.complete_text(messages, max_tokens=4096, temperature=0.3, timeout=60)
 
 
 @dataclass
@@ -46,9 +67,28 @@ class ChatSession:
         return self._client
 
     def ask(self, question: str) -> str:
-        """Send a user question and return the assistant reply (no tool use yet)."""
+        """Send a user question. Honor up to N search-sentinel hops before returning."""
         self.history.append({"role": "user", "content": question})
         client = self._client_or_create()
-        reply = client.complete_text(self.history, max_tokens=4096, temperature=0.3)
-        self.history.append({"role": "assistant", "content": reply})
+
+        for _ in range(_MAX_SEARCHES_PER_TURN + 1):  # +1 so we get one final non-search reply
+            reply = client.complete_text(self.history, max_tokens=4096, temperature=0.3)
+            self.history.append({"role": "assistant", "content": reply})
+
+            query = _extract_search_query(reply)
+            if query is None:
+                return reply
+
+            results = _run_literature_query(query)
+            self.history.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"Literature search results for `{query}`:\n\n{results}\n\n"
+                        "Continue your answer using these results."
+                    ),
+                }
+            )
+
+        # Hit the search cap — return whatever the model said last.
         return reply
