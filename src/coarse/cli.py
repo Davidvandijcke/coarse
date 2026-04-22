@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.status import Status
 
 from coarse import __version__
+from coarse.cli_chat import chat as _chat_fn
 from coarse.config import (
     PROVIDER_ENV_VARS,
     CoarseConfig,
@@ -103,6 +104,9 @@ def main(
     ),
 ) -> None:
     """coarse command group."""
+
+
+app.command()(_chat_fn)
 
 
 @app.command()
