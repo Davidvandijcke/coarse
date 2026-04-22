@@ -1,4 +1,4 @@
-.PHONY: test test-all lint format check security install-hooks pause resume pause-status release-audit
+.PHONY: test test-all lint format check security install-hooks pause resume pause-status release-audit local-app
 
 test:
 	uv run pytest tests/ -v
@@ -31,3 +31,6 @@ pause-status:
 
 release-audit:
 	@python3 scripts/release_audit.py
+
+local-app:
+	scripts/run_local_mac_app.sh $(LOCAL_APP_ARGS)

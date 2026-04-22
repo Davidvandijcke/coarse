@@ -6,6 +6,7 @@ dist/
 .DS_Store
 .env
 .coarse/
+.coarse-local/
 
 # Ignore everything inside .claude/ except the shared slash commands,
 # agent definitions, hook scripts, and project-level settings, which are

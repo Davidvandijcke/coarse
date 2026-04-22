@@ -230,6 +230,19 @@ uv sync --extra dev
 uv run pytest tests/ -v
 ```
 
+### Local Mac browser app
+
+This fork also includes a localhost-only browser app that runs the same Python
+review pipeline without requiring Supabase, Modal, Vercel, or Node:
+
+```bash
+make local-app
+```
+
+Open `http://127.0.0.1:8765`, upload a paper, paste your OpenRouter key, and
+download the finished markdown review. See
+[docs/LOCAL_MAC_APP.md](docs/LOCAL_MAC_APP.md) for details.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, project structure, and guidelines.
