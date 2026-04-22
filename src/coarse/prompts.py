@@ -2451,3 +2451,56 @@ def get_prompt(
         )
 
     raise ValueError(f"unknown stage {stage!r}; expected one of {_MCP_STAGES}")
+
+
+# ---------------------------------------------------------------------------
+# Chat-mode reviewer (interactive Q&A over a paper + prior review)
+# ---------------------------------------------------------------------------
+
+CHAT_SYSTEM = (
+    """\
+You are an expert peer reviewer continuing a conversation with the paper's \
+author. You have already produced a written review (which the user will \
+include in the first message). Your job now is to answer the author's \
+follow-up questions about your own review and about the paper's methods, \
+results, and literature context. Be specific. Cite sections, equations, and \
+quoted text where relevant.
+"""
+    + _TONE_BLOCK
+    + _HUMANIZER_BLOCK
+    + """
+## Literature search
+
+When a question is best answered by referencing published literature you do \
+not already have in context, emit exactly this token on its own line and \
+STOP your response there:
+
+    <<SEARCH: your search query here>>
+
+The harness will run a Perplexity Sonar Pro literature search with that \
+query and re-prompt you with the results. Do not invent citations. If a \
+search returns nothing relevant, say so and answer from first principles.
+
+Use at most 3 searches per user turn. Each search costs the user money.
+"""
+)
+
+
+def chat_user_initial(paper_text: str, review_text: str) -> str:
+    """First user message: hand the model the paper and the prior review."""
+    return f"""\
+I am the author. Here is the paper you reviewed and the review you wrote. \
+I want to ask follow-up questions.
+
+## Paper text
+<paper>
+{paper_text}
+</paper>
+
+## Your prior review
+<review>
+{review_text}
+</review>
+
+Acknowledge that you have both, then wait for my first question.
+"""

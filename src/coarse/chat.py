@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from coarse.extraction import extract_file
+from coarse.prompts import CHAT_SYSTEM, chat_user_initial
 
 
 @dataclass
@@ -25,3 +26,9 @@ class ChatSession:
     def __post_init__(self) -> None:
         self.paper_text = extract_file(self.paper_path).full_markdown
         self.review_text = self.review_path.read_text(encoding="utf-8")
+
+    def system_prompt(self) -> str:
+        return CHAT_SYSTEM
+
+    def initial_user_message(self) -> str:
+        return chat_user_initial(self.paper_text, self.review_text)
