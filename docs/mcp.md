@@ -13,11 +13,13 @@ The `coarse-mcp` console script runs an [MCP](https://modelcontextprotocol.io) s
 
 ## Setup (Claude Code, project-scoped)
 
-1. Install `coarse` from the local checkout (or PyPI when published):
+1. Install the `coarse-ink` package (which ships the `coarse-mcp` script) from the local checkout, or from PyPI once published:
 
    ```bash
    uv tool install --from /Users/you/coarse coarse-ink
    ```
+
+   The install creates several console scripts (`coarse`, `coarse-ink`, `coarse-review`, `coarse-mcp`); the MCP server entry point is `coarse-mcp`.
 
 2. Add a `.mcp.json` at your project root:
 

@@ -2,7 +2,21 @@
 
 from __future__ import annotations
 
-from coarse.mcp_server import mcp, ping
+import asyncio
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+
+from coarse.mcp_server import (
+    _sessions,
+    ask,
+    end_session,
+    list_sessions,
+    mcp,
+    ping,
+    start_chat,
+)
 
 
 def test_ping_returns_pong() -> None:
@@ -11,14 +25,6 @@ def test_ping_returns_pong() -> None:
 
 def test_server_name_is_coarse_chat() -> None:
     assert mcp.name == "coarse-chat"
-
-
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
-
-from coarse.mcp_server import _sessions, start_chat
 
 
 @pytest.fixture(autouse=True)
@@ -71,9 +77,6 @@ def test_start_chat_raises_when_review_missing(fake_paper: Path, tmp_path: Path)
         start_chat(str(fake_paper), str(missing))
 
 
-from coarse.mcp_server import ask
-
-
 def test_ask_returns_assistant_reply(fake_paper: Path, fake_review: Path) -> None:
     session_id = start_chat(str(fake_paper), str(fake_review))
     _sessions[session_id]._client = MagicMock(
@@ -97,9 +100,6 @@ def test_ask_appends_user_question_to_history(fake_paper: Path, fake_review: Pat
 def test_ask_raises_for_unknown_session_id() -> None:
     with pytest.raises(KeyError, match="unknown session"):
         ask("nonexistent-id", "Hi.")
-
-
-from coarse.mcp_server import list_sessions
 
 
 def test_list_sessions_empty_by_default() -> None:
@@ -129,9 +129,6 @@ def test_list_sessions_turns_counts_user_questions(fake_paper: Path, fake_review
     assert entry["turns"] == 2
 
 
-from coarse.mcp_server import end_session
-
-
 def test_end_session_removes_session(fake_paper: Path, fake_review: Path) -> None:
     session_id = start_chat(str(fake_paper), str(fake_review))
     assert session_id in _sessions
@@ -149,9 +146,6 @@ def test_end_session_returns_confirmation_string(fake_paper: Path, fake_review: 
 def test_end_session_raises_for_unknown_id() -> None:
     with pytest.raises(KeyError, match="unknown session"):
         end_session("nonexistent-id")
-
-
-import asyncio
 
 
 def test_all_tools_registered_on_mcp() -> None:
