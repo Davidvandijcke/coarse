@@ -70,6 +70,39 @@ def ask(session_id: str, question: str) -> str:
     return session.ask(question)
 
 
+@mcp.tool()
+def list_sessions() -> list[dict]:
+    """List all active chat sessions and their metadata.
+
+    Returns:
+        A list of dicts with keys: session_id, paper_path, review_path, model, turns.
+        `turns` counts the user questions asked so far in the session (excludes the
+        initial bootstrap user message and any literature-search injection messages).
+    """
+    out = []
+    for sid, sess in _sessions.items():
+        # Initial history is [system, user_initial]; subsequent user messages are
+        # either turn questions or literature-search results. Turn questions are
+        # the ones that did NOT come from the search-result injection, which
+        # always begins with the literal "Literature search results for `".
+        turn_questions = sum(
+            1
+            for m in sess.history[2:]
+            if m["role"] == "user"
+            and not m["content"].startswith("Literature search results for `")
+        )
+        out.append(
+            {
+                "session_id": sid,
+                "paper_path": str(sess.paper_path),
+                "review_path": str(sess.review_path),
+                "model": sess.model,
+                "turns": turn_questions,
+            }
+        )
+    return out
+
+
 def main() -> None:
     """Entry point for the `coarse-mcp` console script."""
     mcp.run()

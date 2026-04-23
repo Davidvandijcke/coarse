@@ -97,3 +97,33 @@ def test_ask_appends_user_question_to_history(fake_paper: Path, fake_review: Pat
 def test_ask_raises_for_unknown_session_id() -> None:
     with pytest.raises(KeyError, match="unknown session"):
         ask("nonexistent-id", "Hi.")
+
+
+from coarse.mcp_server import list_sessions
+
+
+def test_list_sessions_empty_by_default() -> None:
+    assert list_sessions() == []
+
+
+def test_list_sessions_returns_metadata(fake_paper: Path, fake_review: Path) -> None:
+    session_id = start_chat(str(fake_paper), str(fake_review), model="openai/gpt-4o-mini")
+    sessions = list_sessions()
+    assert len(sessions) == 1
+    entry = sessions[0]
+    assert entry["session_id"] == session_id
+    assert entry["paper_path"].endswith("paper.md")
+    assert entry["review_path"].endswith("review.md")
+    assert entry["model"] == "openai/gpt-4o-mini"
+    assert entry["turns"] == 0
+
+
+def test_list_sessions_turns_counts_user_questions(fake_paper: Path, fake_review: Path) -> None:
+    session_id = start_chat(str(fake_paper), str(fake_review))
+    _sessions[session_id]._client = MagicMock(
+        complete_text=MagicMock(return_value="reply")
+    )
+    ask(session_id, "Q1?")
+    ask(session_id, "Q2?")
+    [entry] = list_sessions()
+    assert entry["turns"] == 2
