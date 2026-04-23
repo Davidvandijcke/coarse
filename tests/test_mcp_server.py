@@ -69,3 +69,31 @@ def test_start_chat_raises_when_review_missing(fake_paper: Path, tmp_path: Path)
     missing = tmp_path / "does_not_exist.md"
     with pytest.raises(FileNotFoundError, match="review"):
         start_chat(str(fake_paper), str(missing))
+
+
+from coarse.mcp_server import ask
+
+
+def test_ask_returns_assistant_reply(fake_paper: Path, fake_review: Path) -> None:
+    session_id = start_chat(str(fake_paper), str(fake_review))
+    _sessions[session_id]._client = MagicMock(
+        complete_text=MagicMock(return_value="Hello, author.")
+    )
+    reply = ask(session_id, "What is the paper about?")
+    assert reply == "Hello, author."
+
+
+def test_ask_appends_user_question_to_history(fake_paper: Path, fake_review: Path) -> None:
+    session_id = start_chat(str(fake_paper), str(fake_review))
+    _sessions[session_id]._client = MagicMock(
+        complete_text=MagicMock(return_value="Reply.")
+    )
+    ask(session_id, "Question one?")
+    history = _sessions[session_id].history
+    user_messages = [m["content"] for m in history if m["role"] == "user"]
+    assert any("Question one?" in m for m in user_messages)
+
+
+def test_ask_raises_for_unknown_session_id() -> None:
+    with pytest.raises(KeyError, match="unknown session"):
+        ask("nonexistent-id", "Hi.")

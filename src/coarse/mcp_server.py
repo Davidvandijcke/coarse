@@ -50,6 +50,26 @@ def start_chat(paper_path: str, review_path: str, model: str | None = None) -> s
     return session_id
 
 
+@mcp.tool()
+def ask(session_id: str, question: str) -> str:
+    """Send a question to a running chat session and return the reviewer's reply.
+
+    The session may transparently consult Perplexity Sonar Pro for literature
+    lookups (up to 3 hops per turn) before composing the final reply.
+
+    Args:
+        session_id: Id returned by `start_chat`.
+        question: The user's question for this turn.
+
+    Returns:
+        The reviewer's reply as plain markdown text.
+    """
+    session = _sessions.get(session_id)
+    if session is None:
+        raise KeyError(f"unknown session: {session_id}")
+    return session.ask(question)
+
+
 def main() -> None:
     """Entry point for the `coarse-mcp` console script."""
     mcp.run()
