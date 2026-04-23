@@ -64,7 +64,3 @@ testpaths = ["tests"]
 addopts = "-m 'not slow'"
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
-[dependency-groups]
-dev = [
-    "pytest>=9.0.3",
-]

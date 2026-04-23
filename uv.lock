@@ -384,11 +384,6 @@ formats = [
     { name = "markdownify" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "coarse-ink", extras = ["docling"], marker = "extra == 'all'" },
@@ -412,9 +407,6 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
 ]
 provides-extras = ["docling", "formats", "all", "dev"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.0.3" }]
 
 [[package]]
 name = "cobble"
