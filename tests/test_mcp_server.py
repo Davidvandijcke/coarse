@@ -127,3 +127,25 @@ def test_list_sessions_turns_counts_user_questions(fake_paper: Path, fake_review
     ask(session_id, "Q2?")
     [entry] = list_sessions()
     assert entry["turns"] == 2
+
+
+from coarse.mcp_server import end_session
+
+
+def test_end_session_removes_session(fake_paper: Path, fake_review: Path) -> None:
+    session_id = start_chat(str(fake_paper), str(fake_review))
+    assert session_id in _sessions
+    end_session(session_id)
+    assert session_id not in _sessions
+
+
+def test_end_session_returns_confirmation_string(fake_paper: Path, fake_review: Path) -> None:
+    session_id = start_chat(str(fake_paper), str(fake_review))
+    msg = end_session(session_id)
+    assert session_id in msg
+    assert "ended" in msg.lower()
+
+
+def test_end_session_raises_for_unknown_id() -> None:
+    with pytest.raises(KeyError, match="unknown session"):
+        end_session("nonexistent-id")

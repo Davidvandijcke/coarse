@@ -103,6 +103,22 @@ def list_sessions() -> list[dict]:
     return out
 
 
+@mcp.tool()
+def end_session(session_id: str) -> str:
+    """Drop a chat session from memory. Frees its history.
+
+    Args:
+        session_id: Id returned by `start_chat`.
+
+    Returns:
+        A short confirmation string.
+    """
+    if session_id not in _sessions:
+        raise KeyError(f"unknown session: {session_id}")
+    del _sessions[session_id]
+    return f"Session {session_id} ended."
+
+
 def main() -> None:
     """Entry point for the `coarse-mcp` console script."""
     mcp.run()
