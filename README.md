@@ -204,6 +204,10 @@ print(review.detailed_comments[0].feedback)  # access structured fields
 rendered markdown, and the extracted paper text. The `pdf_path` parameter accepts any
 supported file format (PDF, TXT, MD, TeX, DOCX, HTML, EPUB).
 
+### MCP server
+
+`coarse` ships with an MCP server (`coarse-mcp`) that exposes the chat reviewer as tools usable from Claude Code and other MCP clients. See [docs/mcp.md](docs/mcp.md) for setup.
+
 ## Configuration
 
 Settings are stored in `~/.coarse/config.toml`:
