@@ -46,6 +46,7 @@ dev = ["pytest>=8.0", "ruff>=0.4"]
 [project.scripts]
 coarse = "coarse.cli:app"
 coarse-ink = "coarse.cli:app"
+coarse-mcp = "coarse.mcp_server:main"
 coarse-review = "coarse.cli_review:main"
 
 [tool.hatch.build.targets.wheel]
@@ -62,3 +63,8 @@ select = ["E", "F", "I", "W"]
 testpaths = ["tests"]
 addopts = "-m 'not slow'"
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
