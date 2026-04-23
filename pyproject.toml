@@ -21,6 +21,7 @@ classifiers = [
 dependencies = [
     "litellm>=1.83.0",
     "instructor>=1.15.1",
+    "mcp>=1.0",
     "pydantic>=2.0",
     "typer>=0.12",
     "rich>=13.0",
