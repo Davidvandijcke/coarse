@@ -149,3 +149,21 @@ def test_end_session_returns_confirmation_string(fake_paper: Path, fake_review: 
 def test_end_session_raises_for_unknown_id() -> None:
     with pytest.raises(KeyError, match="unknown session"):
         end_session("nonexistent-id")
+
+
+import asyncio
+
+
+def test_all_tools_registered_on_mcp() -> None:
+    """Every public tool function should be exposed by the MCP server."""
+    expected = {"ping", "start_chat", "ask", "list_sessions", "end_session"}
+    # FastMCP exposes registered tools via list_tools(). The exact accessor
+    # may differ across mcp SDK versions; try the documented async API first
+    # and fall back to the internal registry if needed.
+    try:
+        tools = asyncio.run(mcp.list_tools())
+        names = {t.name for t in tools}
+    except AttributeError:
+        # Fallback for older/newer SDK shapes: dig into the tool manager.
+        names = set(mcp._tool_manager._tools.keys())  # type: ignore[attr-defined]
+    assert expected.issubset(names), f"missing tools: {expected - names}"
