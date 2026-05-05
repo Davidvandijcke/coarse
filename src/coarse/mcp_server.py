@@ -12,7 +12,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from coarse.chat import ChatSession
+from coarse.chat import ChatSession, run_literature_query
 
 mcp = FastMCP("coarse-chat")
 
@@ -101,6 +101,24 @@ def list_sessions() -> list[dict]:
             }
         )
     return out
+
+
+@mcp.tool()
+def search_literature(query: str) -> str:
+    """Run a one-shot literature search via Perplexity Sonar Pro.
+
+    Unlike `ask`, this does not require a session or a paper — it is a direct
+    pass-through to the web-grounded search model. Use it when you want to look
+    something up in the literature without attaching a paper context.
+
+    Args:
+        query: Free-text search query (e.g. "recent work on regression
+            discontinuity with distribution-valued outcomes").
+
+    Returns:
+        Markdown text with findings and citations, as returned by the model.
+    """
+    return run_literature_query(query)
 
 
 @mcp.tool()

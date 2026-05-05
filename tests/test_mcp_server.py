@@ -15,6 +15,7 @@ from coarse.mcp_server import (
     list_sessions,
     mcp,
     ping,
+    search_literature,
     start_chat,
 )
 
@@ -148,9 +149,29 @@ def test_end_session_raises_for_unknown_id() -> None:
         end_session("nonexistent-id")
 
 
+def test_search_literature_calls_run_literature_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_run(query: str) -> str:
+        captured["query"] = query
+        return "## Findings\n\n- Paper A (2024) shows..."
+
+    monkeypatch.setattr("coarse.mcp_server.run_literature_query", fake_run)
+    reply = search_literature("recent work on RDD with distribution outcomes")
+    assert captured["query"] == "recent work on RDD with distribution outcomes"
+    assert "Findings" in reply
+
+
 def test_all_tools_registered_on_mcp() -> None:
     """Every public tool function should be exposed by the MCP server."""
-    expected = {"ping", "start_chat", "ask", "list_sessions", "end_session"}
+    expected = {
+        "ping",
+        "start_chat",
+        "ask",
+        "list_sessions",
+        "end_session",
+        "search_literature",
+    }
     # FastMCP exposes registered tools via list_tools(). The exact accessor
     # may differ across mcp SDK versions; try the documented async API first
     # and fall back to the internal registry if needed.

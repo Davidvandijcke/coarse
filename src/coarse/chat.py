@@ -27,7 +27,7 @@ def _extract_search_query(reply: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
-def _run_literature_query(query: str) -> str:
+def run_literature_query(query: str) -> str:
     """One-shot Perplexity Sonar Pro lookup. Returns the raw markdown reply."""
     lit_client = LLMClient(model=LITERATURE_SEARCH_MODEL)
     messages = [
@@ -79,7 +79,7 @@ class ChatSession:
             if query is None:
                 return reply
 
-            results = _run_literature_query(query)
+            results = run_literature_query(query)
             self.history.append(
                 {
                     "role": "user",

@@ -597,6 +597,12 @@ class LLMClient:
         content = response.choices[0].message.content
         if not content or not content.strip():
             raise ValueError(f"Model {self._model} returned empty response")
+        citations = getattr(response, "citations", None) or []
+        if citations:
+            sources = "\n\n**Sources:**\n" + "\n".join(
+                f"{i + 1}. {url}" for i, url in enumerate(citations)
+            )
+            content = content + sources
         return content.strip()
 
     def add_cost(self, cost_usd: float) -> None:
