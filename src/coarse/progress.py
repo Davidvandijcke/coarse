@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Literal
 
-PipelineProgressEvent = Literal["started", "completed"]
+PipelineProgressEvent = Literal["started", "updated", "completed"]
 
 
 @dataclass(frozen=True, slots=True)

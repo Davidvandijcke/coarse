@@ -916,6 +916,35 @@ def test_complete_openrouter_kimi_retries_md_json_on_route_rejection():
     fallback_client.chat.completions.create_with_completion.assert_called_once()
 
 
+def test_complete_invokes_cost_callback_with_cumulative_total(mock_instructor_client):
+    expected = _SimpleModel(value="hello")
+    mock_completion = _make_mock_completion()
+    mock_instructor_client.chat.completions.create_with_completion.return_value = (
+        expected,
+        mock_completion,
+    )
+    totals: list[float] = []
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.42):
+        client = LLMClient(model=TEST_MODEL, config=CoarseConfig(), cost_callback=totals.append)
+        result = client.complete([{"role": "user", "content": "hello"}], _SimpleModel)
+
+    assert result == expected
+    assert totals == [0.42]
+    assert client.cost_usd == 0.42
+
+
+def test_add_cost_invokes_cost_callback_with_running_total(mock_instructor_client):
+    totals: list[float] = []
+    client = LLMClient(model=TEST_MODEL, config=CoarseConfig(), cost_callback=totals.append)
+
+    client.add_cost(0.10)
+    client.add_cost(0.25)
+
+    assert totals == [0.10, 0.35]
+    assert client.cost_usd == 0.35
+
+
 def test_complete_openrouter_kimi_salvages_fallback_md_json_retry_error():
     primary_client = MagicMock()
     fallback_client = MagicMock()

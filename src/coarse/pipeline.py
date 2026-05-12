@@ -128,16 +128,30 @@ class _PipelineProgressReporter:
         self._completed = 0
         self._total = max(1, total_stages)
         self._disabled = callback is None
+        self._current_stage_key = "pipeline"
+        self._current_stage_label = "Running review pipeline"
 
     def set_total(self, total_stages: int) -> None:
         self._total = max(1, max(self._completed, total_stages))
 
     def start(self, stage_key: str, stage_label: str, actual_cost_usd: float) -> None:
+        self._current_stage_key = stage_key
+        self._current_stage_label = stage_label
         self._emit("started", stage_key, stage_label, actual_cost_usd)
 
     def complete(self, stage_key: str, stage_label: str, actual_cost_usd: float) -> None:
         self._completed += 1
+        self._current_stage_key = stage_key
+        self._current_stage_label = stage_label
         self._emit("completed", stage_key, stage_label, actual_cost_usd)
+
+    def update_cost(self, actual_cost_usd: float) -> None:
+        self._emit(
+            "updated",
+            self._current_stage_key,
+            self._current_stage_label,
+            actual_cost_usd,
+        )
 
     def _emit(
         self,
@@ -377,8 +391,8 @@ def review_paper(
         config = load_config()
 
     resolved_model = model or config.default_model
-    client = LLMClient(model=resolved_model, config=config)
     progress = _PipelineProgressReporter(progress_callback)
+    client = LLMClient(model=resolved_model, config=config, cost_callback=progress.update_cost)
     run_qa = False
 
     if skip_cost_gate:

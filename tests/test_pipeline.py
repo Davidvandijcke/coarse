@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from coarse.config import CoarseConfig
 from coarse.pipeline import (
+    _PipelineProgressReporter,
     _renumber_comments,
     _review_section,
     _section_needs_proof_verify,
@@ -349,6 +350,24 @@ def test_review_paper_advances_section_progress_as_futures_finish():
 
     completed_keys = [event.stage_key for event in progress_events if event.event == "completed"]
     assert completed_keys.index("section_2") < completed_keys.index("section_1")
+
+
+def test_pipeline_progress_reporter_emits_cost_only_updates():
+    """Cost updates should preserve the active stage while spend changes mid-stage."""
+    events: list[PipelineProgress] = []
+    reporter = _PipelineProgressReporter(events.append, total_stages=5)
+
+    reporter.start("overview", "Generating overview", 0.0)
+    reporter.update_cost(0.1234)
+
+    assert events[-1] == PipelineProgress(
+        event="updated",
+        stage_key="overview",
+        stage_label="Generating overview",
+        completed_stages=0,
+        total_stages=5,
+        actual_cost_usd=0.1234,
+    )
 
 
 def test_review_paper_skips_references_section():
@@ -829,7 +848,7 @@ def test_review_paper_uses_provided_config():
     overview = _make_overview()
     captured_models: list[str] = []
 
-    def fake_llm_client(model=None, config=None):
+    def fake_llm_client(model=None, config=None, cost_callback=None):
         captured_models.append(model)
         mock = MagicMock()
         return mock
