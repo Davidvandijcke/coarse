@@ -380,6 +380,33 @@ def _classify_hosted_key_error(api_key: str | None) -> str | None:
     )
 
 
+def _extract_response_body_message(exc: BaseException) -> str:
+    """Pull the provider-returned error body `message` field, lowercased.
+
+    Mirrors the body inspection that ``coarse.extraction_openrouter.
+    _describe_api_error`` does, minus the formatting — the worker-side
+    classifier needs the same signal but doesn't emit a scrubbed summary
+    line because the raw classifier output is what lands in
+    ``reviews.error_message`` on the status page.
+    """
+    resp = getattr(exc, "response", None)
+    if resp is None:
+        return ""
+    try:
+        body = resp.json()
+    except Exception:
+        return (getattr(resp, "text", "") or "").lower()
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            message = err.get("message")
+            if isinstance(message, str):
+                return message.lower()
+        elif isinstance(err, str):
+            return err.lower()
+    return ""
+
+
 def _classify_api_error(exc: BaseException) -> str | None:
     """Return a clear, user-facing message for common API errors.
 
@@ -391,8 +418,24 @@ def _classify_api_error(exc: BaseException) -> str | None:
     if resp is not None and not isinstance(status, int):
         status = getattr(resp, "status_code", None)
     msg = str(exc).lower()
+    body_msg = _extract_response_body_message(exc)
 
     if status == 401 or ("invalid" in msg and "key" in msg) or "unauthorized" in msg:
+        # OpenRouter returns 401 with body "User not found" when a
+        # provisioning/management key is presented on the inference
+        # endpoint — those keys create/list API keys but don't identify
+        # an inference user. This is the terminal classifier (see
+        # do_review's except BaseException) that writes the message
+        # into reviews.error_message, so it must stay in lockstep with
+        # the extraction-side fix in coarse/extraction_openrouter.py.
+        if "user not found" in body_msg:
+            return (
+                "OpenRouter rejected this key with 'User not found' — that "
+                "fires when a provisioning/management key is used on the "
+                "inference endpoint. Create a regular API key at "
+                "https://openrouter.ai/settings/keys (the 'Create Key' "
+                "button, not the provisioning section) and paste that one."
+            )
         return "Invalid API key. Check that your key is correct and active."
     if status == 402 or any(
         kw in msg
@@ -535,6 +578,57 @@ def _get_review_status(db, job_id: str) -> str | None:
     return None
 
 
+def _download_pdf_with_retry(db, pdf_storage_path: str, job_id: str, *, attempts: int = 4) -> bytes:
+    """Download a PDF from Supabase Storage, retrying transient httpx failures.
+
+    ``storage3`` uses httpx with a default ~20s timeout and HTTP/2 — a single
+    network hiccup on the Modal-to-Supabase hop raises ``httpx.ReadTimeout``
+    and kills the whole review before the pipeline even starts. The Modal
+    worker caller used to make one unguarded call to ``.download()``; one
+    timeout = one dead review stuck in ``status=running`` until the
+    sweep_stale_reviews cron flipped it to failed at 3h.
+
+    Retry ~exponentially (1s, 2s, 4s, 8s max) up to ``attempts`` times. Total
+    wall-clock worst case is ~15s on a fully dead link, which is trivial
+    compared to the 10-30 minute review pipeline.
+
+    On exhaustion, raise ``RuntimeError`` chained from the last httpx
+    exception. The do_review ``except BaseException`` handler upstream will
+    write a user-facing error_message and set status=failed, so the user
+    sees a real failure instead of an infinite spinner.
+    """
+    import time as _time
+
+    # Catch ``Exception`` (not ``BaseException``) so ``KeyboardInterrupt`` /
+    # ``SystemExit`` still propagate, and any in-process test short-circuit
+    # that deliberately throws is still reported under its own exception
+    # class rather than being swallowed as a "retryable" transient.
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            data = db.storage.from_("papers").download(pdf_storage_path)
+            if not data:
+                raise ValueError(f"Storage download returned empty for {pdf_storage_path}")
+            if attempt > 0:
+                print(f"[{job_id}] storage download recovered on attempt {attempt + 1}/{attempts}")
+            return data
+        except Exception as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                wait = min(2**attempt, 8)
+                print(
+                    f"[{job_id}] storage download attempt "
+                    f"{attempt + 1}/{attempts} failed "
+                    f"({type(exc).__name__}: {_sanitize_error(str(exc))}), "
+                    f"retrying in {wait}s"
+                )
+                _time.sleep(wait)
+    raise RuntimeError(
+        f"Supabase Storage download failed after {attempts} attempts "
+        f"({type(last_exc).__name__ if last_exc else 'unknown'})"
+    ) from last_exc
+
+
 @app.function(
     image=image,
     timeout=7200,
@@ -609,10 +703,11 @@ def do_review(req_dict: dict):
     if resolved_user_key:
         os.environ["OPENROUTER_API_KEY"] = resolved_user_key
 
-    # Download file from Supabase Storage
-    pdf_bytes = db.storage.from_("papers").download(pdf_storage_path)
-    if not pdf_bytes:
-        raise ValueError(f"Storage download returned empty for {pdf_storage_path}")
+    # Download file from Supabase Storage. Wrapped in exponential-backoff
+    # retry because storage3's httpx default ~20s timeout has been observed
+    # to trip on transient Modal-to-Supabase network hiccups, otherwise
+    # killing the whole review before the pipeline even starts.
+    pdf_bytes = _download_pdf_with_retry(db, pdf_storage_path, job_id)
     print(f"[{job_id}] Downloaded file — {len(pdf_bytes)} bytes")
 
     ext = Path(pdf_storage_path).suffix or ".pdf"

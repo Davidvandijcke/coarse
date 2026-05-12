@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 /* ── Default model options ─────────────────────────────────── */
 const DEFAULT_MODELS = [
+  { id: "anthropic/claude-opus-4.7", label: "Opus 4.7", provider: "Anthropic" },
   { id: "anthropic/claude-opus-4.6", label: "Opus 4.6", provider: "Anthropic" },
   { id: "anthropic/claude-sonnet-4.6", label: "Sonnet 4.6", provider: "Anthropic" },
   { id: "openai/gpt-5.4", label: "GPT-5.4", provider: "OpenAI" },

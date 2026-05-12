@@ -21,7 +21,15 @@ import { getSubmissionPauseResponse } from "@/lib/systemStatus";
 import { getSiteOriginForRequest } from "@/lib/siteOrigin";
 
 export const maxDuration = 30;
-const MODAL_TRIGGER_TIMEOUT_MS = 10_000;
+// Budget below the 30s Vercel function ceiling. A slow Modal cold start of
+// `run_review` was routinely hitting 9-10s on the previous 10s cap, racing
+// the AbortController against a do_review.spawn() that had already fired
+// server-side — the catch block below would then delete review_secrets and
+// mark the review failed while the worker kept running with no key. 25s
+// gives ~2.5x margin over the observed 9.78s cold-start tail and leaves
+// ~5s for the Supabase inserts, optional confirmation email, and response
+// serialization before Vercel kills the function at maxDuration.
+const MODAL_TRIGGER_TIMEOUT_MS = 25_000;
 const MODAL_WEBHOOK_HOST_SUFFIXES = [
   buildModalWebhookHostSuffix("coarse-review", "run-review"),
 ];
@@ -332,14 +340,44 @@ export async function POST(request: NextRequest) {
       );
     }
   } catch (err) {
-    await supabaseAdmin.from("review_secrets").delete().eq("review_id", id);
+    // DO NOT delete review_secrets or markFailed here. Modal's run_review
+    // calls do_review.spawn() BEFORE returning its HTTP response, so on an
+    // AbortError (we timed out waiting) or a network error the spawn may
+    // have already registered the worker. Cleaning up review_secrets on
+    // that path is what caused the "OPENROUTER_API_KEY=MISSING" production
+    // bug — the worker would then start with the key gone and fail every
+    // LLM call. The worker unconditionally sets status=running on start
+    // (deploy/modal_worker.py ~line 591), so any markFailed here is
+    // transient noise that the worker would overwrite anyway.
+    //
+    // If the spawn genuinely did not happen (Modal is down or the network
+    // dropped before the request landed), the row is orphaned. That case
+    // is handled by two existing crons:
+    //   - cleanup_review_secrets.yml (hourly, TTL 3h) sweeps stale secrets
+    //   - sweep_stale_reviews.yml (every 15 min) marks queued/running rows
+    //     older than 3h as failed with a user-friendly message.
+    //
+    // The !workerResp.ok branch above still cleans up — that path is an
+    // explicit Modal 4xx/5xx, which means the spawn did NOT execute.
+    //
+    // Return 202 with {id, accessToken} so the client's submitResp.ok
+    // check passes and it redirects to /status/<id>. The status page
+    // polls and shows queued → running → done as the worker catches up.
     const isAbort = err instanceof Error && err.name === "AbortError";
-    const message = isAbort
-      ? "Review worker did not respond in time"
-      : "Failed to start review worker";
-    await markFailed(message);
-    console.error(`[${id}] worker dispatch failed`, err);
-    return NextResponse.json({ error: message }, { status: 503 });
+    console.error(
+      `[${id}] webhook dispatch uncertain (${isAbort ? "timeout" : "network"}) — ` +
+        `letting worker proceed; cleanup_review_secrets will sweep if spawn never fired`,
+      err,
+    );
+    return NextResponse.json(
+      {
+        id,
+        accessToken,
+        warning:
+          "Review submitted. The worker is still starting — the status page will update in a moment.",
+      },
+      { status: 202 },
+    );
   } finally {
     clearTimeout(timeoutId);
   }
