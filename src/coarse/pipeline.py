@@ -131,6 +131,7 @@ class _PipelineProgressReporter:
         self._completed = 0
         self._total = max(1, total_stages)
         self._disabled = callback is None
+        self._has_started_stage = False
         self._current_stage_key = "pipeline"
         self._current_stage_label = "Running review pipeline"
 
@@ -138,17 +139,21 @@ class _PipelineProgressReporter:
         self._total = max(1, max(self._completed, total_stages))
 
     def start(self, stage_key: str, stage_label: str, actual_cost_usd: float) -> None:
+        self._has_started_stage = True
         self._current_stage_key = stage_key
         self._current_stage_label = stage_label
         self._emit("started", stage_key, stage_label, actual_cost_usd)
 
     def complete(self, stage_key: str, stage_label: str, actual_cost_usd: float) -> None:
         self._completed += 1
+        self._has_started_stage = True
         self._current_stage_key = stage_key
         self._current_stage_label = stage_label
         self._emit("completed", stage_key, stage_label, actual_cost_usd)
 
     def update_cost(self, actual_cost_usd: float) -> None:
+        if not self._has_started_stage:
+            return
         self._emit(
             "updated",
             self._current_stage_key,

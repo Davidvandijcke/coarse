@@ -421,6 +421,16 @@ def test_pipeline_progress_reporter_emits_cost_only_updates():
     )
 
 
+def test_pipeline_progress_reporter_ignores_cost_updates_before_first_stage():
+    """Cost-only updates should not start the UI before a real pipeline stage exists."""
+    events: list[PipelineProgress] = []
+    reporter = _PipelineProgressReporter(events.append, total_stages=5)
+
+    reporter.update_cost(0.1234)
+
+    assert events == []
+
+
 def test_review_paper_skips_references_section():
     """SectionAgent.run() must not be called with the REFERENCES section."""
     config = _make_config()
