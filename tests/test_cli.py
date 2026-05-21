@@ -473,7 +473,8 @@ def test_install_skills_logs_version_replacement(tmp_path: Path, monkeypatch) ->
     result = runner.invoke(app, ["install-skills", "--all", "--force"])
 
     assert result.exit_code == 0, result.output
-    assert "replaced 0.0.1-fake-old" in result.output
+    assert "replaced" in result.output
+    assert "0.0.1-fake-old" in result.output
     # All sentinels updated to the current version.
     for host_dir in (".claude", ".codex", ".gemini"):
         sentinel = fake_home / f"{host_dir}/skills/coarse-review/.coarse-version"

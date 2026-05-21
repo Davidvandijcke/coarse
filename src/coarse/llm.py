@@ -749,17 +749,30 @@ def _lookup_model_cost(model: str) -> dict | None:
     the cost gate returns accurate numbers regardless of which form the
     caller passed.
     """
-    info = litellm.model_cost.get(model)
-    if info is None and "/" in model:
-        info = litellm.model_cost.get(model.split("/", 1)[1])
-    if info is None and model.startswith("openrouter/"):
-        info = litellm.model_cost.get(model.removeprefix("openrouter/"))
-    # Bare provider/model → try with the openrouter/ prefix added.
-    # (Some entries, notably anthropic/claude-{sonnet,opus}-4.6, only
-    # exist under the openrouter/ form in litellm's registry.)
-    if info is None and "/" in model and not model.startswith("openrouter/"):
-        info = litellm.model_cost.get("openrouter/" + model)
-    return info
+    candidates: list[str] = [model]
+
+    if "/" in model:
+        candidates.append(model.split("/", 1)[1])
+
+    if model.startswith("openrouter/"):
+        deproxied = model.removeprefix("openrouter/")
+        candidates.append(deproxied)
+        if "/" in deproxied:
+            candidates.append(deproxied.split("/", 1)[1])
+    elif "/" in model:
+        # Some entries only exist under the openrouter/ form in litellm's
+        # registry, so try that variant for bare provider/model strings.
+        candidates.append("openrouter/" + model)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        info = litellm.model_cost.get(candidate)
+        if info is not None:
+            return info
+    return None
 
 
 _UNKNOWN_MODEL_CEILING = 16_384

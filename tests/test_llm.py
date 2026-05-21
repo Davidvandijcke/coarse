@@ -100,6 +100,12 @@ def test_model_cost_per_token_unknown_model():
     assert result == (0.0, 0.0)
 
 
+def test_model_cost_per_token_openrouter_google_alias_uses_bare_model_fallback():
+    in_cost, out_cost = model_cost_per_token("openrouter/google/gemini-pro-latest")
+    assert in_cost > 0
+    assert out_cost > 0
+
+
 def test_estimate_call_cost():
     in_cost, out_cost = model_cost_per_token("gpt-4o")
     expected = in_cost * 1000 + out_cost * 500

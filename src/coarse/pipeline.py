@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 from pathlib import Path
 
 from coarse.agents.completeness import CompletenessAgent
@@ -55,6 +55,9 @@ logger = logging.getLogger(__name__)
 _PIPELINE_FIXED_PROGRESS_STAGES = 10
 _RESULTS_TYPES = {SectionType.METHODOLOGY, SectionType.RESULTS, SectionType.OTHER}
 _DISCUSSION_TYPES = {SectionType.DISCUSSION, SectionType.CONCLUSION}
+_PARALLEL_SETUP_TIMEOUT_SECONDS = 1_200
+_SECTION_STAGE_TIMEOUT_SECONDS = 1_800
+_CROSS_SECTION_TIMEOUT_SECONDS = 1_200
 
 
 def _check_extraction_quality(structure: "PaperStructure") -> bool:
@@ -499,29 +502,49 @@ def review_paper(
         literature_context = ""
         contribution_context = None
 
-        for future in as_completed(future_map, timeout=900):
-            stage_key = future_map[future]
+        completed_futures = set()
+        try:
+            for future in as_completed(future_map, timeout=_PARALLEL_SETUP_TIMEOUT_SECONDS):
+                completed_futures.add(future)
+                stage_key = future_map[future]
 
-            if stage_key == "calibration":
-                calibration = future.result()
-                progress.complete("calibration", "Completed domain calibration", client.cost_usd)
-                continue
+                if stage_key == "calibration":
+                    calibration = future.result()
+                    progress.complete(
+                        "calibration",
+                        "Completed domain calibration",
+                        client.cost_usd,
+                    )
+                    continue
 
-            if stage_key == "literature_search":
-                try:
-                    literature_context = future.result()
-                except Exception:
-                    logger.warning("Literature search failed, skipping", exc_info=True)
-                    literature_context = ""
+                if stage_key == "literature_search":
+                    try:
+                        literature_context = future.result()
+                    except Exception:
+                        logger.warning("Literature search failed, skipping", exc_info=True)
+                        literature_context = ""
+                    progress.complete(
+                        "literature_search", "Completed literature search", client.cost_usd
+                    )
+                    continue
+
+                contribution_context = future.result()
                 progress.complete(
-                    "literature_search", "Completed literature search", client.cost_usd
+                    "contribution_extraction", "Completed contribution extraction", client.cost_usd
                 )
-                continue
+        except TimeoutError:
+            logger.warning("Parallel setup timed out; skipping unfinished tasks", exc_info=True)
 
-            contribution_context = future.result()
-            progress.complete(
-                "contribution_extraction", "Completed contribution extraction", client.cost_usd
-            )
+        for future, stage_key in future_map.items():
+            if future in completed_futures:
+                continue
+            if stage_key == "calibration":
+                calibration = None
+            elif stage_key == "literature_search":
+                literature_context = ""
+            else:
+                contribution_context = None
+            progress.complete(stage_key, f"Skipped {stage_key.replace('_', ' ')}", client.cost_usd)
 
     overview_agent = OverviewAgent(client)
     section_agent = SectionAgent(client)
@@ -587,18 +610,36 @@ def review_paper(
             ] = (i, section.title)
 
         section_comments: list[DetailedComment] = []
-        for future in as_completed(section_futures):
-            section_index, sec_title = section_futures[future]
-            stage_label = f"Reviewed section {section_index}/{len(non_ref_sections)}: {sec_title}"
-            try:
-                comments = future.result()
-                section_comments.extend(comments)
-            except Exception:
-                logger.warning("Section agent failed for '%s', skipping", sec_title, exc_info=True)
+        completed_futures = set()
+        try:
+            for future in as_completed(section_futures, timeout=_SECTION_STAGE_TIMEOUT_SECONDS):
+                completed_futures.add(future)
+                section_index, sec_title = section_futures[future]
                 stage_label = (
-                    f"Skipped section {section_index}/{len(non_ref_sections)}: {sec_title}"
+                    f"Reviewed section {section_index}/{len(non_ref_sections)}: {sec_title}"
                 )
-            progress.complete(f"section_{section_index}", stage_label, client.cost_usd)
+                try:
+                    comments = future.result()
+                    section_comments.extend(comments)
+                except Exception:
+                    logger.warning(
+                        "Section agent failed for '%s', skipping", sec_title, exc_info=True
+                    )
+                    stage_label = (
+                        f"Skipped section {section_index}/{len(non_ref_sections)}: {sec_title}"
+                    )
+                progress.complete(f"section_{section_index}", stage_label, client.cost_usd)
+        except TimeoutError:
+            logger.warning("Section review timed out; skipping unfinished sections", exc_info=True)
+
+        for future, (section_index, sec_title) in section_futures.items():
+            if future in completed_futures:
+                continue
+            progress.complete(
+                f"section_{section_index}",
+                f"Skipped section {section_index}/{len(non_ref_sections)}: {sec_title}",
+                client.cost_usd,
+            )
 
     if not section_comments:
         logger.error("All section agents failed — review will have no detailed comments")
@@ -628,22 +669,42 @@ def review_paper(
                         author_notes=author_notes,
                     )
                 ] = (i, disc_sec)
-            for future in as_completed(future_to_discussion):
-                i, disc_sec = future_to_discussion[future]
-                stage_label = f"Cross-checked results vs {disc_sec.title}"
-                try:
-                    cross_comments = future.result()
-                    cross_comments = _verify_with_fallback(
-                        cross_comments,
-                        paper_text.full_markdown,
-                        stage_name="Cross-section quote verification",
-                        drop_unverified=False,
-                    )
-                    section_comments.extend(cross_comments)
-                except Exception:
-                    logger.warning("Cross-section synthesis failed, skipping", exc_info=True)
-                    stage_label = f"Skipped cross-check vs {disc_sec.title}"
-                progress.complete(f"cross_section_{i}", stage_label, client.cost_usd)
+            completed_futures = set()
+            try:
+                for future in as_completed(
+                    future_to_discussion,
+                    timeout=_CROSS_SECTION_TIMEOUT_SECONDS,
+                ):
+                    completed_futures.add(future)
+                    i, disc_sec = future_to_discussion[future]
+                    stage_label = f"Cross-checked results vs {disc_sec.title}"
+                    try:
+                        cross_comments = future.result()
+                        cross_comments = _verify_with_fallback(
+                            cross_comments,
+                            paper_text.full_markdown,
+                            stage_name="Cross-section quote verification",
+                            drop_unverified=False,
+                        )
+                        section_comments.extend(cross_comments)
+                    except Exception:
+                        logger.warning("Cross-section synthesis failed, skipping", exc_info=True)
+                        stage_label = f"Skipped cross-check vs {disc_sec.title}"
+                    progress.complete(f"cross_section_{i}", stage_label, client.cost_usd)
+            except TimeoutError:
+                logger.warning(
+                    "Cross-section synthesis timed out; skipping unfinished tasks",
+                    exc_info=True,
+                )
+
+            for future, (i, disc_sec) in future_to_discussion.items():
+                if future in completed_futures:
+                    continue
+                progress.complete(
+                    f"cross_section_{i}",
+                    f"Skipped cross-check vs {disc_sec.title}",
+                    client.cost_usd,
+                )
 
     # --- Phase 3: Editorial filter (single pass — dedup + contradiction + quality) ---
     # The editorial agent receives full paper text for quote/absence verification.
