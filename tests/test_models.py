@@ -177,6 +177,27 @@ def test_supports_temperature_false_for_openrouter_opus_4_7():
     assert supports_temperature("openrouter/anthropic/claude-opus-4.7") is False
 
 
+def test_supports_temperature_false_for_opus_4_7_hyphen():
+    """litellm direct-Anthropic ships the hyphen form — must also gate."""
+    assert supports_temperature("anthropic/claude-opus-4-7") is False
+
+
+def test_supports_temperature_false_for_openrouter_opus_4_7_hyphen():
+    """``openrouter/`` prefix is stripped before matching, so the hyphen form
+    routed via OpenRouter still resolves to the gated prefix."""
+    assert supports_temperature("openrouter/anthropic/claude-opus-4-7") is False
+
+
+def test_supports_temperature_false_for_vertex_opus_4_7():
+    """Vertex AI uses the hyphen form with a ``vertex_ai/`` prefix."""
+    assert supports_temperature("vertex_ai/claude-opus-4-7") is False
+
+
+def test_supports_temperature_false_for_bare_opus_4_7():
+    """Bare Anthropic SDK / Bedrock-style ID without a provider prefix."""
+    assert supports_temperature("claude-opus-4-7") is False
+
+
 def test_supports_temperature_true_for_opus_4_6():
     assert supports_temperature("anthropic/claude-opus-4.6") is True
 

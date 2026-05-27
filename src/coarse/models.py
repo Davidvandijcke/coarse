@@ -179,9 +179,22 @@ def is_reasoning_model(model_id: str) -> bool:
 # 'stop', 'structured_outputs', 'tool_choice', 'tools', 'verbosity'] — no
 # temperature. The matching 4.6 entry does list it.
 #
+# The same backend ships under two ID conventions depending on the route:
+# OpenRouter uses dots (``anthropic/claude-opus-4.7``), while litellm's
+# direct-Anthropic and Vertex routes use hyphens
+# (``anthropic/claude-opus-4-7``, ``vertex_ai/claude-opus-4-7``, bare
+# ``claude-opus-4-7``). Both hit the same model, so both forms must be
+# listed — the v1.4.0 fix for #162 only registered the dot form, which
+# let ``--model anthropic/claude-opus-4-7`` slip past the gate and 400.
+#
 # Keep this tuple tight — only add a model once a passed-temperature
 # request is confirmed to fail.
-TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = ("anthropic/claude-opus-4.7",)
+TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = (
+    "anthropic/claude-opus-4.7",  # OpenRouter form
+    "anthropic/claude-opus-4-7",  # litellm direct-Anthropic form
+    "vertex_ai/claude-opus-4-7",  # Vertex AI form
+    "claude-opus-4-7",  # bare Anthropic SDK / Bedrock-style ID
+)
 
 
 def supports_temperature(model_id: str) -> bool:

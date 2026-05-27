@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **`anthropic/claude-opus-4-7` (hyphen form) now hits the temperature gate that was added in v1.4.0 for issue #162.** The v1.4.0 fix added `TEMPERATURE_UNSUPPORTED_PREFIXES` + `supports_temperature(model_id)` in `src/coarse/models.py` so the `temperature` kwarg is omitted for Opus 4.7, but the tuple only contained the OpenRouter ID form `anthropic/claude-opus-4.7` (dot). The same backend ships under hyphen-form IDs on every non-OpenRouter route: `anthropic/claude-opus-4-7` (litellm direct-Anthropic), `vertex_ai/claude-opus-4-7`, and bare `claude-opus-4-7`. Invocations like `uv run coarse-ink review paper.pdf --model anthropic/claude-opus-4-7 --yes` therefore slipped past the gate and 400'd on the first LLM call. Fix: extend `TEMPERATURE_UNSUPPORTED_PREFIXES` with the three hyphen variants; no logic change to `supports_temperature` itself (its existing `startswith` + `removeprefix("openrouter/")` matcher already resolves `openrouter/anthropic/claude-opus-4-7` once the bare prefix is registered). New parametric coverage in `tests/test_models.py` (hyphen direct + OpenRouter-prefixed + Vertex + bare) and a mirrored integration assert in `tests/test_llm.py` proving `complete()` actually drops the kwarg for the hyphen ID. The existing 4.6 test (`test_supports_temperature_true_for_opus_4_6`) remains green — we widened the gate, not slammed it open.
+
 ## v1.4.1 — 2026-04-21
 
 ### Fixed

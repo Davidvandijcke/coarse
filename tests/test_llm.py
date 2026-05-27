@@ -565,6 +565,27 @@ def test_complete_omits_temperature_for_openrouter_opus_4_7(mock_instructor_clie
     assert "temperature" not in call.kwargs
 
 
+def test_complete_omits_temperature_for_opus_4_7_hyphen(mock_instructor_client):
+    """Hyphen form (litellm direct-Anthropic) must also omit temperature.
+
+    Regression: the v1.4.0 fix only registered the dot form
+    (``anthropic/claude-opus-4.7``) so a user invoking the model via the
+    direct-Anthropic ID slipped past the gate and hit a 400.
+    """
+    client = _build_client("anthropic/claude-opus-4-7", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=256,
+            temperature=0.5,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert "temperature" not in call.kwargs
+
+
 def test_complete_forwards_temperature_for_opus_4_6(mock_instructor_client):
     """Opus 4.6 still accepts temperature — make sure we don't over-strip."""
     client = _build_client("anthropic/claude-opus-4.6", mock_instructor_client)
