@@ -16,6 +16,7 @@ from coarse.models import (
     TEMPERATURE_UNSUPPORTED_PREFIXES,
     VISION_MODEL,
     is_reasoning_model,
+    model_filename_slug,
     supports_temperature,
 )
 
@@ -161,6 +162,17 @@ def test_reasoning_max_tokens_multiplier_sensible():
 
 def test_reasoning_effort_default_is_recognized_value():
     assert REASONING_EFFORT_DEFAULT in {"low", "medium", "high"}
+
+
+def test_model_filename_slug_preserves_common_model_id_characters():
+    assert model_filename_slug("anthropic/claude-sonnet-4-6") == "anthropic_claude-sonnet-4-6"
+    assert model_filename_slug("gpt-5.4") == "gpt-5.4"
+
+
+def test_model_filename_slug_normalizes_separators_and_whitespace():
+    assert model_filename_slug("  qwen/qwen-plus-2025-07-28:thinking  ") == (
+        "qwen_qwen-plus-2025-07-28_thinking"
+    )
 
 
 # ---------------------------------------------------------------------------

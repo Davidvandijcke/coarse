@@ -22,7 +22,7 @@ from coarse.config import (
     save_config,
 )
 from coarse.extraction import SUPPORTED_EXTENSIONS
-from coarse.models import CHEAP_MODELS, QUALITY_MODEL
+from coarse.models import CHEAP_MODELS, QUALITY_MODEL, model_filename_slug
 from coarse.pipeline import review_paper
 
 app = typer.Typer(
@@ -113,7 +113,10 @@ def review(
         help="Path to paper file (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)",
     ),
     output: Optional[Path] = typer.Option(
-        None, "--output", "-o", help="Output file path (default: <pdf_stem>_review.md)"
+        None,
+        "--output",
+        "-o",
+        help="Output file path (default: <pdf_stem>_review.md; adds _<model> when --model is set)",
     ),
     model: Optional[str] = typer.Option(
         None, "--model", "-m", help="LiteLLM model string (e.g. openai/gpt-4o)"
@@ -194,8 +197,16 @@ def review(
             "extraction QA will be skipped. Set GEMINI_API_KEY to enable it.[/dim]"
         )
 
-    # Determine output path
-    out_path = output or Path(f"{pdf.stem}_review.md")
+    # Determine output path. Tag the filename with the model only when the
+    # user explicitly chose one via --model, so the default stays backward
+    # compatible (<stem>_review.md) and back-to-back runs with different
+    # models don't overwrite each other.
+    if output:
+        out_path = output
+    elif model:
+        out_path = Path(f"{pdf.stem}_review_{model_filename_slug(resolved_model)}.md")
+    else:
+        out_path = Path(f"{pdf.stem}_review.md")
 
     console.print(f"[bold]Reviewing[/bold] {pdf.name} with {resolved_model}")
 

@@ -244,7 +244,7 @@ def test_main_handoff_supports_markdown_source(tmp_path) -> None:
         "effort": "high",
         "pre_extracted": None,
     }
-    assert (out_dir / "paper_review.md").read_text(encoding="utf-8") == "# Review\n"
+    assert (out_dir / "paper_review_gpt-5.4.md").read_text(encoding="utf-8") == "# Review\n"
 
 
 def test_main_handoff_success_prints_absolute_local_and_view_lines(tmp_path, capsys) -> None:
