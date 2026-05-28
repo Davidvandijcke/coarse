@@ -229,6 +229,11 @@ def _estimate_tokens(text: str) -> int:
     return len(text) // 4
 
 
+def _has_meaningful_markdown(text: str) -> bool:
+    """Return True when extracted markdown contains non-whitespace content."""
+    return bool(text.strip())
+
+
 _DOCLING_FORMATS = frozenset({".docx", ".html", ".htm", ".tex", ".latex"})
 _FALLBACKS = {
     ".docx": _extract_docx_mammoth,
@@ -269,9 +274,11 @@ def extract_file(file_path: str | Path, use_cache: bool = True) -> PaperText:
     if ext in _DOCLING_FORMATS:
         try:
             full_markdown = _extract_docling(path)
+            if not _has_meaningful_markdown(full_markdown):
+                raise ExtractionError("Docling returned empty content")
             logger.info("Extracted %s via Docling (%d chars)", ext, len(full_markdown))
         except Exception as exc:
-            logger.info("Docling unavailable for %s: %s, using fallback", ext, exc)
+            logger.info("Docling unusable for %s: %s, using fallback", ext, exc)
             full_markdown = _FALLBACKS[ext](path)
     elif ext == ".epub":
         full_markdown = _extract_epub(path)

@@ -237,6 +237,29 @@ def test_all_backends_fail(minimal_pdf: Path) -> None:
                 extract_text(minimal_pdf, use_cache=False)
 
 
+def test_extract_file_latex_falls_back_when_docling_returns_empty(tmp_path: Path) -> None:
+    """Blank Docling output for LaTeX should trigger the regex fallback.
+
+    Regression guard for the .tex path where Docling can return an empty
+    string without raising, which used to propagate blank markdown all the
+    way to the extraction quality gate.
+    """
+    tex = tmp_path / "paper.tex"
+    tex.write_text("\\section{Intro}\nBody text.\n", encoding="utf-8")
+
+    fallback = MagicMock(return_value="# Intro\n\nBody text.\n")
+
+    with (
+        patch("coarse.extraction._extract_docling", return_value="  \n\t"),
+        patch.dict("coarse.extraction._FALLBACKS", {".tex": fallback}, clear=False),
+    ):
+        result = extract_file(tex, use_cache=False)
+
+    fallback.assert_called_once_with(tex)
+    assert result.full_markdown == "# Intro\n\nBody text.\n"
+    assert result.token_estimate == len(result.full_markdown) // 4
+
+
 # --- OpenRouter OCR error handling and retry ---
 
 
