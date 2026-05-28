@@ -69,6 +69,7 @@ src/coarse/
 ├── prompts.py               # All prompt templates
 ├── types.py                 # Pydantic models
 ├── pipeline.py              # review_paper() orchestrator
+├── progress.py              # Pipeline progress event types for live CLI reporting
 ├── review_stages.py         # Stage-local review helpers used by pipeline.py
 ├── synthesis.py             # Review → markdown string
 ├── quality.py               # Quality eval against reference (dev only)
