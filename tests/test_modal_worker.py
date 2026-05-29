@@ -308,6 +308,43 @@ def test_classify_api_error_generic_401_keeps_invalid_key_message(modal_worker) 
     assert msg == "Invalid API key. Check that your key is correct and active."
 
 
+def test_classify_api_error_403_tos_violation(modal_worker) -> None:
+    """Worker classifier must mirror the extraction-side 403 ToS detection
+    (issues #71, #183): point at privacy settings, not credits."""
+    from unittest.mock import MagicMock
+
+    resp = MagicMock()
+    resp.status_code = 403
+    resp.json.return_value = {
+        "error": {
+            "message": "The request is prohibited due to a violation of provider Terms Of Service.",
+            "code": 403,
+        }
+    }
+    exc = RuntimeError("403 Forbidden")
+    exc.response = resp  # type: ignore[attr-defined]
+
+    msg = (modal_worker._classify_api_error(exc) or "").lower()
+    assert "terms" in msg
+    assert "openrouter.ai/settings/privacy" in msg
+    assert "add credits" not in msg and "no credits" not in msg
+
+
+def test_classify_api_error_403_generic_keeps_credits_copy(modal_worker) -> None:
+    """A non-ToS 403 keeps the existing generic guidance."""
+    from unittest.mock import MagicMock
+
+    resp = MagicMock()
+    resp.status_code = 403
+    resp.json.return_value = {"error": {"message": "Forbidden.", "code": 403}}
+    exc = RuntimeError("403 Forbidden")
+    exc.response = resp  # type: ignore[attr-defined]
+
+    msg = (modal_worker._classify_api_error(exc) or "").lower()
+    assert "credits" in msg
+    assert "openrouter.ai/credits" in msg
+
+
 def test_classify_api_error_survives_unparseable_body(modal_worker) -> None:
     """resp.json() raising must not crash the classifier — falls through
     to the generic branch."""
