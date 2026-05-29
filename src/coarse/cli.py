@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import rich.markup
 import typer
 from rich.console import Console
 from rich.progress import (
@@ -102,6 +104,23 @@ def _supports_pipeline_progress() -> bool:
     return console.is_terminal
 
 
+# C0 control chars (except tab/newline/CR), DEL, and C1 control chars. Pipeline
+# stage labels embed paper-controlled section titles (parsed from document
+# headings, otherwise unsanitized), so they can carry raw ANSI/CSI escape bytes
+# (color, cursor moves, screen clear, OSC-8 hyperlinks) and Rich markup tags
+# like [red] / [link=...]. The progress column has markup enabled and passes
+# ESC bytes straight to the terminal, so both must be neutralized.
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+
+def _safe_progress_text(s: str) -> str:
+    """Make a paper-controlled string safe for a Rich progress description:
+    strip control/escape bytes, then escape Rich markup so tags like ``[red]``
+    render as inert literal text instead of being interpreted. The strip must
+    run before the escape — ``markup.escape`` does not remove ESC bytes."""
+    return rich.markup.escape(_CONTROL_CHARS_RE.sub("", s))
+
+
 class _PipelineProgressDisplay:
     """Render live pipeline progress, ETA, and cumulative actual spend."""
 
@@ -140,7 +159,7 @@ class _PipelineProgressDisplay:
         spent = f"${update.actual_cost_usd:.4f}"
         if self._task_id is None:
             self._task_id = self._progress.add_task(
-                update.stage_label,
+                _safe_progress_text(update.stage_label),
                 total=max(1, update.total_stages),
                 completed=update.completed_stages,
                 spent=spent,
@@ -149,7 +168,7 @@ class _PipelineProgressDisplay:
 
         self._progress.update(
             self._task_id,
-            description=update.stage_label,
+            description=_safe_progress_text(update.stage_label),
             total=max(1, update.total_stages),
             completed=update.completed_stages,
             spent=spent,
@@ -280,7 +299,7 @@ def review(
     else:
         out_path = Path(f"{pdf.stem}_review.md")
 
-    console.print(f"[bold]Reviewing[/bold] {pdf.name} with {resolved_model}")
+    console.print(f"[bold]Reviewing[/bold] {rich.markup.escape(pdf.name)} with {resolved_model}")
 
     progress_context = (
         _PipelineProgressDisplay(console) if _supports_pipeline_progress() else nullcontext(None)

@@ -454,6 +454,20 @@ def _classify_api_error(exc: BaseException) -> str | None:
             "limit on your provider dashboard, then try again."
         )
     if status == 403:
+        # Provider Terms-of-Service / data-policy block (issues #71, #183).
+        # Covers both extraction-stage and review-stage 403s, since this is
+        # the terminal classifier whose output lands in reviews.error_message.
+        # Kept in lockstep with coarse/extraction_openrouter.py.
+        if "violation of provider" in body_msg or "terms of service" in body_msg:
+            return (
+                "OpenRouter blocked this request with a provider Terms-of-"
+                "Service violation (HTTP 403). This is a data-policy / "
+                "provider-routing block, not a billing problem — it fires "
+                "when the provider that would serve your request isn't enabled "
+                "for your account. Open https://openrouter.ai/settings/privacy "
+                "and allow the provider (or enable prompt logging / training "
+                "if that provider requires it), then start a new review."
+            )
         return (
             "OpenRouter denied this request (HTTP 403). This usually means "
             "your OpenRouter account has no credits, your privacy settings "
