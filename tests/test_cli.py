@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 import coarse
-from coarse.cli import _PipelineProgressDisplay, app
+from coarse.cli import _PipelineProgressDisplay, _safe_progress_text, app
 from coarse.config import CoarseConfig
 from coarse.progress import PipelineProgress
 from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
@@ -413,6 +413,104 @@ def test_pipeline_progress_display_starts_lazily():
 
     assert entered == [True]
     assert exited == [True]
+
+
+def test_safe_progress_text_strips_control_chars_and_escapes_markup():
+    """Issue #190: paper-controlled section titles must not inject ANSI/CSI
+    escapes or Rich markup into the live progress bar. Covers the full declared
+    control range: C0 (ESC/BEL), DEL, and 8-bit C1 (CSI \\x9b, DCS \\x90)."""
+    evil = (
+        "Reviewed section 1/3: \x1b[31mRED\x1b[2J"  # ESC SGR color + clear-screen
+        "[red]bold[/red]"  # Rich markup
+        "\x1b]8;;http://evil\x07"  # OSC-8 hyperlink + BEL
+        "\x7f\x9b31m\x90q"  # DEL + 8-bit CSI + DCS (the \x7f-\x9f range)
+    )
+    out = _safe_progress_text(evil)
+
+    for ctrl in ("\x1b", "\x07", "\x7f", "\x9b", "\x90"):
+        assert ctrl not in out, f"control byte {ctrl!r} survived sanitization"
+    assert "\\[red]bold\\[/red]" in out  # markup escaped -> renders literally
+    assert "Reviewed section 1/3:" in out  # benign text preserved
+
+
+def test_safe_progress_text_preserves_plain_titles():
+    assert _safe_progress_text("Reviewed section 2/5: Methods") == "Reviewed section 2/5: Methods"
+    # Empty input and the intentional tab/newline/CR carve-out are preserved.
+    assert _safe_progress_text("") == ""
+    assert _safe_progress_text("a\tb\nc\r") == "a\tb\nc\r"
+
+
+def test_pipeline_progress_display_sanitizes_stage_label():
+    """Issue #190: the callback must route paper-controlled stage labels through
+    _safe_progress_text on BOTH the add_task (first event) and update (later
+    events) paths — guards the wiring, not just the helper."""
+    descriptions: list = []
+
+    class _RecordingProgress:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def add_task(self, description, **kwargs):
+            descriptions.append(description)
+            return 1
+
+        def update(self, task_id, description=None, **kwargs):
+            descriptions.append(description)
+
+    evil = "Reviewed section 1/2: \x1b[2J[red]X[/red]"
+    with patch("coarse.cli.Progress", _RecordingProgress):
+        display = _PipelineProgressDisplay(MagicMock())
+        with display:
+            for completed in (1, 2):  # first event -> add_task, second -> update
+                display.callback(
+                    PipelineProgress(
+                        event="completed",
+                        stage_key="section",
+                        stage_label=evil,
+                        completed_stages=completed,
+                        total_stages=2,
+                        actual_cost_usd=0.0,
+                    )
+                )
+
+    assert len(descriptions) == 2  # both add_task and update were exercised
+    for d in descriptions:
+        assert "\x1b" not in d  # control bytes stripped on both paths
+        assert "\\[red]X\\[/red]" in d  # markup escaped on both paths
+
+
+def test_review_escapes_markup_in_filename(tmp_path, monkeypatch):
+    """Issue #190: a filename containing Rich markup must render as literal text
+    in the "Reviewing …" line, not be interpreted as styling."""
+    monkeypatch.chdir(tmp_path)
+    # No slash (illegal in filenames); an unclosed [red] tag still distinguishes
+    # escaped (renders literally) from unescaped (Rich consumes it as styling).
+    pdf = tmp_path / "[red]paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+
+    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, progress_callback=None):
+        from coarse.types import PaperText
+
+        return _make_review(), "# Test\n", PaperText(full_markdown="", token_estimate=0)
+
+    with (
+        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.review_paper", side_effect=fake),
+        patch("coarse.cli._supports_pipeline_progress", return_value=False),
+    ):
+        result = runner.invoke(app, ["review", str(pdf), "--yes"])
+
+    assert result.exit_code == 0, result.output
+    # Escaped markup survives as literal text. Without the escape, Rich would
+    # consume "[red]" as a style tag and it would vanish from the output.
+    assert "[red]paper.pdf" in result.output
 
 
 # ---------------------------------------------------------------------------

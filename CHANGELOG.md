@@ -28,6 +28,8 @@
 
 ### Security
 
+- **Paper-controlled section titles are now sanitized before rendering in the CLI progress bar (issue #190).** The live progress bar (added this cycle) embeds section titles parsed from document headings into the Rich progress description, which has markup enabled and passes raw escape bytes to the terminal — so a crafted heading could inject ANSI/CSI control sequences (color, cursor moves, screen clear, OSC-8 hyperlinks) or Rich markup (`[red]`, `[link=...]`) and spoof/hijack the terminal during a review. A new `_safe_progress_text()` in `src/coarse/cli.py` strips C0/C1 control bytes and escapes Rich markup so titles render as inert literal text; it is applied to both the task-creation and update paths, and the user-supplied filename in the "Reviewing …" line is escaped too. The control-strip must run before the markup escape (escape alone leaves ESC bytes intact). Severity is low — the injected text is the user's own paper in their own terminal during a review they started, and it never reaches the saved `paper_review.md` (synthesis is separate and deterministic). Unit coverage in `tests/test_cli.py`.
+
 - **Cleared all `npm audit` advisories in the `web/` app.** `npm audit fix` bumped `next` to 15.5.18 (resolving the Next.js DoS / middleware-bypass / XSS / cache-poisoning advisories), `ws`, and `@xmldom/xmldom`; an npm `overrides` pin in `web/package.json` forces `next`'s bundled `postcss` to the patched `^8.5.10`, clearing the last moderate advisory. `npm audit --omit=dev` (the CI gate in `.github/workflows/security.yml`) is now clean and `next build` passes.
 
 ## v1.4.1 — 2026-04-21
