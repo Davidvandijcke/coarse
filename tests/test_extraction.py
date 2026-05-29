@@ -270,7 +270,7 @@ def test_extract_file_raises_when_real_fallback_also_blank(tmp_path: Path) -> No
 
     # Docling returns blank too, so we fall through to the REAL latex fallback.
     with patch("coarse.extraction._extract_docling", return_value=""):
-        with pytest.raises(ExtractionError, match="no text"):
+        with pytest.raises(ExtractionError, match=r"no text.*(image-only|scanned)"):
             extract_file(tex, use_cache=False)
 
 
@@ -280,7 +280,7 @@ def test_extract_text_raises_when_pdf_backend_returns_empty_string(minimal_pdf: 
     from coarse.types import ExtractionError
 
     with patch("coarse.extraction._extract_mistral_openrouter", return_value=""):
-        with pytest.raises(ExtractionError, match="no text"):
+        with pytest.raises(ExtractionError, match=r"no text.*(image-only|scanned)"):
             extract_text(minimal_pdf, use_cache=False)
 
 
