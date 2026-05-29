@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -66,6 +67,22 @@ def _effort_text_prefix(effort: str) -> str:
     """
     guidance = _EFFORT_TEXT_GUIDANCE.get(effort, _EFFORT_TEXT_GUIDANCE["high"])
     return f"[SYSTEM]\nReasoning effort: {effort}. {guidance}\n\n"
+
+
+def _resolve_cli_bin(name: str) -> str:
+    """Resolve a CLI name to its full PATH-resolved path, falling back to
+    the bare name when it can't be found.
+
+    On Windows, npm-installed CLIs (``codex``, ``gemini``) are ``.cmd``/``.ps1``
+    shims; ``subprocess.run`` launches binaries via ``CreateProcess`` which
+    does NOT honor ``PATHEXT``, so a bare ``"codex"`` raises ``FileNotFoundError``
+    even though the shim is on ``PATH``. ``shutil.which`` *does* honor
+    ``PATHEXT`` and returns the full shim path, so resolving once at client
+    construction makes both the ``--help`` probe and execution launch the path
+    that actually exists. On a miss we keep the bare name so the existing
+    "binary not found" guidance in ``_run_with_retry`` still fires.
+    """
+    return shutil.which(name) or name
 
 
 def _probe_cli_help(bin_name: str, *subcommand: str) -> str:
@@ -763,7 +780,7 @@ class ClaudeCodeClient(_HeadlessCLIClient):
         **kwargs,
     ) -> None:
         super().__init__(model=model, config=config, timeout=timeout, **kwargs)
-        self._claude_bin = claude_bin
+        self._claude_bin = _resolve_cli_bin(claude_bin)
         self._claude_model = claude_model
         self._effort = effort
 
@@ -873,7 +890,7 @@ class CodexClient(_HeadlessCLIClient):
         **kwargs,
     ) -> None:
         super().__init__(model=model, config=config, timeout=timeout, **kwargs)
-        self._codex_bin = codex_bin
+        self._codex_bin = _resolve_cli_bin(codex_bin)
         self._codex_model = codex_model
         self._effort = effort
 
@@ -934,7 +951,12 @@ class CodexClient(_HeadlessCLIClient):
 
     def _build_cmd(self) -> list[str]:
         self._ensure_config_override_probed()
-        cmd = [self._codex_bin, "exec"]
+        # --skip-git-repo-check: `codex exec` refuses to run when its CWD isn't
+        # a trusted git repo ("Not inside a trusted directory"). The subprocess
+        # coarse spawns runs from wherever the user invoked coarse-review, which
+        # often isn't such a repo (handoff tempdirs, arbitrary paper dirs), so
+        # pass it on every platform — it's a no-op inside a trusted repo.
+        cmd = [self._codex_bin, "exec", "--skip-git-repo-check"]
         if self._codex_model:
             cmd += ["-m", self._codex_model]
         if type(self)._config_override_supported:
@@ -1000,7 +1022,7 @@ class GeminiClient(_HeadlessCLIClient):
         **kwargs,
     ) -> None:
         super().__init__(model=model, config=config, timeout=timeout, **kwargs)
-        self._gemini_bin = gemini_bin
+        self._gemini_bin = _resolve_cli_bin(gemini_bin)
         self._gemini_model = gemini_model
         self._effort = effort
         self._approval_mode = approval_mode
