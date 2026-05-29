@@ -43,6 +43,17 @@ def _reset_probe_caches():
     GeminiClient._output_format_flag_supported = False
 
 
+@pytest.fixture(autouse=True)
+def _bare_cli_paths(monkeypatch):
+    """Pin ``shutil.which`` to identity so ``_resolve_cli_bin`` returns the
+    bare CLI name in tests regardless of whether codex/claude/gemini happen
+    to be installed on the test machine — keeping the ``cmd[0] == "codex"``
+    positional asserts deterministic. Tests that need the Windows ``.cmd``
+    resolution behavior re-patch ``shutil.which`` in their own body.
+    """
+    monkeypatch.setattr("coarse.headless_clients.shutil.which", lambda name: name)
+
+
 def _mark_claude_effort_supported(supported: bool) -> None:
     """Skip the real probe by pre-setting the class cache."""
     ClaudeCodeClient._effort_flag_probed = True
@@ -119,7 +130,7 @@ def test_codex_low_effort_avoids_minimal_mode() -> None:
 
     cmd = client._build_cmd()
 
-    assert cmd[:4] == ["codex", "exec", "-m", "gpt-5.4-mini"]
+    assert cmd[:5] == ["codex", "exec", "--skip-git-repo-check", "-m", "gpt-5.4-mini"]
     assert "model_reasoning_effort='low'" in cmd
     assert "minimal" not in " ".join(cmd)
 
@@ -165,6 +176,43 @@ def test_codex_old_version_drops_config_override_and_injects_text() -> None:
     # Text injection instead.
     assert "Reasoning effort: high." in prompt
     assert prompt.endswith("[USER]\nReview.")
+
+
+def test_codex_build_cmd_includes_skip_git_repo_check() -> None:
+    """Issue #187: `codex exec` aborts outside a trusted git repo unless
+    --skip-git-repo-check is passed; it must sit right after `exec`."""
+    _mark_codex_config_override_supported(True)
+    client = CodexClient(codex_bin="codex", codex_model="gpt-5.4-mini", effort="high")
+
+    cmd = client._build_cmd()
+
+    assert "--skip-git-repo-check" in cmd
+    assert cmd.index("--skip-git-repo-check") == cmd.index("exec") + 1
+
+
+def test_resolve_cli_bin_uses_pathext_shim_on_windows(monkeypatch) -> None:
+    """Issue #187: on Windows the npm `.cmd` shim must be the launched path,
+    because subprocess.run skips PATHEXT for a bare name."""
+    shim = r"C:\Users\u\AppData\Roaming\npm\codex.cmd"
+    monkeypatch.setattr(
+        "coarse.headless_clients.shutil.which",
+        lambda name: shim if name == "codex" else None,
+    )
+    _mark_codex_config_override_supported(True)
+    client = CodexClient(codex_bin="codex", codex_model="gpt-5.4-mini", effort="high")
+
+    assert client._codex_bin == shim
+    assert client._build_cmd()[0] == shim
+
+
+def test_resolve_cli_bin_falls_back_to_bare_name_on_miss(monkeypatch) -> None:
+    """When the CLI isn't on PATH, keep the bare name so the existing
+    'binary not found' RuntimeError + install hint still fires."""
+    monkeypatch.setattr("coarse.headless_clients.shutil.which", lambda name: None)
+
+    assert CodexClient(codex_bin="codex")._codex_bin == "codex"
+    assert GeminiClient(gemini_bin="gemini")._gemini_bin == "gemini"
+    assert ClaudeCodeClient(claude_bin="claude")._claude_bin == "claude"
 
 
 def test_claude_effort_passes_through_unchanged() -> None:
