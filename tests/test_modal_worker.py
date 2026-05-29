@@ -327,7 +327,7 @@ def test_classify_api_error_403_tos_violation(modal_worker) -> None:
     msg = (modal_worker._classify_api_error(exc) or "").lower()
     assert "terms" in msg
     assert "openrouter.ai/settings/privacy" in msg
-    assert "add credits" not in msg
+    assert "add credits" not in msg and "no credits" not in msg
 
 
 def test_classify_api_error_403_generic_keeps_credits_copy(modal_worker) -> None:
@@ -342,6 +342,7 @@ def test_classify_api_error_403_generic_keeps_credits_copy(modal_worker) -> None
 
     msg = (modal_worker._classify_api_error(exc) or "").lower()
     assert "credits" in msg
+    assert "openrouter.ai/credits" in msg
 
 
 def test_classify_api_error_survives_unparseable_body(modal_worker) -> None:
