@@ -201,10 +201,24 @@ def model_filename_slug(model_id: str) -> str:
 # Keep this tuple tight — only add a model once a passed-temperature
 # request is confirmed to fail.
 TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = (
+    # Opus 4.7 (reasoning-first, issue #162): dot / hyphen / Vertex / bare.
     "anthropic/claude-opus-4.7",  # OpenRouter form
     "anthropic/claude-opus-4-7",  # litellm direct-Anthropic form
     "vertex_ai/claude-opus-4-7",  # Vertex AI form
     "claude-opus-4-7",  # bare Anthropic SDK / Bedrock-style ID
+    # Opus 4.8 — same reasoning-first behavior; verified temperature
+    # unsupported on OpenRouter 2026-05-28. The dot prefix also covers
+    # the ``-fast`` variant via startswith.
+    "anthropic/claude-opus-4.8",  # OpenRouter form (covers -fast)
+    "anthropic/claude-opus-4-8",  # litellm direct-Anthropic form
+    "vertex_ai/claude-opus-4-8",  # Vertex AI form
+    "claude-opus-4-8",  # bare Anthropic SDK / Bedrock-style ID
+    # GPT-5.5 reasoning family also rejects temperature (verified OpenRouter
+    # 2026-05-28). litellm's OpenAI param table is no more trustworthy
+    # per-model than the Anthropic one, so gate it explicitly. The prefix
+    # covers the -pro / -mini variants via startswith.
+    "openai/gpt-5.5",  # OpenRouter / litellm OpenAI form
+    "gpt-5.5",  # bare OpenAI SDK ID
 )
 
 

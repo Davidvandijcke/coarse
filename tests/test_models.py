@@ -210,6 +210,24 @@ def test_supports_temperature_false_for_bare_opus_4_7():
     assert supports_temperature("claude-opus-4-7") is False
 
 
+def test_supports_temperature_false_for_opus_4_8_forms():
+    """Opus 4.8 (reasoning-first like 4.7) rejects temperature across ID forms."""
+    assert supports_temperature("anthropic/claude-opus-4.8") is False
+    assert supports_temperature("anthropic/claude-opus-4.8-fast") is False
+    assert supports_temperature("anthropic/claude-opus-4-8") is False
+    assert supports_temperature("openrouter/anthropic/claude-opus-4-8") is False
+    assert supports_temperature("vertex_ai/claude-opus-4-8") is False
+    assert supports_temperature("claude-opus-4-8") is False
+
+
+def test_supports_temperature_false_for_gpt_5_5_forms():
+    """GPT-5.5 reasoning family rejects temperature; prefix covers -pro/-mini."""
+    assert supports_temperature("openai/gpt-5.5") is False
+    assert supports_temperature("openrouter/openai/gpt-5.5") is False
+    assert supports_temperature("openai/gpt-5.5-pro") is False
+    assert supports_temperature("gpt-5.5") is False
+
+
 def test_supports_temperature_true_for_opus_4_6():
     assert supports_temperature("anthropic/claude-opus-4.6") is True
 
