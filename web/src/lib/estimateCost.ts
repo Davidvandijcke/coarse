@@ -141,9 +141,18 @@ const STAGE_OUTPUT_TOKENS = pipelineSpec.stageOutputTokens;
 
 const REASONING_MODEL_PREFIXES: readonly string[] = pipelineSpec.reasoningModelPrefixes;
 const REASONING_MODEL_SUBSTRINGS: readonly string[] = pipelineSpec.reasoningModelSubstrings;
+const NON_REASONING_SUBSTRINGS: readonly string[] = pipelineSpec.nonReasoningSubstrings;
 
 function isReasoningModel(modelId: string): boolean {
   const lower = modelId.toLowerCase().replace(/^openrouter\//, "");
+  // The `-chat` carve-out overrides the broad gpt-5 prefix below, but only for
+  // the gpt-5 family — kept in lockstep with models.is_reasoning_model so it
+  // can't suppress reasoning for an unrelated `-chat`-named model.
+  if (lower.startsWith("openai/gpt-5") || lower.startsWith("gpt-5")) {
+    for (const substr of NON_REASONING_SUBSTRINGS) {
+      if (lower.includes(substr)) return false;
+    }
+  }
   for (const prefix of REASONING_MODEL_PREFIXES) {
     if (lower.startsWith(prefix)) return true;
   }

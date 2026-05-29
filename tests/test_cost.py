@@ -365,7 +365,7 @@ def test_extraction_qa_never_flagged_reasoning_even_with_reasoning_default():
 
 
 def test_build_cost_estimate_does_not_flag_non_reasoning_stages():
-    config = _config(model="openai/gpt-5.4")  # non-pro = non-reasoning
+    config = _config(model="openai/gpt-5-chat")  # -chat is the non-reasoning gpt-5 (#185)
     estimate = build_cost_estimate(_paper(), config, section_count=4)
     for s in estimate.stages:
         assert "(+reasoning)" not in s.name
@@ -374,7 +374,8 @@ def test_build_cost_estimate_does_not_flag_non_reasoning_stages():
 def test_reasoning_model_costs_more_than_same_price_non_reasoning():
     """Pin that the reasoning overhead actually increases the dollar total.
     Compare two model IDs with identical per-token pricing, one reasoning,
-    one not. o3 and gpt-5-pro are known reasoning; regular gpt-5 is not."""
+    one not. o3 and gpt-5-pro are known reasoning; gpt-5-chat is not (#185 —
+    the `-chat` variants are the only non-reasoning gpt-5 models)."""
     paper = _paper()
     reasoning_est = build_cost_estimate(
         paper,
@@ -383,7 +384,7 @@ def test_reasoning_model_costs_more_than_same_price_non_reasoning():
     )
     regular_est = build_cost_estimate(
         paper,
-        _config(model="openai/gpt-5"),
+        _config(model="openai/gpt-5-chat"),
         section_count=6,
     )
     # o3 is actually cheaper per-token than gpt-5 pro, so we can't compare
