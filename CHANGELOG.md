@@ -6,6 +6,8 @@
 
 - **Live pipeline progress bar for `coarse review`.** The terminal CLI now shows a Rich progress bar while a review runs, including completed/total pipeline stages, elapsed time, ETA, and cumulative actual token spend so users can better judge how much work and cost remain after approving the run.
 
+- **README now documents the subscription-backed review path.** `coarse-review` and the bundled `claude` / `codex` / `gemini` headless clients have shipped since v1.3.0 but were only covered on `coarse.vercel.app/setup` and in the SKILL.md files, so GitHub visitors saw only the OpenRouter pay-per-token flow. Adds a short "Use your coding-agent subscription" section pointing at `coarse-review paper.pdf` and `coarse install-skills`.
+
 ### Changed
 
 - **`coarse review` and `coarse-review` append the model ID to the default output filename when a model is set explicitly.** Passing `--model` writes to `<paper_stem>_review_<model>.md` instead of `<paper_stem>_review.md`, so back-to-back runs with different models no longer overwrite each other. Without an explicit `--model` the default filename is unchanged (`<paper_stem>_review.md`), and explicit `--output` paths are unaffected. New `model_filename_slug()` helper in `models.py`; regression coverage in `tests/test_cli.py`, `tests/test_cli_review.py`, `tests/test_headless_review.py`, and `tests/test_models.py`.
