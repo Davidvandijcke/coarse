@@ -271,8 +271,9 @@ def test_is_reasoning_property_true_for_gpt5_pro(mock_instructor_client):
     assert client.is_reasoning is True
 
 
-def test_is_reasoning_property_false_for_regular_gpt5(mock_instructor_client):
-    client = _reasoning_client("openai/gpt-5.4", mock_instructor_client)
+def test_is_reasoning_property_false_for_gpt5_chat(mock_instructor_client):
+    # gpt-5*-chat are the only non-reasoning gpt-5 variants (issue #185).
+    client = _reasoning_client("openai/gpt-5-chat", mock_instructor_client)
     assert client.is_reasoning is False
 
 
@@ -299,7 +300,7 @@ def test_complete_bumps_max_tokens_for_reasoning_model(mock_instructor_client):
 
 
 def test_complete_does_not_bump_max_tokens_for_non_reasoning(mock_instructor_client):
-    client = _reasoning_client("openai/gpt-5.4", mock_instructor_client)
+    client = _reasoning_client("openai/gpt-5-chat", mock_instructor_client)
 
     with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
         client.complete(

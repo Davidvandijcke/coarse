@@ -141,9 +141,15 @@ const STAGE_OUTPUT_TOKENS = pipelineSpec.stageOutputTokens;
 
 const REASONING_MODEL_PREFIXES: readonly string[] = pipelineSpec.reasoningModelPrefixes;
 const REASONING_MODEL_SUBSTRINGS: readonly string[] = pipelineSpec.reasoningModelSubstrings;
+const NON_REASONING_SUBSTRINGS: readonly string[] = pipelineSpec.nonReasoningSubstrings;
 
 function isReasoningModel(modelId: string): boolean {
   const lower = modelId.toLowerCase().replace(/^openrouter\//, "");
+  // gpt-5*-chat and other non-reasoning carve-outs override the broad
+  // gpt-5 prefix below (kept in lockstep with models._NON_REASONING_SUBSTRINGS).
+  for (const substr of NON_REASONING_SUBSTRINGS) {
+    if (lower.includes(substr)) return false;
+  }
   for (const prefix of REASONING_MODEL_PREFIXES) {
     if (lower.startsWith(prefix)) return true;
   }
