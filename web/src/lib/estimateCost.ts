@@ -145,10 +145,13 @@ const NON_REASONING_SUBSTRINGS: readonly string[] = pipelineSpec.nonReasoningSub
 
 function isReasoningModel(modelId: string): boolean {
   const lower = modelId.toLowerCase().replace(/^openrouter\//, "");
-  // gpt-5*-chat and other non-reasoning carve-outs override the broad
-  // gpt-5 prefix below (kept in lockstep with models._NON_REASONING_SUBSTRINGS).
-  for (const substr of NON_REASONING_SUBSTRINGS) {
-    if (lower.includes(substr)) return false;
+  // The `-chat` carve-out overrides the broad gpt-5 prefix below, but only for
+  // the gpt-5 family — kept in lockstep with models.is_reasoning_model so it
+  // can't suppress reasoning for an unrelated `-chat`-named model.
+  if (lower.startsWith("openai/gpt-5") || lower.startsWith("gpt-5")) {
+    for (const substr of NON_REASONING_SUBSTRINGS) {
+      if (lower.includes(substr)) return false;
+    }
   }
   for (const prefix of REASONING_MODEL_PREFIXES) {
     if (lower.startsWith(prefix)) return true;

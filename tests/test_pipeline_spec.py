@@ -92,6 +92,23 @@ def test_ts_estimator_matches_python_cost_gate_for_openrouter_and_fallback_paths
             "is_pdf": False,
             "has_openrouter_key": False,
         },
+        # #185: exercise the reasoning carve-out boundary in BOTH estimators.
+        # gpt-5.4 is now reasoning (broad gpt-5 prefix) → +overhead; gpt-5-chat
+        # is the non-reasoning carve-out → no overhead. With nonzero per-token
+        # pricing, any TS/Python divergence on the reasoning flag would break
+        # the dollar-total parity below.
+        {
+            "model_id": "openai/gpt-5.4",
+            "section_count": 18,
+            "is_pdf": False,
+            "has_openrouter_key": True,
+        },
+        {
+            "model_id": "openai/gpt-5-chat",
+            "section_count": 18,
+            "is_pdf": False,
+            "has_openrouter_key": True,
+        },
     ]
 
     for scenario in scenarios:

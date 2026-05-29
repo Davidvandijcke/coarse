@@ -609,6 +609,23 @@ def test_complete_forwards_temperature_for_opus_4_6(mock_instructor_client):
     assert call.kwargs["temperature"] == 0.5
 
 
+def test_complete_omits_temperature_for_gpt5(mock_instructor_client):
+    """Issue #185: the GPT-5 family rejects temperature, so complete() must omit
+    the kwarg end-to-end (not just have supports_temperature return False)."""
+    client = _build_client("openai/gpt-5.4", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=256,
+            temperature=0.5,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert "temperature" not in call.kwargs
+
+
 def test_complete_text_omits_temperature_for_opus_4_7():
     """Unstructured path (complete_text) must also omit temperature for 4.7."""
     captured: dict[str, object] = {}

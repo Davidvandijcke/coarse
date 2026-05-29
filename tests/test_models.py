@@ -112,6 +112,9 @@ REASONING_POSITIVE_CASES = [
     "anthropic/claude-3.7-sonnet:thinking",
     # Perplexity reasoning
     "perplexity/sonar-reasoning-pro",
+    # Non-gpt-5 `-chat` model carrying a reasoning suffix: the gpt-5-scoped
+    # `-chat` carve-out must NOT suppress this (the substring loop catches it).
+    "deepseek/deepseek-chat-v3.1-thinking",
     # OpenRouter-prefixed variants still get detected
     "openrouter/openai/gpt-5.4-pro",
     "openrouter/openai/o3",
@@ -129,6 +132,8 @@ REASONING_NEGATIVE_CASES = [
     "openai/gpt-5.2-chat",
     "openai/gpt-5.3-chat",
     "openrouter/openai/gpt-5.3-chat",  # carve-out survives the openrouter/ prefix
+    "gpt-5-chat",  # bare OpenAI SDK form of the carve-out
+    "gpt-5.1-chat",
     # Pre-GPT-5 OpenAI chat model
     "openai/gpt-4o",
     # Claude 4-family without :thinking suffix (optional thinking, off by default)

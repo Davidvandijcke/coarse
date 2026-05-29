@@ -122,8 +122,10 @@ REASONING_MODEL_SUBSTRINGS: tuple[str, ...] = (
 # GPT-5-family variants that do NOT run reasoning, overriding the broad
 # `gpt-5` prefix above. Only the `-chat` variants (openai/gpt-5-chat,
 # gpt-5.1-chat, …) report `reasoning` unsupported on OpenRouter (verified
-# 2026-05-29); every other gpt-5* reasons. Checked before the prefix loop in
-# is_reasoning_model().
+# 2026-05-29); every other gpt-5* reasons. This carve-out is applied ONLY to
+# gpt-5-family IDs in is_reasoning_model() (gated on the gpt-5 prefix), so it
+# can never suppress reasoning detection for an unrelated `-chat`-named model
+# (e.g. a future `vendor/foo-chat-thinking`).
 _NON_REASONING_SUBSTRINGS: tuple[str, ...] = ("-chat",)
 
 # Multiplier applied to the caller's requested max_tokens for reasoning
@@ -163,8 +165,13 @@ def is_reasoning_model(model_id: str) -> bool:
     to pass reasoning_effort through to the provider.
     """
     lower = model_id.lower().removeprefix("openrouter/")
-    if any(substring in lower for substring in _NON_REASONING_SUBSTRINGS):
-        return False
+    # The `-chat` carve-out overrides the broad gpt-5 prefix below, but only
+    # for the gpt-5 family — it must not suppress reasoning detection for an
+    # unrelated `-chat`-named model that the substring loop would otherwise
+    # catch (e.g. `vendor/foo-chat-thinking`).
+    if lower.startswith("openai/gpt-5") or lower.startswith("gpt-5"):
+        if any(substring in lower for substring in _NON_REASONING_SUBSTRINGS):
+            return False
     for prefix in REASONING_MODEL_PREFIXES:
         if lower.startswith(prefix):
             return True
