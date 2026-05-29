@@ -212,6 +212,8 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
         full_markdown = normalize_ocr_garble(full_markdown)
         garble = compute_garble_ratio(full_markdown)
 
+    full_markdown = _finalize_markdown_or_raise(full_markdown, path)
+
     paper_text = PaperText(
         full_markdown=full_markdown,
         token_estimate=_estimate_tokens(full_markdown),
@@ -232,6 +234,26 @@ def _estimate_tokens(text: str) -> int:
 def _has_meaningful_markdown(text: str) -> bool:
     """Return True when extracted markdown contains non-whitespace content."""
     return bool(text.strip())
+
+
+def _finalize_markdown_or_raise(full_markdown: str, path: Path) -> str:
+    """Reject blank/whitespace-only extraction output before it reaches
+    ``PaperText``.
+
+    Both extraction paths converge on a final ``full_markdown`` string: the
+    PDF path only checked ``is None`` (so a backend returning ``""`` slipped
+    through), and the non-PDF path never re-checked the format-specific
+    fallback result. A blank document then failed deep in the pipeline with a
+    misleading "no sections found". Centralize the guarantee here so a truly
+    empty/image-only/scanned input fails fast with an actionable message
+    (follow-up to #140).
+    """
+    if not _has_meaningful_markdown(full_markdown):
+        raise ExtractionError(
+            f"Extracted no text from {path.name} — the document may be empty, "
+            "image-only, or a scanned PDF without a text layer."
+        )
+    return full_markdown
 
 
 _DOCLING_FORMATS = frozenset({".docx", ".html", ".htm", ".tex", ".latex"})
@@ -286,6 +308,7 @@ def extract_file(file_path: str | Path, use_cache: bool = True) -> PaperText:
         full_markdown = _extract_plaintext(path)
 
     full_markdown = _strip_nul_bytes(full_markdown)
+    full_markdown = _finalize_markdown_or_raise(full_markdown, path)
 
     paper_text = PaperText(
         full_markdown=full_markdown,

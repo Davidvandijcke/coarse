@@ -260,6 +260,30 @@ def test_extract_file_latex_falls_back_when_docling_returns_empty(tmp_path: Path
     assert result.token_estimate == len(result.full_markdown) // 4
 
 
+def test_extract_file_raises_when_real_fallback_also_blank(tmp_path: Path) -> None:
+    """#189 gap 1: a whitespace-only .tex whose real regex fallback returns ""
+    must raise a clear 'no text' error, not build a blank PaperText."""
+    from coarse.types import ExtractionError
+
+    tex = tmp_path / "blank.tex"
+    tex.write_text("   \n\t\n", encoding="utf-8")  # real _extract_latex_regex -> ""
+
+    # Docling returns blank too, so we fall through to the REAL latex fallback.
+    with patch("coarse.extraction._extract_docling", return_value=""):
+        with pytest.raises(ExtractionError, match=r"no text.*(image-only|scanned)"):
+            extract_file(tex, use_cache=False)
+
+
+def test_extract_text_raises_when_pdf_backend_returns_empty_string(minimal_pdf: Path) -> None:
+    """#189 gap 2: the PDF path only checked `is None`, so a backend returning
+    "" slipped a blank PaperText through. It must now raise."""
+    from coarse.types import ExtractionError
+
+    with patch("coarse.extraction._extract_mistral_openrouter", return_value=""):
+        with pytest.raises(ExtractionError, match=r"no text.*(image-only|scanned)"):
+            extract_text(minimal_pdf, use_cache=False)
+
+
 # --- OpenRouter OCR error handling and retry ---
 
 
