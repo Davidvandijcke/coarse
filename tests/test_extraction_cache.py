@@ -52,6 +52,17 @@ def test_load_cache_returns_none_for_empty_markdown(tmp_path: Path) -> None:
     assert _load_cache(source) is None
 
 
+def test_save_cache_skips_blank_extraction(tmp_path: Path) -> None:
+    """#189: blank/whitespace extractions are never persisted — symmetric with
+    the _load_cache empty-payload guard."""
+    source = tmp_path / "paper.pdf"
+    source.write_bytes(b"%PDF-1.4")
+
+    _save_cache(source, PaperText(full_markdown="   \n\t", token_estimate=0, garble_ratio=0.0))
+
+    assert not source.with_suffix(".extraction_cache.json").exists()
+
+
 def test_save_cache_skips_symlink_path(tmp_path: Path) -> None:
     source = tmp_path / "paper.txt"
     source.write_text("hello")
