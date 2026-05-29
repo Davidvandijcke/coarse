@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 import coarse
-from coarse.cli import _PipelineProgressDisplay, app
+from coarse.cli import _PipelineProgressDisplay, _safe_progress_text, app
 from coarse.config import CoarseConfig
 from coarse.progress import PipelineProgress
 from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
@@ -413,6 +413,26 @@ def test_pipeline_progress_display_starts_lazily():
 
     assert entered == [True]
     assert exited == [True]
+
+
+def test_safe_progress_text_strips_control_chars_and_escapes_markup():
+    """Issue #190: paper-controlled section titles must not inject ANSI/CSI
+    escapes or Rich markup into the live progress bar."""
+    evil = (
+        "Reviewed section 1/3: \x1b[31mRED\x1b[2J"  # SGR color + clear-screen
+        "[red]bold[/red]"  # Rich markup
+        "\x1b]8;;http://evil\x07"  # OSC-8 hyperlink
+    )
+    out = _safe_progress_text(evil)
+
+    assert "\x1b" not in out  # no ESC / ANSI / OSC bytes survive
+    assert "\x07" not in out  # no BEL
+    assert "\\[red]bold\\[/red]" in out  # markup escaped -> renders literally
+    assert "Reviewed section 1/3:" in out  # benign text preserved
+
+
+def test_safe_progress_text_preserves_plain_titles():
+    assert _safe_progress_text("Reviewed section 2/5: Methods") == "Reviewed section 2/5: Methods"
 
 
 # ---------------------------------------------------------------------------
