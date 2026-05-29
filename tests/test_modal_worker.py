@@ -893,14 +893,79 @@ def test_do_review_installs_resolved_key_into_environ(modal_worker, monkeypatch)
     assert captured["env"] == resolved
 
 
-def test_do_review_skips_environ_write_when_no_key_resolved(modal_worker, monkeypatch) -> None:
-    """When _resolve_user_api_key returns None, do_review must NOT write an
-    empty string to OPENROUTER_API_KEY (that would produce a `Bearer ` header
-    and cascade 401s through every LLM call). Regression guard."""
+def test_do_review_fails_fast_when_no_key_resolved(modal_worker, monkeypatch) -> None:
+    """When _resolve_user_api_key returns None AND the Modal-baked env has no
+    OpenRouter key either, do_review must fail fast with a clear user-facing
+    message BEFORE entering the pipeline. The previous behavior (silent
+    fall-through) let _normalize_model in src/coarse/llm.py emit a raw
+    `anthropic/...` model string, which litellm then routed directly to the
+    Anthropic API and died with "Missing Anthropic API Key" on every stage —
+    see issue #171."""
     import os as _os
     import sys as _sys
 
-    captured: dict[str, str | None] = {}
+    update_calls: list[dict] = []
+
+    class _FakeReviewsTable:
+        def update(self, data):
+            update_calls.append(dict(data))
+            return self
+
+        def eq(self, _col, _val):
+            return self
+
+        def execute(self):
+            return types.SimpleNamespace(data=[])
+
+    class _FakeDB:
+        def table(self, _name):
+            return _FakeReviewsTable()
+
+    supabase_stub = types.ModuleType("supabase")
+    supabase_stub.create_client = lambda _u, _k: _FakeDB()
+    monkeypatch.setitem(_sys.modules, "supabase", supabase_stub)
+
+    monkeypatch.setattr(modal_worker, "_resolve_user_api_key", lambda _db, _req, _job: None)
+
+    # If fail-fast regresses, do_review will try to download the PDF. Make
+    # that raise a distinctive error so the test fails loudly on the wrong
+    # code path rather than hanging or succeeding silently.
+    def _fake_download(_db, _path, _job, **_kwargs):
+        raise AssertionError("fail-fast regression: download should not be called")
+
+    monkeypatch.setattr(modal_worker, "_download_pdf_with_retry", _fake_download)
+
+    monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-service-key")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="couldn't find your OpenRouter API key"):
+        modal_worker.do_review(
+            {
+                "job_id": "no-key-test-job",
+                "pdf_storage_path": "papers/test.pdf",
+            }
+        )
+
+    # Env var is NOT set (do_review never installed one — there was nothing to install).
+    assert "OPENROUTER_API_KEY" not in _os.environ
+
+    # The failure message was written to the reviews row BEFORE the raise, so
+    # the user sees a clear explanation on the status page instead of a stale
+    # "running" spinner or a generic server error.
+    failed_updates = [c for c in update_calls if c.get("status") == "failed"]
+    assert len(failed_updates) == 1
+    assert "OpenRouter API key" in failed_updates[0].get("error_message", "")
+
+
+def test_do_review_uses_modal_baked_env_key_when_review_secrets_empty(
+    modal_worker, monkeypatch
+) -> None:
+    """Dev/local-runner safety: if OPENROUTER_API_KEY is already set in the
+    container's env (e.g. a developer running the worker locally with their
+    own key exported), do_review must NOT fail fast even when review_secrets
+    is empty. The fail-fast guard only fires when BOTH sources are empty."""
+    import sys as _sys
 
     class _FakeReviewsTable:
         def update(self, _data):
@@ -922,29 +987,24 @@ def test_do_review_skips_environ_write_when_no_key_resolved(modal_worker, monkey
 
     monkeypatch.setattr(modal_worker, "_resolve_user_api_key", lambda _db, _req, _job: None)
 
-    # Stub the retry helper (see companion test for rationale). Use
-    # SystemExit so a future retry regression can't swallow us and hide
-    # the assertion.
     def _fake_download(_db, _path, _job, **_kwargs):
-        captured["env"] = _os.environ.get("OPENROUTER_API_KEY", "<unset>")
         raise SystemExit("short-circuit before review_paper")
 
     monkeypatch.setattr(modal_worker, "_download_pdf_with_retry", _fake_download)
 
     monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-service-key")
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-localdevkey0123456789")  # security: ignore
 
+    # Reaches download (no ValueError) — that means the fail-fast guard
+    # correctly deferred to the env-baked key.
     with pytest.raises(SystemExit, match="short-circuit before review_paper"):
         modal_worker.do_review(
             {
-                "job_id": "no-key-test-job",
+                "job_id": "env-key-test-job",
                 "pdf_storage_path": "papers/test.pdf",
             }
         )
-
-    # Env var was NOT set to "" — it stays unset.
-    assert captured["env"] == "<unset>"
 
 
 # ---------------------------------------------------------------------------

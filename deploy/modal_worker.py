@@ -700,6 +700,29 @@ def do_review(req_dict: dict):
             }
         ).eq("id", job_id).execute()
         raise ValueError(hosted_key_error)
+    # Fail fast when we have no OpenRouter key to hand the pipeline. Without
+    # this guard, _normalize_model in src/coarse/llm.py falls through to the
+    # raw `anthropic/...` (or `openai/...`, etc.) string, litellm routes that
+    # directly to the named provider, and every stage dies with a misleading
+    # "Missing Anthropic API Key" cascade across structure/domain/contribution/
+    # overview — even though the hosted service only ever accepts OpenRouter
+    # keys. We hit this whenever a second container picks up the same job_id
+    # after review_secrets was already consumed (Modal container restart
+    # during import, duplicate spawn from the web path, etc.). The fix is to
+    # surface a clear, user-actionable failure before the pipeline starts.
+    if not resolved_user_key and not original_key:
+        missing_key_msg = (
+            "We couldn't find your OpenRouter API key on the review worker. "
+            "This can happen if the submission was retried or if the worker "
+            "was restarted. Please start a new review."
+        )
+        db.table("reviews").update(
+            {
+                "status": "failed",
+                "error_message": missing_key_msg,
+            }
+        ).eq("id", job_id).execute()
+        raise ValueError(missing_key_msg)
     if resolved_user_key:
         os.environ["OPENROUTER_API_KEY"] = resolved_user_key
 
