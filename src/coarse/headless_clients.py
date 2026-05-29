@@ -73,13 +73,14 @@ def _resolve_cli_bin(name: str) -> str:
     """Resolve a CLI name to its full PATH-resolved path, falling back to
     the bare name when it can't be found.
 
-    On Windows, npm-installed CLIs (``codex``, ``gemini``) are ``.cmd``/``.ps1``
-    shims; ``subprocess.run`` launches binaries via ``CreateProcess`` which
-    does NOT honor ``PATHEXT``, so a bare ``"codex"`` raises ``FileNotFoundError``
-    even though the shim is on ``PATH``. ``shutil.which`` *does* honor
-    ``PATHEXT`` and returns the full shim path, so resolving once at client
-    construction makes both the ``--help`` probe and execution launch the path
-    that actually exists. On a miss we keep the bare name so the existing
+    On Windows, npm-installed CLIs (``codex``, ``gemini``) are launched through
+    a ``.cmd`` shim; ``subprocess.run`` launches binaries via ``CreateProcess``
+    which does NOT honor ``PATHEXT``, so a bare ``"codex"`` raises
+    ``FileNotFoundError`` even though the shim is on ``PATH``. ``shutil.which``
+    *does* honor ``PATHEXT`` and returns the full ``.cmd`` path, so resolving
+    once at client construction makes both the ``--help`` probe and execution
+    launch the path that actually exists. On a miss we keep the bare name so the
+    existing
     "binary not found" guidance in ``_run_with_retry`` still fires.
     """
     return shutil.which(name) or name
@@ -955,7 +956,9 @@ class CodexClient(_HeadlessCLIClient):
         # a trusted git repo ("Not inside a trusted directory"). The subprocess
         # coarse spawns runs from wherever the user invoked coarse-review, which
         # often isn't such a repo (handoff tempdirs, arbitrary paper dirs), so
-        # pass it on every platform — it's a no-op inside a trusted repo.
+        # pass it on every platform — it's a no-op inside a trusted repo. Unlike
+        # the `-c` config override below, this flag is long-standing in codex and
+        # is assumed universally supported (not version-probed).
         cmd = [self._codex_bin, "exec", "--skip-git-repo-check"]
         if self._codex_model:
             cmd += ["-m", self._codex_model]
