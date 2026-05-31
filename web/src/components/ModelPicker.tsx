@@ -5,15 +5,14 @@ import { useState, useEffect, useRef, useCallback } from "react";
 /* ── Default model options ─────────────────────────────────── */
 const DEFAULT_MODELS = [
   { id: "anthropic/claude-opus-4.8", label: "Opus 4.8", provider: "Anthropic" },
-  { id: "anthropic/claude-opus-4.7", label: "Opus 4.7", provider: "Anthropic" },
   { id: "anthropic/claude-sonnet-4.6", label: "Sonnet 4.6", provider: "Anthropic" },
   { id: "openai/gpt-5.5", label: "GPT-5.5", provider: "OpenAI" },
   { id: "openai/gpt-5-mini", label: "GPT-5 Mini", provider: "OpenAI" },
   { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", provider: "Google" },
-  { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash", provider: "Google" },
+  { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash", provider: "Google" },
   { id: "qwen/qwen3.6-plus", label: "Qwen 3.6 Plus", provider: "Qwen" },
-  { id: "moonshotai/kimi-k2.5", label: "Kimi K2.5", provider: "Moonshot" },
-  { id: "deepseek/deepseek-v3.2", label: "DeepSeek V3.2", provider: "DeepSeek" },
+  { id: "moonshotai/kimi-k2.6", label: "Kimi K2.6", provider: "Moonshot" },
+  { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4", provider: "DeepSeek" },
   { id: "x-ai/grok-4.3", label: "Grok 4.3", provider: "xAI" },
   { id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", provider: "Meta" },
 ];
