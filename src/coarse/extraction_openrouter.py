@@ -138,6 +138,22 @@ def _classify_api_error(exc: Exception) -> str | None:
             "limit in your provider dashboard."
         )
     if status == 403:
+        # OpenRouter returns 403 with body "...violation of provider Terms Of
+        # Service." when the data-policy / provider-routing settings block the
+        # provider that would serve the request — a routing/policy problem,
+        # NOT a billing one. The generic 403 copy below leads with "no credits",
+        # which sent credit-holding users (issues #71, #183) down the wrong
+        # path, so detect the ToS body and give targeted guidance.
+        if "violation of provider" in summary or "terms of service" in summary:
+            return (
+                "OpenRouter blocked this request with a provider Terms-of-"
+                "Service violation (HTTP 403). This is a data-policy / "
+                "provider-routing block, not a billing problem — it fires "
+                "when the provider that would serve your request isn't enabled "
+                "for your account. Open https://openrouter.ai/settings/privacy "
+                "and allow the provider (or enable prompt logging / training "
+                "if that provider requires it), then start a new review."
+            )
         return (
             "OpenRouter denied the PDF extraction request (HTTP 403). This "
             "usually means your OpenRouter account has no credits, your "

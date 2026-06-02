@@ -58,18 +58,22 @@ def load_config() -> CoarseConfig:
     if not path.exists():
         return CoarseConfig()
 
-    # Warn if config file containing API keys is readable by others
-    try:
-        mode = path.stat().st_mode
-        if mode & 0o077:  # group or world readable/writable
-            logger.warning(
-                "Config file %s has insecure permissions (%o). Run: chmod 600 %s",
-                path,
-                mode & 0o777,
-                path,
-            )
-    except OSError:
-        pass
+    # Warn if config file containing API keys is readable by others.
+    # Skip on Windows: NTFS ACLs don't map to POSIX modes (os.stat reports an
+    # emulated 0o666 that never reflects real access), and `chmod 600` is a
+    # no-op there — so the check would warn on every run with useless advice.
+    if os.name != "nt":
+        try:
+            mode = path.stat().st_mode
+            if mode & 0o077:  # group or world readable/writable
+                logger.warning(
+                    "Config file %s has insecure permissions (%o). Run: chmod 600 %s",
+                    path,
+                    mode & 0o777,
+                    path,
+                )
+        except OSError:
+            pass
 
     try:
         with open(path, "rb") as f:

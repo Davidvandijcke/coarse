@@ -244,7 +244,7 @@ def test_main_handoff_supports_markdown_source(tmp_path) -> None:
         "effort": "high",
         "pre_extracted": None,
     }
-    assert (out_dir / "paper_review.md").read_text(encoding="utf-8") == "# Review\n"
+    assert (out_dir / "paper_review_gpt-5.4.md").read_text(encoding="utf-8") == "# Review\n"
 
 
 def test_main_handoff_success_prints_absolute_local_and_view_lines(tmp_path, capsys) -> None:
@@ -471,7 +471,10 @@ def test_main_detach_respawns_cli_with_log_file(tmp_path, capsys, monkeypatch) -
     stdout = capsys.readouterr().out
     assert "Review PID: 4242" in stdout
     assert f"Log file:   {log_path.resolve()}" in stdout
-    assert popen_calls["cmd"][:3] == [popen_calls["cmd"][0], "-m", "coarse.cli_review"]
+    # `-u` (unbuffered) precedes `-m` so the detached child flushes errors to
+    # the log immediately instead of dying with a block-buffered zero-byte log
+    # that --attach can only report as a silent exit 2 (#197).
+    assert popen_calls["cmd"][:4] == [popen_calls["cmd"][0], "-u", "-m", "coarse.cli_review"]
     assert "--detach" in popen_calls["cmd"]
     assert popen_calls["kwargs"]["env"]["COARSE_REVIEW_DETACHED"] == "1"
     assert log_path.exists()
@@ -611,3 +614,48 @@ def test_detach_forces_utf8_mode_in_child_env(tmp_path, monkeypatch) -> None:
     # The detached marker env var must also still be there — that's
     # how the child knows not to recursively re-spawn itself.
     assert captured_env.get("COARSE_REVIEW_DETACHED") == "1"
+
+
+# --- #197: fail fast on a missing/invalid OpenRouter key before OCR ---
+
+
+def test_main_fails_fast_on_missing_openrouter_key_for_pdf(tmp_path, monkeypatch, capsys) -> None:
+    """#197: a PDF review with no usable OpenRouter key returns the dedicated
+    exit code 3 with actionable guidance, and never enters the pipeline (which
+    would otherwise 401 deep in Mistral OCR)."""
+    paper = tmp_path / "paper.pdf"
+    paper.write_bytes(b"%PDF-1.4 fake")
+    out_dir = tmp_path / "out"
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("coarse.headless_review._find_openrouter_key", return_value=None),
+        patch(
+            "coarse.headless_review.run_headless_review",
+            side_effect=AssertionError("pipeline must not run without a key"),
+        ),
+    ):
+        rc = main([str(paper), "--host", "claude", "--output-dir", str(out_dir)])
+    assert rc == 3
+    assert "No valid OpenRouter API key" in capsys.readouterr().err
+
+
+def test_main_proceeds_with_valid_key_for_pdf(tmp_path, monkeypatch) -> None:
+    """#197: a PDF review with a valid sk-or- key passes the preflight and runs."""
+    paper = tmp_path / "paper.pdf"
+    paper.write_bytes(b"%PDF-1.4 fake")
+    out_dir = tmp_path / "out"
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-valid")
+    captured: dict[str, bool] = {}
+
+    def fake_run_headless_review(*args, **kwargs):
+        captured["ran"] = True
+        return _make_review(), "# Review\n", PaperText(full_markdown="# Paper\n", token_estimate=2)
+
+    with patch(
+        "coarse.headless_review.run_headless_review",
+        side_effect=fake_run_headless_review,
+    ):
+        rc = main([str(paper), "--host", "claude", "--output-dir", str(out_dir)])
+    assert rc == 0
+    assert captured.get("ran") is True

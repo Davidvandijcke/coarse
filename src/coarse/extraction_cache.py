@@ -28,6 +28,9 @@ def _load_cache(pdf_path: Path) -> PaperText | None:
     try:
         data = json.loads(cache.read_text(encoding="utf-8"))
         paper_text = PaperText.model_validate(data)
+        if not paper_text.full_markdown.strip():
+            logger.warning("Cache empty, re-extracting")
+            return None
         logger.info("Loaded extraction cache from %s", cache.name)
         return paper_text
     except Exception:
@@ -37,6 +40,11 @@ def _load_cache(pdf_path: Path) -> PaperText | None:
 
 def _save_cache(pdf_path: Path, paper_text: PaperText) -> None:
     """Save extraction result to a cache file next to the source document."""
+    if not paper_text.full_markdown.strip():
+        # Don't persist blank extractions — symmetric with the _load_cache
+        # empty-payload guard, so a stray blank never re-pollutes the cache.
+        logger.warning("Refusing to cache empty extraction for %s", pdf_path.name)
+        return
     cache = _cache_path(pdf_path)
     if cache.is_symlink():
         logger.warning("Cache path %s is a symlink, refusing to write", cache)

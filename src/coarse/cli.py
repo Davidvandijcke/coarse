@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import rich.markup
 import typer
 from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 from rich.status import Status
 
 from coarse import __version__
@@ -22,8 +35,9 @@ from coarse.config import (
     save_config,
 )
 from coarse.extraction import SUPPORTED_EXTENSIONS
-from coarse.models import CHEAP_MODELS, QUALITY_MODEL
+from coarse.models import CHEAP_MODELS, QUALITY_MODEL, model_filename_slug
 from coarse.pipeline import review_paper
+from coarse.progress import PipelineProgress
 
 app = typer.Typer(
     name="coarse",
@@ -85,6 +99,83 @@ def _run_setup(config: CoarseConfig) -> CoarseConfig:
     return config
 
 
+def _supports_pipeline_progress() -> bool:
+    """Return True when the current terminal can render a live progress bar."""
+    return console.is_terminal
+
+
+# C0 control chars (except tab/newline/CR), DEL, and C1 control chars. Pipeline
+# stage labels embed paper-controlled section titles (parsed from document
+# headings, otherwise unsanitized), so they can carry raw ANSI/CSI escape bytes
+# (color, cursor moves, screen clear, OSC-8 hyperlinks) and Rich markup tags
+# like [red] / [link=...]. The progress column has markup enabled and passes
+# ESC bytes straight to the terminal, so both must be neutralized.
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+
+def _safe_progress_text(s: str) -> str:
+    """Make a paper-controlled string safe for a Rich progress description:
+    strip control/escape bytes, then escape Rich markup so tags like ``[red]``
+    render as inert literal text instead of being interpreted. The strip must
+    run before the escape — ``markup.escape`` does not remove ESC bytes."""
+    return rich.markup.escape(_CONTROL_CHARS_RE.sub("", s))
+
+
+class _PipelineProgressDisplay:
+    """Render live pipeline progress, ETA, and cumulative actual spend."""
+
+    def __init__(self, console: Console) -> None:
+        self._progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            TextColumn("spent {task.fields[spent]}"),
+            console=console,
+            transient=False,
+        )
+        self._task_id: int | None = None
+        self._started = False
+
+    def __enter__(self) -> "_PipelineProgressDisplay":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        if not self._started:
+            return False
+        return self._progress.__exit__(exc_type, exc, tb)
+
+    def _ensure_started(self) -> None:
+        if self._started:
+            return
+        self._progress.__enter__()
+        self._started = True
+
+    def callback(self, update: PipelineProgress) -> None:
+        self._ensure_started()
+        spent = f"${update.actual_cost_usd:.4f}"
+        if self._task_id is None:
+            self._task_id = self._progress.add_task(
+                _safe_progress_text(update.stage_label),
+                total=max(1, update.total_stages),
+                completed=update.completed_stages,
+                spent=spent,
+            )
+            return
+
+        self._progress.update(
+            self._task_id,
+            description=_safe_progress_text(update.stage_label),
+            total=max(1, update.total_stages),
+            completed=update.completed_stages,
+            spent=spent,
+            refresh=True,
+        )
+
+
 @app.command()
 def setup() -> None:
     """Interactive setup: configure default model and API keys."""
@@ -113,7 +204,10 @@ def review(
         help="Path to paper file (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)",
     ),
     output: Optional[Path] = typer.Option(
-        None, "--output", "-o", help="Output file path (default: <pdf_stem>_review.md)"
+        None,
+        "--output",
+        "-o",
+        help="Output file path (default: <pdf_stem>_review.md; adds _<model> when --model is set)",
     ),
     model: Optional[str] = typer.Option(
         None, "--model", "-m", help="LiteLLM model string (e.g. openai/gpt-4o)"
@@ -194,29 +288,30 @@ def review(
             "extraction QA will be skipped. Set GEMINI_API_KEY to enable it.[/dim]"
         )
 
-    # Determine output path
-    out_path = output or Path(f"{pdf.stem}_review.md")
-
-    console.print(f"[bold]Reviewing[/bold] {pdf.name} with {resolved_model}")
-
-    # Keep the interactive cost prompt unobscured. The prompt currently lives
-    # inside review_paper(), so wrapping the whole call in a live Rich status
-    # makes the CLI look like it continued past confirmation when it is still
-    # waiting on stdin. The non-interactive `--yes` path keeps the spinner.
-    if yes:
-        with Status("Running review pipeline...", console=console):
-            review_obj, markdown, paper_text = review_paper(
-                pdf_path=pdf,
-                model=resolved_model,
-                skip_cost_gate=yes,
-                config=config,
-            )
+    # Determine output path. Tag the filename with the model only when the
+    # user explicitly chose one via --model, so the default stays backward
+    # compatible (<stem>_review.md) and back-to-back runs with different
+    # models don't overwrite each other.
+    if output:
+        out_path = output
+    elif model:
+        out_path = Path(f"{pdf.stem}_review_{model_filename_slug(resolved_model)}.md")
     else:
+        out_path = Path(f"{pdf.stem}_review.md")
+
+    console.print(f"[bold]Reviewing[/bold] {rich.markup.escape(pdf.name)} with {resolved_model}")
+
+    progress_context = (
+        _PipelineProgressDisplay(console) if _supports_pipeline_progress() else nullcontext(None)
+    )
+    with progress_context as progress_display:
+        progress_callback = None if progress_display is None else progress_display.callback
         review_obj, markdown, paper_text = review_paper(
             pdf_path=pdf,
             model=resolved_model,
             skip_cost_gate=yes,
             config=config,
+            progress_callback=progress_callback,
         )
 
     out_path.write_text(markdown, encoding="utf-8")

@@ -40,7 +40,7 @@ from coarse.cli_attach import (
     write_pidfile,
 )
 from coarse.extraction import SUPPORTED_EXTENSIONS
-from coarse.models import HEADLESS_DEFAULT_MODELS
+from coarse.models import HEADLESS_DEFAULT_MODELS, model_filename_slug
 
 _DETACHED_ENV = "COARSE_REVIEW_DETACHED"
 # Informational only: must match FINALIZE_TOKEN_TTL_MINUTES in
@@ -434,7 +434,10 @@ def _detach_review_process(argv: list[str], log_file: Path) -> int:
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
 
-    cmd = [sys.executable, "-m", "coarse.cli_review", *argv]
+    # `-u` (unbuffered) so an early crash in the detached child flushes its
+    # error to the log immediately, instead of a block-buffered zero-byte log
+    # that --attach can only report as a silent exit 2 (#197).
+    cmd = [sys.executable, "-u", "-m", "coarse.cli_review", *argv]
     popen_kwargs: dict[str, object] = {
         "stdin": subprocess.DEVNULL,
         "stdout": _open_detached_log(log_path),
@@ -664,9 +667,18 @@ def main(argv: list[str] | None = None) -> int:
         out_dir = args.output_dir.expanduser().resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        _ensure_openrouter_key_loaded(
-            args.pre_extracted.expanduser() if args.pre_extracted else None,
-        )
+        pre_extracted_path = args.pre_extracted.expanduser() if args.pre_extracted else None
+        _ensure_openrouter_key_loaded(pre_extracted_path)
+
+        # Fail fast if PDF OCR will run without a usable OpenRouter key (#197):
+        # a missing/placeholder key would otherwise 401 deep in extraction, which
+        # in --detach mode left a near-empty log and a bare exit code.
+        from coarse.headless_review import openrouter_key_preflight_error
+
+        key_error = openrouter_key_preflight_error(paper_path, pre_extracted_path)
+        if key_error:
+            print(key_error, file=sys.stderr)
+            return 3
 
         # Call the pipeline directly so we get the PaperText back in-process
         # (no sidecar file dance). run_headless_review handles all the
@@ -705,7 +717,7 @@ def main(argv: list[str] | None = None) -> int:
                 host=host,
                 model=model,
                 effort=effort,
-                pre_extracted=args.pre_extracted.expanduser() if args.pre_extracted else None,
+                pre_extracted=pre_extracted_path,
             )
         except Exception as exc:
             # Scrub the exception string before printing — if any upstream
@@ -722,7 +734,10 @@ def main(argv: list[str] | None = None) -> int:
         # `cp1252` encoding crashes on those. `PYTHONUTF8=1` in the
         # detached child also covers this, but the explicit encoding
         # makes the non-detached path safe too.
-        review_md_path = out_dir / f"{paper_path.stem}_review.md"
+        if args.model:
+            review_md_path = out_dir / f"{paper_path.stem}_review_{model_filename_slug(model)}.md"
+        else:
+            review_md_path = out_dir / f"{paper_path.stem}_review.md"
         review_md_path.write_text(md_text, encoding="utf-8")
         logger.info("Wrote %d-char review to %s", len(md_text), review_md_path)
 

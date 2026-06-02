@@ -3,6 +3,7 @@
 import pytest
 
 from coarse.models import (
+    _NON_REASONING_SUBSTRINGS,
     CHEAP_MODELS,
     DEFAULT_MODEL,
     JSON_MODE_PREFIXES,
@@ -16,6 +17,7 @@ from coarse.models import (
     TEMPERATURE_UNSUPPORTED_PREFIXES,
     VISION_MODEL,
     is_reasoning_model,
+    model_filename_slug,
     supports_temperature,
 )
 
@@ -67,10 +69,24 @@ REASONING_POSITIVE_CASES = [
     "openai/o3-deep-research",
     "openai/o4",
     "openai/o4-mini-deep-research",
-    # OpenAI GPT-5 Pro family (the actual failure from review 3ee351e6)
+    # OpenAI GPT-5 family — the entire family reasons except `-chat` variants
+    # (verified OpenRouter 2026-05-29). The Pro variant is the original failure
+    # from review 3ee351e6; the non-Pro / codex / mini / nano models are #185.
+    "openai/gpt-5",
+    "openai/gpt-5-mini",
+    "openai/gpt-5-codex",
+    "openai/gpt-5.1",
+    "openai/gpt-5.1-codex",
+    "openai/gpt-5.1-codex-mini",
+    "openai/gpt-5.1-codex-max",
+    "openai/gpt-5.4",
+    "openai/gpt-5.4-mini",
+    "openai/gpt-5.4-nano",
+    "openai/gpt-5.5",
     "openai/gpt-5-pro",
     "openai/gpt-5.2-pro",
     "openai/gpt-5.4-pro",
+    "gpt-5.4",  # bare OpenAI SDK form
     # DeepSeek R-series
     "deepseek/deepseek-r1",
     "deepseek/deepseek-r1-0528",
@@ -96,6 +112,9 @@ REASONING_POSITIVE_CASES = [
     "anthropic/claude-3.7-sonnet:thinking",
     # Perplexity reasoning
     "perplexity/sonar-reasoning-pro",
+    # Non-gpt-5 `-chat` model carrying a reasoning suffix: the gpt-5-scoped
+    # `-chat` carve-out must NOT suppress this (the substring loop catches it).
+    "deepseek/deepseek-chat-v3.1-thinking",
     # OpenRouter-prefixed variants still get detected
     "openrouter/openai/gpt-5.4-pro",
     "openrouter/openai/o3",
@@ -106,15 +125,17 @@ REASONING_POSITIVE_CASES = [
 
 
 REASONING_NEGATIVE_CASES = [
-    # Regular (non-Pro, non-reasoning) OpenAI models
-    "openai/gpt-5.4",
-    "openai/gpt-5.4-mini",
-    "openai/gpt-5.4-nano",
-    "openai/gpt-5.1",
-    "openai/gpt-5",
+    # GPT-5 `-chat` variants are the ONLY non-reasoning gpt-5* models
+    # (verified OpenRouter 2026-05-29, issue #185).
+    "openai/gpt-5-chat",
+    "openai/gpt-5.1-chat",
+    "openai/gpt-5.2-chat",
+    "openai/gpt-5.3-chat",
+    "openrouter/openai/gpt-5.3-chat",  # carve-out survives the openrouter/ prefix
+    "gpt-5-chat",  # bare OpenAI SDK form of the carve-out
+    "gpt-5.1-chat",
+    # Pre-GPT-5 OpenAI chat model
     "openai/gpt-4o",
-    "openai/gpt-5.1-codex",
-    "openai/gpt-5.1-codex-mini",
     # Claude 4-family without :thinking suffix (optional thinking, off by default)
     "anthropic/claude-opus-4.6",
     "anthropic/claude-sonnet-4.6",
@@ -153,6 +174,11 @@ def test_reasoning_prefixes_are_lowercase():
         assert s == s.lower(), f"reasoning substring not lowercase: {s}"
 
 
+def test_non_reasoning_substrings_are_lowercase():
+    for s in _NON_REASONING_SUBSTRINGS:
+        assert s == s.lower(), f"non-reasoning substring not lowercase: {s}"
+
+
 def test_reasoning_max_tokens_multiplier_sensible():
     """Calibrated for GPT-5.4 Pro burning ~15k reasoning on overview; an 8x
     multiplier on 8k default gives 64k headroom. Accept 4-16 as reasonable."""
@@ -161,6 +187,17 @@ def test_reasoning_max_tokens_multiplier_sensible():
 
 def test_reasoning_effort_default_is_recognized_value():
     assert REASONING_EFFORT_DEFAULT in {"low", "medium", "high"}
+
+
+def test_model_filename_slug_preserves_common_model_id_characters():
+    assert model_filename_slug("anthropic/claude-sonnet-4-6") == "anthropic_claude-sonnet-4-6"
+    assert model_filename_slug("gpt-5.4") == "gpt-5.4"
+
+
+def test_model_filename_slug_normalizes_separators_and_whitespace():
+    assert model_filename_slug("  qwen/qwen-plus-2025-07-28:thinking  ") == (
+        "qwen_qwen-plus-2025-07-28_thinking"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +214,53 @@ def test_supports_temperature_false_for_openrouter_opus_4_7():
     assert supports_temperature("openrouter/anthropic/claude-opus-4.7") is False
 
 
+def test_supports_temperature_false_for_opus_4_7_hyphen():
+    """litellm direct-Anthropic ships the hyphen form — must also gate."""
+    assert supports_temperature("anthropic/claude-opus-4-7") is False
+
+
+def test_supports_temperature_false_for_openrouter_opus_4_7_hyphen():
+    """``openrouter/`` prefix is stripped before matching, so the hyphen form
+    routed via OpenRouter still resolves to the gated prefix."""
+    assert supports_temperature("openrouter/anthropic/claude-opus-4-7") is False
+
+
+def test_supports_temperature_false_for_vertex_opus_4_7():
+    """Vertex AI uses the hyphen form with a ``vertex_ai/`` prefix."""
+    assert supports_temperature("vertex_ai/claude-opus-4-7") is False
+
+
+def test_supports_temperature_false_for_bare_opus_4_7():
+    """Bare Anthropic SDK / Bedrock-style ID without a provider prefix."""
+    assert supports_temperature("claude-opus-4-7") is False
+
+
+def test_supports_temperature_false_for_opus_4_8_forms():
+    """Opus 4.8 (reasoning-first like 4.7) rejects temperature across ID forms."""
+    assert supports_temperature("anthropic/claude-opus-4.8") is False
+    assert supports_temperature("anthropic/claude-opus-4.8-fast") is False
+    assert supports_temperature("anthropic/claude-opus-4-8") is False
+    assert supports_temperature("openrouter/anthropic/claude-opus-4-8") is False
+    assert supports_temperature("vertex_ai/claude-opus-4-8") is False
+    assert supports_temperature("claude-opus-4-8") is False
+
+
+def test_supports_temperature_false_for_gpt_5_family():
+    """The whole GPT-5 family rejects temperature on the OpenRouter route
+    (issue #185), not just 5.5; the prefix covers dot/codex/pro/chat/mini
+    variants and the bare OpenAI-SDK form."""
+    assert supports_temperature("openai/gpt-5.5") is False
+    assert supports_temperature("openrouter/openai/gpt-5.5") is False
+    assert supports_temperature("openai/gpt-5.5-pro") is False
+    assert supports_temperature("gpt-5.5") is False
+    assert supports_temperature("openai/gpt-5.4") is False
+    assert supports_temperature("openai/gpt-5-mini") is False
+    assert supports_temperature("openai/gpt-5-codex") is False
+    assert supports_temperature("openai/gpt-5-chat") is False
+    assert supports_temperature("openrouter/openai/gpt-5.4") is False
+    assert supports_temperature("gpt-5.4") is False
+
+
 def test_supports_temperature_true_for_opus_4_6():
     assert supports_temperature("anthropic/claude-opus-4.6") is True
 
@@ -188,8 +272,6 @@ def test_supports_temperature_true_for_default_model():
 @pytest.mark.parametrize(
     "model_id",
     [
-        "openai/gpt-5.4",
-        "openai/gpt-5-mini",
         "google/gemini-3-flash-preview",
         "moonshotai/kimi-k2.5",
         "x-ai/grok-4.1-fast",

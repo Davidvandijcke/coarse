@@ -7,7 +7,11 @@ web cost estimator.
 
 from __future__ import annotations
 
-from coarse.models import REASONING_MODEL_PREFIXES, REASONING_MODEL_SUBSTRINGS
+from coarse.models import (
+    _NON_REASONING_SUBSTRINGS,
+    REASONING_MODEL_PREFIXES,
+    REASONING_MODEL_SUBSTRINGS,
+)
 
 # Section sizing
 TOKENS_PER_SECTION = 1200
@@ -116,4 +120,5 @@ def export_web_spec() -> dict[str, object]:
         "stageOutputTokens": STAGE_OUTPUT_TOKENS,
         "reasoningModelPrefixes": list(REASONING_MODEL_PREFIXES),
         "reasoningModelSubstrings": list(REASONING_MODEL_SUBSTRINGS),
+        "nonReasoningSubstrings": list(_NON_REASONING_SUBSTRINGS),
     }

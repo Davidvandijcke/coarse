@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import datetime
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
 from coarse.config import CoarseConfig
 from coarse.pipeline import (
+    _PipelineProgressReporter,
     _renumber_comments,
     _review_section,
     _section_needs_proof_verify,
     review_paper,
 )
+from coarse.progress import PipelineProgress
 from coarse.types import (
     DetailedComment,
     OverviewFeedback,
@@ -182,6 +186,267 @@ def test_review_paper_calls_stages_in_order():
     editorial_idx = call_order.index("editorial")
     render_idx = call_order.index("render")
     assert overview_idx < completeness_idx < editorial_idx < render_idx
+
+
+def test_review_paper_reports_progress_for_completed_stages():
+    """Completed progress events should cover the real pipeline stage order."""
+    config = CoarseConfig(default_model=TEST_MODEL, extraction_qa=False)
+    paper_text = _make_paper_text()
+    structure = _make_structure()
+    overview = _make_overview()
+    progress_events: list[PipelineProgress] = []
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=paper_text),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.return_value = overview
+        MockCompleteness.return_value.run.return_value = []
+        MockSection.return_value.run.return_value = [_make_comment(1)]
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockEditorial.return_value.run.return_value = [_make_comment(1)]
+
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            progress_callback=progress_events.append,
+        )
+
+    completed_keys = [event.stage_key for event in progress_events if event.event == "completed"]
+    assert completed_keys[:2] == [
+        "extraction",
+        "structure",
+    ]
+    assert set(completed_keys[2:5]) == {
+        "calibration",
+        "literature_search",
+        "contribution_extraction",
+    }
+    assert completed_keys[5:7] == [
+        "overview",
+        "completeness",
+    ]
+    assert set(completed_keys[7:9]) == {
+        "section_1",
+        "section_2",
+    }
+    assert completed_keys[9:] == [
+        "editorial",
+        "quote_verification",
+        "synthesis",
+    ]
+    assert progress_events[-1].completed_stages == progress_events[-1].total_stages
+
+
+def test_review_paper_advances_parallel_progress_as_futures_finish():
+    """Parallel setup progress should advance on the first completed future."""
+    config = CoarseConfig(default_model=TEST_MODEL, extraction_qa=False)
+    paper_text = _make_paper_text()
+    structure = _make_structure()
+    overview = _make_overview()
+    progress_events: list[PipelineProgress] = []
+
+    # Deterministic ordering without sleeps: calibration is released only after
+    # the main thread has *emitted* the literature and contribution completion
+    # events, so it always completes last regardless of scheduler timing (the
+    # sleep-based version flaked under CI load).
+    literature_emitted = threading.Event()
+    contribution_emitted = threading.Event()
+
+    def record(event: PipelineProgress) -> None:
+        progress_events.append(event)
+        if event.event == "completed":
+            if event.stage_key == "literature_search":
+                literature_emitted.set()
+            elif event.stage_key == "contribution_extraction":
+                contribution_emitted.set()
+
+    def gated_calibration(*args, **kwargs):
+        literature_emitted.wait(timeout=5)
+        contribution_emitted.wait(timeout=5)
+        return None
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=paper_text),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", side_effect=gated_calibration),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.return_value = overview
+        MockCompleteness.return_value.run.return_value = []
+        MockSection.return_value.run.return_value = [_make_comment(1)]
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockEditorial.return_value.run.return_value = [_make_comment(1)]
+
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            progress_callback=record,
+        )
+
+    completed_keys = [event.stage_key for event in progress_events if event.event == "completed"]
+    assert completed_keys.index("literature_search") < completed_keys.index("calibration")
+    assert completed_keys.index("contribution_extraction") < completed_keys.index("calibration")
+
+
+def test_review_paper_advances_section_progress_as_futures_finish():
+    """Section progress should advance as soon as faster sections complete."""
+    config = CoarseConfig(default_model=TEST_MODEL, extraction_qa=False)
+    paper_text = _make_paper_text()
+    structure = _make_structure()
+    overview = _make_overview()
+    progress_events: list[PipelineProgress] = []
+
+    # Deterministic ordering without sleeps: section 1 is released only after
+    # the main thread has *emitted* section 2's completion event, so section_2
+    # always completes first regardless of scheduler timing (the sleep-based
+    # version flaked under CI load).
+    section_2_emitted = threading.Event()
+
+    def record(event: PipelineProgress) -> None:
+        progress_events.append(event)
+        if event.event == "completed" and event.stage_key == "section_2":
+            section_2_emitted.set()
+
+    def fake_review_section(
+        _section_agent,
+        _verify_agent,
+        section,
+        *_args,
+        **_kwargs,
+    ):
+        if section.number == 1:
+            section_2_emitted.wait(timeout=5)
+        return [_make_comment(section.number)]
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=paper_text),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline._review_section", side_effect=fake_review_section),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.SectionAgent"),
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.return_value = overview
+        MockCompleteness.return_value.run.return_value = []
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockEditorial.return_value.run.return_value = [_make_comment(1)]
+
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            progress_callback=record,
+        )
+
+    completed_keys = [event.stage_key for event in progress_events if event.event == "completed"]
+    assert completed_keys.index("section_2") < completed_keys.index("section_1")
+
+
+def test_review_paper_skips_unfinished_sections_after_timeout():
+    """Timed-out section futures should be skipped instead of hanging forever."""
+    config = CoarseConfig(default_model=TEST_MODEL, extraction_qa=False)
+    paper_text = _make_paper_text()
+    structure = _make_structure()
+    overview = _make_overview()
+    progress_events: list[PipelineProgress] = []
+
+    def slow_review_section(
+        _section_agent,
+        _verify_agent,
+        _section,
+        *_args,
+        **_kwargs,
+    ):
+        time.sleep(0.03)
+        return [_make_comment(1)]
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=paper_text),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline._review_section", side_effect=slow_review_section),
+        patch("coarse.pipeline._SECTION_STAGE_TIMEOUT_SECONDS", 0.001),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.SectionAgent"),
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.return_value = overview
+        MockCompleteness.return_value.run.return_value = []
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockEditorial.return_value.run.return_value = [_make_comment(1)]
+
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            progress_callback=progress_events.append,
+        )
+
+    completed_keys = [event.stage_key for event in progress_events if event.event == "completed"]
+    assert "section_1" in completed_keys
+    assert "section_2" in completed_keys
+
+
+def test_pipeline_progress_reporter_emits_cost_only_updates():
+    """Cost updates should preserve the active stage while spend changes mid-stage."""
+    events: list[PipelineProgress] = []
+    reporter = _PipelineProgressReporter(events.append, total_stages=5)
+
+    reporter.start("overview", "Generating overview", 0.0)
+    reporter.update_cost(0.1234)
+
+    assert events[-1] == PipelineProgress(
+        event="updated",
+        stage_key="overview",
+        stage_label="Generating overview",
+        completed_stages=0,
+        total_stages=5,
+        actual_cost_usd=0.1234,
+    )
+
+
+def test_pipeline_progress_reporter_ignores_cost_updates_before_first_stage():
+    """Cost-only updates should not start the UI before a real pipeline stage exists."""
+    events: list[PipelineProgress] = []
+    reporter = _PipelineProgressReporter(events.append, total_stages=5)
+
+    reporter.update_cost(0.1234)
+
+    assert events == []
 
 
 def test_review_paper_skips_references_section():
@@ -662,7 +927,7 @@ def test_review_paper_uses_provided_config():
     overview = _make_overview()
     captured_models: list[str] = []
 
-    def fake_llm_client(model=None, config=None):
+    def fake_llm_client(model=None, config=None, cost_callback=None):
         captured_models.append(model)
         mock = MagicMock()
         return mock

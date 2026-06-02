@@ -100,6 +100,12 @@ def test_model_cost_per_token_unknown_model():
     assert result == (0.0, 0.0)
 
 
+def test_model_cost_per_token_openrouter_google_alias_uses_bare_model_fallback():
+    in_cost, out_cost = model_cost_per_token("openrouter/google/gemini-pro-latest")
+    assert in_cost > 0
+    assert out_cost > 0
+
+
 def test_estimate_call_cost():
     in_cost, out_cost = model_cost_per_token("gpt-4o")
     expected = in_cost * 1000 + out_cost * 500
@@ -265,8 +271,9 @@ def test_is_reasoning_property_true_for_gpt5_pro(mock_instructor_client):
     assert client.is_reasoning is True
 
 
-def test_is_reasoning_property_false_for_regular_gpt5(mock_instructor_client):
-    client = _reasoning_client("openai/gpt-5.4", mock_instructor_client)
+def test_is_reasoning_property_false_for_gpt5_chat(mock_instructor_client):
+    # gpt-5*-chat are the only non-reasoning gpt-5 variants (issue #185).
+    client = _reasoning_client("openai/gpt-5-chat", mock_instructor_client)
     assert client.is_reasoning is False
 
 
@@ -293,7 +300,7 @@ def test_complete_bumps_max_tokens_for_reasoning_model(mock_instructor_client):
 
 
 def test_complete_does_not_bump_max_tokens_for_non_reasoning(mock_instructor_client):
-    client = _reasoning_client("openai/gpt-5.4", mock_instructor_client)
+    client = _reasoning_client("openai/gpt-5-chat", mock_instructor_client)
 
     with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
         client.complete(
@@ -565,6 +572,27 @@ def test_complete_omits_temperature_for_openrouter_opus_4_7(mock_instructor_clie
     assert "temperature" not in call.kwargs
 
 
+def test_complete_omits_temperature_for_opus_4_7_hyphen(mock_instructor_client):
+    """Hyphen form (litellm direct-Anthropic) must also omit temperature.
+
+    Regression: the v1.4.0 fix only registered the dot form
+    (``anthropic/claude-opus-4.7``) so a user invoking the model via the
+    direct-Anthropic ID slipped past the gate and hit a 400.
+    """
+    client = _build_client("anthropic/claude-opus-4-7", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=256,
+            temperature=0.5,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert "temperature" not in call.kwargs
+
+
 def test_complete_forwards_temperature_for_opus_4_6(mock_instructor_client):
     """Opus 4.6 still accepts temperature — make sure we don't over-strip."""
     client = _build_client("anthropic/claude-opus-4.6", mock_instructor_client)
@@ -579,6 +607,23 @@ def test_complete_forwards_temperature_for_opus_4_6(mock_instructor_client):
 
     call = mock_instructor_client.chat.completions.create_with_completion.call_args
     assert call.kwargs["temperature"] == 0.5
+
+
+def test_complete_omits_temperature_for_gpt5(mock_instructor_client):
+    """Issue #185: the GPT-5 family rejects temperature, so complete() must omit
+    the kwarg end-to-end (not just have supports_temperature return False)."""
+    client = _build_client("openai/gpt-5.4", mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=256,
+            temperature=0.5,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert "temperature" not in call.kwargs
 
 
 def test_complete_text_omits_temperature_for_opus_4_7():
@@ -914,6 +959,35 @@ def test_complete_openrouter_kimi_retries_md_json_on_route_rejection():
     assert primary_kwargs["extra_body"]["provider"]["require_parameters"] is True
     assert {"id": "response-healing"} in primary_kwargs["extra_body"]["plugins"]
     fallback_client.chat.completions.create_with_completion.assert_called_once()
+
+
+def test_complete_invokes_cost_callback_with_cumulative_total(mock_instructor_client):
+    expected = _SimpleModel(value="hello")
+    mock_completion = _make_mock_completion()
+    mock_instructor_client.chat.completions.create_with_completion.return_value = (
+        expected,
+        mock_completion,
+    )
+    totals: list[float] = []
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.42):
+        client = LLMClient(model=TEST_MODEL, config=CoarseConfig(), cost_callback=totals.append)
+        result = client.complete([{"role": "user", "content": "hello"}], _SimpleModel)
+
+    assert result == expected
+    assert totals == [0.42]
+    assert client.cost_usd == 0.42
+
+
+def test_add_cost_invokes_cost_callback_with_running_total(mock_instructor_client):
+    totals: list[float] = []
+    client = LLMClient(model=TEST_MODEL, config=CoarseConfig(), cost_callback=totals.append)
+
+    client.add_cost(0.10)
+    client.add_cost(0.25)
+
+    assert totals == [0.10, 0.35]
+    assert client.cost_usd == 0.35
 
 
 def test_complete_openrouter_kimi_salvages_fallback_md_json_retry_error():

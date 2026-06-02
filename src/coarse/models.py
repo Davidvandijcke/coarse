@@ -7,6 +7,8 @@ this module. Verify IDs against OpenRouter before changing:
 Last verified: 2026-03-04
 """
 
+import re
+
 # Primary review model (routed via OpenRouter for non-direct providers)
 DEFAULT_MODEL = "qwen/qwen3.5-plus-02-15"
 
@@ -77,7 +79,7 @@ MARKDOWN_JSON_PREFIXES = ("moonshotai", "kimi")
 # Callers that route through these models need:
 #   1. A much larger max_tokens ceiling (see REASONING_MAX_TOKENS_MULTIPLIER)
 #   2. reasoning_effort passed through to cap the thinking budget server-side
-#      on providers that accept it (OpenAI o-series + GPT-5 Pro)
+#      on providers that accept it (OpenAI o-series + GPT-5 family)
 #   3. A cost estimate that includes the reasoning overhead so the pre-flight
 #      gate doesn't under-quote by 5-10x
 #
@@ -87,12 +89,14 @@ REASONING_MODEL_PREFIXES: tuple[str, ...] = (
     "openai/o1",
     "openai/o3",
     "openai/o4",
-    # OpenAI GPT-5 "Pro" variants default to high reasoning effort
-    "openai/gpt-5-pro",
-    "openai/gpt-5.1-pro",
-    "openai/gpt-5.2-pro",
-    "openai/gpt-5.3-pro",
-    "openai/gpt-5.4-pro",
+    # OpenAI GPT-5 family — the entire family runs hidden reasoning EXCEPT
+    # the `-chat` variants (gpt-5-chat, gpt-5.1-chat, …), which are carved
+    # out by _NON_REASONING_SUBSTRINGS below. Verified against OpenRouter
+    # /api/v1/models on 2026-05-29. The `openai/gpt-5` prefix covers gpt-5,
+    # -mini, -nano, -codex(/-max/-mini), .1/.2/.3/.4/.5, and all -pro; the
+    # bare `gpt-5` covers direct-OpenAI-SDK IDs (gpt-5.4, gpt-5-mini, …).
+    "openai/gpt-5",
+    "gpt-5",
     # DeepSeek R-series (R1 and distills)
     "deepseek/deepseek-r",
     # xAI Grok 4 family — reasoning on by default. Grok 3 mini is also a
@@ -115,6 +119,15 @@ REASONING_MODEL_SUBSTRINGS: tuple[str, ...] = (
     "deep-research",
 )
 
+# GPT-5-family variants that do NOT run reasoning, overriding the broad
+# `gpt-5` prefix above. Only the `-chat` variants (openai/gpt-5-chat,
+# gpt-5.1-chat, …) report `reasoning` unsupported on OpenRouter (verified
+# 2026-05-29); every other gpt-5* reasons. This carve-out is applied ONLY to
+# gpt-5-family IDs in is_reasoning_model() (gated on the gpt-5 prefix), so it
+# can never suppress reasoning detection for an unrelated `-chat`-named model
+# (e.g. a future `vendor/foo-chat-thinking`).
+_NON_REASONING_SUBSTRINGS: tuple[str, ...] = ("-chat",)
+
 # Multiplier applied to the caller's requested max_tokens for reasoning
 # models. The caller's value is the intended *visible* output budget; the
 # multiplier reserves headroom for the hidden reasoning phase.
@@ -133,12 +146,14 @@ REASONING_MODEL_SUBSTRINGS: tuple[str, ...] = (
 REASONING_MAX_TOKENS_MULTIPLIER: int = 8
 
 # Default reasoning effort passed to litellm's unified `reasoning_effort`
-# param on providers that accept it (OpenAI o-series + GPT-5 Pro). "medium"
+# param on providers that accept it (OpenAI o-series + GPT-5 family). "medium"
 # preserves most of the quality advantage of reasoning models while
 # preventing the runaway case where the model spends its entire budget on
 # reasoning and never emits output. Callers can override by passing
 # reasoning_effort explicitly in kwargs.
 REASONING_EFFORT_DEFAULT: str = "medium"
+
+_MODEL_FILENAME_SLUG_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def is_reasoning_model(model_id: str) -> bool:
@@ -150,10 +165,24 @@ def is_reasoning_model(model_id: str) -> bool:
     to pass reasoning_effort through to the provider.
     """
     lower = model_id.lower().removeprefix("openrouter/")
+    # The `-chat` carve-out overrides the broad gpt-5 prefix below, but only
+    # for the gpt-5 family — it must not suppress reasoning detection for an
+    # unrelated `-chat`-named model that the substring loop would otherwise
+    # catch (e.g. `vendor/foo-chat-thinking`).
+    if lower.startswith("openai/gpt-5") or lower.startswith("gpt-5"):
+        if any(substring in lower for substring in _NON_REASONING_SUBSTRINGS):
+            return False
     for prefix in REASONING_MODEL_PREFIXES:
         if lower.startswith(prefix):
             return True
     return any(substring in lower for substring in REASONING_MODEL_SUBSTRINGS)
+
+
+def model_filename_slug(model_id: str) -> str:
+    """Return a filesystem-friendly slug for a model identifier."""
+    slug = _MODEL_FILENAME_SLUG_RE.sub("_", model_id.strip())
+    slug = slug.strip("._")
+    return slug or "model"
 
 
 # ---------------------------------------------------------------------------
@@ -179,9 +208,40 @@ def is_reasoning_model(model_id: str) -> bool:
 # 'stop', 'structured_outputs', 'tool_choice', 'tools', 'verbosity'] — no
 # temperature. The matching 4.6 entry does list it.
 #
+# The same backend ships under two ID conventions depending on the route:
+# OpenRouter uses dots (``anthropic/claude-opus-4.7``), while litellm's
+# direct-Anthropic and Vertex routes use hyphens
+# (``anthropic/claude-opus-4-7``, ``vertex_ai/claude-opus-4-7``, bare
+# ``claude-opus-4-7``). Both hit the same model, so both forms must be
+# listed — the v1.4.0 fix for #162 only registered the dot form, which
+# let ``--model anthropic/claude-opus-4-7`` slip past the gate and 400.
+#
 # Keep this tuple tight — only add a model once a passed-temperature
 # request is confirmed to fail.
-TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = ("anthropic/claude-opus-4.7",)
+TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = (
+    # Opus 4.7 (reasoning-first, issue #162): dot / hyphen / Vertex / bare.
+    "anthropic/claude-opus-4.7",  # OpenRouter form
+    "anthropic/claude-opus-4-7",  # litellm direct-Anthropic form
+    "vertex_ai/claude-opus-4-7",  # Vertex AI form
+    "claude-opus-4-7",  # bare Anthropic SDK / Bedrock-style ID
+    # Opus 4.8 — same reasoning-first behavior; verified temperature
+    # unsupported on OpenRouter 2026-05-28. The dot prefix also covers
+    # the ``-fast`` variant via startswith.
+    "anthropic/claude-opus-4.8",  # OpenRouter form (covers -fast)
+    "anthropic/claude-opus-4-8",  # litellm direct-Anthropic form
+    "vertex_ai/claude-opus-4-8",  # Vertex AI form
+    "claude-opus-4-8",  # bare Anthropic SDK / Bedrock-style ID
+    # GPT-5 family rejects temperature on the OpenRouter route (verified
+    # OpenRouter /api/v1/models 2026-05-29 — the whole family, not just 5.5).
+    # litellm's OpenAI param table is no more trustworthy per-model than the
+    # Anthropic one, so gate the family by prefix. `openai/gpt-5` covers the
+    # dot / codex / pro / chat variants; bare `gpt-5` covers direct-OpenAI-SDK
+    # IDs. (gpt-5-image* technically accept temperature, but coarse never
+    # routes a review to an image model.) Omitting temperature is harmless on
+    # routes that accept it; it only prevents a 400 on routes that don't.
+    "openai/gpt-5",  # OpenRouter / litellm OpenAI form (covers all gpt-5*)
+    "gpt-5",  # bare OpenAI SDK ID
+)
 
 
 def supports_temperature(model_id: str) -> bool:

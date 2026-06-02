@@ -106,6 +106,42 @@ def test_classify_api_error_does_not_leak_management_key_copy_on_403() -> None:
     assert "403" in msg
 
 
+def test_classify_api_error_403_tos_violation_drops_credits_redherring() -> None:
+    """A 403 'violation of provider Terms Of Service' is a data-policy /
+    routing block, not billing. The message must point at privacy settings
+    and NOT tell the (credit-holding) user to add credits (issues #71, #183).
+    """
+    resp = MagicMock()
+    resp.status_code = 403
+    resp.json.return_value = {
+        "error": {
+            "message": "The request is prohibited due to a violation of provider Terms Of Service.",
+            "code": 403,
+        }
+    }
+    exc = RuntimeError("403 Forbidden")
+    exc.response = resp  # type: ignore[attr-defined]
+
+    msg = (_classify_api_error(exc) or "").lower()
+    assert "terms" in msg
+    assert "openrouter.ai/settings/privacy" in msg
+    assert "add credits" not in msg and "no credits" not in msg
+
+
+def test_classify_api_error_403_generic_body_keeps_credits_copy() -> None:
+    """A 403 without the ToS body keeps the existing generic guidance
+    (which mentions credits as one possible cause)."""
+    resp = MagicMock()
+    resp.status_code = 403
+    resp.json.return_value = {"error": {"message": "Forbidden.", "code": 403}}
+    exc = RuntimeError("403 Forbidden")
+    exc.response = resp  # type: ignore[attr-defined]
+
+    msg = (_classify_api_error(exc) or "").lower()
+    assert "credits" in msg
+    assert "openrouter.ai/credits" in msg
+
+
 def test_can_fall_through_api_error_for_openrouter_403() -> None:
     exc = RuntimeError("forbidden")
     exc.status_code = 403  # type: ignore[attr-defined]

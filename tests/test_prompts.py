@@ -1261,3 +1261,13 @@ def test_content_boundary_notice_lists_author_notes():
     imports) must enumerate author_notes so the agent is explicitly told that
     block is boundary-fenced data, not a command stream."""
     assert "author_notes" in _CONTENT_BOUNDARY_NOTICE
+
+
+def test_editorial_system_prompt_has_cross_comment_dedup_step():
+    """#200: the editorial pass must instruct the model to merge duplicate /
+    overlapping comments — previously that instruction lived only in the legacy
+    crossref prompt, which runs only as an exception fallback, so a normal run
+    had no cross-comment dedup at all."""
+    low = EDITORIAL_SYSTEM.lower()
+    assert "merge" in low
+    assert "duplicate" in low

@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import threading
+from collections.abc import Callable
 
 import instructor
 import litellm
@@ -382,7 +383,13 @@ def _should_retry_with_md_json(exc: Exception) -> bool:
 class LLMClient:
     """Wraps litellm + instructor for structured output. Tracks cumulative cost."""
 
-    def __init__(self, model: str | None = None, config: CoarseConfig | None = None) -> None:
+    def __init__(
+        self,
+        model: str | None = None,
+        config: CoarseConfig | None = None,
+        *,
+        cost_callback: Callable[[float], None] | None = None,
+    ) -> None:
         if config is None:
             config = load_config()
         self._model = model or config.default_model
@@ -398,6 +405,7 @@ class LLMClient:
         self._cost_usd: float = 0.0
         self._lock = threading.Lock()
         self._is_reasoning = is_reasoning_model(self._model)
+        self._cost_callback = cost_callback
         # Resolve the API key eagerly and stash it so every call can pass
         # `api_key=self._api_key` explicitly. Historically we relied on
         # `_inject_openrouter_privacy` running inside `_sanitized_completion`
@@ -547,8 +555,7 @@ class LLMClient:
             # lookup raises ``This model isn't mapped yet``.
             cost = litellm.completion_cost(completion_response=completion, model=self._model)
             if cost is not None:
-                with self._lock:
-                    self._cost_usd += cost
+                self.add_cost(cost)
         except Exception:
             logger.debug("Cost tracking failed for model %s", self._model, exc_info=True)
         return response
@@ -589,8 +596,7 @@ class LLMClient:
         try:
             cost = litellm.completion_cost(completion_response=response, model=self._model)
             if cost is not None:
-                with self._lock:
-                    self._cost_usd += cost
+                self.add_cost(cost)
         except Exception:
             logger.debug("Cost tracking failed for model %s", self._model, exc_info=True)
 
@@ -603,6 +609,13 @@ class LLMClient:
         """Register an external cost (e.g. from a direct litellm.completion call)."""
         with self._lock:
             self._cost_usd += cost_usd
+            total_cost = self._cost_usd
+        if self._cost_callback is None:
+            return
+        try:
+            self._cost_callback(total_cost)
+        except Exception:
+            logger.debug("Cost callback failed for model %s", self._model, exc_info=True)
 
     @property
     def model(self) -> str:
@@ -736,17 +749,30 @@ def _lookup_model_cost(model: str) -> dict | None:
     the cost gate returns accurate numbers regardless of which form the
     caller passed.
     """
-    info = litellm.model_cost.get(model)
-    if info is None and "/" in model:
-        info = litellm.model_cost.get(model.split("/", 1)[1])
-    if info is None and model.startswith("openrouter/"):
-        info = litellm.model_cost.get(model.removeprefix("openrouter/"))
-    # Bare provider/model → try with the openrouter/ prefix added.
-    # (Some entries, notably anthropic/claude-{sonnet,opus}-4.6, only
-    # exist under the openrouter/ form in litellm's registry.)
-    if info is None and "/" in model and not model.startswith("openrouter/"):
-        info = litellm.model_cost.get("openrouter/" + model)
-    return info
+    candidates: list[str] = [model]
+
+    if "/" in model:
+        candidates.append(model.split("/", 1)[1])
+
+    if model.startswith("openrouter/"):
+        deproxied = model.removeprefix("openrouter/")
+        candidates.append(deproxied)
+        if "/" in deproxied:
+            candidates.append(deproxied.split("/", 1)[1])
+    elif "/" in model:
+        # Some entries only exist under the openrouter/ form in litellm's
+        # registry, so try that variant for bare provider/model strings.
+        candidates.append("openrouter/" + model)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        info = litellm.model_cost.get(candidate)
+        if info is not None:
+            return info
+    return None
 
 
 _UNKNOWN_MODEL_CEILING = 16_384
