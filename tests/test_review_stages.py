@@ -5,6 +5,8 @@ from __future__ import annotations
 from unittest.mock import Mock, patch
 
 from coarse.review_stages import (
+    _MAX_FINAL_COMMENTS,
+    _cap_comments,
     _detect_section_focus,
     _review_section,
     calibrate_domain,
@@ -311,3 +313,57 @@ def test_extract_contribution_returns_none_on_client_failure():
     )
 
     assert extract_contribution(structure, client) is None
+
+
+# --- #200: soft cap on the final comment count ---
+
+
+def test_cap_comments_truncates_over_long_list_to_max():
+    comments = [_comment(i + 1) for i in range(40)]
+    capped = _cap_comments(comments)
+    assert len(capped) == _MAX_FINAL_COMMENTS
+    # Truncation keeps the leading (severity-ordered) comments in order.
+    assert [c.number for c in capped] == list(range(1, _MAX_FINAL_COMMENTS + 1))
+
+
+def test_cap_comments_leaves_well_sized_list_untouched():
+    comments = [_comment(i + 1) for i in range(5)]
+    assert _cap_comments(comments) == comments
+
+
+def test_run_editorial_pass_caps_overlong_editorial_output():
+    """#200: the cap is actually wired into run_editorial_pass — an editorial
+    pass that under-dedups and returns >25 comments is truncated to the leading
+    _MAX_FINAL_COMMENTS, in order. Guards against a future refactor dropping the
+    _cap_comments wrap on a return site."""
+    n = _MAX_FINAL_COMMENTS + 9
+    quotes = [f"This is a sufficiently long verbatim quote number {i} here." for i in range(n)]
+    paper_text = " ".join(quotes)
+    editorial_comments = [
+        DetailedComment(number=i + 1, title=f"Comment {i + 1}", quote=quotes[i], feedback="fb")
+        for i in range(n)
+    ]
+
+    class EditorialStub:
+        def __init__(self, client):
+            self.client = client
+
+        def run(self, *args, **kwargs):
+            return editorial_comments
+
+    class _NoFallback:
+        def __init__(self, client):
+            raise AssertionError("fallback should not run when editorial succeeds")
+
+    result = run_editorial_pass(
+        Mock(),
+        paper_text,
+        _overview(),
+        [_comment(1)],
+        editorial_agent_cls=EditorialStub,
+        crossref_agent_cls=_NoFallback,
+        critique_agent_cls=_NoFallback,
+    )
+
+    assert len(result) == _MAX_FINAL_COMMENTS
+    assert [c.number for c in result] == list(range(1, _MAX_FINAL_COMMENTS + 1))

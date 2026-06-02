@@ -33,6 +33,34 @@ logger = logging.getLogger(__name__)
 # Minimum text length for proof_verify to run on a math-flagged section.
 _MIN_PROOF_VERIFY_SECTION_CHARS = 500
 
+# Soft ceiling on the final detailed-comment count. The editorial pass is a
+# single LLM call with no built-in count cap, so on a comment-heavy paper it
+# can return 60-80 lightly-deduped comments one run and ~18 the next for the
+# same input (#200). 25 is generous versus the ~20-comment refine.ink
+# reference, so it only bites pathological over-generation, not well-
+# deduplicated output. See _cap_comments for the ordering caveat.
+_MAX_FINAL_COMMENTS = 25
+
+
+def _cap_comments(comments: list[DetailedComment]) -> list[DetailedComment]:
+    """Truncate an over-long comment list to the leading ``_MAX_FINAL_COMMENTS`` (#200).
+
+    On the editorial / crossref / critique success paths the list is already
+    ordered by importance (those prompts order critical -> major -> minor), so
+    the dropped tail is the lowest-value comments. On the rare double-failure
+    fallback (editorial AND crossref both raised), the list is raw section
+    order, so the cap there is purely a bounded-output safety net rather than a
+    severity-aware trim.
+    """
+    if len(comments) > _MAX_FINAL_COMMENTS:
+        logger.info(
+            "Capping %d editorial comments to %d (severity-ordered tail dropped)",
+            len(comments),
+            _MAX_FINAL_COMMENTS,
+        )
+        return comments[:_MAX_FINAL_COMMENTS]
+    return comments
+
 
 def _section_needs_proof_verify(section: SectionInfo) -> bool:
     """Return True iff proof_verify should chain after the section agent."""
@@ -213,10 +241,12 @@ def run_editorial_pass(
             document_form=document_form,
             author_notes=author_notes,
         )
-        return _verify_with_fallback(
-            filtered_comments,
-            paper_text,
-            stage_name="Editorial quote verification",
+        return _cap_comments(
+            _verify_with_fallback(
+                filtered_comments,
+                paper_text,
+                stage_name="Editorial quote verification",
+            )
         )
     except Exception:
         logger.warning("Editorial agent failed, falling back to crossref+critique", exc_info=True)
@@ -249,11 +279,13 @@ def run_editorial_pass(
             abstract=abstract,
             author_notes=author_notes,
         )
-        return _verify_with_fallback(
-            filtered_comments,
-            paper_text,
-            stage_name="Critique quote verification",
+        return _cap_comments(
+            _verify_with_fallback(
+                filtered_comments,
+                paper_text,
+                stage_name="Critique quote verification",
+            )
         )
     except Exception:
         logger.warning("Critique fallback also failed", exc_info=True)
-        return filtered_comments
+        return _cap_comments(filtered_comments)

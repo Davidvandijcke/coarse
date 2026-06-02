@@ -4,7 +4,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from coarse.agents.section import SectionAgent, _SectionComments
+from coarse.agents.section import (
+    SectionAgent,
+    _is_low_value_quote,
+    _LooseSectionComment,
+    _SectionComments,
+)
 from coarse.llm import LLMClient
 from coarse.types import (
     DetailedComment,
@@ -328,3 +333,51 @@ def test_section_comments_envelope_accepts_zero_and_many() -> None:
         comments=[_make_comment(number=i) for i in range(1, 8)],
     )
     assert len(many.comments) == 7
+
+
+# --- #198: drop short / bare-LaTeX-token quotes instead of failing the batch ---
+
+
+def test_is_low_value_quote_classifies_short_and_latex_tokens():
+    # Under 20 chars, or a bare run of LaTeX control tokens (any length).
+    assert _is_low_value_quote("\\cmidrule(lr){2-5}")  # 18 chars + pure markup
+    assert _is_low_value_quote("short")
+    assert _is_low_value_quote("\\toprule\\midrule\\bottomrule")  # >=20 but pure markup
+    # Real prose / equations are kept, even when they contain LaTeX commands.
+    assert not _is_low_value_quote("We find that Y causes Z in this setting.")
+    assert not _is_low_value_quote("\\rho is the spectral radius of the matrix M here.")
+
+
+def test_section_agent_drops_low_value_quote_comments_without_raising():
+    """#198: a stray short / LaTeX-token quote is dropped post-parse rather than
+    failing the whole batch's validation and losing the section."""
+    client = _make_client()
+    client.complete.return_value = _SectionComments(
+        comments=[
+            _LooseSectionComment(
+                number=1,
+                title="Real issue",
+                quote="We find that Y causes Z in this setting.",
+                feedback="Substantive feedback.",
+            ),
+            _LooseSectionComment(
+                number=2,
+                title="Bare table rule",
+                quote="\\cmidrule(lr){2-5}",
+                feedback="Useless anchor.",
+            ),
+            _LooseSectionComment(
+                number=3,
+                title="Too short",
+                quote="short",
+                feedback="Useless anchor.",
+            ),
+        ]
+    )
+
+    agent = SectionAgent(client)
+    result = agent.run(_make_section(), "Test Paper")
+
+    assert [c.number for c in result] == [1]
+    assert all(isinstance(c, DetailedComment) for c in result)
+    assert all(len(c.quote.strip()) >= 20 for c in result)

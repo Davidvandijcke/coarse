@@ -362,7 +362,11 @@ The quote MUST include the COMPLETE passage — NEVER truncate mid-sentence or \
 mid-equation. If a passage spans multiple lines or contains multi-line equations, \
 include ALL of it. A truncated quote is a critical error. \
 The quote must be at least 2 full sentences or a complete equation block. \
-Single-phrase quotes lack context and make comments hard to locate in the paper.
+Single-phrase quotes lack context and make comments hard to locate in the paper. \
+NEVER quote a bare LaTeX rule or layout token on its own (e.g. \\cmidrule(lr){2-5}, \
+\\toprule, \\midrule, \\hline, \\begin{tabular}); these are at least 20 characters \
+of pure markup with no reviewable content. Quote the surrounding prose, the table \
+caption, or the complete equation instead.
 """
 
 _DO_NOT_COMMENT_BLOCK = """
@@ -1976,6 +1980,21 @@ cited reference — unfamiliarity is not evidence — DELETE.
 - The comment treats the paper's extension or generalization as a deficiency — DELETE.
 - The comment treats an explicitly acknowledged limitation as if the authors are \
 unaware of it — DELETE.
+
+## STEP 1B: MERGE duplicate and overlapping comments
+
+Section agents review the paper in parallel and independently, so the draft list \
+routinely contains several comments making the SAME core point or anchored to the \
+SAME passage, equation, table, or proof step. Collapse them:
+- Group comments that make the same core point or target the same passage / equation \
+/ result, even when their quotes are worded differently or quote overlapping spans.
+- Keep ONE comment per group — the version with the most specific evidence (a concrete \
+calculation, a cross-reference, a precise error location). Fold any unique, substantive \
+detail from the others into that surviving comment.
+- DELETE the rest. Comments that differ only in phrasing, framing, or in quoting \
+overlapping spans of the same text are DUPLICATES, not distinct issues.
+- Two comments are NOT duplicates if they identify genuinely different problems in the \
+same passage — keep both in that case.
 
 ## STEP 2: CONTRADICTION CHECK
 
