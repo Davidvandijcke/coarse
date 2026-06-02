@@ -74,7 +74,13 @@ timeout instead of hanging its own tool-call. Public because
 
 # Sentinels the watcher scans the log for to decide its exit code.
 _ATTACH_SUCCESS_MARKERS = ("REVIEW COMPLETE", "PUBLISHED TO COARSE WEB")
-_ATTACH_FAILURE_MARKERS = ("ERROR: pipeline failed", "WEB CALLBACK FAILED")
+_ATTACH_FAILURE_MARKERS = (
+    "ERROR: pipeline failed",
+    "WEB CALLBACK FAILED",
+    # Emitted by the cli_review OpenRouter-key preflight (#197) — first line of
+    # headless_review._OPENROUTER_KEY_HELP. Keep in sync with that wording.
+    "ERROR: No valid OpenRouter API key",
+)
 
 
 # ---------------------------------------------------------------------------

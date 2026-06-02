@@ -56,6 +56,15 @@ KNOWN_OVERSIZED: dict[str, int] = {
     # bumped in commit ${COMMIT2_SHA} when the retry-loop + model-
     # fallback + semaphore landed.
     "headless_clients": 1100,
+    # cli_review.py is the standalone `coarse-review` entrypoint: it carries
+    # argparse, the --detach launcher, the --handoff fetch/download/finalize
+    # flow, and (added in #197) the OpenRouter-key preflight. It sat at 795
+    # lines — just under the cap — so the #197 fix tipped it over despite
+    # factoring the preflight body into headless_review.openrouter_key_
+    # preflight_error. Allowlisted at 850 (a CLI entrypoint, already in
+    # PIPELINE_ALLOW); a post-release candidate for splitting the handoff
+    # flow into its own module.
+    "cli_review": 850,
 }
 
 
