@@ -56,11 +56,14 @@ export const HOST_CLI_NAME: Record<ChatHost, "claude" | "codex" | "gemini"> = {
   "gemini-cli": "gemini",
 };
 
-// Default models per host (user can override in the modal).
+// Default models per host (user can override in the modal). Index 0 is the
+// pre-selected default (see page.tsx setSelectedModel). Latest generation
+// leads; the prior generation stays available as a fallback option.
 export const HOST_DEFAULT_MODELS: Record<ChatHost, string[]> = {
-  "claude-code": ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
-  "codex": ["gpt-5.4", "gpt-5.3-codex", "gpt-5.4-mini", "gpt-5.4-pro"],
+  "claude-code": ["claude-opus-4-8", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+  "codex": ["gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.4-mini", "gpt-5.4-pro"],
   "gemini-cli": [
+    "gemini-3.5-flash",
     "gemini-3.1-pro-preview",
     "gemini-3-flash-preview",
     "gemini-3.1-flash-lite-preview",
