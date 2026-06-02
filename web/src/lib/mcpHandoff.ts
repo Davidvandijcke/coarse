@@ -86,13 +86,13 @@ export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 // The variable is still called `DEFAULT_MCP_UVX_FROM` for backward
 // compatibility with the `test_release_blocker_pin_is_coupled_to_unreleased_version`
 // drift test that enforces the pin matches `__version__`.
-const DEFAULT_MCP_UVX_FROM = "coarse-ink==1.4.1";
+const DEFAULT_MCP_UVX_FROM = "coarse-ink==1.5.0";
 
 export function resolvePinnedUvFrom(): string {
   const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();
   if (!raw) return DEFAULT_MCP_UVX_FROM;
   // Allowlist for `NEXT_PUBLIC_COARSE_UVX_FROM` overrides. Accepts:
-  //   1. Plain semver pin: `coarse-ink==1.4.1` (production default).
+  //   1. Plain semver pin: `coarse-ink==1.5.0` (production default).
   //   2. `[mcp]` extra form for operators who want the MCP path.
   //   3. Commit-sha git ref for pinned dev testing.
   //   4. `@dev` or `@main` branch ref — self-updating Preview default,

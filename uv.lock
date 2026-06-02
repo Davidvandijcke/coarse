@@ -290,7 +290,7 @@ wheels = [
 
 [[package]]
 name = "coarse-ink"
-version = "1.4.1"
+version = "1.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "instructor" },

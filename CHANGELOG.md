@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.5.0 — 2026-05-31
+
 ### Added
 
 - **Live pipeline progress bar for `coarse review`.** The terminal CLI now shows a Rich progress bar while a review runs, including completed/total pipeline stages, elapsed time, ETA, and cumulative actual token spend so users can better judge how much work and cost remain after approving the run.
