@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -178,3 +179,30 @@ def test_get_config_path():
     assert path.parts[-1] == "config.toml"
     assert path.parts[-2] == ".coarse"
     assert str(path).startswith(str(Path.home()))
+
+
+# --- #199: the POSIX permission warning must not fire on Windows ---
+
+
+def test_load_config_skips_permission_warning_on_windows(tmp_config_path, monkeypatch, caplog):
+    """#199: NTFS reports an emulated 0o666 that never maps to POSIX modes, and
+    `chmod 600` is a no-op there — so the warning must be skipped on Windows."""
+    tmp_config_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_config_path.write_text('default_model = "x"\n', encoding="utf-8")
+    tmp_config_path.chmod(0o666)
+    monkeypatch.setattr("coarse.config.os.name", "nt")
+    with caplog.at_level("WARNING"):
+        load_config()
+    assert "insecure permissions" not in caplog.text
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission semantics unavailable on Windows")
+def test_load_config_warns_on_insecure_permissions_posix(tmp_config_path, monkeypatch, caplog):
+    """#199: on POSIX the warning still fires for a group/world-accessible config."""
+    tmp_config_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_config_path.write_text('default_model = "x"\n', encoding="utf-8")
+    tmp_config_path.chmod(0o666)
+    monkeypatch.setattr("coarse.config.os.name", "posix")
+    with caplog.at_level("WARNING"):
+        load_config()
+    assert "insecure permissions" in caplog.text

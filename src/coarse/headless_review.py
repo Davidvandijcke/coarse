@@ -31,12 +31,51 @@ from pathlib import Path
 
 from coarse.models import HEADLESS_DEFAULT_MODELS, model_filename_slug
 
+# Shared guidance for a missing/invalid OpenRouter key. Used by both
+# headless_review (sys.exit) and cli_review (return-code preflight) so the
+# two entrypoints stay in lockstep. The first line is also a recognized
+# --attach failure marker (cli_attach._ATTACH_FAILURE_MARKERS); keep them in
+# sync if this wording changes.
+_OPENROUTER_KEY_HELP = (
+    "ERROR: No valid OpenRouter API key found (keys look like `sk-or-...`).\n\n"
+    "Mistral OCR extraction requires an OpenRouter API key. Any of these work:\n"
+    "  1. Run `coarse setup` to save it to ~/.coarse/config.toml\n"
+    "  2. export OPENROUTER_API_KEY=sk-or-v1-...\n"
+    "  3. Add OPENROUTER_API_KEY=sk-or-v1-... to a .env file in the\n"
+    "     current directory (or any parent directory, up to 3 levels) if\n"
+    "     you explicitly prefer project-local storage.\n\n"
+    "Alternatively, if you have a pre-extracted markdown file, pass it\n"
+    "as the second argument to skip OCR:\n"
+    "  python -m coarse.headless_review --host claude <paper.pdf> <paper.md>\n\n"
+    "Get a free OpenRouter key at https://openrouter.ai/settings/keys — "
+    "review extraction costs ~$0.05-0.15 per paper."
+)
+
+
+def _looks_like_openrouter_key(value: str | None) -> bool:
+    """True only for a plausibly real OpenRouter key (``sk-or-…``).
+
+    OpenRouter inference and provisioning keys are all ``sk-or-`` prefixed.
+    Rejecting everything else turns config junk — a literal ``"FROM_ENV"``
+    placeholder, a blank/quoted entry, or a top-level string mis-set under
+    ``[api_keys]`` — into "absent" so it is never forwarded as
+    ``Authorization: Bearer <junk>``, which otherwise surfaces as an opaque
+    401 deep inside extraction instead of a clean missing-key error (#197).
+    """
+    return bool(value) and value.strip().startswith("sk-or-")
+
 
 def _find_openrouter_key() -> str | None:
-    """Try env var, ~/.coarse/config.toml, and ./.env (up to 3 parents up)."""
-    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-    if key:
-        return key
+    """Find an OpenRouter key from env var, ~/.coarse/config.toml, or ./.env
+    (up to 3 parents up), in that priority order.
+
+    Only a value that looks like a real key (``sk-or-…``) is accepted; a
+    non-key value from any source is skipped so resolution falls through to
+    the next source rather than returning junk that would 401 (#197).
+    """
+    env_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if _looks_like_openrouter_key(env_key):
+        return env_key
 
     try:
         import tomllib
@@ -53,7 +92,7 @@ def _find_openrouter_key() -> str | None:
                 or data.get("openrouter_api_key")
                 or data.get("openrouter", {}).get("api_key")
             )
-            if stored:
+            if _looks_like_openrouter_key(stored):
                 return stored.strip()
         except Exception:
             pass
@@ -69,7 +108,9 @@ def _find_openrouter_key() -> str | None:
                     continue
                 k, v = line.split("=", 1)
                 if k.strip() == "OPENROUTER_API_KEY":
-                    return v.strip().strip("\"'")
+                    candidate = v.strip().strip("\"'")
+                    if _looks_like_openrouter_key(candidate):
+                        return candidate
         except Exception:
             continue
 
@@ -82,22 +123,25 @@ def _require_openrouter_key() -> str:
         os.environ["OPENROUTER_API_KEY"] = key
         return key
 
-    print(
-        "ERROR: OPENROUTER_API_KEY not found.\n\n"
-        "Mistral OCR extraction requires an OpenRouter API key. Any of these work:\n"
-        "  1. Run `coarse setup` to save it to ~/.coarse/config.toml\n"
-        "  2. export OPENROUTER_API_KEY=sk-or-v1-...\n"
-        "  3. Add OPENROUTER_API_KEY=sk-or-v1-... to a .env file in the\n"
-        "     current directory (or any parent directory, up to 3 levels) if\n"
-        "     you explicitly prefer project-local storage.\n\n"
-        "Alternatively, if you have a pre-extracted markdown file, pass it\n"
-        "as the second argument to skip OCR:\n"
-        "  python -m coarse.headless_review --host claude <paper.pdf> <paper.md>\n\n"
-        "Get a free OpenRouter key at https://openrouter.ai/settings/keys — "
-        "review extraction costs ~$0.05-0.15 per paper.",
-        file=sys.stderr,
-    )
+    print(_OPENROUTER_KEY_HELP, file=sys.stderr)
     sys.exit(3)
+
+
+def openrouter_key_preflight_error(paper_path: Path, pre_extracted: Path | None) -> str | None:
+    """Return guidance text if a PDF review would run without a usable OpenRouter
+    key, else None (#197).
+
+    Only PDF sources hit Mistral OCR on OpenRouter; non-PDF formats and
+    pre-extracted markdown skip OCR and need no key. Reads ``os.environ`` —
+    callers must run ``_ensure_openrouter_key_loaded`` first so any valid
+    env/config/.env key has been promoted, making this check authoritative for
+    what extraction will resolve.
+    """
+    if pre_extracted is not None or paper_path.suffix.lower() != ".pdf":
+        return None
+    if _looks_like_openrouter_key(os.environ.get("OPENROUTER_API_KEY")):
+        return None
+    return _OPENROUTER_KEY_HELP
 
 
 def _make_client_factory(host: str, model: str | None, effort: str):

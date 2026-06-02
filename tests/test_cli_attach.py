@@ -643,3 +643,27 @@ def test_windows_pid_alive_uses_openprocess_and_exit_code(monkeypatch) -> None:
     )
     assert _windows_pid_alive(1234) is False
     assert fake_ctypes.windll.kernel32.closed is True
+
+
+def test_attach_returns_one_on_openrouter_key_marker(tmp_path, _fast_attach, capsys) -> None:
+    """#197: the cli_review OpenRouter-key preflight error is a recognized
+    failure marker, so --attach reports a clean exit 1 instead of a silent
+    exit 2 against a near-empty log."""
+    log = tmp_path / "review.log"
+    script = textwrap.dedent(
+        """
+        import sys
+        log = open(sys.argv[1], 'w')
+        log.write('ERROR: No valid OpenRouter API key found (keys look like `sk-or-...`).\\n')
+        log.close()
+        """
+    )
+    proc = _spawn_fake_review(log, script=script)
+    try:
+        write_pidfile(pidfile_for_log(log), proc.pid)
+        rc = run_attach(log, timeout_seconds=10)
+    finally:
+        proc.wait(timeout=5)
+    out = capsys.readouterr().out
+    assert rc == 1, f"expected failure exit, got {rc}; stdout={out!r}"
+    assert "No valid OpenRouter API key" in out
