@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from coarse.agents.base import ReviewAgent, truncate_section
 from coarse.prompts import (
@@ -21,6 +23,48 @@ from coarse.types import (
 )
 
 _TEMPERATURE = 0.3
+
+# A quote that is nothing but LaTeX control sequences — table rules like
+# \cmidrule(lr){2-5}, \toprule, \hline, \begin/\end, spacing commands — is a
+# useless anchor: it carries no reviewable prose and cannot satisfy the
+# >=20-char verbatim-quote contract on DetailedComment.quote.
+_LATEX_ONLY_QUOTE_RE = re.compile(r"^(?:\\[A-Za-z@]+\*?(?:\[[^\]]*\]|\([^)]*\)|\{[^}]*\})*\s*)+$")
+
+
+def _is_low_value_quote(quote: str) -> bool:
+    """True for a quote that should be dropped rather than anchored to a comment.
+
+    Catches the two shapes that break the ``DetailedComment.quote`` contract:
+    anything under 20 characters once stripped, and a bare run of LaTeX control
+    tokens with no prose (e.g. ``\\cmidrule(lr){2-5}``, 18 chars). See
+    ``_LooseSectionComment`` for why this filtering happens here (#198).
+    """
+    q = quote.strip()
+    return len(q) < 20 or bool(_LATEX_ONLY_QUOTE_RE.match(q))
+
+
+class _LooseSectionComment(DetailedComment):
+    """Section-agent response shape with the 20-char quote floor relaxed (#198).
+
+    The model occasionally picks a short or bare-LaTeX-token quote (e.g.
+    ``\\cmidrule(lr){2-5}``). Under the strict ``DetailedComment`` schema that
+    fails ``min_length=20``, and because instructor validates the whole batch,
+    one bad quote triggers a retry storm that on exhaustion drops the ENTIRE
+    section (``pipeline`` skips a section whose agent raises). Relaxing the
+    floor here lets the batch parse; ``SectionAgent.run`` then drops the
+    low-value comment(s) and re-validates the survivors as strict
+    ``DetailedComment`` instances, so downstream consumers see only valid
+    >=20-char quotes.
+    """
+
+    # The LLM/JSON path validates dicts (no config needed); from_attributes
+    # additionally lets the envelope be built from existing DetailedComment
+    # instances (the parent class), which in-memory callers and the test
+    # helpers do — without it, `_SectionComments(comments=[DetailedComment(...)])`
+    # raises model_type.
+    model_config = ConfigDict(from_attributes=True)
+
+    quote: str = Field(min_length=1, description="Verbatim quote from the paper")
 
 
 class _SectionComments(BaseModel):
@@ -43,7 +87,7 @@ class _SectionComments(BaseModel):
     path tolerates an empty list without any other changes.
     """
 
-    comments: list[DetailedComment] = Field(default_factory=list)
+    comments: list[_LooseSectionComment] = Field(default_factory=list)
 
 
 class SectionAgent(ReviewAgent):
@@ -88,4 +132,10 @@ class SectionAgent(ReviewAgent):
         result = self.client.complete(
             messages, _SectionComments, max_tokens=16384, temperature=_TEMPERATURE
         )
-        return result.comments
+        # Drop low-value quotes (too short / bare LaTeX tokens) and re-validate
+        # survivors as strict DetailedComments. See _LooseSectionComment (#198).
+        return [
+            DetailedComment.model_validate(c.model_dump())
+            for c in result.comments
+            if not _is_low_value_quote(c.quote)
+        ]
