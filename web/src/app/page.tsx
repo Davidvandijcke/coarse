@@ -51,8 +51,9 @@ type TurnstileApi = {
     opts: {
       sitekey: string;
       callback: (token: string) => void;
-      "error-callback"?: () => void;
+      "error-callback"?: (errorCode?: string) => void;
       "expired-callback"?: () => void;
+      "before-interactive-callback"?: () => void;
       theme?: "light" | "dark" | "auto";
     },
   ) => string;
@@ -392,12 +393,32 @@ export default function Home() {
     let watchdogTimer: number | undefined;
     let retries = 0;
     const MAX_RETRIES = 50; // 50 * 150ms = 7.5s
+    // Cloudflare fires error-callback on transient errors too (network blips,
+    // ITP hiccups — common on Safari). Reset and retry a bounded number of
+    // times before giving up, rather than treating the first error as fatal
+    // (#205). A genuinely terminal cause (e.g. hostname mismatch) exhausts the
+    // budget quickly and still surfaces as a failure.
+    let errorRetries = 0;
+    const MAX_ERROR_RETRIES = 2;
 
     const markFailed = (reason: string) => {
       if (cancelled) return;
       console.error(`Turnstile: ${reason}`);
       turnstileTokenRef.current = "";
       setTurnstileStatus("failed");
+    };
+
+    // Silent-block watchdog: if the widget produces no token within the budget,
+    // treat it as blocked/unreachable. Re-armed after each reset, and CANCELLED
+    // when the challenge goes interactive (before-interactive-callback) so a
+    // user who takes a moment to click the checkbox isn't falsely failed (#205).
+    const armWatchdog = () => {
+      if (watchdogTimer !== undefined) window.clearTimeout(watchdogTimer);
+      watchdogTimer = window.setTimeout(() => {
+        if (!cancelled && turnstileTokenRef.current === "") {
+          markFailed("no token after 20s — widget never resolved (blocked / unreachable)");
+        }
+      }, 20_000);
     };
 
     const tryRender = () => {
@@ -429,8 +450,41 @@ export default function Home() {
               watchdogTimer = undefined;
             }
           },
-          "error-callback": () => {
-            markFailed("widget error-callback fired (likely hostname mismatch or blocked iframe)");
+          "error-callback": (errorCode?: string) => {
+            if (cancelled) return;
+            errorRetries += 1;
+            if (errorRetries > MAX_ERROR_RETRIES) {
+              markFailed(
+                `error-callback fired ${errorRetries}x (last code: ${errorCode ?? "?"})`,
+              );
+              return;
+            }
+            // Transient — re-run the challenge and keep waiting. A persistent
+            // cause re-fires this until the retry budget is exhausted above.
+            console.warn(
+              `Turnstile: error-callback (code ${errorCode ?? "?"}) — resetting, attempt ${errorRetries}/${MAX_ERROR_RETRIES}`,
+            );
+            turnstileTokenRef.current = "";
+            setTurnstileStatus("loading");
+            const a = getTurnstileApi();
+            if (a && turnstileWidgetIdRef.current !== undefined) {
+              try {
+                a.reset(turnstileWidgetIdRef.current);
+              } catch {
+                /* best-effort — reset throws only if the widget is gone */
+              }
+            }
+            armWatchdog();
+          },
+          "before-interactive-callback": () => {
+            // The challenge escalated to an interactive checkbox (more common
+            // on Safari under ITP). Cancel the watchdog — the user may take a
+            // moment to click, and timing out here falsely reports a block.
+            if (cancelled) return;
+            if (watchdogTimer !== undefined) {
+              window.clearTimeout(watchdogTimer);
+              watchdogTimer = undefined;
+            }
           },
           "expired-callback": () => {
             // Token expired — back to loading while Cloudflare auto-
@@ -446,14 +500,7 @@ export default function Home() {
         markFailed(`render threw: ${err instanceof Error ? err.message : String(err)}`);
         return;
       }
-      // Watchdog: if the widget doesn't deliver a token within 12s,
-      // treat it as failed. Covers the case where Cloudflare's iframe
-      // is blocked from loading but api.render itself didn't throw.
-      watchdogTimer = window.setTimeout(() => {
-        if (turnstileTokenRef.current === "") {
-          markFailed("no token after 12s — widget likely blocked by a browser extension");
-        }
-      }, 12_000);
+      armWatchdog();
     };
     tryRender();
 
@@ -1412,24 +1459,29 @@ export default function Home() {
                     }}
                   >
                     <p style={{ margin: "0 0 0.6rem" }}>
-                      Our human check couldn&apos;t load. A browser privacy
-                      extension or a Turnstile hostname mismatch is most
-                      likely blocking{" "}
+                      Our human check couldn&apos;t complete. Something is
+                      blocking or slowing{" "}
                       <code style={{ fontFamily: "var(--font-space-mono), monospace" }}>
                         challenges.cloudflare.com
                       </code>{" "}
-                      — common with Brave Shields, uBlock Origin on some filter
-                      lists, or Firefox ETP strict mode.
+                      — usually a strict browser privacy mode (such as
+                      Safari&apos;s tracking prevention or Firefox ETP strict), a
+                      content/ad blocker (Brave Shields, uBlock Origin on some
+                      lists), or a slow or filtered network.
                     </p>
                     <p style={{ margin: "0 0 0.6rem" }}>
-                      Try disabling the extension for{" "}
+                      Try reloading the page first. If it persists, allow{" "}
+                      <code style={{ fontFamily: "var(--font-space-mono), monospace" }}>
+                        challenges.cloudflare.com
+                      </code>{" "}
+                      for{" "}
                       <code style={{ fontFamily: "var(--font-space-mono), monospace" }}>
                         {siteHost}
                       </code>{" "}
-                      and refreshing, or use a different browser. If
-                      you&apos;re on a preview URL, the deployment may also need
-                      that hostname added to the Cloudflare Turnstile widget
-                      allowlist.
+                      (disable content blockers or relax privacy settings), or
+                      use a different browser. On a preview URL, the deployment
+                      may also need that hostname on the Cloudflare Turnstile
+                      widget allowlist.
                     </p>
                     <p style={{ margin: 0 }}>
                       Or run coarse locally with your own OpenRouter key:{" "}
