@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Cloudflare Turnstile no longer fails spuriously on Safari, and the failure message no longer misattributes the cause (issue #205).** The homepage widget effect (`web/src/app/page.tsx`) treated the first `error-callback` as permanently fatal and timed out after 12s with a "blocked by a browser extension" message — both of which misfire on Safari, where Intelligent Tracking Prevention makes transient `error-callback`s common and managed challenges often escalate to an interactive checkbox. Three changes: (1) `error-callback` now resets and retries up to twice via `turnstile.reset()` before giving up (Cloudflare's recommended pattern), so a transient error recovers instead of dead-ending; (2) a new `before-interactive-callback` cancels the silent-block watchdog so a user taking a moment to click an interactive challenge isn't falsely failed, and the watchdog budget is raised 12s → 20s for slow/ITP loads; (3) the failure message drops the "a browser extension or hostname mismatch is most likely" assertion and instead names the real causes (strict privacy modes like Safari ITP / Firefox ETP, content blockers, slow networks), leading with "reload first" (which now actually recovers) and keeping the CLI fallback. Server-side verification (`web/src/lib/turnstile.ts`) is unchanged, so anti-abuse posture is unaffected. Web-only.
+
 ## v1.5.0 — 2026-05-31
 
 ### Added
