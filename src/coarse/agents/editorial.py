@@ -27,7 +27,11 @@ from coarse.types import (
     OverviewFeedback,
 )
 
-_TEMPERATURE = 0.15
+# 0.0: the editorial pass filters and consolidates an existing comment list —
+# it is not generative, so determinism is preferable. The earlier 0.15 only
+# added run-to-run variance that produced wildly different comment counts (e.g.
+# ~80 lightly-deduped one run vs ~18 the next) for the same input (#200).
+_TEMPERATURE = 0.0
 
 
 class _EditorialComments(BaseModel):
