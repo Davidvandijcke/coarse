@@ -370,23 +370,37 @@ def test_review_paper_advances_section_progress_as_futures_finish():
     assert completed_keys.index("section_2") < completed_keys.index("section_1")
 
 
-def test_review_paper_skips_unfinished_sections_after_timeout():
-    """Timed-out section futures should be skipped instead of hanging forever."""
+def test_review_paper_retains_comment_from_every_section_under_load():
+    """A paper with more sections than the executor's worker pool keeps a
+    comment from every section that completes.
+
+    This documents the end-state behavior after the stage-level timeout was
+    removed. It is not, on its own, a guard against reintroducing the timeout
+    (with no deadline there is no straggler to drop) — that structural guard is
+    ``test_section_stage_has_no_stage_level_timeout`` below.
+    """
     config = CoarseConfig(default_model=TEST_MODEL, extraction_qa=False)
     paper_text = _make_paper_text()
-    structure = _make_structure()
+    # More sections than ThreadPoolExecutor(max_workers=10), so the batch spans
+    # more than one scheduling wave — the realistic "many sections" case.
+    n_sections = 12
+    structure = _make_structure(
+        sections=[_make_section(i, SectionType.INTRODUCTION) for i in range(1, n_sections + 1)]
+    )
     overview = _make_overview()
     progress_events: list[PipelineProgress] = []
 
-    def slow_review_section(
-        _section_agent,
-        _verify_agent,
-        _section,
-        *_args,
-        **_kwargs,
-    ):
-        time.sleep(0.03)
-        return [_make_comment(1)]
+    def slow_review_section(_section_agent, _verify_agent, section, *_args, **_kwargs):
+        # Small delay so the batch genuinely spans multiple waves; no assertion
+        # depends on the timing, it just mirrors a real multi-section run.
+        time.sleep(0.02)
+        return [_make_comment(section.number)]
+
+    captured: dict[str, list[DetailedComment]] = {}
+
+    def capture_editorial(_client, _paper_text, _overview, comments, **_kwargs):
+        captured["comments"] = list(comments)
+        return list(comments)
 
     with (
         patch("coarse.pipeline.extract_file", return_value=paper_text),
@@ -395,19 +409,16 @@ def test_review_paper_skips_unfinished_sections_after_timeout():
         patch("coarse.pipeline.search_literature", return_value=""),
         patch("coarse.pipeline.extract_contribution", return_value=None),
         patch("coarse.pipeline._review_section", side_effect=slow_review_section),
-        patch("coarse.pipeline._SECTION_STAGE_TIMEOUT_SECONDS", 0.001),
+        patch("coarse.pipeline.run_editorial_pass", side_effect=capture_editorial),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
         patch("coarse.pipeline.SectionAgent"),
-        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
-        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.ProofVerifyAgent"),
         patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
         patch("coarse.pipeline.render_review", return_value="md"),
     ):
         MockOverview.return_value.run.return_value = overview
         MockCompleteness.return_value.run.return_value = []
-        MockVerify.return_value.run.return_value = [_make_comment(1)]
-        MockEditorial.return_value.run.return_value = [_make_comment(1)]
 
         review_paper(
             "paper.pdf",
@@ -416,9 +427,96 @@ def test_review_paper_skips_unfinished_sections_after_timeout():
             progress_callback=progress_events.append,
         )
 
-    completed_keys = [event.stage_key for event in progress_events if event.event == "completed"]
-    assert "section_1" in completed_keys
-    assert "section_2" in completed_keys
+    # Every section's comment survived to the editorial stage — none dropped.
+    titles = {c.title for c in captured["comments"]}
+    assert titles == {f"Comment {i}" for i in range(1, n_sections + 1)}
+
+    # No section was reported as skipped purely because the batch was slow,
+    # and every section was reported as reviewed.
+    completed = [e for e in progress_events if e.event == "completed"]
+    assert [e for e in completed if e.stage_label.startswith("Skipped section")] == []
+    reviewed = {e.stage_key for e in completed if e.stage_label.startswith("Reviewed section")}
+    assert reviewed == {f"section_{i}" for i in range(1, n_sections + 1)}
+
+
+def test_section_stage_has_no_stage_level_timeout():
+    """The section stage must collect futures without a wall-clock guillotine.
+
+    The behavioral test above can't catch a reintroduced timeout — with no
+    deadline there is no straggler to drop. This guards structurally: the old
+    code used ``as_completed(section_futures, timeout=_SECTION_STAGE_TIMEOUT_SECONDS)``
+    and relabelled stragglers "Skipped" while ``shutdown(wait=True)`` waited for
+    them anyway, so the deadline bounded no wall-clock and only discarded
+    paid-for comments. This test fails the moment that guillotine returns.
+    """
+    import inspect
+
+    import coarse.pipeline as pipeline_module
+
+    assert not hasattr(pipeline_module, "_SECTION_STAGE_TIMEOUT_SECONDS")
+
+    src = inspect.getsource(pipeline_module.review_paper)
+    assert "as_completed(section_futures)" in src
+    assert "as_completed(section_futures, timeout" not in src
+
+
+def test_review_paper_skips_only_the_section_whose_agent_raises():
+    """The retained per-section try/except drops just the failing section's
+    comment and labels it "Skipped"; the other sections are unaffected."""
+    config = CoarseConfig(default_model=TEST_MODEL, extraction_qa=False)
+    paper_text = _make_paper_text()
+    structure = _make_structure(
+        sections=[_make_section(i, SectionType.INTRODUCTION) for i in range(1, 4)]
+    )
+    overview = _make_overview()
+    progress_events: list[PipelineProgress] = []
+
+    def review_section_two_raises(_section_agent, _verify_agent, section, *_args, **_kwargs):
+        if section.number == 2:
+            raise RuntimeError("section 2 agent blew up")
+        return [_make_comment(section.number)]
+
+    captured: dict[str, list[DetailedComment]] = {}
+
+    def capture_editorial(_client, _paper_text, _overview, comments, **_kwargs):
+        captured["comments"] = list(comments)
+        return list(comments)
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=paper_text),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline._review_section", side_effect=review_section_two_raises),
+        patch("coarse.pipeline.run_editorial_pass", side_effect=capture_editorial),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.SectionAgent"),
+        patch("coarse.pipeline.ProofVerifyAgent"),
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.return_value = overview
+        MockCompleteness.return_value.run.return_value = []
+
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            progress_callback=progress_events.append,
+        )
+
+    # The failing section's comment is dropped; the other two survive.
+    titles = {c.title for c in captured["comments"]}
+    assert titles == {"Comment 1", "Comment 3"}
+
+    # The failing section is reported as Skipped, the others as Reviewed.
+    completed = [e for e in progress_events if e.event == "completed"]
+    skipped = {e.stage_key for e in completed if e.stage_label.startswith("Skipped section")}
+    reviewed = {e.stage_key for e in completed if e.stage_label.startswith("Reviewed section")}
+    assert skipped == {"section_2"}
+    assert reviewed == {"section_1", "section_3"}
 
 
 def test_pipeline_progress_reporter_emits_cost_only_updates():

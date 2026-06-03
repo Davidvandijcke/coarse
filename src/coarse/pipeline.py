@@ -56,7 +56,6 @@ _PIPELINE_FIXED_PROGRESS_STAGES = 10
 _RESULTS_TYPES = {SectionType.METHODOLOGY, SectionType.RESULTS, SectionType.OTHER}
 _DISCUSSION_TYPES = {SectionType.DISCUSSION, SectionType.CONCLUSION}
 _PARALLEL_SETUP_TIMEOUT_SECONDS = 1_200
-_SECTION_STAGE_TIMEOUT_SECONDS = 1_800
 _CROSS_SECTION_TIMEOUT_SECONDS = 1_200
 
 
@@ -617,36 +616,22 @@ def review_paper(
             ] = (i, section.title)
 
         section_comments: list[DetailedComment] = []
-        completed_futures = set()
-        try:
-            for future in as_completed(section_futures, timeout=_SECTION_STAGE_TIMEOUT_SECONDS):
-                completed_futures.add(future)
-                section_index, sec_title = section_futures[future]
+        # No stage-level timeout: the executor's shutdown(wait=True) blocks until
+        # every section future finishes regardless, so a stage guillotine never
+        # bounds wall-clock — it only discards comments we already paid to compute.
+        # The per-call timeout in the headless client is the real safety bound.
+        for future in as_completed(section_futures):
+            section_index, sec_title = section_futures[future]
+            stage_label = f"Reviewed section {section_index}/{len(non_ref_sections)}: {sec_title}"
+            try:
+                comments = future.result()
+                section_comments.extend(comments)
+            except Exception:
+                logger.warning("Section agent failed for '%s', skipping", sec_title, exc_info=True)
                 stage_label = (
-                    f"Reviewed section {section_index}/{len(non_ref_sections)}: {sec_title}"
+                    f"Skipped section {section_index}/{len(non_ref_sections)}: {sec_title}"
                 )
-                try:
-                    comments = future.result()
-                    section_comments.extend(comments)
-                except Exception:
-                    logger.warning(
-                        "Section agent failed for '%s', skipping", sec_title, exc_info=True
-                    )
-                    stage_label = (
-                        f"Skipped section {section_index}/{len(non_ref_sections)}: {sec_title}"
-                    )
-                progress.complete(f"section_{section_index}", stage_label, client.cost_usd)
-        except TimeoutError:
-            logger.warning("Section review timed out; skipping unfinished sections", exc_info=True)
-
-        for future, (section_index, sec_title) in section_futures.items():
-            if future in completed_futures:
-                continue
-            progress.complete(
-                f"section_{section_index}",
-                f"Skipped section {section_index}/{len(non_ref_sections)}: {sec_title}",
-                client.cost_usd,
-            )
+            progress.complete(f"section_{section_index}", stage_label, client.cost_usd)
 
     if not section_comments:
         logger.error("All section agents failed — review will have no detailed comments")
