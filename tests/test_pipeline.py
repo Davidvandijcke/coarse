@@ -460,6 +460,65 @@ def test_section_stage_has_no_stage_level_timeout():
     assert "as_completed(section_futures, timeout" not in src
 
 
+def test_review_paper_skips_only_the_section_whose_agent_raises():
+    """The retained per-section try/except drops just the failing section's
+    comment and labels it "Skipped"; the other sections are unaffected."""
+    config = CoarseConfig(default_model=TEST_MODEL, extraction_qa=False)
+    paper_text = _make_paper_text()
+    structure = _make_structure(
+        sections=[_make_section(i, SectionType.INTRODUCTION) for i in range(1, 4)]
+    )
+    overview = _make_overview()
+    progress_events: list[PipelineProgress] = []
+
+    def review_section_two_raises(_section_agent, _verify_agent, section, *_args, **_kwargs):
+        if section.number == 2:
+            raise RuntimeError("section 2 agent blew up")
+        return [_make_comment(section.number)]
+
+    captured: dict[str, list[DetailedComment]] = {}
+
+    def capture_editorial(_client, _paper_text, _overview, comments, **_kwargs):
+        captured["comments"] = list(comments)
+        return list(comments)
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=paper_text),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline._review_section", side_effect=review_section_two_raises),
+        patch("coarse.pipeline.run_editorial_pass", side_effect=capture_editorial),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.pipeline.SectionAgent"),
+        patch("coarse.pipeline.ProofVerifyAgent"),
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.return_value = overview
+        MockCompleteness.return_value.run.return_value = []
+
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            progress_callback=progress_events.append,
+        )
+
+    # The failing section's comment is dropped; the other two survive.
+    titles = {c.title for c in captured["comments"]}
+    assert titles == {"Comment 1", "Comment 3"}
+
+    # The failing section is reported as Skipped, the others as Reviewed.
+    completed = [e for e in progress_events if e.event == "completed"]
+    skipped = {e.stage_key for e in completed if e.stage_label.startswith("Skipped section")}
+    reviewed = {e.stage_key for e in completed if e.stage_label.startswith("Reviewed section")}
+    assert skipped == {"section_2"}
+    assert reviewed == {"section_1", "section_3"}
+
+
 def test_pipeline_progress_reporter_emits_cost_only_updates():
     """Cost updates should preserve the active stage while spend changes mid-stage."""
     events: list[PipelineProgress] = []
