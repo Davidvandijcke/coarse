@@ -34,7 +34,10 @@ function loadFilter(reviewId: string): CommentFilter {
   }
 }
 
-export function useCommentStatus(reviewId: string, commentCount: number) {
+// `keys` is the full set of checkable item keys (detailed comments use their
+// positive comment number; Overall Feedback issues use a negative key). Pass a
+// memoized array so `remaining` stays referentially stable across renders.
+export function useCommentStatus(reviewId: string, keys: number[]) {
   const [statuses, setStatuses] = useState<Record<number, CommentStatus>>(
     () => loadStatuses(reviewId)
   );
@@ -76,11 +79,11 @@ export function useCommentStatus(reviewId: string, commentCount: number) {
 
   const remaining = useMemo(() => {
     let count = 0;
-    for (let i = 1; i <= commentCount; i++) {
-      if ((statuses[i] ?? "active") === "active") count++;
+    for (const key of keys) {
+      if ((statuses[key] ?? "active") === "active") count++;
     }
     return count;
-  }, [statuses, commentCount]);
+  }, [statuses, keys]);
 
   return { statuses, getStatus, setStatus, remaining, filter, setFilter };
 }

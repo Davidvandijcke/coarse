@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-import type { ParsedReview, DetailedComment } from "@/lib/parseReview";
+import type { ParsedReview, DetailedComment, OverallIssue } from "@/lib/parseReview";
 import { CharcoalRule } from "@/components/charcoal";
 import {
   useCommentStatus,
@@ -26,6 +26,37 @@ import {
 import type { ReviewJson } from "@/lib/types";
 
 const katexOptions = { strict: false, throwOnError: false };
+
+/* ── Overall Feedback issues as checkable / discussable items ─────────────
+ * Issues have no comment number, so they key into the shared status store and
+ * the persisted-chat keying by a negative number (issue index i -> -(i+1)),
+ * which can never collide with a positive detailed-comment number. */
+function issueKey(i: number): number {
+  return -(i + 1);
+}
+
+/** A synthetic comment for an Overall Feedback issue (body becomes the feedback,
+ * no quote) so it can flow through the same chat path as detailed comments. */
+function issueToComment(issue: OverallIssue, i: number): DetailedComment {
+  return {
+    number: issueKey(i),
+    title: issue.title,
+    status: "Pending",
+    quote: "",
+    feedback: issue.body,
+  };
+}
+
+/** Resolve a persisted chat key back to its target — a detailed comment
+ * (number >= 0) or an Overall Feedback issue (number < 0). */
+function resolveChatTarget(parsed: ParsedReview, number: number): DetailedComment | null {
+  if (number >= 0) {
+    return parsed.detailedComments.find((x) => x.number === number) ?? null;
+  }
+  const i = -number - 1;
+  const issue = parsed.overallFeedback.issues[i];
+  return issue ? issueToComment(issue, i) : null;
+}
 
 /* ── Quote block with expand/collapse + "Show in paper" ──── */
 function QuoteBlock({
@@ -320,6 +351,84 @@ function CommentCard({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/* ── Overall Feedback issue card (checkable + discussable) ─── */
+function IssueCard({
+  issue,
+  status,
+  onStatusChange,
+  onDiscuss,
+}: {
+  issue: OverallIssue;
+  status: CommentStatus;
+  onStatusChange: (s: CommentStatus) => void;
+  onDiscuss: () => void;
+}) {
+  const isDone = status === "done";
+  const isDismissed = status === "dismissed";
+  return (
+    <div
+      style={{
+        background: "var(--board-surface)",
+        borderRadius: "2px",
+        border: "1px solid var(--tray)",
+        padding: "1rem 1.25rem",
+        marginBottom: "0.75rem",
+        opacity: isDismissed ? 0.35 : isDone ? 0.6 : 1,
+        transition: "opacity 0.2s",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: "0.75rem",
+          marginBottom: "0.5rem",
+        }}
+      >
+        <h3
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: "1.1rem",
+            fontWeight: 700,
+            color: "var(--chalk-bright)",
+            margin: 0,
+            lineHeight: 1.35,
+            flex: 1,
+            textDecoration: isDone ? "line-through" : "none",
+          }}
+        >
+          {issue.title}
+        </h3>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            flexShrink: 0,
+          }}
+        >
+          <button
+            onClick={onDiscuss}
+            title="Discuss this comment with an AI model"
+            style={{ ...actionBtnStyle, color: "var(--blue-chalk)" }}
+          >
+            Discuss
+          </button>
+          <StatusButtons status={status} onStatusChange={onStatusChange} />
+        </div>
+      </div>
+      <div className="review-content" style={{ fontSize: "1.05rem", lineHeight: 1.7 }}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[[rehypeKatex, katexOptions]]}
+        >
+          {preprocessLatex(issue.body)}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 }
@@ -735,14 +844,14 @@ export default function ReviewDisplay({
     chatRestoredRef.current = true;
     const persisted = loadPersistedChat(reviewId);
     if (!persisted) return;
-    const c = parsed.detailedComments.find((x) => x.number === persisted.commentNumber);
-    if (c) {
+    const target = resolveChatTarget(parsed, persisted.commentNumber);
+    if (target) {
       setChatInitialMessages(persisted.messages);
-      setChatComment(c);
+      setChatComment(target);
     } else {
       clearPersistedChat(reviewId);
     }
-  }, [reviewId, parsed.detailedComments]);
+  }, [reviewId, parsed]);
 
   // Open paper panel by default when paper markdown becomes available
   useEffect(() => {
@@ -750,8 +859,15 @@ export default function ReviewDisplay({
   }, [paperMarkdown]);
   const mainRef = useRef<HTMLDivElement>(null);
 
+  // The prominent "remaining" count tracks detailed comments only; Overall
+  // Feedback issues are still checkable (their negative keys land in the same
+  // status store for dimming/filtering) but don't inflate the comment count.
+  const statusKeys = useMemo(
+    () => parsed.detailedComments.map((c) => c.number),
+    [parsed.detailedComments],
+  );
   const { getStatus, setStatus, remaining, filter, setFilter } =
-    useCommentStatus(reviewId, parsed.detailedComments.length);
+    useCommentStatus(reviewId, statusKeys);
 
   const hasPaper = !!paperMarkdown;
 
@@ -1125,42 +1241,20 @@ export default function ReviewDisplay({
               </div>
             )}
 
-            {parsed.overallFeedback.issues.map((issue, i) => (
-              <div
-                key={i}
-                style={{
-                  background: "var(--board-surface)",
-                  borderRadius: "2px",
-                  border: "1px solid var(--tray)",
-                  padding: "1rem 1.25rem",
-                  marginBottom: "0.75rem",
-                }}
-              >
-                <h3
-                  style={{
-                    fontFamily: "var(--font-serif)",
-                    fontSize: "1.1rem",
-                    fontWeight: 700,
-                    color: "var(--chalk-bright)",
-                    margin: "0 0 0.5rem",
-                    lineHeight: 1.35,
-                  }}
-                >
-                  {issue.title}
-                </h3>
-                <div
-                  className="review-content"
-                  style={{ fontSize: "1.05rem", lineHeight: 1.7 }}
-                >
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[[rehypeKatex, katexOptions]]}
-                  >
-                    {preprocessLatex(issue.body)}
-                  </ReactMarkdown>
-                </div>
-              </div>
-            ))}
+            {parsed.overallFeedback.issues.map((issue, i) => {
+              const key = issueKey(i);
+              const status = getStatus(key);
+              if (filter !== "all" && status !== filter) return null;
+              return (
+                <IssueCard
+                  key={i}
+                  issue={issue}
+                  status={status}
+                  onStatusChange={(s) => setStatus(key, s)}
+                  onDiscuss={() => openChat(issueToComment(issue, i))}
+                />
+              );
+            })}
           </section>
 
           <CharcoalRule />

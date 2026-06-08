@@ -24,7 +24,12 @@ const FALLBACK_MODEL = "anthropic/claude-opus-4.8";
 
 function normalizeModel(model?: string | null): string {
   const m = (model ?? "").replace(/^openrouter\//, "").trim();
-  return m || FALLBACK_MODEL;
+  // The chat always routes through OpenRouter, which needs a "provider/model"
+  // ID. A review's model can instead be a CLI-handoff marker
+  // ("coarse-review-cli:codex") or a bare host-CLI model ("claude-opus-4-6"),
+  // neither of which OpenRouter accepts — fall back to a known-good default.
+  if (!m || !m.includes("/")) return FALLBACK_MODEL;
+  return m;
 }
 
 const EXAMPLE_PROMPTS = [
@@ -224,12 +229,15 @@ export default function CommentChat({
         style={sheetStyle}
         role="dialog"
         aria-modal="true"
-        aria-label={`Discuss comment ${comment.number}`}
+        aria-label={`Discuss: ${comment.title}`}
       >
         {/* Header */}
         <div style={headerStyle}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={kickerStyle}>Discuss · comment #{comment.number}</div>
+            <div style={kickerStyle}>
+              Discuss ·{" "}
+              {comment.number >= 0 ? `comment #${comment.number}` : "overall feedback"}
+            </div>
             <div style={titleStyle}>{comment.title}</div>
           </div>
           <button onClick={handleClose} aria-label="Close chat" style={closeBtnStyle}>
