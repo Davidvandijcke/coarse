@@ -6,6 +6,7 @@ import type { Review } from "@/lib/types";
 import { PageMarks } from "@/components/charcoal";
 import { parseReview } from "@/lib/parseReview";
 import ReviewDisplay from "@/components/ReviewDisplay";
+import { REVIEW_RETURN_TOKEN_KEY } from "@/lib/useOpenRouterKey";
 
 export default function ReviewPageClient({ id }: { id: string }) {
   const [review, setReview] = useState<Review | null>(null);
@@ -13,7 +14,21 @@ export default function ReviewPageClient({ id }: { id: string }) {
   const [notFound, setNotFound] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const token = searchParams.get("token")?.trim() ?? "";
+  const urlToken = searchParams.get("token")?.trim() ?? "";
+  // Returning from an OpenRouter OAuth redirect (see useOpenRouterKey) can drop
+  // the ?token= param. When a ?code= is present but the token is gone, recover
+  // the token stashed before the redirect so private reviews stay accessible.
+  const token = useMemo(() => {
+    if (urlToken) return urlToken;
+    if (typeof window === "undefined") return "";
+    const sp = new URLSearchParams(window.location.search);
+    if (!sp.has("code")) return "";
+    try {
+      return window.sessionStorage.getItem(REVIEW_RETURN_TOKEN_KEY)?.trim() ?? "";
+    } catch {
+      return "";
+    }
+  }, [urlToken]);
 
   useEffect(() => {
     let cancelled = false;

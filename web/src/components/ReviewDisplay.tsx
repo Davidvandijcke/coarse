@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -16,6 +16,13 @@ import {
 import PaperPanel from "@/components/PaperPanel";
 import { preprocessLatex } from "@/lib/preprocessLatex";
 import { buildReviewUrl } from "@/lib/reviewAccess";
+import CommentChat from "@/components/CommentChat";
+import { useOpenRouterKey } from "@/lib/useOpenRouterKey";
+import {
+  clearPersistedChat,
+  loadPersistedChat,
+  type ChatMessage,
+} from "@/lib/openrouterChat";
 
 const katexOptions = { strict: false, throwOnError: false };
 
@@ -159,12 +166,14 @@ function CommentCard({
   commentStatus,
   onStatusChange,
   onShowInPaper,
+  onDiscuss,
 }: {
   comment: DetailedComment;
   id: string;
   commentStatus: CommentStatus;
   onStatusChange: (s: CommentStatus) => void;
   onShowInPaper?: () => void;
+  onDiscuss?: () => void;
 }) {
   const [showDismissed, setShowDismissed] = useState(false);
   const isDone = commentStatus === "done";
@@ -207,7 +216,26 @@ function CommentCard({
         >
           {comment.title}
         </h3>
-        <StatusButtons status={commentStatus} onStatusChange={onStatusChange} />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            marginLeft: "auto",
+            flexShrink: 0,
+          }}
+        >
+          {onDiscuss && (
+            <button
+              onClick={onDiscuss}
+              title="Discuss this comment with an AI model"
+              style={{ ...actionBtnStyle, color: "var(--blue-chalk)" }}
+            >
+              Discuss
+            </button>
+          )}
+          <StatusButtons status={commentStatus} onStatusChange={onStatusChange} />
+        </div>
       </div>
 
       {/* Collapsed content for dismissed */}
@@ -648,6 +676,48 @@ export default function ReviewDisplay({
   const [highlightQuote, setHighlightQuote] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Per-comment "Discuss" chat (streams directly from the browser to OpenRouter).
+  const orKey = useOpenRouterKey();
+  const [chatComment, setChatComment] = useState<DetailedComment | null>(null);
+  const [chatInitialMessages, setChatInitialMessages] = useState<
+    ChatMessage[] | undefined
+  >(undefined);
+  const chatRestoredRef = useRef(false);
+
+  const overallFeedbackText = useMemo(() => {
+    const fb = parsed.overallFeedback;
+    const parts: string[] = [];
+    if (fb.summary) parts.push(fb.summary);
+    for (const issue of fb.issues) parts.push(`${issue.title}\n${issue.body}`);
+    return parts.join("\n\n");
+  }, [parsed.overallFeedback]);
+
+  const openChat = useCallback((c: DetailedComment) => {
+    setChatInitialMessages(undefined);
+    setChatComment(c);
+  }, []);
+
+  const closeChat = useCallback(() => {
+    clearPersistedChat(reviewId);
+    setChatComment(null);
+    setChatInitialMessages(undefined);
+  }, [reviewId]);
+
+  // Reopen a chat persisted before an OpenRouter OAuth redirect (or a reload).
+  useEffect(() => {
+    if (chatRestoredRef.current) return;
+    chatRestoredRef.current = true;
+    const persisted = loadPersistedChat(reviewId);
+    if (!persisted) return;
+    const c = parsed.detailedComments.find((x) => x.number === persisted.commentNumber);
+    if (c) {
+      setChatInitialMessages(persisted.messages);
+      setChatComment(c);
+    } else {
+      clearPersistedChat(reviewId);
+    }
+  }, [reviewId, parsed.detailedComments]);
 
   // Open paper panel by default when paper markdown becomes available
   useEffect(() => {
@@ -1109,6 +1179,7 @@ export default function ReviewDisplay({
                         ? () => handleShowInPaper(comment.quote)
                         : undefined
                     }
+                    onDiscuss={() => openChat(comment)}
                   />
                   <div
                     style={{
@@ -1196,6 +1267,27 @@ export default function ReviewDisplay({
           </div>
         </main>
       </div>
+
+      {chatComment && (
+        <CommentChat
+          key={chatComment.number}
+          reviewId={reviewId}
+          comment={chatComment}
+          paperTitle={paperTitle || parsed.title}
+          paperMarkdown={paperMarkdown}
+          domain={domain || parsed.metadata.domain}
+          overallFeedbackText={overallFeedbackText}
+          defaultModel={model || ""}
+          initialMessages={chatInitialMessages}
+          apiKey={orKey.apiKey}
+          hasKey={orKey.hasKey}
+          keyNotice={orKey.notice}
+          onSetKey={orKey.setKey}
+          onStartLogin={orKey.startLogin}
+          onLogout={orKey.logout}
+          onClose={closeChat}
+        />
+      )}
     </>
   );
 }
