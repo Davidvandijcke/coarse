@@ -37,6 +37,9 @@ export interface BuildSystemPromptArgs {
   domain?: string | null;
   overallFeedbackText: string;
   comment: DetailedComment;
+  /** Reviewer's severity/confidence from the structured review, when available. */
+  severity?: string | null;
+  confidence?: string | null;
 }
 
 /**
@@ -53,6 +56,8 @@ export function buildChatSystemPrompt({
   domain,
   overallFeedbackText,
   comment,
+  severity,
+  confidence,
 }: BuildSystemPromptArgs): string {
   const paperBlock = paperMarkdown?.trim()
     ? paperMarkdown.trim()
@@ -85,6 +90,10 @@ export function buildChatSystemPrompt({
     "",
     "=== THE COMMENT UNDER DISCUSSION ===",
     `Title: ${comment.title}`,
+  );
+  if (severity) lines.push(`Reviewer's severity rating: ${severity}`);
+  if (confidence) lines.push(`Reviewer's confidence: ${confidence}`);
+  lines.push(
     "Quoted passage from the paper:",
     '"""',
     comment.quote || "(no quote provided)",

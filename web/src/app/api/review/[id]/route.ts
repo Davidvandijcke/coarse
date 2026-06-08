@@ -25,7 +25,7 @@ export async function GET(
   const { data, error } = await supabaseAdmin
     .from("reviews")
     .select(
-      "id, paper_filename, status, paper_title, model, domain, result_markdown, paper_markdown, cost_usd, duration_seconds, error_message, created_at, completed_at, access_token_required",
+      "id, paper_filename, status, paper_title, model, domain, result_markdown, result_json, paper_markdown, cost_usd, duration_seconds, error_message, created_at, completed_at, access_token_required",
     )
     .eq("id", id)
     .maybeSingle();

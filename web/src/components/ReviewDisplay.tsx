@@ -23,6 +23,7 @@ import {
   loadPersistedChat,
   type ChatMessage,
 } from "@/lib/openrouterChat";
+import type { ReviewJson } from "@/lib/types";
 
 const katexOptions = { strict: false, throwOnError: false };
 
@@ -657,6 +658,7 @@ export default function ReviewDisplay({
   domain,
   durationSeconds,
   costUsd,
+  resultJson,
 }: {
   parsed: ParsedReview;
   markdown: string;
@@ -668,6 +670,7 @@ export default function ReviewDisplay({
   domain?: string | null;
   durationSeconds?: number | null;
   costUsd?: number | null;
+  resultJson?: ReviewJson | null;
 }) {
   const router = useRouter();
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -686,12 +689,34 @@ export default function ReviewDisplay({
   const chatRestoredRef = useRef(false);
 
   const overallFeedbackText = useMemo(() => {
-    const fb = parsed.overallFeedback;
     const parts: string[] = [];
+    const sj = resultJson?.overall_feedback;
+    if (sj) {
+      // Structured overall feedback carries assessment / recommendation /
+      // revision targets that the rendered markdown doesn't expose.
+      if (sj.assessment) parts.push(`Assessment: ${sj.assessment}`);
+      if (sj.summary) parts.push(sj.summary);
+      for (const issue of sj.issues ?? []) parts.push(`${issue.title}\n${issue.body}`);
+      if (sj.recommendation) parts.push(`Recommendation: ${sj.recommendation}`);
+      if (sj.revision_targets?.length)
+        parts.push(`Revision targets:\n- ${sj.revision_targets.join("\n- ")}`);
+      return parts.join("\n\n");
+    }
+    const fb = parsed.overallFeedback;
     if (fb.summary) parts.push(fb.summary);
     for (const issue of fb.issues) parts.push(`${issue.title}\n${issue.body}`);
     return parts.join("\n\n");
-  }, [parsed.overallFeedback]);
+  }, [resultJson, parsed.overallFeedback]);
+
+  // Structured metadata (severity/confidence) for the open comment, when the
+  // review has result_json; null for legacy reviews (chat falls back gracefully).
+  const structuredChatComment = useMemo(
+    () =>
+      chatComment
+        ? resultJson?.detailed_comments?.find((c) => c.number === chatComment.number) ?? null
+        : null,
+    [chatComment, resultJson],
+  );
 
   const openChat = useCallback((c: DetailedComment) => {
     setChatInitialMessages(undefined);
@@ -1277,6 +1302,8 @@ export default function ReviewDisplay({
           paperMarkdown={paperMarkdown}
           domain={domain || parsed.metadata.domain}
           overallFeedbackText={overallFeedbackText}
+          commentSeverity={structuredChatComment?.severity}
+          commentConfidence={structuredChatComment?.confidence}
           defaultModel={model || ""}
           initialMessages={chatInitialMessages}
           apiKey={orKey.apiKey}

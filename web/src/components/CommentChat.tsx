@@ -40,6 +40,8 @@ export interface CommentChatProps {
   paperMarkdown?: string | null;
   domain?: string | null;
   overallFeedbackText: string;
+  commentSeverity?: string | null;
+  commentConfidence?: string | null;
   defaultModel: string;
   initialMessages?: ChatMessage[];
 
@@ -59,6 +61,8 @@ export default function CommentChat({
   paperMarkdown,
   domain,
   overallFeedbackText,
+  commentSeverity,
+  commentConfidence,
   defaultModel,
   initialMessages,
   apiKey,
@@ -147,6 +151,8 @@ export default function CommentChat({
           domain,
           overallFeedbackText,
           comment,
+          severity: commentSeverity,
+          confidence: commentConfidence,
         }),
       };
 
@@ -196,6 +202,8 @@ export default function CommentChat({
       domain,
       overallFeedbackText,
       comment,
+      commentSeverity,
+      commentConfidence,
       onLogout,
     ],
   );

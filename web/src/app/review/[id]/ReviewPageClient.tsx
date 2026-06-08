@@ -388,6 +388,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
           domain={review.domain}
           durationSeconds={review.duration_seconds}
           costUsd={review.cost_usd}
+          resultJson={review.result_json}
         />
       )}
 

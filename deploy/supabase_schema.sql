@@ -15,6 +15,11 @@ create table reviews (
   domain text,
   taxonomy text,
   result_markdown text,
+  -- Structured Review JSON (Pydantic model dump): stable per-comment numbers,
+  -- severity, confidence, and structured overall feedback. Powers the
+  -- per-comment chat and a future second-round review. NULL for legacy/CLI-
+  -- handoff reviews; consumers fall back to parsing result_markdown.
+  result_json jsonb,
   paper_markdown text,
   cost_usd numeric(8,4),
   duration_seconds int,

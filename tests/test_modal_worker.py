@@ -388,6 +388,56 @@ def test_strip_nul_bytes_leaves_normal_text_alone(modal_worker) -> None:
 
 
 # ---------------------------------------------------------------------------
+# _review_result_json: structured Review -> jsonb-safe dict for result_json
+# ---------------------------------------------------------------------------
+
+
+def test_review_result_json_is_jsonb_safe_and_keeps_structure(modal_worker) -> None:
+    """_review_result_json serializes a Review into a NUL-free dict that keeps
+    the structured fields (severity/confidence) the per-comment chat relies on."""
+    import json
+
+    from coarse.types import (
+        DetailedComment,
+        OverviewFeedback,
+        OverviewIssue,
+        Review,
+    )
+
+    review = Review(
+        title="Paper\x00Title",
+        domain="economics",
+        taxonomy="academic/research_paper",
+        date="01/01/2026",
+        overall_feedback=OverviewFeedback(
+            issues=[OverviewIssue(title="Macro issue", body="body\x00text")],
+        ),
+        detailed_comments=[
+            DetailedComment(
+                number=1,
+                title="A comment",
+                quote="this is a verbatim quote of at least twenty characters",
+                feedback="feedback\x00with nul",
+                severity="critical",
+                confidence="high",
+            ),
+        ],
+    )
+
+    out = modal_worker._review_result_json(review)
+
+    assert isinstance(out, dict)
+    # No NUL survives anywhere — Postgres jsonb would reject it.
+    assert "\x00" not in json.dumps(out)
+    assert out["title"] == "PaperTitle"
+    comment = out["detailed_comments"][0]
+    assert comment["number"] == 1
+    assert comment["severity"] == "critical"
+    assert comment["confidence"] == "high"
+    assert comment["feedback"] == "feedbackwith nul"
+
+
+# ---------------------------------------------------------------------------
 # ReviewRequest.author_notes plumbing (#54)
 # ---------------------------------------------------------------------------
 
@@ -1239,6 +1289,9 @@ def test_do_review_deletes_on_success(modal_worker, monkeypatch) -> None:
     class _FakeReview:
         title = "Stub Paper"
         domain = "social_sciences"
+
+        def model_dump_json(self) -> str:
+            return '{"title": "Stub Paper", "detailed_comments": []}'
 
     class _FakePaperText:
         full_markdown = "# stub"
