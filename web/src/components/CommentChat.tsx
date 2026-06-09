@@ -11,7 +11,6 @@ import ModelPicker from "@/components/ModelPicker";
 import OpenRouterLoginButton from "@/components/OpenRouterLoginButton";
 import {
   buildChatSystemPrompt,
-  clearPersistedChat,
   OpenRouterAuthError,
   savePersistedChat,
   streamChatCompletion,
@@ -181,7 +180,11 @@ export default function CommentChat({
         }
         if (!acc.trim()) {
           setMessages((prev) => prev.slice(0, -1));
-          setError("No response from the model. Try again or switch models.");
+          // A user-initiated Stop (abort) returns cleanly with no content — that
+          // isn't a model failure, so don't show an error in that case.
+          if (!controller.signal.aborted) {
+            setError("No response from the model. Try again or switch models.");
+          }
         }
       } catch (err) {
         setMessages((prev) => prev.slice(0, -1)); // drop the streaming bubble

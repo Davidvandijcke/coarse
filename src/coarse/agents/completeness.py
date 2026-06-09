@@ -13,7 +13,7 @@ from coarse.prompts import (
     COMPLETENESS_SYSTEM,
     author_notes_block,
     completeness_user,
-    document_form_notice,
+    feedback_system_prompt,
 )
 from coarse.types import (
     ContributionContext,
@@ -78,7 +78,7 @@ class CompletenessAgent(ReviewAgent):
             contribution_context=contribution_context,
         )
         # Append form-specific addendum (empty for manuscript/preprint).
-        system_prompt = COMPLETENESS_SYSTEM + document_form_notice(structure.document_form)
+        system_prompt = feedback_system_prompt(COMPLETENESS_SYSTEM, structure.document_form)
         messages = self._build_messages(system_prompt, user_text)
 
         result = self.client.complete(

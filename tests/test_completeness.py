@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 from coarse.agents.completeness import CompletenessAgent, _CompletenessResult
 from coarse.llm import LLMClient
-from coarse.prompts import COMPLETENESS_SYSTEM
+from coarse.prompts import COMPLETENESS_SYSTEM, feedback_system_prompt
 from coarse.types import (
     OverviewFeedback,
     OverviewIssue,
@@ -126,7 +126,7 @@ def test_completeness_agent_uses_correct_system_prompt():
     messages = call_args[0][0]
     system_msgs = [m for m in messages if m["role"] == "system"]
     assert len(system_msgs) == 1
-    assert system_msgs[0]["content"] == COMPLETENESS_SYSTEM
+    assert system_msgs[0]["content"] == feedback_system_prompt(COMPLETENESS_SYSTEM, "manuscript")
 
 
 def test_completeness_agent_user_message_includes_title_and_abstract():
@@ -277,7 +277,7 @@ def test_completeness_runs_on_manuscript_with_unchanged_prompt():
     assert client.complete.call_count == 1
     messages = client.complete.call_args[0][0]
     system_content = [m for m in messages if m["role"] == "system"][0]["content"]
-    assert system_content == COMPLETENESS_SYSTEM
+    assert system_content == feedback_system_prompt(COMPLETENESS_SYSTEM, "manuscript")
 
 
 def test_completeness_runs_on_draft_with_form_notice():

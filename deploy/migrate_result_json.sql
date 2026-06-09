@@ -11,6 +11,11 @@
 -- web reviews; the CLI-handoff finalize path leaves it NULL until that path is
 -- updated.
 --
+-- DEPLOY ORDER: apply this to a Supabase project BEFORE deploying the Modal
+-- worker / web that reference result_json to it. The worker's terminal UPDATE
+-- and the /api/review SELECT both name the column, so a missing column fails
+-- every review write / fetch (Postgres 42703). Apply to preview first, then prod.
+--
 -- Idempotent: safe to re-run in the SQL editor.
 
 alter table reviews add column if not exists result_json jsonb;

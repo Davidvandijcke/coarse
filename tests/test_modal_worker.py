@@ -1113,7 +1113,12 @@ def test_do_review_uses_modal_baked_env_key_when_review_secrets_empty(
 
 
 def _install_do_review_stubs(
-    modal_worker, monkeypatch, *, resolved: str | None, delete_calls: list
+    modal_worker,
+    monkeypatch,
+    *,
+    resolved: str | None,
+    delete_calls: list,
+    update_calls: list | None = None,
 ) -> None:
     """Shared scaffolding for the three preemption-safety tests below.
 
@@ -1121,11 +1126,14 @@ def _install_do_review_stubs(
     _delete_user_key helper so the test can assert how many times DELETE
     fired under different do_review exit paths. Each caller still stubs
     _download_pdf_with_retry or review_paper to drive the specific branch
-    (SystemExit, regular exception, or success)."""
+    (SystemExit, regular exception, or success). Pass ``update_calls`` to
+    capture each ``reviews`` UPDATE payload."""
     import sys as _sys
 
     class _FakeReviewsTable:
-        def update(self, _data):
+        def update(self, data):
+            if update_calls is not None:
+                update_calls.append(dict(data))
             return self
 
         def eq(self, _col, _val):
@@ -1282,8 +1290,13 @@ def test_do_review_deletes_on_success(modal_worker, monkeypatch) -> None:
     for non-preempted reviews."""
     resolved = "sk-or-v1-successpathtest12345678901234"  # security: ignore
     delete_calls: list[str] = []
+    update_calls: list[dict] = []
     _install_do_review_stubs(
-        modal_worker, monkeypatch, resolved=resolved, delete_calls=delete_calls
+        modal_worker,
+        monkeypatch,
+        resolved=resolved,
+        delete_calls=delete_calls,
+        update_calls=update_calls,
     )
 
     class _FakeReview:
@@ -1315,6 +1328,12 @@ def test_do_review_deletes_on_success(modal_worker, monkeypatch) -> None:
     assert delete_calls == ["success-test-job"], (
         "DELETE did not fire on success; the key will linger until the cron"
     )
+
+    # The terminal "done" write must include the structured result_json built
+    # from the Review (guards the call-site plumbing, not just the helper).
+    done_updates = [c for c in update_calls if c.get("status") == "done"]
+    assert len(done_updates) == 1
+    assert done_updates[0]["result_json"] == {"title": "Stub Paper", "detailed_comments": []}
 
 
 # ---------------------------------------------------------------------------

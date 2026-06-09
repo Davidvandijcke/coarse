@@ -115,15 +115,16 @@ def _make_noncaching_agent() -> ProofVerifyAgent:
 
 
 def test_verify_agent_manuscript_system_prompt_unchanged():
-    """Manuscript path: system prompt is byte-identical to PROOF_VERIFY_SYSTEM."""
-    from coarse.prompts import PROOF_VERIFY_SYSTEM
+    """Manuscript path: system prompt is PROOF_VERIFY_SYSTEM plus the shared
+    math-formatting guidance (no document-form notice)."""
+    from coarse.prompts import PROOF_VERIFY_SYSTEM, feedback_system_prompt
 
     agent = _make_noncaching_agent()
     agent.run(_make_section(), "Title", [_make_comment(1)])
 
     messages = agent.client.complete.call_args[0][0]
     system_content = [m for m in messages if m["role"] == "system"][0]["content"]
-    assert system_content == PROOF_VERIFY_SYSTEM
+    assert system_content == feedback_system_prompt(PROOF_VERIFY_SYSTEM, "manuscript")
 
 
 def test_verify_agent_outline_gets_form_notice():

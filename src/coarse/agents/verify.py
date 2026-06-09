@@ -8,7 +8,7 @@ from coarse.agents.base import ReviewAgent, truncate_section
 from coarse.prompts import (
     PROOF_VERIFY_SYSTEM,
     author_notes_block,
-    document_form_notice,
+    feedback_system_prompt,
     proof_verify_user,
 )
 from coarse.types import DetailedComment, DocumentForm, SectionInfo
@@ -50,7 +50,7 @@ class ProofVerifyAgent(ReviewAgent):
         # Append form-specific addendum (empty for manuscript) so an outline
         # or partial draft whose "Proof" heading contains stub text doesn't
         # trigger the full adversarial verifier frame.
-        system_prompt = PROOF_VERIFY_SYSTEM + document_form_notice(document_form)
+        system_prompt = feedback_system_prompt(PROOF_VERIFY_SYSTEM, document_form)
         messages = self._build_messages(system_prompt, user_text)
         result = self.client.complete(
             messages,

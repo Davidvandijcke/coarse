@@ -104,7 +104,9 @@ export function startAiHandoff(service: AiService, reviewId: string, args: Hando
   a.href = url;
   a.download = `coarse_${reviewId}_context.md`;
   a.click();
-  URL.revokeObjectURL(url);
+  // Defer the revoke: revoking on the same tick can cancel the download in some
+  // browsers before the navigation commits.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 
   // Always copy the kickoff prompt as the universal fallback (and for the
   // services whose URL can't prefill it).
