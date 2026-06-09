@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.7.0 — 2026-06-09
+
 ### Added
 
 - **Claude Fable 5 in the model picker (`anthropic/claude-fable-5`, issue #214).** New Anthropic model ($10/$50 per M, 1M context, 128K max output), added as the lead Anthropic option on the web form. Like the recent Opus models it drops the `temperature` param (verified on OpenRouter — `supported_parameters` has no `temperature`), so it's also added to `TEMPERATURE_UNSUPPORTED_PREFIXES` in `models.py`; without that gate coarse would pass `temperature` and 400 on every call (the #162 failure mode). Static smoke tests confirmed the rest is fine — it's not classified as a reasoning model, uses tool-calling (supported), and its 128K max output clears coarse's largest request (32,768). Coverage in `tests/test_models.py`.
