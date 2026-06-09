@@ -17,6 +17,7 @@ import PaperPanel from "@/components/PaperPanel";
 import { preprocessLatex } from "@/lib/preprocessLatex";
 import { buildReviewUrl } from "@/lib/reviewAccess";
 import CommentChat from "@/components/CommentChat";
+import SubscriptionHandoffMenu from "@/components/SubscriptionHandoffMenu";
 import { useOpenRouterKey } from "@/lib/useOpenRouterKey";
 import {
   clearPersistedChat,
@@ -1096,6 +1097,14 @@ export default function ReviewDisplay({
           <button onClick={copyLink} style={headerBtnStyle}>
             {copied ? "Copied" : "Share"}
           </button>
+
+          <SubscriptionHandoffMenu
+            reviewId={reviewId}
+            paperTitle={paperTitle || parsed.title}
+            paperMarkdown={paperMarkdown}
+            markdown={markdown}
+            resultJson={resultJson}
+          />
 
           <DownloadMenu markdown={markdown} reviewId={reviewId} model={model} />
 

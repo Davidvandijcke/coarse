@@ -245,10 +245,36 @@ export default function CommentChat({
           </button>
         </div>
 
-        {/* Model picker */}
+        {/* Model picker + key control */}
         {hasKey && (
-          <div style={{ padding: "0.55rem 1.25rem", borderBottom: "1px solid var(--tray)" }}>
+          <div
+            style={{
+              padding: "0.55rem 1.25rem",
+              borderBottom: "1px solid var(--tray)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "0.75rem",
+            }}
+          >
             <ModelDisclosure model={model} onChange={setModel} />
+            <button
+              onClick={onLogout}
+              title="Disconnect your OpenRouter key (it isn't stored beyond this tab)"
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--dust)",
+                fontFamily: "var(--font-chalk)",
+                fontSize: "0.9rem",
+                textDecoration: "underline",
+                cursor: "pointer",
+                flexShrink: 0,
+                whiteSpace: "nowrap",
+              }}
+            >
+              Disconnect key
+            </button>
           </div>
         )}
 
