@@ -261,6 +261,16 @@ def test_supports_temperature_false_for_gpt_5_family():
     assert supports_temperature("gpt-5.4") is False
 
 
+def test_supports_temperature_false_for_claude_fable_5():
+    """Claude Fable 5 drops temperature like the recent Opus models (issue
+    #214; verified on OpenRouter — supported_parameters has no temperature).
+    The name has no version dot, so all ID forms are identical."""
+    assert supports_temperature("anthropic/claude-fable-5") is False
+    assert supports_temperature("openrouter/anthropic/claude-fable-5") is False
+    assert supports_temperature("vertex_ai/claude-fable-5") is False
+    assert supports_temperature("claude-fable-5") is False
+
+
 def test_supports_temperature_true_for_opus_4_6():
     assert supports_temperature("anthropic/claude-opus-4.6") is True
 

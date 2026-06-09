@@ -241,6 +241,13 @@ TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = (
     # routes that accept it; it only prevents a 400 on routes that don't.
     "openai/gpt-5",  # OpenRouter / litellm OpenAI form (covers all gpt-5*)
     "gpt-5",  # bare OpenAI SDK ID
+    # Claude Fable 5 — like the recent Opus models it drops `temperature`
+    # (verified OpenRouter /api/v1/models 2026-06-09: supported_parameters has
+    # no `temperature`). The name has no version dot, so the OpenRouter and
+    # litellm Anthropic forms are identical.
+    "anthropic/claude-fable-5",  # OpenRouter / litellm Anthropic form
+    "vertex_ai/claude-fable-5",  # Vertex AI form
+    "claude-fable-5",  # bare Anthropic SDK / Bedrock-style ID
 )
 
 
