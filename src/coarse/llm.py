@@ -828,23 +828,22 @@ def model_cost_per_token(model: str) -> tuple[float, float]:
 #
 # Reasoning models bill hidden reasoning tokens at the *output* rate, and
 # those tokens do not show up in the `tokens_out` budget the caller asked
-# for. Empirically, on academic-review tasks a reasoning model spends
-# roughly 4x the visible output budget on internal thinking (measured from
-# review 3ee351e6: ~2k visible overview output, ~15k reasoning — the
-# overview hit max_tokens before emitting any content, but that ratio
-# generalizes to the sections/crossref/critique stages once the ceiling
-# is raised). reasoning_effort="medium" caps this, so 4x is a reasonable
-# billable estimate.
+# for. This multiplier adds that overhead so the pre-flight gate doesn't
+# under-quote reasoning models.
 #
-# Without this adjustment, the pre-flight cost gate under-quotes reasoning
-# models by 3-5x and the user sees a surprise bill post-run.
+# Calibrated against the per-stage output budgets in pipeline_spec, which are
+# now *expected* output (not max_tokens ceilings). With realistic output
+# budgets, 1.5x is a sensible billable overhead for reasoning_effort="medium".
+# The previous 4x — calibrated when the budgets WERE the ceilings — compounded
+# into a large over-quote for expensive reasoning models (GPT-5.5 ~$81/paper).
+# Keep in lockstep with pipeline_spec.REASONING_OVERHEAD_MULTIPLIER.
 #
 # Note: this is the *cost overhead* multiplier. The request-budget
 # multiplier is 8x and lives in `models.py::REASONING_MAX_TOKENS_MULTIPLIER` —
 # they're intentionally asymmetric because reasoning_effort="medium" is
 # expected to cap actual usage well below the raised ceiling. If you change
 # one, check the other.
-_REASONING_OVERHEAD_MULTIPLIER: float = 4.0
+_REASONING_OVERHEAD_MULTIPLIER: float = 1.5
 
 
 def estimate_reasoning_overhead_tokens(model: str, tokens_out: int) -> int:
