@@ -212,6 +212,32 @@ def document_form_notice(form: str) -> str:
     return _DOCUMENT_FORM_NOTICES.get(form, _DOCUMENT_FORM_NOTICES["other"])
 
 
+# Appended to every feedback agent's system prompt (overview, section, cross-
+# section, editorial) so mathematical expressions in the model's prose render as
+# LaTeX in the web UI's KaTeX layer. Without it, models sometimes emit plain-text
+# pseudo-math ("E_n[Z_j(...)]", "alpha_j") that has no markup for KaTeX to render
+# — observed in overview/"major" comments while section comments used LaTeX.
+MATH_FORMATTING_GUIDANCE = (
+    "\n\nMATH FORMATTING: Write every mathematical expression in your own "
+    "feedback using LaTeX delimiters so it renders — inline as $...$ and display "
+    "as $$...$$. Use LaTeX commands for symbols (e.g. $\\alpha_j$, $\\hat{Q}_j(u)$, "
+    "$\\mathbb{E}_n[Z_j(\\cdot)]$), never plain text like 'alpha_j', 'Q_hat_j', or "
+    "'E_n[...]'. This applies to your feedback prose only; quotes from the paper "
+    "are still copied verbatim."
+)
+
+
+def feedback_system_prompt(base: str, form: str) -> str:
+    """Compose a feedback agent's system prompt.
+
+    Combines the agent's base system prompt, the document-form addendum, and the
+    shared math-formatting guidance so every feedback agent renders math as LaTeX
+    consistently. Used by the overview, section, cross-section, and editorial
+    agents in place of a bare ``base + document_form_notice(form)``.
+    """
+    return base + document_form_notice(form) + MATH_FORMATTING_GUIDANCE
+
+
 _FENCE_TAG_RE = re.compile(
     r"</?(?:paper_content|paper_intro|paper_conclusion|paper_abstract"
     r"|paper_sections|literature_context|first_pass_review|author_notes)\s*>",

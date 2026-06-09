@@ -11,6 +11,7 @@ from coarse.prompts import (
     CROSSREF_SYSTEM,
     EDITORIAL_SYSTEM,
     MATH_DETECTION_SYSTEM,
+    MATH_FORMATTING_GUIDANCE,
     METADATA_SYSTEM,
     OVERVIEW_SYSTEM,
     PROOF_VERIFY_SYSTEM,
@@ -31,6 +32,7 @@ from coarse.prompts import (
     crossref_user,
     editorial_system,
     editorial_user,
+    feedback_system_prompt,
     math_detection_user,
     metadata_user,
     overview_paper_context,
@@ -194,6 +196,36 @@ def test_section_system_requires_verbatim_quote():
 def test_overview_system_specifies_issue_count():
     assert "4" in OVERVIEW_SYSTEM
     assert "5" in OVERVIEW_SYSTEM
+
+
+def test_math_formatting_guidance_is_well_formed():
+    # Tells the model to use inline and display LaTeX, and carves out quotes.
+    assert "$...$" in MATH_FORMATTING_GUIDANCE
+    assert "$$...$$" in MATH_FORMATTING_GUIDANCE
+    assert "verbatim" in MATH_FORMATTING_GUIDANCE
+
+
+def test_feedback_system_prompt_appends_math_guidance_to_all_bases():
+    # Every feedback agent base (overview, all section foci, cross-section,
+    # editorial) gets the math-formatting guidance plus its own base text.
+    bases = [
+        OVERVIEW_SYSTEM,
+        SECTION_SYSTEM,
+        CROSS_SECTION_SYSTEM,
+        EDITORIAL_SYSTEM,
+        *SECTION_SYSTEM_MAP.values(),
+    ]
+    for base in bases:
+        composed = feedback_system_prompt(base, "manuscript")
+        assert base in composed
+        assert MATH_FORMATTING_GUIDANCE in composed
+
+
+def test_feedback_system_prompt_keeps_document_form_notice():
+    # Non-manuscript forms still get their form addendum AND the math guidance.
+    composed = feedback_system_prompt(OVERVIEW_SYSTEM, "draft")
+    assert MATH_FORMATTING_GUIDANCE in composed
+    assert composed != OVERVIEW_SYSTEM + MATH_FORMATTING_GUIDANCE  # notice present
 
 
 def test_crossref_system_mentions_deduplication():

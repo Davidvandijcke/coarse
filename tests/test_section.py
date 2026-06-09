@@ -167,10 +167,10 @@ def test_section_agent_prompt_caching():
 
 
 def test_section_agent_manuscript_system_prompt_unchanged():
-    """For document_form='manuscript' (the default), the system prompt must
-    be the raw SECTION_SYSTEM for 'general' focus — byte-identical to the
-    pre-document-form path so we don't regress quality on full papers."""
-    from coarse.prompts import SECTION_SYSTEM
+    """For document_form='manuscript' (the default), the system prompt for the
+    'general' focus is SECTION_SYSTEM plus the shared math-formatting guidance,
+    with NO document-form notice (manuscript notice is empty)."""
+    from coarse.prompts import SECTION_SYSTEM, feedback_system_prompt
 
     client = _make_client()
     client.complete.return_value = _SectionComments(comments=[_make_comment(1)])
@@ -180,7 +180,7 @@ def test_section_agent_manuscript_system_prompt_unchanged():
 
     messages = client.complete.call_args[0][0]
     system_content = [m for m in messages if m["role"] == "system"][0]["content"]
-    assert system_content == SECTION_SYSTEM
+    assert system_content == feedback_system_prompt(SECTION_SYSTEM, "manuscript")
 
 
 def test_section_agent_outline_gets_form_notice_appended():

@@ -7,7 +7,7 @@ from coarse.llm import LLMClient
 from coarse.prompts import (
     OVERVIEW_SYSTEM,
     author_notes_block,
-    document_form_notice,
+    feedback_system_prompt,
     overview_paper_context,
     overview_user,
 )
@@ -51,7 +51,7 @@ class OverviewAgent(ReviewAgent):
         # Append the document-form addendum to the system prompt. Empty string
         # for manuscripts/preprints so that path is unchanged; a tailored block
         # for outlines/drafts/proposals/etc. that relaxes the peer-review frame.
-        system_prompt = OVERVIEW_SYSTEM + document_form_notice(structure.document_form)
+        system_prompt = feedback_system_prompt(OVERVIEW_SYSTEM, structure.document_form)
 
         # Author steering notes — returns "" when notes is None/empty so the
         # no-notes path is byte-identical. Prepended to the user message only,
