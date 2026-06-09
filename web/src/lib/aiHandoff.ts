@@ -23,9 +23,12 @@ export const AI_SERVICES: AiService[] = [
   { key: "claude", label: "Claude", base: "https://claude.ai/new", promptParam: "q" },
   { key: "chatgpt", label: "ChatGPT", base: "https://chatgpt.com/", promptParam: "q" },
   { key: "grok", label: "Grok", base: "https://grok.com/", promptParam: "q" },
-  // Gemini / DeepSeek have no native URL prefill — open clean, rely on clipboard.
+  // No known native URL prefill below — open clean, rely on the clipboard copy.
   { key: "gemini", label: "Gemini", base: "https://gemini.google.com/app", promptParam: null },
   { key: "deepseek", label: "DeepSeek", base: "https://chat.deepseek.com/", promptParam: null },
+  { key: "kimi", label: "Kimi", base: "https://www.kimi.com/", promptParam: null },
+  { key: "qwen", label: "Qwen", base: "https://chat.qwen.ai/", promptParam: null },
+  { key: "glm", label: "GLM (Z.ai)", base: "https://chat.z.ai/", promptParam: null },
 ];
 
 // Phrased to stay sensible even if a service auto-submits the prefilled prompt
