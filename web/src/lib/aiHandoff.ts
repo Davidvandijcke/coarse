@@ -12,22 +12,37 @@ import type { ReviewJson } from "./types";
 export interface AiService {
   key: string;
   label: string;
-  url: string;
+  base: string;
+  /** URL query param that prefills the composer, or null if unsupported. We
+   * can't paste into a cross-origin page's input, so this service-side param
+   * is the only way to prefill; clipboard is the fallback when it's null. */
+  promptParam: string | null;
 }
 
 export const AI_SERVICES: AiService[] = [
-  { key: "claude", label: "Claude", url: "https://claude.ai/new" },
-  { key: "chatgpt", label: "ChatGPT", url: "https://chatgpt.com/" },
-  { key: "gemini", label: "Gemini", url: "https://gemini.google.com/app" },
-  { key: "grok", label: "Grok", url: "https://grok.com/" },
-  { key: "deepseek", label: "DeepSeek", url: "https://chat.deepseek.com/" },
+  { key: "claude", label: "Claude", base: "https://claude.ai/new", promptParam: "q" },
+  { key: "chatgpt", label: "ChatGPT", base: "https://chatgpt.com/", promptParam: "q" },
+  { key: "grok", label: "Grok", base: "https://grok.com/", promptParam: "q" },
+  // Gemini / DeepSeek have no native URL prefill — open clean, rely on clipboard.
+  { key: "gemini", label: "Gemini", base: "https://gemini.google.com/app", promptParam: null },
+  { key: "deepseek", label: "DeepSeek", base: "https://chat.deepseek.com/", promptParam: null },
 ];
 
+// Phrased to stay sensible even if a service auto-submits the prefilled prompt
+// before the file is attached (e.g. ChatGPT's ?q=).
 export const HANDOFF_KICKOFF_PROMPT =
-  'I\'ve attached a research paper, an automated peer review of it (by a tool called "coarse"), ' +
-  "and the structured review data. Act as an expert referee: help me understand the review, judge " +
-  "which comments are actually correct (be willing to say a comment is wrong or overstated), and " +
-  "figure out how to revise. Start by summarizing the most important issues.";
+  'I\'m sharing a research paper plus an automated peer review of it (by a tool called "coarse") ' +
+  "as an attached markdown file. Act as an expert referee: help me judge which review comments are " +
+  "actually correct — be willing to say a comment is wrong or overstated — and how I should revise. " +
+  "I'll attach the file next; if you don't see it yet, just ask me for it.";
+
+/** Build the URL to open, prefilling the prompt via the service's query param
+ * when it supports one. */
+export function serviceUrl(service: AiService, prompt: string): string {
+  if (!service.promptParam) return service.base;
+  const sep = service.base.includes("?") ? "&" : "?";
+  return `${service.base}${sep}${service.promptParam}=${encodeURIComponent(prompt)}`;
+}
 
 export interface HandoffArgs {
   paperTitle?: string | null;
@@ -88,8 +103,9 @@ export function startAiHandoff(service: AiService, reviewId: string, args: Hando
   a.click();
   URL.revokeObjectURL(url);
 
-  // Best-effort: copy a kickoff prompt so the user can just paste.
+  // Always copy the kickoff prompt as the universal fallback (and for the
+  // services whose URL can't prefill it).
   navigator.clipboard?.writeText(HANDOFF_KICKOFF_PROMPT).catch(() => {});
 
-  window.open(service.url, "_blank", "noopener,noreferrer");
+  window.open(serviceUrl(service, HANDOFF_KICKOFF_PROMPT), "_blank", "noopener,noreferrer");
 }

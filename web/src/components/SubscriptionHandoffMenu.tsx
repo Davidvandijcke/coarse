@@ -45,7 +45,9 @@ export default function SubscriptionHandoffMenu({
     });
     setOpen(false);
     setNote(
-      `Context downloaded + a starter prompt copied. In ${service.label}: start a chat, attach coarse_${reviewId}_context.md, and paste.`,
+      service.promptParam
+        ? `Opened ${service.label} with the prompt prefilled — attach coarse_${reviewId}_context.md, then send. (Prompt also copied, just in case.)`
+        : `Opened ${service.label} — attach coarse_${reviewId}_context.md and paste the copied prompt.`,
     );
     if (noteTimer.current) clearTimeout(noteTimer.current);
     noteTimer.current = setTimeout(() => setNote(null), 12000);
