@@ -252,7 +252,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, project structure,
 
 ## Version
 
-1.6.0
+1.7.0
 
 ## License
 

@@ -190,8 +190,11 @@ def test_extraction_qa_skipped_for_non_pdf_inputs():
 
 
 def test_per_stage_output_budgets_pinned():
-    """Snapshot: output budgets must match the max_tokens each agent
-    actually requests. A typo bumping 10000 -> 1000 should fail this.
+    """Snapshot of the per-stage EXPECTED output budgets used for cost
+    estimation (pipeline_spec.STAGE_OUTPUT_TOKENS). These are deliberately
+    below the agents' runtime max_tokens — they model expected output, not the
+    ceiling — so the estimate doesn't over-quote expensive models. A typo
+    bumping 4000 -> 400 should fail this.
     """
     with patch("coarse.cost.has_provider_key", return_value=True):
         est = build_cost_estimate(_paper(), _config(), section_count=8)
@@ -203,12 +206,12 @@ def test_per_stage_output_budgets_pinned():
     assert by_name["math_detection"].estimated_tokens_out == 1024
     assert by_name["calibration"].estimated_tokens_out == 2048
     assert by_name["contribution_extraction"].estimated_tokens_out == 2048
-    assert by_name["overview"].estimated_tokens_out == 8192
-    assert by_name["completeness"].estimated_tokens_out == 4096
-    assert by_name["section_1"].estimated_tokens_out == 10000
-    assert by_name["proof_verify_1"].estimated_tokens_out == 16384
-    assert by_name["cross_section_1"].estimated_tokens_out == 8192
-    assert by_name["editorial"].estimated_tokens_out == 24000
+    assert by_name["overview"].estimated_tokens_out == 4096
+    assert by_name["completeness"].estimated_tokens_out == 3072
+    assert by_name["section_1"].estimated_tokens_out == 4000
+    assert by_name["proof_verify_1"].estimated_tokens_out == 6000
+    assert by_name["cross_section_1"].estimated_tokens_out == 4096
+    assert by_name["editorial"].estimated_tokens_out == 12000
     assert by_name["extraction_qa"].estimated_tokens_out == 4096
 
 
@@ -298,7 +301,8 @@ def test_overview_is_a_single_call_not_a_panel():
     overview_stages = [s for s in est.stages if s.name.startswith("overview")]
     assert len(overview_stages) == 1
     assert overview_stages[0].name == "overview"
-    assert overview_stages[0].estimated_tokens_out == 8192
+    # Cost-estimate expected-output budget (below the runtime max_tokens=8192).
+    assert overview_stages[0].estimated_tokens_out == 4096
 
 
 # ---------------------------------------------------------------------------
@@ -400,16 +404,16 @@ def test_reasoning_overhead_visible_in_tokens_out_column():
     """The displayed tokens_out column should reflect the reasoning overhead
     so the table is internally consistent with the dollar column.
 
-    Section agents budget 10000 visible output tokens; a reasoning model
-    should add 4x on top (per _REASONING_OVERHEAD_MULTIPLIER in llm.py),
-    giving 10000 + 40000 = 50000 displayed tokens.
+    Section agents budget 4000 visible output tokens (expected output); a
+    reasoning model adds 1.5x on top (per _REASONING_OVERHEAD_MULTIPLIER in
+    llm.py), giving 4000 + 6000 = 10000 displayed tokens.
     """
     config = _config(model="openai/o3")
     with patch("coarse.cost.has_provider_key", return_value=True):
         est = build_cost_estimate(_paper(), config, section_count=4)
     section_stage = next(s for s in est.stages if s.name.startswith("section_"))
-    # Visible budget is 10000 per section + 4x reasoning overhead = 50000.
-    assert section_stage.estimated_tokens_out == 50000
+    # Visible budget is 4000 per section + 1.5x reasoning overhead = 10000.
+    assert section_stage.estimated_tokens_out == 10000
 
 
 # ---------------------------------------------------------------------------

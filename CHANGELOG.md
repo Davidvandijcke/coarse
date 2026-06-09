@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v1.7.0 — 2026-06-09
+
+### Added
+
+- **Claude Fable 5 in the model picker (`anthropic/claude-fable-5`, issue #214).** New Anthropic model ($10/$50 per M, 1M context, 128K max output), added as the lead Anthropic option on the web form. Like the recent Opus models it drops the `temperature` param (verified on OpenRouter — `supported_parameters` has no `temperature`), so it's also added to `TEMPERATURE_UNSUPPORTED_PREFIXES` in `models.py`; without that gate coarse would pass `temperature` and 400 on every call (the #162 failure mode). Static smoke tests confirmed the rest is fine — it's not classified as a reasoning model, uses tool-calling (supported), and its 128K max output clears coarse's largest request (32,768). Coverage in `tests/test_models.py`.
+
+### Fixed
+
+- **The pre-flight cost estimate no longer wildly over-quotes reasoning models (issue #212).** GPT-5.5 quoted ~$81 for a 30k-token paper. The prices were correct ($5/$30 per M); the inflation came from two compounding conservatisms: (1) the per-stage output budgets in `pipeline_spec.STAGE_OUTPUT_TOKENS` were the agents' `max_tokens` *ceilings* (e.g. `section`=10000) rather than expected output, and (2) reasoning models multiplied output by 5× (`reasoningOverheadMultiplier=4`). Recalibrated: the review-model output budgets are trimmed to expected output (`section` 10000→4000, `proof_verify` 16384→6000, `editorial` 24000→12000, `overview` 8192→4096, `completeness` 4096→3072, `cross_section` 8192→4096), and the reasoning overhead multiplier drops 4→1.5 in **both** `pipeline_spec.py` (web estimate, via the regenerated `web/src/data/pipelineSpec.json`) and `llm._REASONING_OVERHEAD_MULTIPLIER` (Python pre-flight gate). GPT-5.5 now estimates ~$20. `STAGE_OUTPUT_TOKENS` is cost-estimate-only — it does **not** bound runtime `max_tokens`, so real outputs are unaffected. The trade-off is a slimmer "never under-quote" margin (chosen deliberately). Coverage updated in `tests/test_cost.py`.
+
+### Changed
+
+- **Default model picker: Qwen 3.6 Plus → Qwen 3.7 Plus** (`qwen/qwen3.7-plus`, verified on OpenRouter at $0.40/$1.60 per M).
+
 ## v1.6.0 — 2026-06-09
 
 ### Added
