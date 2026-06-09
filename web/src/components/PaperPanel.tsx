@@ -15,11 +15,13 @@ export default function PaperPanel({
   highlightQuote,
   onClose,
   reviewId,
+  width,
 }: {
   markdown: string;
   highlightQuote: string | null;
   onClose: () => void;
   reviewId?: string;
+  width?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const blocks = useMemo(() => splitIntoBlocks(preprocessLatex(markdown)), [markdown]);
@@ -63,13 +65,12 @@ export default function PaperPanel({
     <div
       className="paper-panel"
       style={{
-        width: "45%",
+        width: width ?? "45%",
         flexShrink: 0,
         position: "sticky",
         top: "4.5rem",
         height: "calc(100vh - 4.5rem)",
         overflowY: "auto",
-        borderRight: "1px solid var(--tray)",
       }}
     >
       {/* Header */}

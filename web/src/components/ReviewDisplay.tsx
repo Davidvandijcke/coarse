@@ -790,6 +790,61 @@ export default function ReviewDisplay({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Draggable divider: paper panel width as a % of the body (20–75), persisted.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [paperWidthPct, setPaperWidthPct] = useState(45);
+  const widthRef = useRef(paperWidthPct);
+  widthRef.current = paperWidthPct;
+
+  useEffect(() => {
+    try {
+      const v = Number(localStorage.getItem("coarse-paper-width-pct"));
+      if (v >= 20 && v <= 75) setPaperWidthPct(v);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const onResizeMove = useCallback((e: MouseEvent) => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pct = ((e.clientX - rect.left) / rect.width) * 100;
+    setPaperWidthPct(Math.min(75, Math.max(20, pct)));
+  }, []);
+
+  const onResizeEnd = useCallback(() => {
+    document.removeEventListener("mousemove", onResizeMove);
+    document.removeEventListener("mouseup", onResizeEnd);
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    try {
+      localStorage.setItem("coarse-paper-width-pct", String(Math.round(widthRef.current)));
+    } catch {
+      /* ignore */
+    }
+  }, [onResizeMove]);
+
+  const onResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+      document.addEventListener("mousemove", onResizeMove);
+      document.addEventListener("mouseup", onResizeEnd);
+    },
+    [onResizeMove, onResizeEnd],
+  );
+
+  // Detach drag listeners if we unmount mid-drag.
+  useEffect(
+    () => () => {
+      document.removeEventListener("mousemove", onResizeMove);
+      document.removeEventListener("mouseup", onResizeEnd);
+    },
+    [onResizeMove, onResizeEnd],
+  );
+
   // Per-comment "Discuss" chat (streams directly from the browser to OpenRouter).
   const orKey = useOpenRouterKey();
   const [chatComment, setChatComment] = useState<DetailedComment | null>(null);
@@ -1128,6 +1183,7 @@ export default function ReviewDisplay({
 
       {/* ── Body: paper panel + sidebar + main ────────────── */}
       <div
+        ref={bodyRef}
         style={{
           display: "flex",
           maxWidth: paperPanelOpen ? "100%" : "1100px",
@@ -1137,14 +1193,37 @@ export default function ReviewDisplay({
           transition: "max-width 0.2s",
         }}
       >
-        {/* Paper panel */}
+        {/* Paper panel + draggable divider */}
         {paperPanelOpen && paperMarkdown && (
-          <PaperPanel
-            markdown={paperMarkdown}
-            highlightQuote={highlightQuote}
-            onClose={() => setPaperPanelOpen(false)}
-            reviewId={reviewId}
-          />
+          <>
+            <PaperPanel
+              markdown={paperMarkdown}
+              highlightQuote={highlightQuote}
+              onClose={() => setPaperPanelOpen(false)}
+              reviewId={reviewId}
+              width={`${paperWidthPct}%`}
+            />
+            <div
+              className="paper-resize-handle"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Drag to resize the paper panel"
+              title="Drag to resize"
+              onMouseDown={onResizeStart}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--blue-chalk)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "var(--tray)")}
+              style={{
+                flexShrink: 0,
+                width: "6px",
+                cursor: "col-resize",
+                position: "sticky",
+                top: "4.5rem",
+                height: "calc(100vh - 4.5rem)",
+                background: "var(--tray)",
+                transition: "background 0.15s",
+              }}
+            />
+          </>
         )}
 
         {/* Sidebar */}
