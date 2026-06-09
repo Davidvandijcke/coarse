@@ -11,7 +11,7 @@ from coarse.prompts import (
     SECTION_SYSTEM,
     SECTION_SYSTEM_MAP,
     author_notes_block,
-    document_form_notice,
+    feedback_system_prompt,
     section_user,
 )
 from coarse.types import (
@@ -116,7 +116,7 @@ class SectionAgent(ReviewAgent):
         # Empty for manuscript/preprint so the default peer-review path is
         # unchanged.
         base_system = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
-        system_prompt = base_system + document_form_notice(document_form)
+        system_prompt = feedback_system_prompt(base_system, document_form)
         user_text = author_notes_block(author_notes) + section_user(
             paper_title,
             truncated,

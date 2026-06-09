@@ -11,7 +11,7 @@ from coarse.prompts import (
     CROSS_SECTION_SYSTEM,
     author_notes_block,
     cross_section_user,
-    document_form_notice,
+    feedback_system_prompt,
 )
 from coarse.types import DetailedComment, DocumentForm, SectionInfo
 
@@ -46,7 +46,7 @@ class CrossSectionAgent(ReviewAgent):
             abstract=abstract,
         )
         # Empty notice for manuscript so manuscript path is byte-identical.
-        system_prompt = CROSS_SECTION_SYSTEM + document_form_notice(document_form)
+        system_prompt = feedback_system_prompt(CROSS_SECTION_SYSTEM, document_form)
         messages = self._build_messages(system_prompt, user_text)
         result = self.client.complete(
             messages,

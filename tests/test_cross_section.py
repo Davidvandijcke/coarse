@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 from coarse.agents.cross_section import CrossSectionAgent, _CrossSectionComments
 from coarse.llm import LLMClient
-from coarse.prompts import CROSS_SECTION_SYSTEM
+from coarse.prompts import CROSS_SECTION_SYSTEM, feedback_system_prompt
 from coarse.types import (
     DetailedComment,
     SectionInfo,
@@ -136,7 +136,7 @@ def test_cross_section_agent_uses_correct_system_prompt():
     messages = call_args[0][0]
     system_msgs = [m for m in messages if m["role"] == "system"]
     assert len(system_msgs) == 1
-    assert system_msgs[0]["content"] == CROSS_SECTION_SYSTEM
+    assert system_msgs[0]["content"] == feedback_system_prompt(CROSS_SECTION_SYSTEM, "manuscript")
 
 
 def test_cross_section_agent_passes_correct_response_model():
@@ -229,7 +229,8 @@ def test_cross_section_agent_prompt_caching():
 
 
 def test_cross_section_agent_manuscript_system_prompt_unchanged():
-    """Manuscript path is byte-identical to CROSS_SECTION_SYSTEM."""
+    """Manuscript path is CROSS_SECTION_SYSTEM plus the shared math-formatting
+    guidance (no document-form notice)."""
     client = _make_client()
     client.complete.return_value = _CrossSectionComments(comments=[])
     agent = CrossSectionAgent(client)
@@ -242,7 +243,7 @@ def test_cross_section_agent_manuscript_system_prompt_unchanged():
 
     messages = client.complete.call_args[0][0]
     system_content = [m for m in messages if m["role"] == "system"][0]["content"]
-    assert system_content == CROSS_SECTION_SYSTEM
+    assert system_content == feedback_system_prompt(CROSS_SECTION_SYSTEM, "manuscript")
 
 
 def test_cross_section_agent_outline_gets_form_notice():
