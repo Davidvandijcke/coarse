@@ -10,7 +10,7 @@ const DEFAULT_MODELS = [
   { id: "openai/gpt-5-mini", label: "GPT-5 Mini", provider: "OpenAI" },
   { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", provider: "Google" },
   { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash", provider: "Google" },
-  { id: "qwen/qwen3.6-plus", label: "Qwen 3.6 Plus", provider: "Qwen" },
+  { id: "qwen/qwen3.7-plus", label: "Qwen 3.7 Plus", provider: "Qwen" },
   { id: "moonshotai/kimi-k2.6", label: "Kimi K2.6", provider: "Moonshot" },
   { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4", provider: "DeepSeek" },
   { id: "x-ai/grok-4.3", label: "Grok 4.3", provider: "xAI" },

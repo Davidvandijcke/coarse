@@ -36,7 +36,13 @@ AVG_COMMENTS_PER_SECTION = 3
 TOKENS_PER_COMMENT = 350
 EDITORIAL_OVERHEAD = 5000
 OVERVIEW_CONTEXT_OVERHEAD = 5000
-REASONING_OVERHEAD_MULTIPLIER = 4
+# Reasoning models bill hidden reasoning tokens at the output rate. With the
+# per-stage output budgets below set to *expected* output (not max_tokens
+# ceilings), 1.5x is a realistic billable overhead for reasoning_effort=medium.
+# 4x compounded with the ceiling-based budgets over-quoted expensive reasoning
+# models badly (GPT-5.5 ~$81 for a 30k-token paper). Keep in lockstep with
+# llm._REASONING_OVERHEAD_MULTIPLIER.
+REASONING_OVERHEAD_MULTIPLIER = 1.5
 
 FIXED_STAGE_INPUT_TOKENS: dict[str, int] = {
     "metadata": 500,
@@ -53,7 +59,11 @@ LITERATURE_FLAT_COST = 0.03
 # Conservative multiplier applied to the final total.
 COST_BUFFER = 1.30
 
-# Structured-output budgets per stage kind.
+# Expected structured output per stage kind, for COST ESTIMATION ONLY. These do
+# NOT bound runtime max_tokens — the agents set those independently (section
+# agent uses 16384, etc.). The review-model stages were trimmed from their
+# max_tokens ceilings down to realistic expected output so the estimate stops
+# over-quoting expensive models (a section review is ~3 comments, not 10k tokens).
 STAGE_OUTPUT_TOKENS: dict[str, int] = {
     "metadata": 256,
     "math_detection": 1024,
@@ -61,12 +71,12 @@ STAGE_OUTPUT_TOKENS: dict[str, int] = {
     "literature_query_gen": 512,
     "literature_ranking": 2048,
     "contribution_extraction": 2048,
-    "overview": 8192,
-    "completeness": 4096,
-    "section": 10000,
-    "proof_verify": 16384,
-    "cross_section": 8192,
-    "editorial": 24000,
+    "overview": 4096,
+    "completeness": 3072,
+    "section": 4000,
+    "proof_verify": 6000,
+    "cross_section": 4096,
+    "editorial": 12000,
     "extraction_qa": 4096,
 }
 
