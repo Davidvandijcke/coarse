@@ -23,6 +23,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import os
 import subprocess
 import sys
@@ -278,6 +279,18 @@ def _strip_nul_bytes(text: str | None) -> str | None:
     if not text:
         return text
     return text.replace("\x00", "").replace("\\u0000", "")
+
+
+def _review_result_json(review) -> dict:
+    """Serialize a Review to a jsonb-safe dict for the reviews.result_json column.
+
+    The pipeline builds a structured Review (stable comment numbers, severity,
+    confidence, structured overall feedback) but historically only the rendered
+    markdown was persisted. _strip_nul_bytes scrubs the NUL code point that
+    Postgres jsonb rejects from the serialized JSON before we re-parse it into a
+    dict for the Supabase write.
+    """
+    return json.loads(_strip_nul_bytes(review.model_dump_json()))
 
 
 def _sanitize_error(msg: str) -> str:
@@ -831,6 +844,12 @@ def do_review(req_dict: dict):
             print(f"[{job_id}] Review row disappeared before completion; skipping final write")
             return
 
+        # Persist the structured Review alongside the rendered markdown so the
+        # per-comment chat (and a future second-round review) can use stable
+        # comment numbers, severity, and confidence instead of re-parsing
+        # markdown (see _review_result_json).
+        result_json = _review_result_json(review)
+
         db.table("reviews").update(
             {
                 "status": "done",
@@ -838,6 +857,7 @@ def do_review(req_dict: dict):
                 "model": model,
                 "domain": review.domain,
                 "result_markdown": _strip_nul_bytes(markdown),
+                "result_json": result_json,
                 "paper_markdown": _strip_nul_bytes(paper_text.full_markdown),
                 "duration_seconds": duration,
                 "completed_at": datetime.now(timezone.utc).isoformat(),

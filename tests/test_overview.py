@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 from coarse.agents.overview import OverviewAgent, _build_sections_text, merge_overview
 from coarse.llm import LLMClient
-from coarse.prompts import OVERVIEW_SYSTEM
+from coarse.prompts import OVERVIEW_SYSTEM, feedback_system_prompt
 from coarse.types import (
     OverviewFeedback,
     OverviewIssue,
@@ -89,7 +89,7 @@ def test_overview_agent_calls_complete_with_correct_model():
     assert response_model is OverviewFeedback
     system_msgs = [m for m in messages if m["role"] == "system"]
     assert len(system_msgs) == 1
-    assert system_msgs[0]["content"] == OVERVIEW_SYSTEM
+    assert system_msgs[0]["content"] == feedback_system_prompt(OVERVIEW_SYSTEM, "manuscript")
 
 
 def test_build_sections_text_includes_all_sections():
@@ -206,7 +206,7 @@ def test_overview_agent_prompt_caching_layout():
     # Second block: OVERVIEW_SYSTEM (no cache_control)
     second = system_msg["content"][1]
     assert second["type"] == "text"
-    assert second["text"] == OVERVIEW_SYSTEM
+    assert second["text"] == feedback_system_prompt(OVERVIEW_SYSTEM, "manuscript")
     assert "cache_control" not in second
 
 
@@ -314,9 +314,10 @@ def _make_structure_with_form(form: str) -> PaperStructure:
 
 
 def test_overview_manuscript_system_prompt_unchanged():
-    """For document_form='manuscript', the system prompt sent to the LLM must
-    be exactly OVERVIEW_SYSTEM — byte-identical to the pre-document-form
-    behavior so we don't regress quality on full papers."""
+    """For document_form='manuscript', the system prompt is OVERVIEW_SYSTEM plus
+    the shared math-formatting guidance, with NO document-form notice (the
+    manuscript form notice is empty) — so the only addition vs the base is the
+    math guidance."""
     client = _make_client()
     client.complete.return_value = _make_feedback()
     agent = OverviewAgent(client)
@@ -325,7 +326,7 @@ def test_overview_manuscript_system_prompt_unchanged():
 
     messages = client.complete.call_args[0][0]
     system_content = [m for m in messages if m["role"] == "system"][0]["content"]
-    assert system_content == OVERVIEW_SYSTEM
+    assert system_content == feedback_system_prompt(OVERVIEW_SYSTEM, "manuscript")
 
 
 def test_overview_outline_system_prompt_gets_form_notice():

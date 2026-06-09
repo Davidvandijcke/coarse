@@ -80,9 +80,9 @@ def test_editorial_agent_accepts_comment_target_without_crashing():
 
 
 def test_editorial_agent_manuscript_system_prompt_unchanged():
-    """For document_form='manuscript' (default), system prompt is byte-identical
-    to EDITORIAL_SYSTEM — the manuscript path must not regress."""
-    from coarse.prompts import EDITORIAL_SYSTEM
+    """For document_form='manuscript' (default), system prompt is EDITORIAL_SYSTEM
+    plus the shared math-formatting guidance (no document-form notice)."""
+    from coarse.prompts import EDITORIAL_SYSTEM, feedback_system_prompt
 
     client = MagicMock()
     client.supports_prompt_caching = False
@@ -97,7 +97,7 @@ def test_editorial_agent_manuscript_system_prompt_unchanged():
 
     messages = client.complete.call_args[0][0]
     system_content = [m for m in messages if m["role"] == "system"][0]["content"]
-    assert system_content == EDITORIAL_SYSTEM
+    assert system_content == feedback_system_prompt(EDITORIAL_SYSTEM, "manuscript")
 
 
 def test_editorial_agent_outline_gets_form_notice():

@@ -6,6 +6,7 @@ import type { Review } from "@/lib/types";
 import { PageMarks } from "@/components/charcoal";
 import { parseReview } from "@/lib/parseReview";
 import ReviewDisplay from "@/components/ReviewDisplay";
+import { REVIEW_RETURN_TOKEN_KEY } from "@/lib/useOpenRouterKey";
 
 export default function ReviewPageClient({ id }: { id: string }) {
   const [review, setReview] = useState<Review | null>(null);
@@ -13,7 +14,31 @@ export default function ReviewPageClient({ id }: { id: string }) {
   const [notFound, setNotFound] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const token = searchParams.get("token")?.trim() ?? "";
+  const urlToken = searchParams.get("token")?.trim() ?? "";
+  const stashKey = `${REVIEW_RETURN_TOKEN_KEY}:${id}`;
+  // The access token lives in ?token=, but an OpenRouter OAuth redirect (or any
+  // reload of a URL that lost the param) can drop it. We stash the token per
+  // review in sessionStorage and recover it whenever the URL has none, so a
+  // token-gated review stays accessible across reloads within the tab.
+  const token = useMemo(() => {
+    if (urlToken) return urlToken;
+    if (typeof window === "undefined") return "";
+    try {
+      return window.sessionStorage.getItem(stashKey)?.trim() ?? "";
+    } catch {
+      return "";
+    }
+  }, [urlToken, stashKey]);
+
+  // Persist the token (per review) so a later token-less load can recover it.
+  useEffect(() => {
+    if (!urlToken) return;
+    try {
+      window.sessionStorage.setItem(stashKey, urlToken);
+    } catch {
+      /* ignore */
+    }
+  }, [urlToken, stashKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -373,6 +398,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
           domain={review.domain}
           durationSeconds={review.duration_seconds}
           costUsd={review.cost_usd}
+          resultJson={review.result_json}
         />
       )}
 

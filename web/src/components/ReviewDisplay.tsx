@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-import type { ParsedReview, DetailedComment } from "@/lib/parseReview";
+import type { ParsedReview, DetailedComment, OverallIssue } from "@/lib/parseReview";
 import { CharcoalRule } from "@/components/charcoal";
 import {
   useCommentStatus,
@@ -16,8 +16,48 @@ import {
 import PaperPanel from "@/components/PaperPanel";
 import { preprocessLatex } from "@/lib/preprocessLatex";
 import { buildReviewUrl } from "@/lib/reviewAccess";
+import CommentChat from "@/components/CommentChat";
+import SubscriptionHandoffMenu from "@/components/SubscriptionHandoffMenu";
+import { useOpenRouterKey } from "@/lib/useOpenRouterKey";
+import {
+  clearPersistedChat,
+  loadPersistedChat,
+  type ChatMessage,
+} from "@/lib/openrouterChat";
+import type { ReviewJson } from "@/lib/types";
 
 const katexOptions = { strict: false, throwOnError: false };
+
+/* ── Overall Feedback issues as checkable / discussable items ─────────────
+ * Issues have no comment number, so they key into the shared status store and
+ * the persisted-chat keying by a negative number (issue index i -> -(i+1)),
+ * which can never collide with a positive detailed-comment number. */
+function issueKey(i: number): number {
+  return -(i + 1);
+}
+
+/** A synthetic comment for an Overall Feedback issue (body becomes the feedback,
+ * no quote) so it can flow through the same chat path as detailed comments. */
+function issueToComment(issue: OverallIssue, i: number): DetailedComment {
+  return {
+    number: issueKey(i),
+    title: issue.title,
+    status: "Pending",
+    quote: "",
+    feedback: issue.body,
+  };
+}
+
+/** Resolve a persisted chat key back to its target — a detailed comment
+ * (number >= 0) or an Overall Feedback issue (number < 0). */
+function resolveChatTarget(parsed: ParsedReview, number: number): DetailedComment | null {
+  if (number >= 0) {
+    return parsed.detailedComments.find((x) => x.number === number) ?? null;
+  }
+  const i = -number - 1;
+  const issue = parsed.overallFeedback.issues[i];
+  return issue ? issueToComment(issue, i) : null;
+}
 
 /* ── Quote block with expand/collapse + "Show in paper" ──── */
 function QuoteBlock({
@@ -159,12 +199,14 @@ function CommentCard({
   commentStatus,
   onStatusChange,
   onShowInPaper,
+  onDiscuss,
 }: {
   comment: DetailedComment;
   id: string;
   commentStatus: CommentStatus;
   onStatusChange: (s: CommentStatus) => void;
   onShowInPaper?: () => void;
+  onDiscuss?: () => void;
 }) {
   const [showDismissed, setShowDismissed] = useState(false);
   const isDone = commentStatus === "done";
@@ -207,7 +249,26 @@ function CommentCard({
         >
           {comment.title}
         </h3>
-        <StatusButtons status={commentStatus} onStatusChange={onStatusChange} />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            marginLeft: "auto",
+            flexShrink: 0,
+          }}
+        >
+          {onDiscuss && (
+            <button
+              onClick={onDiscuss}
+              title="Discuss this comment with an AI model"
+              style={{ ...actionBtnStyle, color: "var(--blue-chalk)" }}
+            >
+              Discuss
+            </button>
+          )}
+          <StatusButtons status={commentStatus} onStatusChange={onStatusChange} />
+        </div>
       </div>
 
       {/* Collapsed content for dismissed */}
@@ -291,6 +352,84 @@ function CommentCard({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/* ── Overall Feedback issue card (checkable + discussable) ─── */
+function IssueCard({
+  issue,
+  status,
+  onStatusChange,
+  onDiscuss,
+}: {
+  issue: OverallIssue;
+  status: CommentStatus;
+  onStatusChange: (s: CommentStatus) => void;
+  onDiscuss: () => void;
+}) {
+  const isDone = status === "done";
+  const isDismissed = status === "dismissed";
+  return (
+    <div
+      style={{
+        background: "var(--board-surface)",
+        borderRadius: "2px",
+        border: "1px solid var(--tray)",
+        padding: "1rem 1.25rem",
+        marginBottom: "0.75rem",
+        opacity: isDismissed ? 0.35 : isDone ? 0.6 : 1,
+        transition: "opacity 0.2s",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: "0.75rem",
+          marginBottom: "0.5rem",
+        }}
+      >
+        <h3
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: "1.1rem",
+            fontWeight: 700,
+            color: "var(--chalk-bright)",
+            margin: 0,
+            lineHeight: 1.35,
+            flex: 1,
+            textDecoration: isDone ? "line-through" : "none",
+          }}
+        >
+          {issue.title}
+        </h3>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            flexShrink: 0,
+          }}
+        >
+          <button
+            onClick={onDiscuss}
+            title="Discuss this comment with an AI model"
+            style={{ ...actionBtnStyle, color: "var(--blue-chalk)" }}
+          >
+            Discuss
+          </button>
+          <StatusButtons status={status} onStatusChange={onStatusChange} />
+        </div>
+      </div>
+      <div className="review-content" style={{ fontSize: "1.05rem", lineHeight: 1.7 }}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[[rehypeKatex, katexOptions]]}
+        >
+          {preprocessLatex(issue.body)}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 }
@@ -629,6 +768,7 @@ export default function ReviewDisplay({
   domain,
   durationSeconds,
   costUsd,
+  resultJson,
 }: {
   parsed: ParsedReview;
   markdown: string;
@@ -640,6 +780,7 @@ export default function ReviewDisplay({
   domain?: string | null;
   durationSeconds?: number | null;
   costUsd?: number | null;
+  resultJson?: ReviewJson | null;
 }) {
   const router = useRouter();
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -649,14 +790,140 @@ export default function ReviewDisplay({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Draggable divider: paper panel width as a % of the body (20–75), persisted.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [paperWidthPct, setPaperWidthPct] = useState(45);
+  const widthRef = useRef(paperWidthPct);
+  widthRef.current = paperWidthPct;
+
+  useEffect(() => {
+    try {
+      const v = Number(localStorage.getItem("coarse-paper-width-pct"));
+      if (v >= 20 && v <= 75) setPaperWidthPct(v);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const onResizeMove = useCallback((e: MouseEvent) => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pct = ((e.clientX - rect.left) / rect.width) * 100;
+    setPaperWidthPct(Math.min(75, Math.max(20, pct)));
+  }, []);
+
+  const onResizeEnd = useCallback(() => {
+    document.removeEventListener("mousemove", onResizeMove);
+    document.removeEventListener("mouseup", onResizeEnd);
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    try {
+      localStorage.setItem("coarse-paper-width-pct", String(Math.round(widthRef.current)));
+    } catch {
+      /* ignore */
+    }
+  }, [onResizeMove]);
+
+  const onResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+      document.addEventListener("mousemove", onResizeMove);
+      document.addEventListener("mouseup", onResizeEnd);
+    },
+    [onResizeMove, onResizeEnd],
+  );
+
+  // Detach drag listeners if we unmount mid-drag.
+  useEffect(
+    () => () => {
+      document.removeEventListener("mousemove", onResizeMove);
+      document.removeEventListener("mouseup", onResizeEnd);
+    },
+    [onResizeMove, onResizeEnd],
+  );
+
+  // Per-comment "Discuss" chat (streams directly from the browser to OpenRouter).
+  const orKey = useOpenRouterKey();
+  const [chatComment, setChatComment] = useState<DetailedComment | null>(null);
+  const [chatInitialMessages, setChatInitialMessages] = useState<
+    ChatMessage[] | undefined
+  >(undefined);
+  const chatRestoredRef = useRef(false);
+
+  const overallFeedbackText = useMemo(() => {
+    const parts: string[] = [];
+    const sj = resultJson?.overall_feedback;
+    if (sj) {
+      // Structured overall feedback carries assessment / recommendation /
+      // revision targets that the rendered markdown doesn't expose.
+      if (sj.assessment) parts.push(`Assessment: ${sj.assessment}`);
+      if (sj.summary) parts.push(sj.summary);
+      for (const issue of sj.issues ?? []) parts.push(`${issue.title}\n${issue.body}`);
+      if (sj.recommendation) parts.push(`Recommendation: ${sj.recommendation}`);
+      if (sj.revision_targets?.length)
+        parts.push(`Revision targets:\n- ${sj.revision_targets.join("\n- ")}`);
+      return parts.join("\n\n");
+    }
+    const fb = parsed.overallFeedback;
+    if (fb.summary) parts.push(fb.summary);
+    for (const issue of fb.issues) parts.push(`${issue.title}\n${issue.body}`);
+    return parts.join("\n\n");
+  }, [resultJson, parsed.overallFeedback]);
+
+  // Structured metadata (severity/confidence) for the open comment, when the
+  // review has result_json; null for legacy reviews (chat falls back gracefully).
+  const structuredChatComment = useMemo(
+    () =>
+      chatComment
+        ? resultJson?.detailed_comments?.find((c) => c.number === chatComment.number) ?? null
+        : null,
+    [chatComment, resultJson],
+  );
+
+  const openChat = useCallback((c: DetailedComment) => {
+    setChatInitialMessages(undefined);
+    setChatComment(c);
+  }, []);
+
+  const closeChat = useCallback(() => {
+    clearPersistedChat(reviewId);
+    setChatComment(null);
+    setChatInitialMessages(undefined);
+  }, [reviewId]);
+
+  // Reopen a chat persisted before an OpenRouter OAuth redirect (or a reload).
+  useEffect(() => {
+    if (chatRestoredRef.current) return;
+    chatRestoredRef.current = true;
+    const persisted = loadPersistedChat(reviewId);
+    if (!persisted) return;
+    const target = resolveChatTarget(parsed, persisted.commentNumber);
+    if (target) {
+      setChatInitialMessages(persisted.messages);
+      setChatComment(target);
+    } else {
+      clearPersistedChat(reviewId);
+    }
+  }, [reviewId, parsed]);
+
   // Open paper panel by default when paper markdown becomes available
   useEffect(() => {
     if (paperMarkdown) setPaperPanelOpen(true);
   }, [paperMarkdown]);
   const mainRef = useRef<HTMLDivElement>(null);
 
+  // The prominent "remaining" count tracks detailed comments only; Overall
+  // Feedback issues are still checkable (their negative keys land in the same
+  // status store for dimming/filtering) but don't inflate the comment count.
+  const statusKeys = useMemo(
+    () => parsed.detailedComments.map((c) => c.number),
+    [parsed.detailedComments],
+  );
   const { getStatus, setStatus, remaining, filter, setFilter } =
-    useCommentStatus(reviewId, parsed.detailedComments.length);
+    useCommentStatus(reviewId, statusKeys);
 
   const hasPaper = !!paperMarkdown;
 
@@ -886,6 +1153,14 @@ export default function ReviewDisplay({
             {copied ? "Copied" : "Share"}
           </button>
 
+          <SubscriptionHandoffMenu
+            reviewId={reviewId}
+            paperTitle={paperTitle || parsed.title}
+            paperMarkdown={paperMarkdown}
+            markdown={markdown}
+            resultJson={resultJson}
+          />
+
           <DownloadMenu markdown={markdown} reviewId={reviewId} model={model} />
 
           <a
@@ -908,6 +1183,7 @@ export default function ReviewDisplay({
 
       {/* ── Body: paper panel + sidebar + main ────────────── */}
       <div
+        ref={bodyRef}
         style={{
           display: "flex",
           maxWidth: paperPanelOpen ? "100%" : "1100px",
@@ -917,14 +1193,37 @@ export default function ReviewDisplay({
           transition: "max-width 0.2s",
         }}
       >
-        {/* Paper panel */}
+        {/* Paper panel + draggable divider */}
         {paperPanelOpen && paperMarkdown && (
-          <PaperPanel
-            markdown={paperMarkdown}
-            highlightQuote={highlightQuote}
-            onClose={() => setPaperPanelOpen(false)}
-            reviewId={reviewId}
-          />
+          <>
+            <PaperPanel
+              markdown={paperMarkdown}
+              highlightQuote={highlightQuote}
+              onClose={() => setPaperPanelOpen(false)}
+              reviewId={reviewId}
+              width={`${paperWidthPct}%`}
+            />
+            <div
+              className="paper-resize-handle"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Drag to resize the paper panel"
+              title="Drag to resize"
+              onMouseDown={onResizeStart}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--blue-chalk)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "var(--tray)")}
+              style={{
+                flexShrink: 0,
+                width: "6px",
+                cursor: "col-resize",
+                position: "sticky",
+                top: "4.5rem",
+                height: "calc(100vh - 4.5rem)",
+                background: "var(--tray)",
+                transition: "background 0.15s",
+              }}
+            />
+          </>
         )}
 
         {/* Sidebar */}
@@ -1030,42 +1329,20 @@ export default function ReviewDisplay({
               </div>
             )}
 
-            {parsed.overallFeedback.issues.map((issue, i) => (
-              <div
-                key={i}
-                style={{
-                  background: "var(--board-surface)",
-                  borderRadius: "2px",
-                  border: "1px solid var(--tray)",
-                  padding: "1rem 1.25rem",
-                  marginBottom: "0.75rem",
-                }}
-              >
-                <h3
-                  style={{
-                    fontFamily: "var(--font-serif)",
-                    fontSize: "1.1rem",
-                    fontWeight: 700,
-                    color: "var(--chalk-bright)",
-                    margin: "0 0 0.5rem",
-                    lineHeight: 1.35,
-                  }}
-                >
-                  {issue.title}
-                </h3>
-                <div
-                  className="review-content"
-                  style={{ fontSize: "1.05rem", lineHeight: 1.7 }}
-                >
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[[rehypeKatex, katexOptions]]}
-                  >
-                    {preprocessLatex(issue.body)}
-                  </ReactMarkdown>
-                </div>
-              </div>
-            ))}
+            {parsed.overallFeedback.issues.map((issue, i) => {
+              const key = issueKey(i);
+              const status = getStatus(key);
+              if (filter !== "all" && status !== filter) return null;
+              return (
+                <IssueCard
+                  key={i}
+                  issue={issue}
+                  status={status}
+                  onStatusChange={(s) => setStatus(key, s)}
+                  onDiscuss={() => openChat(issueToComment(issue, i))}
+                />
+              );
+            })}
           </section>
 
           <CharcoalRule />
@@ -1109,6 +1386,7 @@ export default function ReviewDisplay({
                         ? () => handleShowInPaper(comment.quote)
                         : undefined
                     }
+                    onDiscuss={() => openChat(comment)}
                   />
                   <div
                     style={{
@@ -1196,6 +1474,29 @@ export default function ReviewDisplay({
           </div>
         </main>
       </div>
+
+      {chatComment && (
+        <CommentChat
+          key={chatComment.number}
+          reviewId={reviewId}
+          comment={chatComment}
+          paperTitle={paperTitle || parsed.title}
+          paperMarkdown={paperMarkdown}
+          domain={domain || parsed.metadata.domain}
+          overallFeedbackText={overallFeedbackText}
+          commentSeverity={structuredChatComment?.severity}
+          commentConfidence={structuredChatComment?.confidence}
+          defaultModel={model || ""}
+          initialMessages={chatInitialMessages}
+          apiKey={orKey.apiKey}
+          hasKey={orKey.hasKey}
+          keyNotice={orKey.notice}
+          onSetKey={orKey.setKey}
+          onStartLogin={orKey.startLogin}
+          onLogout={orKey.logout}
+          onClose={closeChat}
+        />
+      )}
     </>
   );
 }
