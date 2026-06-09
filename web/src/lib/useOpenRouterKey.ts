@@ -88,20 +88,10 @@ export function useOpenRouterKey(): UseOpenRouterKey {
   }, []);
 
   const startLogin = useCallback(() => {
-    // Login is a full-page redirect to OpenRouter and back. We pass the current
-    // URL (including any ?token=) as the callback so OpenRouter returns here and
-    // appends ?code=. OpenRouter's docs do not guarantee it preserves a
-    // pre-existing query string, so we also stash the review token and recover
-    // it in ReviewPageClient if ?token= is dropped from the URL on return.
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
-    if (token) {
-      try {
-        window.sessionStorage.setItem(REVIEW_RETURN_TOKEN_KEY, token);
-      } catch {
-        /* non-fatal */
-      }
-    }
+    // Login is a full-page redirect to OpenRouter and back. Pass the current URL
+    // (including any ?token=) as the callback so OpenRouter returns here. The
+    // review token is stashed per-review by ReviewPageClient, which recovers it
+    // if OpenRouter drops ?token= from the URL on return.
     const callbackUrl = window.location.origin + window.location.pathname + window.location.search;
     beginLogin(callbackUrl).catch(() => {
       setNotice("OpenRouter login could not start. Paste a key instead.");
