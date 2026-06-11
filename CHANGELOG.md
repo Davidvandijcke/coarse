@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **"Review with my subscription" no longer demands an OpenRouter key for non-PDF uploads (issue #186).** The handoff mechanics already ran `.tex`/`.md`/`.docx`/`.html`/`.epub`/`.txt` sources end-to-end with no OpenRouter key — only PDFs use Mistral OCR; everything else extracts locally, and the literature search quietly falls back to the free arXiv path — but every user-facing surface still demanded a key unconditionally. Worst, the agent prompt's STEP 2 instructed the coding agent to stop a key-free `.tex` review and ask the user for a key it would never use. Now PDF-conditional: `buildAgentPrompt`/`buildLaunchUrl` take an `isPdf` flag (non-PDF sources get an explicit "no OpenRouter key needed — do not ask for one" step), the web-form explainer + handoff modal (`web/src/app/page.tsx`) and the `/h/<token>` landing page render matching copy (`isPdf` is captured at handoff-mint time so swapping the dropzone file afterwards can't flip the guidance for an already-minted handoff), the `/setup` walkthrough marks its OpenRouter step "PDFs only", and the three bundled SKILL.md files gate their key section on PDF. README + `cli_review.py` docstring clarified to match. Drift coverage in `tests/test_headless_instructions.py`. The SKILL.md edits live under `src/coarse/`, so they ship with the next PyPI release; everything else is web/docs-only.
+
 ## v1.7.0 — 2026-06-09
 
 ### Added

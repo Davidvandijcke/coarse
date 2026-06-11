@@ -99,10 +99,11 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
 
     # page.tsx must pass logFile + attachCmd through to buildAgentPrompt
     # on every call site (handleLaunch + the collapsible manual-commands UI).
-    assert (
-        "const fullPrompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile });"
-        in handoff_page
-    )
+    assert "const fullPrompt = buildAgentPrompt({" in handoff_page
+    # Every prompt/launch call site must also thread the mint-time isPdf
+    # flag (#186): two buildAgentPrompt call sites + buildLaunchUrl. See
+    # test_handoff_key_guidance_is_pdf_conditional for the branch content.
+    assert handoff_page.count("isPdf: handoffState.isPdf") >= 3
     assert "coarse.ink does not receive or store your" in handoff_page
 
     # The /h/<token> landing-page HTML renderer shares its core runCmd
@@ -131,6 +132,59 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     assert '"coarse-ink==1.7.0"' in handoff_lib
     assert "@feat/mcp-server" not in handoff_lib
     assert "@feat/mcp-server" not in handoff_route
+
+
+def test_handoff_key_guidance_is_pdf_conditional() -> None:
+    """Issue #186: only PDF sources run Mistral OCR, so only PDF handoffs
+    may tell the agent (or the user) to configure an OpenRouter key.
+
+    Non-PDF sources (.tex, .md, .docx, …) extract locally with no key
+    anywhere in the pipeline — the literature search falls back to the
+    free arXiv path when no key is set. Before this gate,
+    ``buildAgentPrompt``'s STEP 2 unconditionally instructed the coding
+    agent to stop and ask the user for an OpenRouter key, blocking
+    key-free .tex reviews on a key that would never be used. Pin every
+    surface that branches on the flag so a refactor can't quietly
+    revert any of them to the unconditional key demand.
+    """
+    handoff_lib = _read("web/src/lib/mcpHandoff.ts")
+    handoff_page = _read("web/src/app/page.tsx")
+    handoff_route = _read("web/src/app/h/[token]/route.ts")
+
+    # buildAgentPrompt takes the flag and branches STEP 2 on it.
+    assert "isPdf: boolean;" in handoff_lib
+    assert "const step2 = isPdf" in handoff_lib
+    # PDF branch: the key request must still exist verbatim.
+    assert "I need an OpenRouter API key for the Mistral OCR extraction step" in handoff_lib
+    # Non-PDF branch: explicit no-key + do-not-ask instruction.
+    assert "No OpenRouter API key is needed for this review" in handoff_lib
+    assert "ask me for an OpenRouter key" in handoff_lib
+
+    # page.tsx captures isPdf at handoff-mint time — from the uploaded
+    # file's name, not the live dropzone state — so swapping the file
+    # after minting can't flip the guidance for an existing handoff.
+    assert 'isPdf: file.name.toLowerCase().endsWith(".pdf")' in handoff_page
+    # And the modal + explainer copy branch on it.
+    assert "handoffState.isPdf ?" in handoff_page
+    assert "selectedFileIsPdf" in handoff_page
+    assert "No OpenRouter key needed for this paper" in handoff_page
+
+    # The /h/<token> landing page derives the flag from the stored
+    # filename extension and renders the matching key note.
+    assert 'isPdf: ext === ".pdf"' in handoff_route
+    assert "No OpenRouter key needed:" in handoff_route
+    assert "OpenRouter key:</strong> PDF sources use Mistral OCR" in handoff_route
+
+    # The three bundled skills gate their key section on PDF too.
+    for skill in (
+        "src/coarse/_skills/claude_code/SKILL.md",
+        "src/coarse/_skills/codex/SKILL.md",
+        "src/coarse/_skills/gemini_cli/SKILL.md",
+    ):
+        text = _read(skill)
+        assert "OpenRouter API key required for PDF papers only" in text, skill
+        assert "If the paper is a PDF and neither probe reports" in text, skill
+        assert "never block a non-PDF review on a missing key" in text, skill
 
 
 def test_submit_route_handoff_retry_checks_review_status() -> None:

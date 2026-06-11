@@ -1,9 +1,9 @@
 // Handoff helpers for the "Review with my subscription" button on the
 // coarse web form. The flow is:
 //
-//   1. User uploads PDF via /api/presign + direct Supabase Storage PUT
-//      (same path as the regular OpenRouter review — no extraction
-//      triggered).
+//   1. User uploads the paper (any supported format) via /api/presign +
+//      direct Supabase Storage PUT (same path as the regular OpenRouter
+//      review — no extraction triggered).
 //   2. User clicks "Review with Claude Code / Codex / Gemini CLI".
 //   3. Frontend POSTs to /api/cli-handoff which mints a short-lived
 //      finalize_token (3h, see FINALIZE_TOKEN_TTL_MINUTES) bound to
@@ -17,9 +17,12 @@
 //          [--effort ...]`
 //   5. The user's local `coarse-review` command:
 //        a. Fetches the bundle from /h/<token> as JSON
-//        b. Downloads the raw PDF from the signed URL inside the bundle
-//        c. Extracts locally with their OpenRouter key (from
-//           ~/.coarse/config.toml or .env)
+//        b. Downloads the raw source file from the signed URL inside
+//           the bundle
+//        c. Extracts locally. Only PDFs need the user's OpenRouter key
+//           (from ~/.coarse/config.toml or .env) for Mistral OCR;
+//           non-PDF sources (.tex, .md, .docx, …) parse locally with
+//           no key at all (#186)
 //        d. Runs the full coarse pipeline, routing every LLM call
 //           through the chosen headless CLI
 //        e. POSTs the rendered review back to /api/mcp-finalize with
@@ -154,15 +157,55 @@ export const HOST_LAUNCH_HINT: Record<ChatHost, string> = {
  * so Claude Code's Bash tool sees stdout activity. One agent-visible
  * Bash call covers the full 10-25min wait instead of 10-25 separate
  * per-poll approval prompts.
+ *
+ * ``isPdf`` gates STEP 2 (the OpenRouter key check). Only PDF sources
+ * run Mistral OCR; non-PDF uploads (.tex, .md, .docx, …) extract
+ * locally with no OpenRouter key, so for them STEP 2 explicitly tells
+ * the agent NOT to ask for or configure a key (#186). Without this
+ * gate, agents stopped a key-free .tex review to demand a key it
+ * would never use.
  */
 export function buildAgentPrompt(args: {
   setupCmd: string;
   runCmd: string;
   attachCmd: string;
   logFile: string;
+  isPdf: boolean;
 }): string {
-  const { setupCmd, runCmd, attachCmd, logFile } = args;
+  const { setupCmd, runCmd, attachCmd, logFile, isPdf } = args;
   const configCmd = setupCmd.replace("coarse install-skills --all --force", "coarse setup");
+  const step2 = isPdf
+    ? `STEP 2 — Check for an OpenRouter API key without printing its ` +
+      `value. Prefer presence-only probes so the key doesn't needlessly ` +
+      `show up in the chat transcript:\n\n` +
+      `  test -n "$OPENROUTER_API_KEY" && echo "env: set" || echo "env: missing"\n` +
+      `  test -f .env && grep -q '^OPENROUTER_API_KEY=' .env && echo ".env: set" || echo ".env: missing"\n\n` +
+      `If neither probe reports "set", tell me:\n\n` +
+      `  "I need an OpenRouter API key for the Mistral OCR extraction step ` +
+      `(~$0.10 per paper). A few options:\n` +
+      `   1. Paste the key here and I'll save it to ~/.coarse/config.toml ` +
+      `via \`${configCmd}\`. Heads up that whatever you paste here passes ` +
+      `through the LLM provider (Anthropic / OpenAI / Google), so treat ` +
+      `the key as slightly less private than one you typed into a local ` +
+      `terminal — rotate at https://openrouter.ai/settings/keys if that ` +
+      `worries you.\n` +
+      `   2. Set it yourself in a separate terminal and come back: ` +
+      `\`export OPENROUTER_API_KEY=sk-or-v1-...\` or add it to a \`.env\` ` +
+      `file in your current directory.\n` +
+      `   3. Run \`${configCmd}\` in a separate terminal yourself and ` +
+      `paste the key into its interactive prompt — the key lands in ` +
+      `~/.coarse/config.toml without touching this chat at all.\n` +
+      `   Which do you want?"\n\n` +
+      `If I paste the key into chat, just save it — run \`${configCmd}\` ` +
+      `with the pasted value and confirm it's stored. No need to lecture ` +
+      `me about it; I already know what I'm doing.`
+    : `STEP 2 — No OpenRouter API key is needed for this review. The ` +
+      `paper is not a PDF, so coarse-review extracts it locally without ` +
+      `the Mistral OCR step. (If a key happens to be configured it is ` +
+      `only used opportunistically for the ~$0.03 Perplexity literature ` +
+      `search; without one, a free arXiv fallback runs instead.) Do NOT ` +
+      `ask me for an OpenRouter key and do NOT pause the workflow to ` +
+      `configure one.`;
   return (
     `Please review an academic paper for me using the coarse-review skill. ` +
     `The paper is a REMOTE resource — its source URL is already embedded ` +
@@ -187,30 +230,7 @@ export function buildAgentPrompt(args: {
     `either way because uvx is already loading the coarse bundle via ` +
     `\`--from\`.\n\n` +
     `${setupCmd}\n\n` +
-    `STEP 2 — Check for an OpenRouter API key without printing its ` +
-    `value. Prefer presence-only probes so the key doesn't needlessly ` +
-    `show up in the chat transcript:\n\n` +
-    `  test -n "$OPENROUTER_API_KEY" && echo "env: set" || echo "env: missing"\n` +
-    `  test -f .env && grep -q '^OPENROUTER_API_KEY=' .env && echo ".env: set" || echo ".env: missing"\n\n` +
-    `If neither probe reports "set", tell me:\n\n` +
-    `  "I need an OpenRouter API key for the Mistral OCR extraction step ` +
-    `(~$0.10 per paper). A few options:\n` +
-    `   1. Paste the key here and I'll save it to ~/.coarse/config.toml ` +
-    `via \`${configCmd}\`. Heads up that whatever you paste here passes ` +
-    `through the LLM provider (Anthropic / OpenAI / Google), so treat ` +
-    `the key as slightly less private than one you typed into a local ` +
-    `terminal — rotate at https://openrouter.ai/settings/keys if that ` +
-    `worries you.\n` +
-    `   2. Set it yourself in a separate terminal and come back: ` +
-    `\`export OPENROUTER_API_KEY=sk-or-v1-...\` or add it to a \`.env\` ` +
-    `file in your current directory.\n` +
-    `   3. Run \`${configCmd}\` in a separate terminal yourself and ` +
-    `paste the key into its interactive prompt — the key lands in ` +
-    `~/.coarse/config.toml without touching this chat at all.\n` +
-    `   Which do you want?"\n\n` +
-    `If I paste the key into chat, just save it — run \`${configCmd}\` ` +
-    `with the pasted value and confirm it's stored. No need to lecture ` +
-    `me about it; I already know what I'm doing.\n\n` +
+    `${step2}\n\n` +
     `STEP 3 — Launch the detached review. Run the EXACT command below, ` +
     `verbatim. Do not substitute, rewrite, or interpret any argument — ` +
     `every piece is already filled in. The \`--handoff\` URL is the ` +
@@ -309,9 +329,10 @@ export function buildLaunchUrl(args: {
   setupCmd: string;
   attachCmd: string;
   logFile: string;
+  isPdf: boolean;
 }): string {
-  const { host, runCmd, setupCmd, attachCmd, logFile } = args;
-  const prompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile });
+  const { host, runCmd, setupCmd, attachCmd, logFile, isPdf } = args;
+  const prompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile, isPdf });
 
   if (host === "codex") {
     // Codex supports codex://new?prompt=<text> deep links that pre-fill
