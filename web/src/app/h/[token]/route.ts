@@ -204,6 +204,7 @@ export async function GET(
     paperTitle: reviewRow.paper_filename ?? "your paper",
     paperId: tokenRow.paper_id,
     siteUrl,
+    isPdf: ext === ".pdf",
   });
   return new NextResponse(html, {
     status: 200,
@@ -263,8 +264,9 @@ function renderLandingPage(args: {
   paperTitle: string;
   paperId: string;
   siteUrl: string;
+  isPdf: boolean;
 }): string {
-  const { handoffUrl, paperTitle, paperId, siteUrl } = args;
+  const { handoffUrl, paperTitle, paperId, siteUrl, isPdf } = args;
   const safe = (s: string) => escapeHtml(s);
   const siteHost = (() => {
     try {
@@ -285,6 +287,13 @@ function renderLandingPage(args: {
     handoffUrl,
     paperId,
   });
+
+  // Only PDF sources run Mistral OCR (and therefore need an OpenRouter
+  // key on the user's machine); every other format extracts locally with
+  // no key at all (#186).
+  const keyNote = isPdf
+    ? `<p class="note"><strong>OpenRouter key:</strong> PDF sources use Mistral OCR (~$0.10 per paper), so <code>OPENROUTER_API_KEY</code> must be available on this machine — env var, <code>.env</code>, or <code>~/.coarse/config.toml</code>. If it's missing, the run fails fast with setup instructions.</p>`
+    : `<p class="note"><strong>No OpenRouter key needed:</strong> this file is not a PDF, so extraction runs locally without the Mistral OCR step.</p>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -334,6 +343,7 @@ function renderLandingPage(args: {
     <pre class="cmd" id="run"><button class="copy" onclick="copy('run')">copy</button>${safe(runCmd)}</pre>
     <p class="note">Starts a detached local review worker, writes its PID to <code>${safe(logFile)}.pid</code>, streams all output to <code>${safe(logFile)}</code>, and returns within 2 seconds. The review will appear at <code>${safe(siteHost)}/review/${safe(paperId)}?token=…</code> when it's done — the <code>view:</code> line in the log has the full tokened URL.</p>
     <p class="note"><strong>Options:</strong> edit the command before running to add <code>--host claude|codex|gemini</code> (default: first CLI found on PATH), <code>--model &lt;id&gt;</code>, and <code>--effort low|medium|high|max</code>.</p>
+    ${keyNote}
   </div>
 
   <div class="step">

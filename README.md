@@ -61,12 +61,15 @@ Or run `coarse setup` to store keys in `~/.coarse/config.toml`.
 If you already have a `claude`, `codex`, or `gemini` CLI logged into its subscription,
 `coarse-review` routes every pipeline LLM call through the local CLI (`claude -p`,
 `codex exec`, `gemini -p`) so reviews bill your Claude Max / ChatGPT Pro / Google AI Pro
-subscription instead of a pay-per-token API. Only the ~$0.05–0.15 Mistral OCR step still
-uses `OPENROUTER_API_KEY` (skip it with `--pre-extracted paper.md`).
+subscription instead of a pay-per-token API. Only the ~$0.05–0.15 Mistral OCR step on
+PDF sources still uses `OPENROUTER_API_KEY` (skip it with `--pre-extracted paper.md`).
+Non-PDF sources (`.tex`, `.md`, `.txt`, `.docx`, `.html`, `.epub`) extract locally, so
+they run entirely on your subscription with no OpenRouter key at all.
 
 ```bash
 coarse-review paper.pdf                          # auto-detects claude → codex → gemini
 coarse-review paper.pdf --host codex --model gpt-5.5
+coarse-review paper.tex                          # .tex/.md/...: no OpenRouter key needed
 ```
 
 Run `coarse install-skills` to register a `/coarse-review` skill in each CLI's skills
@@ -75,7 +78,8 @@ directory, so you can trigger reviews from inside the coding agent itself.
 ## Supported formats
 
 PDF, TXT, Markdown, LaTeX, DOCX, HTML, and EPUB. PDFs use Mistral OCR; other formats use
-Docling (if installed) with lightweight fallbacks. Install optional format support:
+Docling (if installed) with lightweight fallbacks. Only PDF extraction touches OpenRouter —
+every other format is parsed locally. Install optional format support:
 
 ```bash
 pip install coarse-ink[formats]   # DOCX, HTML, EPUB fallbacks

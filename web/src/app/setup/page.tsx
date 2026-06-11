@@ -953,7 +953,7 @@ function SubscriptionTab() {
         </Step>
 
         {/* Step 2 */}
-        <Step number={2} title="Put an OpenRouter key on your machine">
+        <Step number={2} title="Put an OpenRouter key on your machine (PDFs only)">
           <p
             style={{
               fontFamily: "Georgia, serif",
@@ -963,8 +963,11 @@ function SubscriptionTab() {
               margin: "0 0 0.75rem",
             }}
           >
-            coarse still needs OpenRouter for the OCR step (~$0.10 per
-            paper). Follow the{" "}
+            This step only applies to PDF papers — non-PDF sources
+            (.tex, .md, .docx, …) are extracted locally without OCR, so
+            they need no OpenRouter key anywhere and you can skip
+            straight to step 3. For PDFs, coarse still needs OpenRouter
+            for the OCR step (~$0.10 per paper). Follow the{" "}
             <strong style={{ color: "var(--chalk-bright)" }}>
               OpenRouter key
             </strong>{" "}
@@ -1039,7 +1042,8 @@ function SubscriptionTab() {
             >
               main page
             </a>
-            , drop your PDF onto the form, then click the{" "}
+            , drop your paper (PDF, .tex, .md, .docx, …) onto the form,
+            then click the{" "}
             <strong style={{ color: "var(--chalk-bright)" }}>
               Review with my subscription ▾
             </strong>{" "}

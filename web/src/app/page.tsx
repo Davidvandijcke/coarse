@@ -339,8 +339,11 @@ export default function Home() {
   type HandoffPhase = "idle" | "extracting" | "ready" | "failed";
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
   const [handoffPhase, setHandoffPhase] = useState<HandoffPhase>("idle");
+  // isPdf is captured at handoff-mint time (not derived from the live
+  // `file` state) so swapping the dropzone file after minting can't
+  // flip the key guidance for an already-minted handoff (#186).
   const [handoffState, setHandoffState] = useState<{
-    paperId: string; host: ChatHost;
+    paperId: string; host: ChatHost; isPdf: boolean;
   } | null>(null);
   const [handoffMessage, setHandoffMessage] = useState<string>("");
   const [handoffBundle, setHandoffBundle] = useState<CliHandoffBundle | null>(null);
@@ -852,7 +855,11 @@ export default function Home() {
       setSelectedEffort("high");
 
       setHandoffBundle(bundle);
-      setHandoffState({ paperId: id, host });
+      setHandoffState({
+        paperId: id,
+        host,
+        isPdf: file.name.toLowerCase().endsWith(".pdf"),
+      });
       setHandoffPhase("ready");
       setHandoffMessage("");
     } catch (err) {
@@ -895,7 +902,9 @@ export default function Home() {
     // the custom URL scheme. On some browsers (notably on Windows),
     // awaiting an async clipboard write can consume user activation and
     // cause codex:// / claude:// launches to be blocked.
-    const fullPrompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile });
+    const fullPrompt = buildAgentPrompt({
+      setupCmd, runCmd, attachCmd, logFile, isPdf: handoffState.isPdf,
+    });
     navigator.clipboard.writeText(fullPrompt).catch((err) => {
       console.error("clipboard write failed", err);
     });
@@ -906,7 +915,9 @@ export default function Home() {
     // timer: if the OS never switches focus to another app, the scheme
     // didn't resolve and we swap in a "didn't work — paste the commands
     // instead" hint so the user isn't stuck.
-    const launchUrl = buildLaunchUrl({ host, runCmd, setupCmd, attachCmd, logFile });
+    const launchUrl = buildLaunchUrl({
+      host, runCmd, setupCmd, attachCmd, logFile, isPdf: handoffState.isPdf,
+    });
     if (!launchUrl) {
       setLaunchStatus("Command copied to clipboard. Paste it into your terminal.");
       return;
@@ -966,6 +977,10 @@ export default function Home() {
   const handoffBusy = handoffPhase === "extracting";
   const canHandoff =
     !!file && !handoffBusy && !submitting && accepting && turnstileReadyForSubmit;
+  // Non-PDF sources (.tex, .md, .docx, …) skip Mistral OCR in the handoff
+  // flow — extraction is local, so no OpenRouter key is needed anywhere
+  // (#186). With no file selected yet, default to the PDF copy.
+  const selectedFileIsPdf = !file || file.name.toLowerCase().endsWith(".pdf");
 
   return (
     <div style={{ background: "var(--board)", minHeight: "100vh" }}>
@@ -1671,9 +1686,21 @@ export default function Home() {
                 <a href="https://claude.ai/download" target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue-chalk)", textDecoration: "none" }}>Claude Code</a>,{" "}
                 <a href="https://github.com/openai/codex" target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue-chalk)", textDecoration: "none" }}>Codex</a>, or{" "}
                 <a href="https://github.com/google-gemini/gemini-cli" target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue-chalk)", textDecoration: "none" }}>Gemini CLI</a>{" "}
-                subscription for the LLM reasoning. You only pay ~$0.10 for the
-                local Mistral OCR step (with your own OpenRouter key). Review
-                shows up on this page when done.
+                subscription for the LLM reasoning.{" "}
+                {selectedFileIsPdf ? (
+                  <>
+                    You only pay ~$0.10 for the local Mistral OCR step (with
+                    your own OpenRouter key); non-PDF uploads (.tex, .md,
+                    .docx, …) skip OCR and need no OpenRouter key.
+                  </>
+                ) : (
+                  <>
+                    Your file is not a PDF, so it skips the Mistral OCR step
+                    entirely — the whole run is covered by your subscription,
+                    no OpenRouter key needed.
+                  </>
+                )}{" "}
+                Review shows up on this page when done.
               </p>
               <p
                 style={{
@@ -1766,7 +1793,10 @@ export default function Home() {
                         Paste this prompt into your {HOST_LABELS[host]} terminal:
                       </div>
                       <CodeBlock
-                        text={buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile })}
+                        text={buildAgentPrompt({
+                          setupCmd, runCmd, attachCmd, logFile,
+                          isPdf: handoffState.isPdf,
+                        })}
                         maxHeight="160px"
                       />
                       <p
@@ -1782,23 +1812,39 @@ export default function Home() {
                         the full review locally, and take 10&ndash;25 minutes.
                         Your provider login stays on your machine.
                       </p>
-                      <p
-                        style={{
-                          fontFamily: "var(--font-chalk)",
-                          fontSize: "0.92rem",
-                          color: "var(--yellow-chalk)",
-                          margin: "0.5rem 0 0",
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        Your OpenRouter key needs to be on your machine first
-                        — export <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>OPENROUTER_API_KEY</code>,
-                        or put it in <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>.env</code>{" "}
-                        or <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>~/.coarse/config.toml</code>.
-                        We don&apos;t pass it through the browser because the
-                        handoff URL ends up in your agent&apos;s chat log. If
-                        it&apos;s missing, the agent will ask.
-                      </p>
+                      {handoffState.isPdf ? (
+                        <p
+                          style={{
+                            fontFamily: "var(--font-chalk)",
+                            fontSize: "0.92rem",
+                            color: "var(--yellow-chalk)",
+                            margin: "0.5rem 0 0",
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          Your OpenRouter key needs to be on your machine first
+                          — export <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>OPENROUTER_API_KEY</code>,
+                          or put it in <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>.env</code>{" "}
+                          or <code style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: "0.88rem" }}>~/.coarse/config.toml</code>.
+                          We don&apos;t pass it through the browser because the
+                          handoff URL ends up in your agent&apos;s chat log. If
+                          it&apos;s missing, the agent will ask.
+                        </p>
+                      ) : (
+                        <p
+                          style={{
+                            fontFamily: "var(--font-chalk)",
+                            fontSize: "0.92rem",
+                            color: "var(--dust)",
+                            margin: "0.5rem 0 0",
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          No OpenRouter key needed for this paper — it&apos;s
+                          not a PDF, so extraction runs locally without the
+                          Mistral OCR step.
+                        </p>
+                      )}
                     </div>
 
                     {/* Review URL */}

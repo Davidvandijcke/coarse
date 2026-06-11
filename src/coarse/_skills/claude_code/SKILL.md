@@ -14,7 +14,7 @@ description: >
 
 # coarse-review (Claude Code)
 
-Runs the **full coarse review pipeline** on a paper using the local `claude -p` CLI as the LLM backend. Every LLM call the pipeline makes — structure metadata, overview, per-section review, proof verification, editorial dedup — is served by a headless Claude Code subprocess using the user's Claude Max subscription. The only per-paper cost is the ~$0.05-0.15 Mistral OCR extraction, which uses the user's OpenRouter key locally.
+Runs the **full coarse review pipeline** on a paper using the local `claude -p` CLI as the LLM backend. Every LLM call the pipeline makes — structure metadata, overview, per-section review, proof verification, editorial dedup — is served by a headless Claude Code subprocess using the user's Claude Max subscription. The only per-paper cost is the ~$0.05-0.15 Mistral OCR extraction for PDF sources, which uses the user's OpenRouter key locally — non-PDF sources (.tex, .md, .txt, .docx, .html, .epub) extract locally with no OpenRouter key at all.
 
 This is the **same pipeline** that powers coarse.ink — only the LLM backend is swapped.
 
@@ -35,13 +35,13 @@ This is the **same pipeline** that powers coarse.ink — only the LLM backend is
   (If that fails with `No such command 'install-skills'`, you're on a
   PyPI release that predates the command — upgrade or ignore; the skill
   bundle is also loadable directly via `uvx --from` without install.)
-- **OpenRouter API key required** for Mistral OCR extraction (~$0.10 per paper). Prefer checking for the key with presence-only probes so you don't needlessly echo its value into the transcript, but if the user hands you the key directly just save it — don't lecture them.
+- **OpenRouter API key required for PDF papers only** — Mistral OCR extraction (~$0.10 per paper) runs on PDFs alone. Non-PDF sources (.tex, .md, .txt, .docx, .html, .epub) extract locally and need no OpenRouter key at all: skip the probes below and never block a non-PDF review on a missing key. Prefer checking for the key with presence-only probes so you don't needlessly echo its value into the transcript, but if the user hands you the key directly just save it — don't lecture them.
 
-  Before running the review, check whether `OPENROUTER_API_KEY` is already configured:
+  For PDF papers, before running the review, check whether `OPENROUTER_API_KEY` is already configured:
   - In the environment: `test -n "$OPENROUTER_API_KEY" && echo "env: set" || echo "env: missing"`
   - In a `.env` file in the current directory: `test -f .env && grep -q '^OPENROUTER_API_KEY=' .env && echo ".env: set" || echo ".env: missing"`
 
-  If neither probe reports "set", ask the user:
+  If the paper is a PDF and neither probe reports "set", ask the user:
 
   > I need an OpenRouter API key for the OCR extraction step (~$0.10 per paper). A few options:
   >
