@@ -756,3 +756,74 @@ def test_analyze_structure_prose_heavy_override_skips_draft_and_proposal():
         assert result.document_form == form, (
             f"Override fired for {form!r} — it should only fire for outline/notes/other."
         )
+
+
+# ---------------------------------------------------------------------------
+# paper_language detection propagation (multilingual rollout)
+# ---------------------------------------------------------------------------
+
+
+def _client_returning_language(language: str):
+    """Mock client whose metadata call returns the given language code."""
+    client = MagicMock()
+
+    def _side_effect(messages, response_model, **kwargs):
+        if response_model is PaperMetadata:
+            return PaperMetadata(
+                title="T",
+                domain="d",
+                taxonomy="academic/research_paper",
+                language=language,
+            )
+        if response_model is MathSectionDetection:
+            return MathSectionDetection(math_section_indices=[])
+        raise ValueError(f"Unexpected response_model: {response_model}")
+
+    client.complete.side_effect = _side_effect
+    return client
+
+
+def test_analyze_structure_default_paper_language_is_empty(mock_client):
+    """The default mock metadata returns no language → English/unknown ('')."""
+    result = analyze_structure(make_paper_text(), mock_client)
+    assert result.paper_language == ""
+
+
+def test_analyze_structure_propagates_detected_language():
+    """A supported detected language code lands on PaperStructure.paper_language."""
+    client = _client_returning_language("es")
+    result = analyze_structure(make_paper_text(), client)
+    assert result.paper_language == "es"
+
+
+def test_analyze_structure_normalizes_detected_language():
+    """A messy-cased / underscore code is normalized via coarse.languages."""
+    client = _client_returning_language("zh_hant")
+    result = analyze_structure(make_paper_text(), client)
+    assert result.paper_language == "zh-Hant"
+
+
+def test_analyze_structure_drops_unsupported_language():
+    """A code outside the supported set falls back to '' (the byte-identical
+    English/unknown path) rather than leaking an unsupported tag downstream."""
+    client = _client_returning_language("xx")
+    result = analyze_structure(make_paper_text(), client)
+    assert result.paper_language == ""
+
+
+def test_analyze_structure_keeps_english_code():
+    """'en' is supported, so it propagates as-is; the pipeline (not structure)
+    treats 'en' as the English/no-directive path via resolve_language_context."""
+    client = _client_returning_language("en")
+    result = analyze_structure(make_paper_text(), client)
+    assert result.paper_language == "en"
+
+
+def test_metadata_max_tokens_has_headroom_for_language_field(mock_client):
+    """Adding the language field must not shrink the metadata budget below the
+    512 that long-title papers already needed; it was bumped to leave headroom."""
+    analyze_structure(make_paper_text(), mock_client)
+    metadata_call = next(
+        c for c in mock_client.complete.call_args_list if c[0][1] is PaperMetadata
+    )
+    assert metadata_call[1]["max_tokens"] >= 512

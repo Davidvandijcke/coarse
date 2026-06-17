@@ -1302,6 +1302,9 @@ def test_do_review_deletes_on_success(modal_worker, monkeypatch) -> None:
     class _FakeReview:
         title = "Stub Paper"
         domain = "social_sciences"
+        # English path: review.language is None, so do_review writes no language
+        # columns (asserted in test_do_review_omits_language_columns_when_none).
+        language = None
 
         def model_dump_json(self) -> str:
             return '{"title": "Stub Paper", "detailed_comments": []}'
@@ -1334,6 +1337,184 @@ def test_do_review_deletes_on_success(modal_worker, monkeypatch) -> None:
     done_updates = [c for c in update_calls if c.get("status") == "done"]
     assert len(done_updates) == 1
     assert done_updates[0]["result_json"] == {"title": "Stub Paper", "detailed_comments": []}
+
+
+# ---------------------------------------------------------------------------
+# do_review — multilingual plumbing (issue #223 / PR-B worker side).
+#
+# do_review forwards the request's language fields into review_paper() and
+# persists the *resolved* LanguageContext from review.language into the
+# reviews row's dedicated language columns. review.language is None on the
+# English path (and for older Review objects), and in that case the columns
+# must be left untouched so English reviews — and PR-A's submit-time column
+# values — are not clobbered.
+# ---------------------------------------------------------------------------
+
+
+def test_do_review_forwards_language_fields_to_review_paper(modal_worker, monkeypatch) -> None:
+    """do_review must pass req.review_language / req.site_language into
+    review_paper() as language= / site_language=. Regression guard against a
+    refactor that drops the multilingual plumbing on the worker side."""
+    resolved = "sk-or-v1-langforwardtest12345678901234"  # security: ignore
+    delete_calls: list[str] = []
+    _install_do_review_stubs(
+        modal_worker, monkeypatch, resolved=resolved, delete_calls=delete_calls
+    )
+
+    captured_kwargs: dict = {}
+
+    class _FakeReview:
+        title = "Stub Paper"
+        domain = "social_sciences"
+        language = None
+
+        def model_dump_json(self) -> str:
+            return '{"title": "Stub Paper", "detailed_comments": []}'
+
+    class _FakePaperText:
+        full_markdown = "# stub"
+
+    def _capturing_review_paper(*_args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return _FakeReview(), "## stub review", _FakePaperText()
+
+    _install_coarse_stubs(monkeypatch, review_paper_behavior=_capturing_review_paper)
+    monkeypatch.setattr(
+        modal_worker, "_download_pdf_with_retry", lambda *_a, **_kw: b"%PDF-1.4\nstub\n"
+    )
+    monkeypatch.setattr(modal_worker, "_get_review_status", lambda _db, _job: "running")
+
+    modal_worker.do_review(
+        {
+            "job_id": "lang-forward-job",
+            "pdf_storage_path": "papers/test.pdf",
+            "review_language": "es",
+            "site_language": "fr",
+        }
+    )
+
+    assert captured_kwargs.get("language") == "es"
+    assert captured_kwargs.get("site_language") == "fr"
+
+
+def test_do_review_persists_language_columns_when_context_present(
+    modal_worker, monkeypatch
+) -> None:
+    """When the pipeline returns a Review with a populated LanguageContext, the
+    terminal 'done' update must include the resolved language columns
+    (review_language, paper_language, paper_language_source, text_direction)."""
+    resolved = "sk-or-v1-langpersisttest12345678901234"  # security: ignore
+    delete_calls: list[str] = []
+    update_calls: list[dict] = []
+    _install_do_review_stubs(
+        modal_worker,
+        monkeypatch,
+        resolved=resolved,
+        delete_calls=delete_calls,
+        update_calls=update_calls,
+    )
+
+    # do_review only reads attributes off review.language, so a SimpleNamespace
+    # mirroring the LanguageContext field shape is sufficient and keeps the test
+    # independent of the contract module's import state under the coarse stubs.
+    language_ctx = types.SimpleNamespace(
+        site_language="es",
+        review_language="es",
+        paper_language="es",
+        paper_language_source="detected",
+        text_direction="ltr",
+    )
+
+    class _FakeReview:
+        title = "Stub Paper"
+        domain = "social_sciences"
+        language = language_ctx
+
+        def model_dump_json(self) -> str:
+            return '{"title": "Stub Paper", "detailed_comments": []}'
+
+    class _FakePaperText:
+        full_markdown = "# stub"
+
+    def _spanish_review_paper(*_args, **_kwargs):
+        return _FakeReview(), "## stub review", _FakePaperText()
+
+    _install_coarse_stubs(monkeypatch, review_paper_behavior=_spanish_review_paper)
+    monkeypatch.setattr(
+        modal_worker, "_download_pdf_with_retry", lambda *_a, **_kw: b"%PDF-1.4\nstub\n"
+    )
+    monkeypatch.setattr(modal_worker, "_get_review_status", lambda _db, _job: "running")
+
+    modal_worker.do_review(
+        {
+            "job_id": "lang-persist-job",
+            "pdf_storage_path": "papers/test.pdf",
+            "review_language": "es",
+            "site_language": "es",
+        }
+    )
+
+    done_updates = [c for c in update_calls if c.get("status") == "done"]
+    assert len(done_updates) == 1
+    done = done_updates[0]
+    assert done["review_language"] == "es"
+    assert done["paper_language"] == "es"
+    assert done["paper_language_source"] == "detected"
+    assert done["text_direction"] == "ltr"
+
+
+def test_do_review_omits_language_columns_when_none(modal_worker, monkeypatch) -> None:
+    """English path: review.language is None, so the terminal 'done' update must
+    NOT write any language columns — leaving the column defaults (and PR-A's
+    submit-time values) untouched."""
+    resolved = "sk-or-v1-langnonetest123456789012345678"  # security: ignore
+    delete_calls: list[str] = []
+    update_calls: list[dict] = []
+    _install_do_review_stubs(
+        modal_worker,
+        monkeypatch,
+        resolved=resolved,
+        delete_calls=delete_calls,
+        update_calls=update_calls,
+    )
+
+    class _FakeReview:
+        title = "Stub Paper"
+        domain = "social_sciences"
+        language = None
+
+        def model_dump_json(self) -> str:
+            return '{"title": "Stub Paper", "detailed_comments": []}'
+
+    class _FakePaperText:
+        full_markdown = "# stub"
+
+    def _english_review_paper(*_args, **_kwargs):
+        return _FakeReview(), "## stub review", _FakePaperText()
+
+    _install_coarse_stubs(monkeypatch, review_paper_behavior=_english_review_paper)
+    monkeypatch.setattr(
+        modal_worker, "_download_pdf_with_retry", lambda *_a, **_kw: b"%PDF-1.4\nstub\n"
+    )
+    monkeypatch.setattr(modal_worker, "_get_review_status", lambda _db, _job: "running")
+
+    modal_worker.do_review(
+        {
+            "job_id": "lang-none-job",
+            "pdf_storage_path": "papers/test.pdf",
+        }
+    )
+
+    done_updates = [c for c in update_calls if c.get("status") == "done"]
+    assert len(done_updates) == 1
+    done = done_updates[0]
+    for col in (
+        "review_language",
+        "paper_language",
+        "paper_language_source",
+        "text_direction",
+    ):
+        assert col not in done, f"English path must not write language column {col!r}"
 
 
 # ---------------------------------------------------------------------------

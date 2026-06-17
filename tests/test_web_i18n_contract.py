@@ -73,3 +73,27 @@ def test_submit_forwards_review_language_to_worker():
     assert "review_language:" in src, (
         "submit route must forward review_language in the Modal trigger body"
     )
+
+
+def test_language_catalog_python_ts_in_sync():
+    """The Python and TS language catalogs must list identical entries in the
+    same order. Both modules' docstrings promise this guard; without it the two
+    can silently drift (a language added to one side only)."""
+    import re
+
+    from coarse.languages import SUPPORTED_LANGUAGES
+
+    ts = _read("web/src/lib/languages.ts")
+    body = re.search(r"SUPPORTED_LANGUAGES:\s*LanguageEntry\[\]\s*=\s*\[(.*?)\];", ts, re.DOTALL)
+    assert body, "could not find SUPPORTED_LANGUAGES array in languages.ts"
+    ts_catalog = re.findall(
+        r'\{\s*code:\s*"([^"]+)",\s*name:\s*"([^"]+)",\s*direction:\s*"([^"]+)"\s*\}',
+        body.group(1),
+    )
+    py_catalog = [
+        (code, entry["name"], entry["direction"]) for code, entry in SUPPORTED_LANGUAGES.items()
+    ]
+    assert ts_catalog == py_catalog, (
+        "languages.ts and languages.py catalogs drifted — codes/names/directions/"
+        f"order must match.\nPython: {py_catalog}\nTS: {ts_catalog}"
+    )

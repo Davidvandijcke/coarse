@@ -12,12 +12,14 @@ export default function SubscriptionHandoffMenu({
   paperMarkdown,
   markdown,
   resultJson,
+  reviewLanguageName,
 }: {
   reviewId: string;
   paperTitle?: string | null;
   paperMarkdown?: string | null;
   markdown: string;
   resultJson?: ReviewJson | null;
+  reviewLanguageName?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -42,6 +44,7 @@ export default function SubscriptionHandoffMenu({
       paperMarkdown,
       resultMarkdown: markdown,
       resultJson,
+      reviewLanguageName,
     });
     setOpen(false);
     setNote(

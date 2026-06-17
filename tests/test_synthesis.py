@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from coarse.synthesis import render_review
-from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
+from coarse.types import (
+    DetailedComment,
+    LanguageContext,
+    OverviewFeedback,
+    OverviewIssue,
+    Review,
+)
 
 
 def _make_review(
@@ -348,3 +354,29 @@ def test_render_review_revision_targets_empty():
     review = _make_review()
     result = render_review(review)
     assert "**Key revision targets**" not in result
+
+
+# --- Review.language must not change the rendered markdown (label localization
+# is a later PR; for now render_review ignores Review.language entirely) ---
+
+
+def test_render_review_ignores_language_context_byte_identical():
+    """render_review output must be byte-identical whether Review.language is
+    None (English default) or a populated LanguageContext. The synthesis layer
+    does not localize labels yet, so attaching language metadata is a no-op on
+    the markdown — this is the invariant that keeps the English path stable."""
+    baseline = _make_review()
+    assert baseline.language is None
+    baseline_md = render_review(baseline)
+
+    localized = _make_review()
+    localized.language = LanguageContext(
+        site_language="es",
+        review_language="es",
+        paper_language="es",
+        text_direction="ltr",
+        paper_language_source="detected",
+    )
+    localized_md = render_review(localized)
+
+    assert localized_md == baseline_md

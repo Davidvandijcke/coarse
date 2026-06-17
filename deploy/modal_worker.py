@@ -838,6 +838,8 @@ def do_review(req_dict: dict):
                 skip_cost_gate=True,
                 config=config,
                 author_notes=author_notes,
+                language=req.review_language,
+                site_language=req.site_language,
             )
         finally:
             signed_url_ctx.reset(signed_url_token)
@@ -858,19 +860,37 @@ def do_review(req_dict: dict):
         # markdown (see _review_result_json).
         result_json = _review_result_json(review)
 
-        db.table("reviews").update(
-            {
-                "status": "done",
-                "paper_title": review.title,
-                "model": model,
-                "domain": review.domain,
-                "result_markdown": _strip_nul_bytes(markdown),
-                "result_json": result_json,
-                "paper_markdown": _strip_nul_bytes(paper_text.full_markdown),
-                "duration_seconds": duration,
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-            }
-        ).eq("id", job_id).execute()
+        update_payload = {
+            "status": "done",
+            "paper_title": review.title,
+            "model": model,
+            "domain": review.domain,
+            "result_markdown": _strip_nul_bytes(markdown),
+            "result_json": result_json,
+            "paper_markdown": _strip_nul_bytes(paper_text.full_markdown),
+            "duration_seconds": duration,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Persist the resolved language metadata into the dedicated columns so the
+        # web layer can index/filter on it (the same data also rides in
+        # result_json via review.language, but jsonb is awkward to query).
+        # review_paper() always sets review.language; the guard covers Review
+        # objects built without it. These are the authoritative resolved values
+        # (for English the review_language is empty, text_direction 'ltr', which
+        # the web treats as English).
+        lang = getattr(review, "language", None)
+        if lang is not None:
+            update_payload.update(
+                {
+                    "review_language": lang.review_language,
+                    "paper_language": lang.paper_language,
+                    "paper_language_source": lang.paper_language_source,
+                    "text_direction": lang.text_direction,
+                }
+            )
+
+        db.table("reviews").update(update_payload).eq("id", job_id).execute()
 
         # Terminal success → the user's OpenRouter key is no longer needed. The
         # DELETE used to happen at worker start, but Modal preemption retries

@@ -1405,3 +1405,202 @@ def test_appendix_filter_skips_short_appendix():
         and (s.section_type != SectionType.APPENDIX or len(s.text) >= _MIN_APPENDIX_CHARS)
     ]
     assert appendix not in reviewable
+
+
+# ---------------------------------------------------------------------------
+# Language resolution + attachment (multilingual rollout)
+# ---------------------------------------------------------------------------
+
+
+def _run_review_capturing_language(
+    *,
+    structure: PaperStructure,
+    language: str | None = None,
+    site_language: str | None = None,
+    config: CoarseConfig | None = None,
+):
+    """Run review_paper with all stages stubbed, capturing the ``language`` value
+    forwarded to the feedback agents. Returns (review, captured_languages).
+
+    Captures the language passed to overview/completeness/section/editorial so
+    tests can assert the resolved directive name reaches every agent.
+    """
+    config = config or _make_config()
+    overview = _make_overview()
+    captured: dict[str, object] = {}
+
+    def capture_overview(
+        s, calibration=None, literature_context="", author_notes=None, language=None
+    ):
+        captured["overview_language"] = language
+        return overview
+
+    def capture_completeness(
+        structure_arg,
+        overview_arg,
+        calibration=None,
+        contribution_context=None,
+        author_notes=None,
+        language=None,
+    ):
+        captured["completeness_language"] = language
+        return []
+
+    def capture_section(
+        section,
+        title,
+        overview=None,
+        calibration=None,
+        focus="general",
+        literature_context="",
+        all_sections=None,
+        abstract="",
+        document_form="manuscript",
+        author_notes=None,
+        language=None,
+    ):
+        captured.setdefault("section_languages", []).append(language)  # type: ignore[union-attr]
+        return [_make_comment(section.number)]
+
+    def capture_editorial(
+        paper_text,
+        overview_arg,
+        comments,
+        comment_target=None,
+        title="",
+        abstract="",
+        contribution_context=None,
+        document_form="manuscript",
+        author_notes=None,
+        language=None,
+    ):
+        captured["editorial_language"] = language
+        return comments
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline.OverviewAgent") as MockOverview,
+        patch("coarse.pipeline.SectionAgent") as MockSection,
+        patch("coarse.pipeline.ProofVerifyAgent") as MockVerify,
+        patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
+        patch("coarse.review_stages.EditorialAgent") as MockEditorial,
+        patch("coarse.pipeline.verify_quotes", side_effect=lambda c, t, **kw: c),
+        patch("coarse.pipeline.render_review", return_value="md"),
+    ):
+        MockOverview.return_value.run.side_effect = capture_overview
+        MockSection.return_value.run.side_effect = capture_section
+        MockVerify.return_value.run.return_value = [_make_comment(1)]
+        MockCompleteness.return_value.run.side_effect = capture_completeness
+        MockEditorial.return_value.run.side_effect = capture_editorial
+
+        review, _md, _pt = review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            language=language,
+            site_language=site_language,
+        )
+
+    return review, captured
+
+
+def _structure_with_language(paper_language: str) -> PaperStructure:
+    structure = _make_structure()
+    return structure.model_copy(update={"paper_language": paper_language})
+
+
+def test_review_paper_english_paper_passes_none_language_to_agents():
+    """The byte-identical invariant: an English/unknown paper (paper_language='')
+    with no explicit or site language resolves to directive None, so every
+    feedback agent receives language=None — exactly the pre-feature English path.
+    """
+    structure = _structure_with_language("")  # English / undetected
+    review, captured = _run_review_capturing_language(structure=structure)
+
+    assert captured["overview_language"] is None
+    assert captured["completeness_language"] is None
+    assert captured["editorial_language"] is None
+    assert captured["section_languages"] == [None, None]
+
+    # The review still carries a LanguageContext (for the web layer), but it is
+    # the English default: no detected paper language, empty review language.
+    assert review.language is not None
+    assert review.language.paper_language == ""
+    assert review.language.review_language == ""
+    assert review.language.paper_language_source == "default"
+
+
+def test_review_paper_detected_spanish_passes_spanish_directive_to_agents():
+    """A detected-Spanish paper (no explicit override) makes resolve_language_context
+    return the Spanish directive NAME, which is forwarded to every feedback agent,
+    and the attached LanguageContext records review_language='es'."""
+    structure = _structure_with_language("es")
+    review, captured = _run_review_capturing_language(structure=structure)
+
+    # Agents get the human-readable NAME, not the code (models follow names).
+    assert captured["overview_language"] == "Spanish"
+    assert captured["completeness_language"] == "Spanish"
+    assert captured["editorial_language"] == "Spanish"
+    assert captured["section_languages"] == ["Spanish", "Spanish"]
+
+    assert review.language is not None
+    assert review.language.review_language == "es"
+    assert review.language.paper_language == "es"
+    assert review.language.paper_language_source == "detected"
+
+
+def test_review_paper_explicit_language_overrides_detection():
+    """An explicit language wins over the detected paper language: a French
+    paper reviewed with an explicit German request gets the German directive,
+    and review.language.review_language == 'de'."""
+    structure = _structure_with_language("fr")
+    review, captured = _run_review_capturing_language(structure=structure, language="German")
+
+    assert captured["overview_language"] == "German"
+    assert captured["section_languages"] == ["German", "German"]
+
+    assert review.language is not None
+    assert review.language.review_language == "de"
+    # Detection still records the paper's own language for the web layer.
+    assert review.language.paper_language == "fr"
+
+
+def test_review_paper_explicit_language_accepts_code():
+    """The explicit override may be a BCP-47 code, not just a name — it resolves
+    to the corresponding directive name and review_language code."""
+    structure = _structure_with_language("")
+    review, captured = _run_review_capturing_language(structure=structure, language="ja")
+
+    assert captured["overview_language"] == "Japanese"
+    assert review.language is not None
+    assert review.language.review_language == "ja"
+
+
+def test_review_paper_site_language_used_only_as_fallback():
+    """site_language steers the output only when there's no explicit language and
+    the paper is English/unknown — the lowest-priority fallback."""
+    structure = _structure_with_language("")
+    review, captured = _run_review_capturing_language(
+        structure=structure, site_language="fr"
+    )
+
+    assert captured["overview_language"] == "French"
+    assert review.language is not None
+    assert review.language.review_language == "fr"
+    assert review.language.site_language == "fr"
+
+
+def test_review_paper_config_review_language_is_explicit_choice():
+    """config.review_language behaves as the explicit choice when no language
+    argument is passed (preserves the PR-B1 fallback semantics)."""
+    structure = _structure_with_language("")
+    config = CoarseConfig(default_model=TEST_MODEL, review_language="Spanish")
+    review, captured = _run_review_capturing_language(structure=structure, config=config)
+
+    assert captured["overview_language"] == "Spanish"
+    assert review.language is not None
+    assert review.language.review_language == "es"

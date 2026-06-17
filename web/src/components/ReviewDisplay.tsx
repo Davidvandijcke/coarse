@@ -24,7 +24,8 @@ import {
   loadPersistedChat,
   type ChatMessage,
 } from "@/lib/openrouterChat";
-import type { ReviewJson } from "@/lib/types";
+import type { ReviewJson, TextDirection } from "@/lib/types";
+import { languageName, textDirection } from "@/lib/languages";
 
 const katexOptions = { strict: false, throwOnError: false };
 
@@ -769,6 +770,10 @@ export default function ReviewDisplay({
   durationSeconds,
   costUsd,
   resultJson,
+  reviewLanguage,
+  paperLanguage,
+  textDirectionCol,
+  paperLanguageSource,
 }: {
   parsed: ParsedReview;
   markdown: string;
@@ -781,8 +786,24 @@ export default function ReviewDisplay({
   durationSeconds?: number | null;
   costUsd?: number | null;
   resultJson?: ReviewJson | null;
+  reviewLanguage?: string | null;
+  paperLanguage?: string | null;
+  textDirectionCol?: TextDirection | null;
+  paperLanguageSource?: "detected" | "user" | "default" | null;
 }) {
   const router = useRouter();
+
+  // Language / direction. The review content follows the review language; the
+  // paper panel follows the paper's own language. Both default to English/ltr,
+  // so an English review renders exactly as before. Prefer the stored column
+  // direction; fall back to deriving it from the review language.
+  const reviewDir: TextDirection =
+    textDirectionCol ?? textDirection(reviewLanguage);
+  const paperDir: TextDirection = textDirection(paperLanguage);
+  const reviewLangName = languageName(reviewLanguage);
+  const showLangBadge =
+    !!reviewLanguage && reviewLanguage !== "en" && !!reviewLangName;
+
   const [activeId, setActiveId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [paperPanelOpen, setPaperPanelOpen] = useState(!!paperMarkdown);
@@ -1098,6 +1119,21 @@ export default function ReviewDisplay({
 
   return (
     <>
+      {/* Math is language-neutral and must stay left-to-right even when the
+          surrounding review/paper text is RTL (Arabic). Only injected when an
+          RTL context is present, so the English/LTR path is untouched. */}
+      {(reviewDir === "rtl" || paperDir === "rtl") && (
+        <style jsx global>{`
+          [dir="rtl"] .katex,
+          [dir="rtl"] .katex-display {
+            direction: ltr;
+          }
+          [dir="rtl"] .katex-display {
+            text-align: left;
+          }
+        `}</style>
+      )}
+
       {/* ── Header ──────────────────────────────────────────── */}
       <header
         className="review-header"
@@ -1159,6 +1195,7 @@ export default function ReviewDisplay({
             paperMarkdown={paperMarkdown}
             markdown={markdown}
             resultJson={resultJson}
+            reviewLanguageName={reviewLangName ?? undefined}
           />
 
           <DownloadMenu markdown={markdown} reviewId={reviewId} model={model} />
@@ -1196,13 +1233,18 @@ export default function ReviewDisplay({
         {/* Paper panel + draggable divider */}
         {paperPanelOpen && paperMarkdown && (
           <>
-            <PaperPanel
-              markdown={paperMarkdown}
-              highlightQuote={highlightQuote}
-              onClose={() => setPaperPanelOpen(false)}
-              reviewId={reviewId}
-              width={`${paperWidthPct}%`}
-            />
+            {/* display:contents keeps PaperPanel as the flex item while still
+                letting dir/lang inherit to the paper content (set per the
+                paper's own language, which may differ from the review). */}
+            <div dir={paperDir} lang={paperLanguage || undefined} style={{ display: "contents" }}>
+              <PaperPanel
+                markdown={paperMarkdown}
+                highlightQuote={highlightQuote}
+                onClose={() => setPaperPanelOpen(false)}
+                reviewId={reviewId}
+                width={`${paperWidthPct}%`}
+              />
+            </div>
             <div
               className="paper-resize-handle"
               role="separator"
@@ -1243,6 +1285,8 @@ export default function ReviewDisplay({
         <main
           ref={mainRef}
           className="review-main"
+          dir={reviewDir}
+          lang={reviewLanguage || undefined}
           style={{
             flex: 1,
             minWidth: 0,
@@ -1290,6 +1334,16 @@ export default function ReviewDisplay({
             )}
             {costUsd != null && (
               <MetaTag label="Cost" value={`$${Number(costUsd).toFixed(2)}`} />
+            )}
+            {showLangBadge && (
+              <MetaTag
+                label="Review language"
+                value={
+                  paperLanguageSource === "detected"
+                    ? `${reviewLangName} · auto-detected`
+                    : (reviewLangName as string)
+                }
+              />
             )}
           </div>
 
@@ -1486,6 +1540,7 @@ export default function ReviewDisplay({
           overallFeedbackText={overallFeedbackText}
           commentSeverity={structuredChatComment?.severity}
           commentConfidence={structuredChatComment?.confidence}
+          reviewLanguageName={reviewLangName ?? undefined}
           defaultModel={model || ""}
           initialMessages={chatInitialMessages}
           apiKey={orKey.apiKey}

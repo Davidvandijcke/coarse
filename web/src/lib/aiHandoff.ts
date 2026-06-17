@@ -39,6 +39,13 @@ export const HANDOFF_KICKOFF_PROMPT =
   "actually correct — be willing to say a comment is wrong or overstated — and how I should revise. " +
   "I'll attach the file next; if you don't see it yet, just ask me for it.";
 
+/** The kickoff prompt, optionally asking for a reply in the review's language.
+ * Empty/unset name returns the default English-path prompt unchanged. */
+export function handoffKickoffPrompt(reviewLanguageName?: string | null): string {
+  const name = reviewLanguageName?.trim();
+  return name ? `${HANDOFF_KICKOFF_PROMPT} Please respond in ${name}.` : HANDOFF_KICKOFF_PROMPT;
+}
+
 /** Build the URL to open, prefilling the prompt via the service's query param
  * when it supports one. */
 export function serviceUrl(service: AiService, prompt: string): string {
@@ -52,6 +59,9 @@ export interface HandoffArgs {
   paperMarkdown?: string | null;
   resultMarkdown?: string | null;
   resultJson?: ReviewJson | null;
+  /** Human-readable review language; when set, the kickoff prompt asks for a
+   * reply in it. Empty/unset keeps the default (English) prompt. */
+  reviewLanguageName?: string | null;
 }
 
 /** Build the single markdown file bundling paper + review + structured JSON. */
@@ -60,11 +70,12 @@ export function buildHandoffMarkdown({
   paperMarkdown,
   resultMarkdown,
   resultJson,
+  reviewLanguageName,
 }: HandoffArgs): string {
   const lines: string[] = [
     `# Discuss the coarse review of "${paperTitle || "this paper"}"`,
     "",
-    HANDOFF_KICKOFF_PROMPT,
+    handoffKickoffPrompt(reviewLanguageName),
     "",
     "This file bundles three things: the paper, the automated review, and (when available) the structured review data.",
     "",
@@ -108,9 +119,11 @@ export function startAiHandoff(service: AiService, reviewId: string, args: Hando
   // browsers before the navigation commits.
   setTimeout(() => URL.revokeObjectURL(url), 0);
 
+  const kickoff = handoffKickoffPrompt(args.reviewLanguageName);
+
   // Always copy the kickoff prompt as the universal fallback (and for the
   // services whose URL can't prefill it).
-  navigator.clipboard?.writeText(HANDOFF_KICKOFF_PROMPT).catch(() => {});
+  navigator.clipboard?.writeText(kickoff).catch(() => {});
 
-  window.open(serviceUrl(service, HANDOFF_KICKOFF_PROMPT), "_blank", "noopener,noreferrer");
+  window.open(serviceUrl(service, kickoff), "_blank", "noopener,noreferrer");
 }

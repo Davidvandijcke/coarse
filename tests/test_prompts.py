@@ -269,6 +269,35 @@ def test_feedback_system_prompt_appends_language_directive_when_set():
     assert composed != baseline
 
 
+# --- Metadata system prompt now also detects the paper's language ---
+
+
+def test_metadata_system_requests_language_detection():
+    """The cheap metadata call must ask for the paper's primary language as a
+    code, and steer the model toward the BODY (not the front matter), so CJK
+    journals with an English abstract don't get mis-detected as English."""
+    sys = METADATA_SYSTEM.lower()
+    assert "language" in sys
+    assert "body" in sys  # detect the body text, not just the title page
+
+
+def test_metadata_system_lists_exact_supported_codes():
+    """The instruction must enumerate the exact supported code set so the LLM
+    can't return an arbitrary tag the pipeline would then drop."""
+    for code in ("en", "es", "fr", "de", "nl", "pt", "it", "ja", "ko", "ar"):
+        assert code in METADATA_SYSTEM
+    # Both Chinese script variants must be offered explicitly.
+    assert "zh-Hans" in METADATA_SYSTEM
+    assert "zh-Hant" in METADATA_SYSTEM
+
+
+def test_metadata_system_keeps_existing_contract():
+    """Adding language must not drop the title/domain/taxonomy/document_form
+    contract the structure parser still depends on."""
+    for field in ("title", "domain", "taxonomy", "document_form"):
+        assert field in METADATA_SYSTEM
+
+
 def test_crossref_system_mentions_deduplication():
     assert "duplic" in CROSSREF_SYSTEM.lower()
 

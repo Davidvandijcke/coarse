@@ -11,6 +11,7 @@ from coarse.types import (
     LanguageContext,
     OverviewFeedback,
     OverviewIssue,
+    PaperMetadata,
     PaperStructure,
     PaperText,
     Review,
@@ -412,3 +413,81 @@ def test_language_context_rejects_bad_text_direction():
 def test_language_context_rejects_bad_paper_language_source():
     with pytest.raises(ValidationError):
         LanguageContext(paper_language_source="guessed")  # type: ignore[arg-type]
+
+
+# --- PaperMetadata.language (detected source language) ---
+
+
+def test_paper_metadata_language_defaults_to_empty():
+    """The detected-language field defaults to '' so existing callers that
+    don't set it (and English/unknown papers) keep the byte-identical path."""
+    meta = PaperMetadata(title="T", domain="d", taxonomy="academic/research_paper")
+    assert meta.language == ""
+
+
+def test_paper_metadata_language_parses_supported_code():
+    """A BCP-47 code from the supported set round-trips onto the model."""
+    meta = PaperMetadata(
+        title="T",
+        domain="d",
+        taxonomy="academic/research_paper",
+        language="zh-Hans",
+    )
+    assert meta.language == "zh-Hans"
+
+
+# --- PaperStructure.paper_language ---
+
+
+def test_paper_structure_paper_language_defaults_to_empty():
+    ps = PaperStructure(
+        title="t",
+        domain="x",
+        taxonomy="y",
+        abstract="a",
+        sections=[make_section(1, SectionType.INTRODUCTION)],
+    )
+    assert ps.paper_language == ""
+
+
+def test_paper_structure_paper_language_round_trips():
+    ps = PaperStructure(
+        title="t",
+        domain="x",
+        taxonomy="y",
+        abstract="a",
+        sections=[make_section(1, SectionType.INTRODUCTION)],
+        paper_language="es",
+    )
+    assert ps.paper_language == "es"
+
+
+# --- Review.language (resolved LanguageContext) ---
+
+
+def test_review_language_defaults_to_none():
+    """A Review with no language is the English default path."""
+    review = make_review()
+    assert review.language is None
+
+
+def test_review_language_round_trips_through_json():
+    """Review.language survives model_dump_json + model_validate, both when
+    None (English) and when populated with a resolved LanguageContext."""
+    # None path
+    english = make_review()
+    assert Review.model_validate(json.loads(english.model_dump_json())).language is None
+
+    # Populated path
+    ctx = LanguageContext(
+        site_language="en",
+        review_language="es",
+        paper_language="es",
+        text_direction="ltr",
+        paper_language_source="detected",
+    )
+    spanish = make_review()
+    spanish.language = ctx
+    deserialized = Review.model_validate(json.loads(spanish.model_dump_json()))
+    assert deserialized == spanish
+    assert deserialized.language == ctx

@@ -157,6 +157,13 @@ class PaperStructure(BaseModel):
             "peer-review; other values relax the review to match the draft stage."
         ),
     )
+    paper_language: str = Field(
+        default="",
+        description=(
+            "Detected primary language of the paper body as a BCP-47 code from the "
+            "supported set, or '' when English/unknown (the byte-identical default)."
+        ),
+    )
 
 
 class PaperMetadata(BaseModel):
@@ -173,6 +180,14 @@ class PaperMetadata(BaseModel):
             "for partial prose; 'proposal' for planned-but-unexecuted research; "
             "'report' for non-academic technical reports; 'notes' for working "
             "notes/lecture notes; 'other' when none fit."
+        ),
+    )
+    language: str = Field(
+        default="",
+        description=(
+            "Primary language of the paper body as a BCP-47 code from the supported "
+            "set (en, es, fr, de, nl, pt, it, zh-Hans, zh-Hant, ja, ko, ar). Use 'en' "
+            "if English or if unsure."
         ),
     )
 
@@ -283,6 +298,17 @@ class Review(BaseModel):
     )
     detailed_comments: list[DetailedComment] = Field(
         description="Detailed review comments (8-18)",
+    )
+    language: LanguageContext | None = Field(
+        default=None,
+        description=(
+            "Resolved language context for this review (detected paper language, "
+            "effective output language, text direction). review_paper() sets this "
+            "for every review (for English/unknown the review_language is empty); it "
+            "defaults to None only for Review objects constructed outside the "
+            "pipeline. Rendering/labels ignore this for now — it is metadata for the "
+            "web layer and a later localization PR."
+        ),
     )
 
 

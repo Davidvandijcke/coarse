@@ -38,6 +38,8 @@
 // handoff URL is the only thing that crosses the browser→terminal
 // boundary, and it's copy-pasted from a modal.
 
+import { languageName } from "@/lib/languages";
+
 export type ChatHost = "claude-code" | "codex" | "gemini-cli";
 
 export const HOST_LABELS: Record<ChatHost, string> = {
@@ -171,9 +173,17 @@ export function buildAgentPrompt(args: {
   attachCmd: string;
   logFile: string;
   isPdf: boolean;
+  reviewLanguage?: string;
 }): string {
-  const { setupCmd, runCmd, attachCmd, logFile, isPdf } = args;
+  const { setupCmd, runCmd, attachCmd, logFile, isPdf, reviewLanguage } = args;
   const configCmd = setupCmd.replace("coarse install-skills --all --force", "coarse setup");
+  // One-line language directive, only when the user picked a non-auto
+  // language. Empty/undefined → "" so the prompt is byte-identical to
+  // the pre-i18n output.
+  const langName = languageName(reviewLanguage);
+  const languageNote = langName
+    ? `\n\nWrite the review in ${langName} (keep quotes in the paper's original language).`
+    : "";
   const step2 = isPdf
     ? `STEP 2 — Check for an OpenRouter API key without printing its ` +
       `value. Prefer presence-only probes so the key doesn't needlessly ` +
@@ -308,7 +318,8 @@ export function buildAgentPrompt(args: {
     `where there is no graphical display.\n` +
     `  - The local markdown path (the \`local:\` line)\n` +
     `  - A summary of the recommendation (accept / revise / reject)\n` +
-    `  - The top 3 macro issues from the overview section`
+    `  - The top 3 macro issues from the overview section` +
+    languageNote
   );
 }
 
@@ -330,9 +341,10 @@ export function buildLaunchUrl(args: {
   attachCmd: string;
   logFile: string;
   isPdf: boolean;
+  reviewLanguage?: string;
 }): string {
-  const { host, runCmd, setupCmd, attachCmd, logFile, isPdf } = args;
-  const prompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile, isPdf });
+  const { host, runCmd, setupCmd, attachCmd, logFile, isPdf, reviewLanguage } = args;
+  const prompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile, isPdf, reviewLanguage });
 
   if (host === "codex") {
     // Codex supports codex://new?prompt=<text> deep links that pre-fill
@@ -414,8 +426,9 @@ export interface HandoffCliCommands {
 export function buildHandoffLandingCommands(args: {
   handoffUrl: string;
   paperId: string;
+  reviewLanguage?: string;
 }): HandoffCliCommands {
-  const { handoffUrl, paperId } = args;
+  const { handoffUrl, paperId, reviewLanguage } = args;
   const quotedUvFrom = shellQuote(MCP_UVX_FROM);
   const logFile = `/tmp/coarse-review-${paperId}.log`;
   // The handoff URL MUST be single-quoted in the shell. After the
@@ -434,7 +447,15 @@ export function buildHandoffLandingCommands(args: {
   const quotedHandoffUrl = shellQuote(handoffUrl);
   const quotedLogFile = shellQuote(logFile);
   const setupCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse install-skills --all --force`;
-  const runCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach --log-file ${quotedLogFile} --handoff ${quotedHandoffUrl}`;
+  // `--language <name>` is appended only when the user picked a non-auto
+  // language; empty/undefined leaves the command byte-identical to today.
+  // Use the human-readable name (fall back to the raw code if unknown);
+  // it's shell-quoted because names like "Simplified Chinese" contain a
+  // space — the same quoting discipline as the URL and log file above.
+  const langSuffix = reviewLanguage
+    ? ` --language ${shellQuote(languageName(reviewLanguage) ?? reviewLanguage)}`
+    : "";
+  const runCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach --log-file ${quotedLogFile} --handoff ${quotedHandoffUrl}${langSuffix}`;
   // Single blocking watch command that replaces the legacy per-60s
   // tail polling loop. See buildAgentPrompt STEP 4 and the
   // _run_attach docstring in src/coarse/cli_review.py for the full
@@ -458,10 +479,11 @@ export function buildCliCommands(args: {
   model: string;
   effort: EffortLevel;
   paperId: string;
+  reviewLanguage?: string;
 }): HandoffCliCommands {
-  const { handoffUrl, host, model, effort, paperId } = args;
+  const { handoffUrl, host, model, effort, paperId, reviewLanguage } = args;
   const cliName = HOST_CLI_NAME[host];
-  const base = buildHandoffLandingCommands({ handoffUrl, paperId });
+  const base = buildHandoffLandingCommands({ handoffUrl, paperId, reviewLanguage });
   const runCmd = `${base.runCmd} --host ${cliName} --model ${model} --effort ${effort}`;
   return { ...base, runCmd };
 }

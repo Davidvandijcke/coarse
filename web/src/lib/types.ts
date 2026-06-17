@@ -29,6 +29,7 @@ export interface ReviewJson {
   date: string;
   overall_feedback: ReviewJsonOverall;
   detailed_comments: ReviewJsonComment[];
+  language?: LanguageContext | null;
 }
 
 /**

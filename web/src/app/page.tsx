@@ -5,6 +5,7 @@ import { useDropzone } from "react-dropzone";
 import { useRouter } from "next/navigation";
 import { CharcoalRule, HeroMarks } from "@/components/charcoal";
 import ModelPicker from "@/components/ModelPicker";
+import LanguagePicker from "@/components/LanguagePicker";
 import OpenRouterLoginButton from "@/components/OpenRouterLoginButton";
 import { estimateTokensFromPdf, estimateTokensFromText, estimateTokensFromDocx, estimateTokensFromEpub, getModelPricing, estimateReviewCost } from "@/lib/estimateCost";
 import { beginLogin, completeLogin, loadStoredKey, saveStoredKey, clearStoredKey } from "@/lib/openrouterAuth";
@@ -280,6 +281,9 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("anthropic/claude-opus-4.8");
+  // "" = auto (match the paper's own language). Sent as review_language on
+  // the /api/submit body and threaded into the handoff CLI command.
+  const [reviewLanguage, setReviewLanguage] = useState("");
   const [authorNotes, setAuthorNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -761,6 +765,7 @@ export default function Home() {
           model,
           storage_path: storagePath,
           author_notes: authorNotes || undefined,
+          review_language: reviewLanguage,
           handoff_secret: handoffSecret,
         }),
       });
@@ -896,6 +901,7 @@ export default function Home() {
       model: selectedModel,
       effort: selectedEffort,
       paperId: handoffState.paperId,
+      reviewLanguage,
     });
 
     // Kick off clipboard copy first, but don't await it before launching
@@ -903,7 +909,7 @@ export default function Home() {
     // awaiting an async clipboard write can consume user activation and
     // cause codex:// / claude:// launches to be blocked.
     const fullPrompt = buildAgentPrompt({
-      setupCmd, runCmd, attachCmd, logFile, isPdf: handoffState.isPdf,
+      setupCmd, runCmd, attachCmd, logFile, isPdf: handoffState.isPdf, reviewLanguage,
     });
     navigator.clipboard.writeText(fullPrompt).catch((err) => {
       console.error("clipboard write failed", err);
@@ -916,7 +922,7 @@ export default function Home() {
     // didn't resolve and we swap in a "didn't work — paste the commands
     // instead" hint so the user isn't stuck.
     const launchUrl = buildLaunchUrl({
-      host, runCmd, setupCmd, attachCmd, logFile, isPdf: handoffState.isPdf,
+      host, runCmd, setupCmd, attachCmd, logFile, isPdf: handoffState.isPdf, reviewLanguage,
     });
     if (!launchUrl) {
       setLaunchStatus("Command copied to clipboard. Paste it into your terminal.");
@@ -1405,6 +1411,15 @@ export default function Home() {
             {/* Model picker */}
             <ModelPicker value={model} onChange={setModel} />
 
+            {/* Review language — applies to both the OpenRouter submit and
+                the subscription-handoff command. "" = auto (paper's own
+                language), which keeps both paths unchanged from today. */}
+            <LanguagePicker
+              value={reviewLanguage}
+              onChange={setReviewLanguage}
+              disabled={submitting || handoffBusy}
+            />
+
             {/* Optional author notes — steer the review */}
             <div>
               <FieldLabel>
@@ -1727,6 +1742,7 @@ export default function Home() {
                   model: selectedModel,
                   effort: selectedEffort,
                   paperId: handoffState.paperId,
+                  reviewLanguage,
                 });
                 return (
                   <div
@@ -1795,7 +1811,7 @@ export default function Home() {
                       <CodeBlock
                         text={buildAgentPrompt({
                           setupCmd, runCmd, attachCmd, logFile,
-                          isPdf: handoffState.isPdf,
+                          isPdf: handoffState.isPdf, reviewLanguage,
                         })}
                         maxHeight="160px"
                       />

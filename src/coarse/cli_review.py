@@ -240,6 +240,7 @@ def _post_finalize(
     markdown: str,
     paper_markdown: str,
     host_label: str,
+    language: dict[str, str] | None = None,
 ) -> dict:
     """POST the rendered review back to coarse.vercel.app/api/mcp-finalize.
 
@@ -270,6 +271,11 @@ def _post_finalize(
         "paper_markdown": paper_markdown,
         "model": f"coarse-review-cli:{host_label}",
     }
+    # Forward the resolved review-output language so the finalize route persists
+    # the language columns (otherwise a `--language Arabic` handoff renders
+    # LTR with no badge). Empty values are skipped server-side.
+    if language:
+        payload.update({k: v for k, v in language.items() if v})
 
     last_exc: Exception | None = None
     last_status: int | None = None
@@ -772,6 +778,19 @@ def main(argv: list[str] | None = None) -> int:
                     len(paper_markdown),
                 )
 
+                # Carry the resolved review-output language (if any) so the
+                # finalize route can persist the language columns.
+                language_fields: dict[str, str] | None = None
+                if review.language is not None:
+                    lc = review.language
+                    language_fields = {
+                        "site_language": lc.site_language,
+                        "review_language": lc.review_language,
+                        "paper_language": lc.paper_language,
+                        "text_direction": lc.text_direction,
+                        "paper_language_source": lc.paper_language_source,
+                    }
+
                 resp = _post_finalize(
                     callback_url=handoff_bundle["callback_url"],
                     finalize_token=handoff_bundle["finalize_token"],
@@ -782,6 +801,7 @@ def main(argv: list[str] | None = None) -> int:
                     markdown=md_text,
                     paper_markdown=paper_markdown,
                     host_label=host,
+                    language=language_fields,
                 )
                 review_url = resp.get("review_url", "")
                 _print_completion_footer(

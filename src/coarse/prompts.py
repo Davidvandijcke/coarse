@@ -527,6 +527,12 @@ brief. Looks like a document but does not present novel research for peer review
   * "notes" — Working notes, lecture notes, problem sets, seminar handouts. \
 Not structured as a research paper.
   * "other" — Doesn't fit any category above.
+- language: The primary language of the paper's BODY TEXT — not just the title \
+page. CJK and other non-English journals often print an English title and \
+abstract over a body written in another language; classify by the body, not the \
+front matter. Return its code from this EXACT set: en, es, fr, de, nl, pt, it, \
+zh-Hans, zh-Hant, ja, ko, ar. Use "en" if the body is English or if you are \
+unsure.
 
 When in doubt between "manuscript" and "draft", choose "manuscript" only if \
 substantially all sections have real prose. When in doubt between "outline" \

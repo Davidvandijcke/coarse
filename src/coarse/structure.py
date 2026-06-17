@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 
+from coarse.languages import coerce_detected_code
 from coarse.llm import LLMClient
 from coarse.prompts import (
     MATH_DETECTION_SYSTEM,
@@ -144,6 +145,12 @@ def analyze_structure(paper_text: PaperText, client: LLMClient) -> PaperStructur
     # LLM-based math section detection
     sections = _detect_math_sections(sections, client)
 
+    # Detected paper language: best-effort map the LLM's BCP-47 code to a
+    # supported review language (drops region/variant subtags — pt-BR -> pt,
+    # zh-Hant-HK -> zh-Hant), falling back to "" (the English/unknown default
+    # path that keeps output byte-identical).
+    paper_language = coerce_detected_code(metadata.language)
+
     return PaperStructure(
         title=title,
         domain=metadata.domain,
@@ -151,6 +158,7 @@ def analyze_structure(paper_text: PaperText, client: LLMClient) -> PaperStructur
         abstract=abstract,
         sections=sections,
         document_form=metadata.document_form,
+        paper_language=paper_language,
     )
 
 
@@ -323,12 +331,14 @@ def _get_metadata(
         {"role": "user", "content": metadata_user(first_page, abstract[:1000], headings_str)},
     ]
     try:
-        # 512 leaves headroom for a long title + subtitle plus the other
-        # four fields under instructor's JSON envelope. 384 was tight when
+        # 640 leaves headroom for a long title + subtitle plus the other
+        # fields under instructor's JSON envelope. 384 was tight when
         # ML/bio titles run 200+ chars before domain/taxonomy/document_form
         # land; hitting finish_reason=length here drops us into the fallback
-        # and silently loses the classification.
-        return client.complete(messages, PaperMetadata, max_tokens=512, temperature=0.1)
+        # and silently loses the classification. Bumped 512 -> 640 (+128) when
+        # the language field was added so one more short field can't truncate
+        # classification on a long-title real paper.
+        return client.complete(messages, PaperMetadata, max_tokens=640, temperature=0.1)
     except Exception:
         # Fall back to "draft", NOT "manuscript". The whole point of this
         # feature is that strict peer-review on non-manuscripts produces
