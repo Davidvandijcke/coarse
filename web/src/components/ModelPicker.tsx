@@ -5,8 +5,18 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { formatPromptPrice } from "@/lib/estimateCost";
 
 /* ── Default model options ─────────────────────────────────── */
-const DEFAULT_MODELS = [
-  { id: "anthropic/claude-fable-5", label: "Fable 5", provider: "Anthropic" },
+type DefaultModel = {
+  id: string;
+  label: string;
+  provider: string;
+  /** Render greyed-out and non-selectable (model temporarily unavailable). */
+  unavailable?: boolean;
+  /** Append a smaller "(provider)" suffix to the chip, e.g. "Fusion (OpenRouter)". */
+  showProvider?: boolean;
+};
+
+const DEFAULT_MODELS: DefaultModel[] = [
+  { id: "anthropic/claude-fable-5", label: "Fable 5", provider: "Anthropic", unavailable: true },
   { id: "anthropic/claude-opus-4.8", label: "Opus 4.8", provider: "Anthropic" },
   { id: "anthropic/claude-sonnet-4.6", label: "Sonnet 4.6", provider: "Anthropic" },
   { id: "openai/gpt-5.5", label: "GPT-5.5", provider: "OpenAI" },
@@ -20,8 +30,9 @@ const DEFAULT_MODELS = [
   { id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", provider: "Meta" },
   // OpenRouter Fusion: a multi-model deliberation panel with web search.
   // Higher latency and variable (usage-based) cost than a single model — see
-  // the FUSION_MODEL note in src/coarse/models.py.
-  { id: "openrouter/fusion", label: "Fusion", provider: "OpenRouter" },
+  // the FUSION_MODEL note in src/coarse/models.py. showProvider tags the chip
+  // "(OpenRouter)" since "Fusion" alone is less self-explanatory than e.g. "Opus 4.8".
+  { id: "openrouter/fusion", label: "Fusion", provider: "OpenRouter", showProvider: true },
 ];
 
 interface OpenRouterModel {
@@ -272,28 +283,38 @@ export default function ModelPicker({
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
         {DEFAULT_MODELS.map((m) => {
           const selected = value === m.id;
+          const unavailable = m.unavailable === true;
           return (
             <button
               key={m.id}
               type="button"
+              disabled={unavailable}
+              title={unavailable ? "Currently unavailable" : undefined}
               onClick={() => {
+                if (unavailable) return;
                 onChange(m.id);
                 setCustomLabel(null);
               }}
               style={{
                 padding: "0.4rem 0.85rem",
                 background: selected ? "var(--yellow-chalk)" : "var(--board-surface)",
-                color: selected ? "var(--board)" : "var(--chalk)",
+                color: unavailable ? "var(--dust)" : selected ? "var(--board)" : "var(--chalk)",
                 border: `1px solid ${selected ? "var(--yellow-chalk)" : "var(--tray)"}`,
                 borderRadius: "2px",
                 fontFamily: "var(--font-space-mono), monospace",
                 fontSize: "1.1rem",
-                cursor: "pointer",
+                cursor: unavailable ? "not-allowed" : "pointer",
+                opacity: unavailable ? 0.45 : 1,
                 transition: "all 0.15s",
                 whiteSpace: "nowrap",
               }}
             >
               {m.label}
+              {m.showProvider && (
+                <span style={{ fontSize: "0.78em", opacity: 0.7, marginLeft: "0.3rem" }}>
+                  ({m.provider})
+                </span>
+              )}
             </button>
           );
         })}
