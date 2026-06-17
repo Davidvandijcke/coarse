@@ -21,6 +21,18 @@ export interface ModelPricing {
   completionCostPerToken: number;
 }
 
+/**
+ * Representative per-token rates for models OpenRouter reports as dynamic
+ * (prompt/completion = "-1"), e.g. openrouter/fusion. Shared from
+ * pipeline_spec.py via pipelineSpec.json so the web and Python estimators
+ * can't drift. Used to override the -1 sentinel, which would otherwise make
+ * the review-cost estimate go negative.
+ */
+const DYNAMIC_PRICING_OVERRIDES = pipelineSpec.dynamicPricingOverrides as Record<
+  string,
+  { prompt: number; completion: number }
+>;
+
 let pricingCache: Map<string, ModelPricing> | null = null;
 
 /** Fetch and cache the full OpenRouter pricing map. */
@@ -43,15 +55,45 @@ async function fetchPricingMap(): Promise<Map<string, ModelPricing>> {
   const data = await resp.json();
   const map = new Map<string, ModelPricing>();
   for (const m of data.data ?? []) {
-    if (m.id && m.pricing?.prompt) {
-      map.set(m.id, {
-        promptCostPerToken: parseFloat(m.pricing.prompt),
-        completionCostPerToken: parseFloat(m.pricing.completion ?? "0"),
-      });
+    if (!m.id || !m.pricing?.prompt) continue;
+    const promptCostPerToken = parseFloat(m.pricing.prompt);
+    const completionCostPerToken = parseFloat(m.pricing.completion ?? "0");
+    // OpenRouter reports a negative price ("-1") for dynamic-priced models —
+    // ones whose per-request cost depends on which models the request fans
+    // out to (e.g. openrouter/fusion, openrouter/auto). Left as-is, the
+    // negative rate makes the review-cost estimate go negative. So:
+    //   - substitute representative rates if we have them (Fusion), else
+    //   - omit the model, so getModelPricing() returns null and the UI shows
+    //     "cost estimate unavailable" instead of a negative dollar figure.
+    if (promptCostPerToken < 0 || completionCostPerToken < 0) {
+      const override = DYNAMIC_PRICING_OVERRIDES[m.id];
+      if (override) {
+        map.set(m.id, {
+          promptCostPerToken: override.prompt,
+          completionCostPerToken: override.completion,
+        });
+      }
+      continue;
     }
+    map.set(m.id, { promptCostPerToken, completionCostPerToken });
   }
   pricingCache = map;
   return map;
+}
+
+/**
+ * Format a per-token prompt price (USD) as a compact "$X/M" chip label.
+ * Returns "variable" for dynamic (negative) rates, "free" for 0, and "" for
+ * unknown/NaN. Kept here (not in ModelPicker) so it's unit-testable and so
+ * price formatting lives next to the pricing types.
+ */
+export function formatPromptPrice(promptCostPerToken: number | null | undefined): string {
+  if (promptCostPerToken == null || Number.isNaN(promptCostPerToken)) return "";
+  const perMillion = promptCostPerToken * 1_000_000;
+  if (perMillion < 0) return "variable";
+  if (perMillion === 0) return "free";
+  if (perMillion < 1) return `$${perMillion.toFixed(2)}/M`;
+  return `$${perMillion.toFixed(0)}/M`;
 }
 
 export async function getModelPricing(modelId: string): Promise<ModelPricing | null> {

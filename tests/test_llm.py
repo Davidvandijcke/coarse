@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import instructor
 import pytest
 from instructor.core.exceptions import FailedAttempt, InstructorRetryException
 from pydantic import BaseModel, ValidationError
@@ -9,6 +10,7 @@ from coarse.llm import (
     LLMClient,
     _inject_openrouter_privacy,
     _is_openrouter_kimi_model,
+    _normalize_model,
     _prepare_openrouter_kimi_structured_kwargs,
     _sanitized_completion,
     _select_fallback_instructor_mode,
@@ -17,7 +19,11 @@ from coarse.llm import (
     estimate_reasoning_overhead_tokens,
     model_cost_per_token,
 )
-from coarse.models import REASONING_EFFORT_DEFAULT, REASONING_MAX_TOKENS_MULTIPLIER
+from coarse.models import (
+    FUSION_MODEL,
+    REASONING_EFFORT_DEFAULT,
+    REASONING_MAX_TOKENS_MULTIPLIER,
+)
 from coarse.types import OverviewFeedback
 
 TEST_MODEL = "test/mock-model"
@@ -112,6 +118,54 @@ def test_estimate_call_cost():
     result = estimate_call_cost("gpt-4o", 1000, 500)
     assert result > 0
     assert abs(result - expected) < 1e-12
+
+
+def test_normalize_model_doubles_openrouter_fusion():
+    # OpenRouter's own meta-models live under the `openrouter/` vendor namespace,
+    # which collides with litellm's provider-routing prefix. The canonical slug
+    # must be doubled or litellm POSTs a bare `fusion` and OpenRouter 502s.
+    assert _normalize_model(FUSION_MODEL) == "openrouter/openrouter/fusion"
+
+
+def test_normalize_model_fusion_doubling_is_idempotent():
+    # The doubled form already starts with `openrouter/`, so re-normalizing it
+    # must not triple-prefix.
+    doubled = _normalize_model(FUSION_MODEL)
+    assert _normalize_model(doubled) == doubled
+
+
+def test_fusion_cost_per_token_resolves_for_both_routing_forms():
+    # Canonical id (used by the cost gate) and the doubled routing form (which
+    # `self._model` becomes after _normalize_model) must both price > 0, since
+    # OpenRouter reports dynamic (-1) pricing that would otherwise zero out.
+    for model in (FUSION_MODEL, "openrouter/openrouter/fusion"):
+        in_cost, out_cost = model_cost_per_token(model)
+        assert in_cost > 0, model
+        assert out_cost > 0, model
+
+
+def test_estimate_call_cost_positive_for_fusion():
+    assert estimate_call_cost(FUSION_MODEL, 5000, 2000) > 0
+
+
+def test_select_instructor_mode_fusion_uses_json():
+    # Fusion routes through OpenRouter, so it gets JSON mode (verified to work
+    # against the live endpoint).
+    assert _select_instructor_mode("openrouter/openrouter/fusion") == instructor.Mode.JSON
+
+
+def test_fusion_doubled_routing_form_registered_in_litellm_cost():
+    # Runtime cost tracking calls litellm.completion_cost(model=self._model),
+    # where self._model is the doubled `openrouter/openrouter/fusion`. That only
+    # resolves because _CUSTOM_MODEL_INFO's registration loop also registers the
+    # `openrouter/`-prefixed form. Guard it so a refactor of that loop can't
+    # silently send Fusion cost tracking back to $0 (it's swallowed at runtime).
+    import litellm
+
+    info = litellm.model_cost.get("openrouter/openrouter/fusion")
+    assert info is not None
+    assert info["input_cost_per_token"] > 0
+    assert info["output_cost_per_token"] > 0
 
 
 def test_client_uses_config_model(mock_instructor_client, monkeypatch):
