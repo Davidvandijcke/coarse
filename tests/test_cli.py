@@ -45,6 +45,7 @@ def _fake_review_paper(
     model=None,
     skip_cost_gate=False,
     config=None,
+    language=None,
     progress_callback=None,
 ):
     from coarse.types import PaperText
@@ -107,7 +108,14 @@ def test_review_command_custom_output_path(tmp_path):
     pdf.write_bytes(b"%PDF-1.4 fake")
     out = tmp_path / "out.md"
 
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, progress_callback=None):
+    def fake(
+        pdf_path,
+        model=None,
+        skip_cost_gate=False,
+        config=None,
+        language=None,
+        progress_callback=None,
+    ):
         from coarse.types import PaperText
 
         return _make_review(), "# Custom Output\n", PaperText(full_markdown="", token_estimate=0)
@@ -158,7 +166,14 @@ def test_review_yes_flag_skips_cost_gate(tmp_path, monkeypatch):
 
     captured: dict = {}
 
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, progress_callback=None):
+    def fake(
+        pdf_path,
+        model=None,
+        skip_cost_gate=False,
+        config=None,
+        language=None,
+        progress_callback=None,
+    ):
         captured["skip_cost_gate"] = skip_cost_gate
         from coarse.types import PaperText
 
@@ -309,7 +324,14 @@ def test_review_path_skips_pipeline_progress_when_terminal_support_missing(tmp_p
 
     captured: dict = {}
 
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, progress_callback=None):
+    def fake(
+        pdf_path,
+        model=None,
+        skip_cost_gate=False,
+        config=None,
+        language=None,
+        progress_callback=None,
+    ):
         captured["has_progress_callback"] = progress_callback is not None
         from coarse.types import PaperText
 
@@ -351,7 +373,14 @@ def test_review_yes_path_enters_pipeline_progress_display(tmp_path, monkeypatch)
 
     captured: dict = {}
 
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, progress_callback=None):
+    def fake(
+        pdf_path,
+        model=None,
+        skip_cost_gate=False,
+        config=None,
+        language=None,
+        progress_callback=None,
+    ):
         captured["has_progress_callback"] = callable(progress_callback)
         from coarse.types import PaperText
 
@@ -494,7 +523,14 @@ def test_review_escapes_markup_in_filename(tmp_path, monkeypatch):
     pdf = tmp_path / "[red]paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
-    def fake(pdf_path, model=None, skip_cost_gate=False, config=None, progress_callback=None):
+    def fake(
+        pdf_path,
+        model=None,
+        skip_cost_gate=False,
+        config=None,
+        language=None,
+        progress_callback=None,
+    ):
         from coarse.types import PaperText
 
         return _make_review(), "# Test\n", PaperText(full_markdown="", token_estimate=0)

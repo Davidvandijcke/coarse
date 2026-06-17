@@ -227,15 +227,59 @@ MATH_FORMATTING_GUIDANCE = (
 )
 
 
-def feedback_system_prompt(base: str, form: str) -> str:
+def language_directive(language: str | None) -> str:
+    """Return a system-prompt addendum telling the agent which language to write
+    its human-facing review output in.
+
+    Returns ``""`` for None/empty so the default (English) path is
+    byte-identical. When a language is given the directive (1) localizes only
+    the reviewer's own prose, (2) keeps every verbatim quote from the paper in
+    its ORIGINAL source language — the integrity anchor for quote verification —
+    (3) leaves LaTeX/math untouched, and (4) reinterprets the English-specific
+    "humanizer" vocabulary rules elsewhere in the prompt as intent (plain,
+    natural, varied prose) to apply idiomatically in the target language rather
+    than as a literal English word list.
+
+    ``language`` is a human-readable language NAME ("French", "Simplified
+    Chinese"), not a locale code — models follow names far more reliably than
+    tags like ``zh-Hant``. The web path maps codes to names before calling in;
+    the CLI passes the name through directly.
+    """
+    if language is None:
+        return ""
+    name = language.strip()
+    if not name:
+        return ""
+    return (
+        f"\n\nOUTPUT LANGUAGE: Write ALL of your own review prose — comment "
+        f"titles, feedback, the overall assessment, issue titles and bodies, the "
+        f"recommendation, and revision targets — in {name}. That is the language "
+        f"the reader has requested. Two hard exceptions: (1) every verbatim quote "
+        f"you take from the paper MUST be copied EXACTLY as it appears in the "
+        f"source, in the paper's original language — never translate, "
+        f"transliterate, or otherwise alter a quote; (2) leave LaTeX/math "
+        f"expressions unchanged. Any English-specific vocabulary or phrasing "
+        f"guidance above (e.g. words to avoid) describes ENGLISH writing — apply "
+        f"its intent (plain, natural, varied, non-AI-sounding prose) idiomatically "
+        f"in {name}, not the literal English word list. Write {name} as a native "
+        f"academic referee in that language would."
+    )
+
+
+def feedback_system_prompt(base: str, form: str, language: str | None = None) -> str:
     """Compose a feedback agent's system prompt.
 
-    Combines the agent's base system prompt, the document-form addendum, and the
-    shared math-formatting guidance so every feedback agent renders math as LaTeX
-    consistently. Used by the overview, section, cross-section, and editorial
-    agents in place of a bare ``base + document_form_notice(form)``.
+    Combines the agent's base system prompt, the document-form addendum, the
+    shared math-formatting guidance, and (when set) the output-language
+    directive so every feedback agent renders math as LaTeX consistently and
+    writes its prose in the requested language. Used by the overview, section,
+    cross-section, completeness, proof-verify, and editorial agents in place of
+    a bare ``base + document_form_notice(form)``. ``language=None`` keeps the
+    default English path byte-identical.
     """
-    return base + document_form_notice(form) + MATH_FORMATTING_GUIDANCE
+    return (
+        base + document_form_notice(form) + MATH_FORMATTING_GUIDANCE + language_directive(language)
+    )
 
 
 _FENCE_TAG_RE = re.compile(

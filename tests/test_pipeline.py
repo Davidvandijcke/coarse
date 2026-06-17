@@ -110,7 +110,9 @@ def test_review_paper_calls_stages_in_order():
         call_order.append("structure")
         return structure
 
-    def fake_overview_run(s, calibration=None, literature_context="", author_notes=None):
+    def fake_overview_run(
+        s, calibration=None, literature_context="", author_notes=None, language=None
+    ):
         call_order.append("overview")
         return overview
 
@@ -125,6 +127,7 @@ def test_review_paper_calls_stages_in_order():
         abstract="",
         document_form="manuscript",
         author_notes=None,
+        language=None,
     ):
         call_order.append(f"section_{section.number}")
         return [_make_comment(section.number)]
@@ -135,6 +138,7 @@ def test_review_paper_calls_stages_in_order():
         calibration=None,
         contribution_context=None,
         author_notes=None,
+        language=None,
     ):
         call_order.append("completeness")
         return []
@@ -149,6 +153,7 @@ def test_review_paper_calls_stages_in_order():
         contribution_context=None,
         document_form="manuscript",
         author_notes=None,
+        language=None,
     ):
         call_order.append("editorial")
         return [_make_comment(1)]
@@ -571,6 +576,7 @@ def test_review_paper_skips_references_section():
         abstract="",
         document_form="manuscript",
         author_notes=None,
+        language=None,
     ):
         called_sections.append(section)
         return [_make_comment(section.number)]
@@ -625,7 +631,9 @@ def test_review_paper_forwards_author_notes_to_all_review_agents():
 
     captured: dict[str, object] = {}
 
-    def capture_overview(s, calibration=None, literature_context="", author_notes=None):
+    def capture_overview(
+        s, calibration=None, literature_context="", author_notes=None, language=None
+    ):
         captured["overview_notes"] = author_notes
         return overview
 
@@ -640,6 +648,7 @@ def test_review_paper_forwards_author_notes_to_all_review_agents():
         abstract="",
         document_form="manuscript",
         author_notes=None,
+        language=None,
     ):
         captured.setdefault("section_notes", []).append(author_notes)  # type: ignore[union-attr]
         return [_make_comment(section.number)]
@@ -651,6 +660,7 @@ def test_review_paper_forwards_author_notes_to_all_review_agents():
         abstract="",
         document_form="manuscript",
         author_notes=None,
+        language=None,
     ):
         captured.setdefault("verify_notes", []).append(author_notes)  # type: ignore[union-attr]
         return comments
@@ -661,6 +671,7 @@ def test_review_paper_forwards_author_notes_to_all_review_agents():
         calibration=None,
         contribution_context=None,
         author_notes=None,
+        language=None,
     ):
         captured["completeness_notes"] = author_notes
         return []
@@ -672,6 +683,7 @@ def test_review_paper_forwards_author_notes_to_all_review_agents():
         abstract="",
         document_form="manuscript",
         author_notes=None,
+        language=None,
     ):
         captured.setdefault("cross_section_notes", []).append(author_notes)  # type: ignore[union-attr]
         return []
@@ -686,6 +698,7 @@ def test_review_paper_forwards_author_notes_to_all_review_agents():
         contribution_context=None,
         document_form="manuscript",
         author_notes=None,
+        language=None,
     ):
         captured["editorial_notes"] = author_notes
         return comments
@@ -749,6 +762,7 @@ def test_review_paper_forwards_author_notes_to_fallback_crossref_and_critique():
         title="",
         abstract="",
         author_notes=None,
+        language=None,
     ):
         captured["crossref_notes"] = author_notes
         return comments
@@ -760,6 +774,7 @@ def test_review_paper_forwards_author_notes_to_fallback_crossref_and_critique():
         title="",
         abstract="",
         author_notes=None,
+        language=None,
     ):
         captured["critique_notes"] = author_notes
         return comments
@@ -931,6 +946,7 @@ def test_review_paper_section_comments_flattened():
         contribution_context=None,
         document_form="manuscript",
         author_notes=None,
+        language=None,
     ):
         editorial_received.extend(comments)
         return [_make_comment(1)]
@@ -982,6 +998,7 @@ def test_review_paper_verifies_section_quotes_before_editorial_handoff():
         contribution_context=None,
         document_form="manuscript",
         author_notes=None,
+        language=None,
     ):
         editorial_received.extend(comments)
         return comments
@@ -1136,6 +1153,7 @@ def test_review_section_chains_verify_for_proof():
         abstract="abstract",
         document_form="manuscript",
         author_notes=None,
+        language=None,
     )
     assert result == verified
 

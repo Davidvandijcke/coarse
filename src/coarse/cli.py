@@ -212,6 +212,14 @@ def review(
     model: Optional[str] = typer.Option(
         None, "--model", "-m", help="LiteLLM model string (e.g. openai/gpt-4o)"
     ),
+    language: Optional[str] = typer.Option(
+        None,
+        "--language",
+        "-l",
+        help="Language for the review output, e.g. 'Spanish', 'French', "
+        "'Simplified Chinese' (default: English). Quotes stay in the paper's "
+        "original language. Falls back to review_language in ~/.coarse/config.toml.",
+    ),
     api_key: Optional[str] = typer.Option(
         None,
         "--api-key",
@@ -311,6 +319,7 @@ def review(
             model=resolved_model,
             skip_cost_gate=yes,
             config=config,
+            language=language,
             progress_callback=progress_callback,
         )
 

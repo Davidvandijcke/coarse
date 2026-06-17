@@ -508,6 +508,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Reasoning effort level (default: high)",
     )
     parser.add_argument(
+        "--language",
+        default=None,
+        help="Language for the review output (e.g. 'Spanish', 'French', "
+        "'Simplified Chinese'); default English. Quotes stay in the paper's "
+        "original language.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("coarse-output"),
@@ -720,6 +727,7 @@ def main(argv: list[str] | None = None) -> int:
                 model=model,
                 effort=effort,
                 pre_extracted=pre_extracted_path,
+                language=args.language,
             )
         except Exception as exc:
             # Scrub the exception string before printing — if any upstream

@@ -35,6 +35,7 @@ class CrossSectionAgent(ReviewAgent):
         abstract: str = "",
         document_form: DocumentForm = "manuscript",
         author_notes: str | None = None,
+        language: str | None = None,
     ) -> list[DetailedComment]:
         results_section = truncate_section(results_section)
         discussion_section = truncate_section(discussion_section)
@@ -46,7 +47,7 @@ class CrossSectionAgent(ReviewAgent):
             abstract=abstract,
         )
         # Empty notice for manuscript so manuscript path is byte-identical.
-        system_prompt = feedback_system_prompt(CROSS_SECTION_SYSTEM, document_form)
+        system_prompt = feedback_system_prompt(CROSS_SECTION_SYSTEM, document_form, language)
         messages = self._build_messages(system_prompt, user_text)
         result = self.client.complete(
             messages,

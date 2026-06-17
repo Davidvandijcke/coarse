@@ -55,6 +55,7 @@ class CompletenessAgent(ReviewAgent):
         calibration: DomainCalibration | None = None,
         contribution_context: ContributionContext | None = None,
         author_notes: str | None = None,
+        language: str | None = None,
     ) -> list[OverviewIssue]:
         # Short-circuit for document forms where "flag missing content" is
         # meaningless: outlines ARE missing content on purpose, notes aren't
@@ -78,7 +79,9 @@ class CompletenessAgent(ReviewAgent):
             contribution_context=contribution_context,
         )
         # Append form-specific addendum (empty for manuscript/preprint).
-        system_prompt = feedback_system_prompt(COMPLETENESS_SYSTEM, structure.document_form)
+        system_prompt = feedback_system_prompt(
+            COMPLETENESS_SYSTEM, structure.document_form, language
+        )
         messages = self._build_messages(system_prompt, user_text)
 
         result = self.client.complete(
