@@ -355,6 +355,7 @@ def review_paper(
     skip_cost_gate: bool = False,
     config: CoarseConfig | None = None,
     author_notes: str | None = None,
+    language: str | None = None,
     progress_callback: PipelineProgressCallback | None = None,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
@@ -379,6 +380,13 @@ def review_paper(
             instructions that override the review rubric. Trimmed/truncated to
             2000 chars by ``author_notes_block`` in prompts.py. ``None`` or an
             empty/ whitespace-only string is a byte-identical no-op.
+        language: Optional human-readable language NAME ("French", "Simplified
+            Chinese") for the human-facing review output. Forwarded to every
+            feedback agent's system prompt via ``feedback_system_prompt`` so the
+            reviewer writes its prose in that language while keeping verbatim
+            quotes in the paper's source language and LaTeX unchanged. Falls back
+            to ``config.review_language`` when not passed; ``None``/empty is a
+            byte-identical no-op (the English path).
         progress_callback: Optional callback receiving best-effort pipeline
             progress updates, including cumulative actual token spend.
 
@@ -398,6 +406,9 @@ def review_paper(
         config = load_config()
 
     resolved_model = model or config.default_model
+    # Human-readable language name for the review output; falls back to the
+    # config default. None/empty keeps the English path byte-identical.
+    resolved_language = language or config.review_language
     progress = _PipelineProgressReporter(progress_callback)
     client = LLMClient(model=resolved_model, config=config, cost_callback=progress.update_cost)
     run_qa = False
@@ -559,7 +570,11 @@ def review_paper(
     # --- Phase 1: Overview (single-pass, full paper text) ---
     progress.start("overview", "Generating overview", client.cost_usd)
     overview = overview_agent.run(
-        structure, calibration, literature_context, author_notes=author_notes
+        structure,
+        calibration,
+        literature_context,
+        author_notes=author_notes,
+        language=resolved_language,
     )
     progress.complete("overview", "Generated overview", client.cost_usd)
 
@@ -573,6 +588,7 @@ def review_paper(
             calibration=calibration,
             contribution_context=contribution_context,
             author_notes=author_notes,
+            language=resolved_language,
         )
         overview = merge_overview(overview, completeness_issues, max_total=12)
     except Exception:
@@ -612,6 +628,7 @@ def review_paper(
                     sec_abstract,
                     document_form=structure.document_form,
                     author_notes=author_notes,
+                    language=resolved_language,
                 )
             ] = (i, section.title)
 
@@ -659,6 +676,7 @@ def review_paper(
                         abstract=structure.abstract,
                         document_form=structure.document_form,
                         author_notes=author_notes,
+                        language=resolved_language,
                     )
                 ] = (i, disc_sec)
             completed_futures = set()
@@ -711,6 +729,7 @@ def review_paper(
         contribution_context=contribution_context,
         document_form=structure.document_form,
         author_notes=author_notes,
+        language=resolved_language,
     )
     progress.complete("editorial", "Completed editorial filter", client.cost_usd)
 

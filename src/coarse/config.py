@@ -44,6 +44,11 @@ class CoarseConfig(BaseModel):
     vision_model: str = VISION_MODEL
     extraction_qa: bool = True
     max_cost_usd: float = 10.0
+    # Default human-readable language NAME for review output ("French",
+    # "Simplified Chinese"). Empty = English (today's behavior); the `--language`
+    # CLI flag overrides it per-run. Empty string rather than None because TOML
+    # has no null type and save_config serializes this field.
+    review_language: str = ""
     api_keys: dict[str, str] = Field(default_factory=dict)
 
 

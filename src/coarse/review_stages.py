@@ -116,6 +116,7 @@ def _review_section(
     *,
     document_form: DocumentForm = "manuscript",
     author_notes: str | None = None,
+    language: str | None = None,
 ) -> list[DetailedComment]:
     """Review a section; chain with adversarial verification for proof sections."""
     comments = section_agent.run(
@@ -129,6 +130,7 @@ def _review_section(
         abstract=abstract,
         document_form=document_form,
         author_notes=author_notes,
+        language=language,
     )
     comments = _verify_with_fallback(
         comments,
@@ -143,6 +145,7 @@ def _review_section(
             abstract=abstract,
             document_form=document_form,
             author_notes=author_notes,
+            language=language,
         )
         comments = _verify_with_fallback(
             comments,
@@ -220,6 +223,7 @@ def run_editorial_pass(
     contribution_context: ContributionContext | None = None,
     document_form: DocumentForm = "manuscript",
     author_notes: str | None = None,
+    language: str | None = None,
     editorial_agent_cls: type[EditorialAgent] | None = None,
     crossref_agent_cls: type[CrossrefAgent] | None = None,
     critique_agent_cls: type[CritiqueAgent] | None = None,
@@ -240,6 +244,7 @@ def run_editorial_pass(
             contribution_context=contribution_context,
             document_form=document_form,
             author_notes=author_notes,
+            language=language,
         )
         return _cap_comments(
             _verify_with_fallback(

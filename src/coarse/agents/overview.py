@@ -45,13 +45,14 @@ class OverviewAgent(ReviewAgent):
         calibration: DomainCalibration | None = None,
         literature_context: str = "",
         author_notes: str | None = None,
+        language: str | None = None,
     ) -> OverviewFeedback:
         sections_text = _build_sections_text(structure.sections)
 
         # Append the document-form addendum to the system prompt. Empty string
         # for manuscripts/preprints so that path is unchanged; a tailored block
         # for outlines/drafts/proposals/etc. that relaxes the peer-review frame.
-        system_prompt = feedback_system_prompt(OVERVIEW_SYSTEM, structure.document_form)
+        system_prompt = feedback_system_prompt(OVERVIEW_SYSTEM, structure.document_form, language)
 
         # Author steering notes — returns "" when notes is None/empty so the
         # no-notes path is byte-identical. Prepended to the user message only,

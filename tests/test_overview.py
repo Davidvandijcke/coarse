@@ -92,6 +92,35 @@ def test_overview_agent_calls_complete_with_correct_model():
     assert system_msgs[0]["content"] == feedback_system_prompt(OVERVIEW_SYSTEM, "manuscript")
 
 
+def test_overview_agent_forwards_language_to_system_prompt():
+    """run(language=...) injects the output-language directive into the system prompt."""
+    client = _make_client()
+    client.complete.return_value = _make_feedback()
+
+    agent = OverviewAgent(client)
+    agent.run(_make_structure(), language="French")
+
+    messages = client.complete.call_args[0][0]
+    system_msgs = [m for m in messages if m["role"] == "system"]
+    assert system_msgs[0]["content"] == feedback_system_prompt(
+        OVERVIEW_SYSTEM, "manuscript", "French"
+    )
+    assert "French" in system_msgs[0]["content"]
+
+
+def test_overview_agent_default_language_byte_identical():
+    """No language ⇒ system prompt identical to the pre-feature path."""
+    client = _make_client()
+    client.complete.return_value = _make_feedback()
+
+    agent = OverviewAgent(client)
+    agent.run(_make_structure())
+
+    messages = client.complete.call_args[0][0]
+    system_msgs = [m for m in messages if m["role"] == "system"]
+    assert system_msgs[0]["content"] == feedback_system_prompt(OVERVIEW_SYSTEM, "manuscript")
+
+
 def test_build_sections_text_includes_all_sections():
     """All section titles appear in the output string."""
     sections = [

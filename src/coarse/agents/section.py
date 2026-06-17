@@ -109,6 +109,7 @@ class SectionAgent(ReviewAgent):
         abstract: str = "",
         document_form: DocumentForm = "manuscript",
         author_notes: str | None = None,
+        language: str | None = None,
     ) -> list[DetailedComment]:
         truncated = truncate_section(section)
 
@@ -116,7 +117,7 @@ class SectionAgent(ReviewAgent):
         # Empty for manuscript/preprint so the default peer-review path is
         # unchanged.
         base_system = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
-        system_prompt = feedback_system_prompt(base_system, document_form)
+        system_prompt = feedback_system_prompt(base_system, document_form, language)
         user_text = author_notes_block(author_notes) + section_user(
             paper_title,
             truncated,

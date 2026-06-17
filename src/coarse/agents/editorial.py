@@ -61,6 +61,7 @@ class EditorialAgent(ReviewAgent):
         contribution_context: ContributionContext | None = None,
         document_form: DocumentForm = "manuscript",
         author_notes: str | None = None,
+        language: str | None = None,
     ) -> list[DetailedComment]:
         user_content = author_notes_block(author_notes) + editorial_user(
             paper_text,
@@ -73,7 +74,7 @@ class EditorialAgent(ReviewAgent):
         base_sys = editorial_system(comment_target) if comment_target else EDITORIAL_SYSTEM
         # Append form-specific addendum (empty for manuscript/preprint) so the
         # editorial pass also relaxes its framing on non-manuscript inputs.
-        sys_prompt = feedback_system_prompt(base_sys, document_form)
+        sys_prompt = feedback_system_prompt(base_sys, document_form, language)
 
         messages = self._build_messages(sys_prompt, user_content)
         result = self.client.complete(
