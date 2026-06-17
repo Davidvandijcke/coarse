@@ -9,7 +9,12 @@ from pathlib import Path
 from coarse.config import CoarseConfig
 from coarse.cost import build_cost_estimate
 from coarse.llm import model_cost_per_token
-from coarse.models import DEFAULT_MODEL
+from coarse.models import (
+    DEFAULT_MODEL,
+    FUSION_INPUT_COST_PER_TOKEN,
+    FUSION_MODEL,
+    FUSION_OUTPUT_COST_PER_TOKEN,
+)
 from coarse.pipeline_spec import (
     MAX_REVIEWABLE_SECTIONS,
     estimate_cross_section_count,
@@ -37,6 +42,16 @@ def test_exported_web_spec_matches_checked_in_json():
     json_path = repo_root / "web" / "src" / "data" / "pipelineSpec.json"
     checked_in = json.loads(json_path.read_text())
     assert checked_in == export_web_spec()
+
+
+def test_dynamic_pricing_overrides_exported_for_fusion():
+    # The web estimator substitutes these when OpenRouter returns -1 pricing.
+    # They must match the canonical rates in models.py so web/Python don't drift.
+    overrides = export_web_spec()["dynamicPricingOverrides"]
+    assert overrides[FUSION_MODEL] == {
+        "prompt": FUSION_INPUT_COST_PER_TOKEN,
+        "completion": FUSION_OUTPUT_COST_PER_TOKEN,
+    }
 
 
 def _run_ts_estimator(
@@ -109,6 +124,15 @@ def test_ts_estimator_matches_python_cost_gate_for_openrouter_and_fallback_paths
             "is_pdf": False,
             "has_openrouter_key": True,
         },
+        # OpenRouter Fusion: dynamic (-1) OpenRouter pricing, substituted with
+        # representative rates. Verifies both estimators price it identically
+        # (and positively) rather than going to $0 / negative.
+        {
+            "model_id": FUSION_MODEL,
+            "section_count": 18,
+            "is_pdf": False,
+            "has_openrouter_key": True,
+        },
     ]
 
     for scenario in scenarios:
@@ -133,3 +157,72 @@ def test_ts_estimator_matches_python_cost_gate_for_openrouter_and_fallback_paths
             has_openrouter_key=scenario["has_openrouter_key"],
         )
         assert abs(ts_total - py_total) < 1e-9
+
+
+def _run_node(repo_root: Path, script: str) -> object:
+    """Run an ESM snippet through node's type-stripping loader; parse its stdout JSON."""
+    result = subprocess.run(
+        ["node", "--experimental-strip-types", "--input-type=module", "-e", script],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
+def test_ts_pricing_map_handles_dynamic_negative_pricing():
+    """estimateCost.fetchPricingMap must not let OpenRouter's "-1" dynamic
+    price reach the estimator: a known dynamic model (Fusion) is substituted
+    with representative rates, an unknown dynamic model is dropped (→ null →
+    "cost estimate unavailable"), and normal models pass through. Exercises the
+    web-side fix that the Python parity test can't (it injects rates directly)."""
+    repo_root = Path(__file__).resolve().parents[1]
+    script = """
+globalThis.fetch = async () => ({
+  json: async () => ({ data: [
+    { id: "anthropic/claude-test", pricing: { prompt: "0.000003", completion: "0.000015" } },
+    { id: "openrouter/fusion", pricing: { prompt: "-1", completion: "-1" } },
+    { id: "openrouter/auto", pricing: { prompt: "-1", completion: "-1" } },
+  ]})
+});
+const { getModelPricing } = await import("./web/src/lib/estimateCost.ts");
+console.log(JSON.stringify({
+  normal: await getModelPricing("anthropic/claude-test"),
+  fusion: await getModelPricing("openrouter/fusion"),
+  unknownDynamic: await getModelPricing("openrouter/auto"),
+}));
+"""
+    out = _run_node(repo_root, script)
+    assert out["normal"] == {"promptCostPerToken": 3e-6, "completionCostPerToken": 1.5e-5}
+    assert out["fusion"] == {
+        "promptCostPerToken": FUSION_INPUT_COST_PER_TOKEN,
+        "completionCostPerToken": FUSION_OUTPUT_COST_PER_TOKEN,
+    }
+    # Unknown dynamic model is omitted → getModelPricing returns null, NOT a
+    # negative rate. This is the regression guard for the $-743986 UI bug.
+    assert out["unknownDynamic"] is None
+
+
+def test_ts_format_prompt_price_branches():
+    repo_root = Path(__file__).resolve().parents[1]
+    script = """
+import { formatPromptPrice } from "./web/src/lib/estimateCost.ts";
+console.log(JSON.stringify({
+  dynamic: formatPromptPrice(-1),
+  free: formatPromptPrice(0),
+  cheap: formatPromptPrice(2.6e-7),
+  pricey: formatPromptPrice(5e-6),
+  unknown: formatPromptPrice(null),
+  nan: formatPromptPrice(NaN),
+}));
+"""
+    out = _run_node(repo_root, script)
+    assert out == {
+        "dynamic": "variable",
+        "free": "free",
+        "cheap": "$0.26/M",
+        "pricey": "$5/M",
+        "unknown": "",
+        "nan": "",
+    }

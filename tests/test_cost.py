@@ -8,6 +8,7 @@ import pytest
 
 from coarse.config import CoarseConfig
 from coarse.cost import build_cost_estimate, confirm_or_abort, run_cost_gate
+from coarse.models import FUSION_MODEL
 from coarse.types import CostEstimate, CostStage, PaperText
 
 TEST_MODEL = "test/mock-model"
@@ -503,3 +504,24 @@ def test_extraction_qa_stage_absent_when_disabled():
     estimate = build_cost_estimate(_paper(), config)
     names = [s.name for s in estimate.stages]
     assert "extraction_qa" not in names
+
+
+# ---------------------------------------------------------------------------
+# OpenRouter Fusion (dynamic-priced model)
+# ---------------------------------------------------------------------------
+
+
+def test_fusion_estimate_is_priced_not_zero():
+    """OpenRouter reports -1 (dynamic) pricing for Fusion, which used to make
+    the estimate $0 — silently bypassing the approval gate's `<= 0.01` skip
+    and reporting $0 spent on a model that bills real money. With the
+    registered representative rates the estimate must be well above the skip
+    threshold so the gate actually fires."""
+    estimate = build_cost_estimate(_paper(), _config(model=FUSION_MODEL), section_count=8)
+    assert estimate.total_cost_usd > 0.01
+    # The review-model stages should be attributed to Fusion and priced > 0,
+    # confirming the rate lookup resolved rather than zeroing out.
+    review_stages = [s for s in estimate.stages if s.name == "overview"]
+    assert review_stages
+    assert review_stages[0].model == FUSION_MODEL
+    assert review_stages[0].estimated_cost_usd > 0
