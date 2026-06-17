@@ -8,6 +8,7 @@ from coarse.types import (
     CostEstimate,
     CostStage,
     DetailedComment,
+    LanguageContext,
     OverviewFeedback,
     OverviewIssue,
     PaperStructure,
@@ -361,3 +362,53 @@ def test_review_roundtrip_json_with_new_fields():
     assert deserialized == review
     assert deserialized.overall_feedback.recommendation == overview.recommendation
     assert deserialized.overall_feedback.revision_targets == overview.revision_targets
+
+
+# --- LanguageContext (multilingual contract) ---
+
+
+def test_language_context_defaults_are_english_noop():
+    """An unset LanguageContext is the English default path."""
+    ctx = LanguageContext()
+    assert ctx.site_language == "en"
+    # Empty review_language means "follow the detected paper language" (resolved
+    # in the worker), NOT a hardcoded English default — this is what makes
+    # "review my Chinese paper in Chinese" the zero-config behavior.
+    assert ctx.review_language == ""
+    assert ctx.paper_language == ""
+    assert ctx.text_direction == "ltr"
+    assert ctx.paper_language_source == "default"
+
+
+def test_language_context_has_no_analysis_language():
+    """analysis_language is deferred to the contingent English-pivot design
+    (PR-G). Shipping a field with no consumer under the generation-time MVP
+    would be speculative config — guard against it reappearing."""
+    assert "analysis_language" not in LanguageContext.model_fields
+
+
+def test_language_context_round_trips_values():
+    ctx = LanguageContext(
+        site_language="fr",
+        review_language="zh-Hant",
+        paper_language="de",
+        text_direction="rtl",
+        paper_language_source="user",
+    )
+    assert ctx.model_dump() == {
+        "site_language": "fr",
+        "review_language": "zh-Hant",
+        "paper_language": "de",
+        "text_direction": "rtl",
+        "paper_language_source": "user",
+    }
+
+
+def test_language_context_rejects_bad_text_direction():
+    with pytest.raises(ValidationError):
+        LanguageContext(text_direction="sideways")  # type: ignore[arg-type]
+
+
+def test_language_context_rejects_bad_paper_language_source():
+    with pytest.raises(ValidationError):
+        LanguageContext(paper_language_source="guessed")  # type: ignore[arg-type]

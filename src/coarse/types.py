@@ -4,6 +4,43 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+class LanguageContext(BaseModel):
+    """Language metadata carried across the web, pipeline, and rendering layers.
+
+    Additive contract for the multilingual rollout (see
+    ``docs/MULTILINGUAL_PLAN.md``). Every field defaults to the English path, so
+    an unset context is a no-op. An empty ``review_language`` means "follow the
+    detected ``paper_language``" — the effective output language is resolved in
+    the worker after detection, not here. Verbatim quotes always stay in the
+    paper's source language regardless of these fields.
+
+    Note: there is intentionally no ``analysis_language`` field. Under the
+    generation-time localization design (the MVP), agents write directly in
+    ``review_language``, so a separate internal-reasoning language has no
+    consumer; it is deferred to the contingent English-pivot design (PR-G).
+    """
+
+    site_language: str = Field(default="en", description="Primary site/UI locale (BCP-47)")
+    review_language: str = Field(
+        default="",
+        description=(
+            "Locale for the human-facing review output. Empty = follow the detected paper_language."
+        ),
+    )
+    paper_language: str = Field(
+        default="",
+        description="Detected or user-specified source language of the paper (BCP-47)",
+    )
+    text_direction: Literal["ltr", "rtl"] = Field(
+        default="ltr",
+        description="Text direction for the review/site UI",
+    )
+    paper_language_source: Literal["detected", "user", "default"] = Field(
+        default="default",
+        description="How paper_language was chosen",
+    )
+
+
 class PaperText(BaseModel):
     """Extracted PDF content as markdown with metadata."""
 

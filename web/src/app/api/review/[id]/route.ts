@@ -25,7 +25,7 @@ export async function GET(
   const { data, error } = await supabaseAdmin
     .from("reviews")
     .select(
-      "id, paper_filename, status, paper_title, model, domain, result_markdown, result_json, paper_markdown, cost_usd, duration_seconds, error_message, created_at, completed_at, access_token_required",
+      "id, paper_filename, status, paper_title, model, domain, taxonomy, site_language, review_language, paper_language, paper_language_source, text_direction, result_markdown, result_json, paper_markdown, cost_usd, duration_seconds, error_message, created_at, completed_at, access_token_required",
     )
     .eq("id", id)
     .maybeSingle();
@@ -35,7 +35,7 @@ export async function GET(
     return NextResponse.json(
       {
         error:
-          "Review lookup failed because the deployment and database schema are out of sync. Run deploy/migrate_review_access_security.sql.",
+          "Review lookup failed because the deployment and database schema are out of sync. Run deploy/migrate_review_access_security.sql and deploy/migrate_i18n_contract.sql.",
       },
       { status: 503 },
     );

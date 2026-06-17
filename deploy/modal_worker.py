@@ -516,6 +516,14 @@ class ReviewRequest(BaseModel):
     # the overview/section/editorial agents. Default None = no-op, so older
     # in-flight spawn() payloads without this field still deserialize cleanly.
     author_notes: str | None = None
+    # Review-output language contract (multilingual rollout, see
+    # docs/MULTILINGUAL_PLAN.md). Forwarded from the web submit body. The worker
+    # resolves the *effective* review language after it detects the paper's
+    # language (consumed in PR-B); PR-A just carries the fields so the transport
+    # exists. Default None = the English path, so older in-flight spawn()
+    # payloads without these fields still deserialize cleanly.
+    review_language: str | None = None
+    site_language: str | None = None
 
 
 def _fetch_user_key(db, job_id: str) -> str | None:

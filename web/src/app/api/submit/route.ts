@@ -19,6 +19,12 @@ import {
 } from "@/lib/reviewCapacity";
 import { getSubmissionPauseResponse } from "@/lib/systemStatus";
 import { getSiteOriginForRequest } from "@/lib/siteOrigin";
+import {
+  parseLanguageFields,
+  validateLanguageFields,
+  languageUpdateFields,
+  type LanguageFields,
+} from "@/lib/language";
 
 export const maxDuration = 30;
 // Budget below the 30s Vercel function ceiling. A slow Modal cold start of
@@ -78,6 +84,7 @@ export async function POST(request: NextRequest) {
   let storagePath = "";
   let authorNotes = "";
   let handoffSecret = "";
+  let lang: LanguageFields = parseLanguageFields({});
 
   try {
     const body = await request.json();
@@ -88,6 +95,7 @@ export async function POST(request: NextRequest) {
     storagePath = (body.storage_path ?? "").trim();
     authorNotes = (body.author_notes ?? "").trim();
     handoffSecret = (body.handoff_secret ?? "").trim();
+    lang = parseLanguageFields(body);
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -128,6 +136,10 @@ export async function POST(request: NextRequest) {
   // provide meaningful room for prompt-injection payloads.
   if (authorNotes.length > 2000) {
     return NextResponse.json({ error: "Author notes too long (max 2000 chars)" }, { status: 400 });
+  }
+  const languageError = validateLanguageFields(lang);
+  if (languageError) {
+    return NextResponse.json({ error: languageError }, { status: 400 });
   }
   if (!storagePath) {
     return NextResponse.json({ error: "No storage path provided" }, { status: 400 });
@@ -235,9 +247,14 @@ export async function POST(request: NextRequest) {
   const statusUrl = buildReviewUrl(siteUrl, "status", id, accessToken);
   const reviewKey = buildReviewKey(id, accessToken);
 
-  // Update model on the review record
-  if (model) {
-    await supabaseAdmin.from("reviews").update({ model }).eq("id", id);
+  // Persist the model + any language-contract fields the form sent. The worker
+  // resolves the *effective* review_language after detection (an empty
+  // review_language means "follow the detected paper language"), so we only
+  // record the raw user-supplied values here.
+  const reviewMetadataUpdate: Record<string, string> = languageUpdateFields(lang);
+  if (model) reviewMetadataUpdate.model = model;
+  if (Object.keys(reviewMetadataUpdate).length > 0) {
+    await supabaseAdmin.from("reviews").update(reviewMetadataUpdate).eq("id", id);
   }
 
   // Mark the reviews row as failed instead of deleting it on mid-submit
@@ -323,6 +340,11 @@ export async function POST(request: NextRequest) {
         email,
         model: model || undefined,
         author_notes: authorNotes || undefined,
+        // Forwarded so the worker can resolve the effective review language
+        // after it detects paper_language (consumed in PR-B). Empty until the
+        // submit form ships a language picker.
+        review_language: lang.review_language || undefined,
+        site_language: lang.site_language || undefined,
       }),
     });
 
