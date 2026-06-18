@@ -19,7 +19,7 @@ export const nl: Messages = {
 
   bannerPausedDefault: "Inzendingen zijn tijdelijk gepauzeerd.",
   bannerBusyPrefix: "Het systeem is druk (",
-  bannerBusySuffix: " plekken in gebruik). Je review komt mogelijk in de wachtrij.",
+  bannerBusySuffix: " plaatsen in gebruik). Je review komt mogelijk in de wachtrij.",
   bannerFasterPrefix: "Voor snellere resultaten, probeer de CLI:",
   bannerPipInstall: "pip install coarse-ink",
   bannerGithub: "GitHub",
@@ -30,7 +30,7 @@ export const nl: Messages = {
   heroLede:
     "AI-agents reviewen je artikel en schrijven een refereerrapport. Je betaalt de API-kosten rechtstreeks. Geen account.",
   heroManifesto:
-    "Academische peer review draait op onbetaalde academische arbeid. Anderen besloten daar een verdienmodel van te maken. Dat vonden wij niks.",
+    "Academische peer review draait op onbetaalde academische arbeid. Anderen besloten daar een verdienmodel van te maken. Daar waren wij niet van gediend.",
 
   scoreVsOthers: "vs. andere AI-reviewers",
   statCostNum: "< $2*",
@@ -61,12 +61,12 @@ export const nl: Messages = {
   fieldEmail: "E-mail ",
   fieldEmailQualifier: "(alleen voor webreview)",
   emailPlaceholderUnavailable: "— niet beschikbaar —",
-  emailPlaceholder: "jij@universiteit.nl",
+  emailPlaceholder: "jij@universiteit.be",
   emailAriaLabel: "E-mailadres",
   emailHelperDisabled:
-    "E-mailbezorging ligt tijdelijk plat. Bewaar je reviewsleutel bij het indienen en kom over ongeveer een uur terug.",
+    "E-mailbezorging ligt tijdelijk plat. Bewaar je reviewsleutel bij het indienen en kom over een uurtje terug.",
   emailHelperPrefix:
-    "We e-mailen je als het klaar is. Controleer je spammap als je het niet ziet.",
+    "We mailen je als het klaar is. Check je spamfolder als je het niet ziet.",
 
   fieldKey: "OpenRouter-sleutel",
   fieldKeyGetOne: "haal er een →",
@@ -231,7 +231,7 @@ export const nl: Messages = {
   statusQueuedHeading: "In de wachtrij.",
   statusRunningBody: "De reviewpipeline draait (meestal 30–60 minuten).",
   statusQueuedBody: "Je review staat in de wachtrij en begint zo.",
-  statusEmailWhenDone: "We e-mailen je als het klaar is.",
+  statusEmailWhenDone: "We mailen je als het klaar is.",
   statusCancelledHeading: "Review geannuleerd.",
   statusCancelledBody:
     "De wachtende taak is als geannuleerd gemarkeerd. Als het werk al was begonnen, heeft de worker mogelijk wat tijd nodig om af te ronden.",
