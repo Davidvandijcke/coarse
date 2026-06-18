@@ -817,6 +817,7 @@ def do_review(req_dict: dict):
         from coarse import review_paper
         from coarse.config import CoarseConfig
         from coarse.extraction_openrouter import signed_url_ctx
+        from coarse.review_labels import email_completion_labels
 
         # Read os.environ directly — the previous version inferred from local
         # variables, which could lie about the actual state reaching litellm
@@ -909,20 +910,22 @@ def do_review(req_dict: dict):
         except Exception:
             pass  # Non-critical; cleanup cron will sweep it
 
-        # Send completion email
+        # Send completion email, localized to the resolved review language
+        # (English for an English/unset review — byte-identical copy).
         if email:
             access_token = _sign_review_access_token(job_id)
             review_url = f"{site_url}/review/{job_id}?token={access_token}"
             review_key = f"{job_id}.{access_token}"
+            email_l = email_completion_labels(lang.review_language if lang else "")
             try:
                 _send_email(
                     to=email,
-                    subject="Your paper review is ready",
+                    subject=email_l["subject"],
                     html=(
-                        f"<p>Your review is ready.</p>"
-                        f'<p><a href="{review_url}">View your review →</a></p>'
-                        f"<p><strong>Review key:</strong> <code>{review_key}</code><br>"
-                        f"Save this key to return to your review later.</p>"
+                        f"<p>{email_l['ready']}</p>"
+                        f'<p><a href="{review_url}">{email_l["view"]}</a></p>'
+                        f"<p><strong>{email_l['key_label']}</strong> <code>{review_key}</code><br>"
+                        f"{email_l['key_hint']}</p>"
                         f"<p>— coarse</p>"
                     ),
                 )
