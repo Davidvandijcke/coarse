@@ -1,5 +1,7 @@
 "use client";
 
+import { useSiteLanguageContext } from "@/lib/i18n";
+
 interface Props {
   apiKey: string;
   onLogin: () => void;
@@ -8,6 +10,7 @@ interface Props {
 }
 
 export default function OpenRouterLoginButton({ apiKey, onLogin, onLogout, disabled }: Props) {
+  const { t } = useSiteLanguageContext();
   const isLoggedIn = apiKey.trim().length > 0;
 
   if (isLoggedIn) {
@@ -22,7 +25,7 @@ export default function OpenRouterLoginButton({ apiKey, onLogin, onLogout, disab
           color: "var(--yellow-chalk)",
         }}
       >
-        <span aria-live="polite">Connected to OpenRouter</span>
+        <span aria-live="polite">{t("openRouterConnected")}</span>
         <button
           type="button"
           onClick={onLogout}
@@ -37,7 +40,7 @@ export default function OpenRouterLoginButton({ apiKey, onLogin, onLogout, disab
             cursor: "pointer",
           }}
         >
-          Log out
+          {t("openRouterLogOut")}
         </button>
       </div>
     );
@@ -61,7 +64,7 @@ export default function OpenRouterLoginButton({ apiKey, onLogin, onLogout, disab
         transition: "background 0.2s, color 0.2s",
       }}
     >
-      Log in with OpenRouter →
+      {t("openRouterLogIn")}
     </button>
   );
 }

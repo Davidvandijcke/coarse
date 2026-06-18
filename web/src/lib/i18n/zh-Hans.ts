@@ -8,23 +8,28 @@
 import type { Messages } from "@/lib/i18n";
 
 export const zhHans: Messages = {
+  // site language switcher (consumed by SiteLanguageSwitcher.tsx)
   siteLanguageLabel: "网站语言",
 
+  // copy-to-clipboard code block
   codeBlockCopied: "已复制 ✓",
   codeBlockCopy: "复制",
 
+  // header
   headerTagline: "同行评审是一种公共产品。",
   navSetup: "设置",
   navSideBySide: "并排对比",
   navGithub: "github ↗",
 
+  // capacity banner
   bannerPausedDefault: "投稿已暂时暂停。",
   bannerBusyPrefix: "系统繁忙（",
   bannerBusySuffix: " 个名额正在使用中）。你的评审可能会进入队列。",
-  bannerFasterPrefix: "想要更快的结果，试试 CLI：",
+  bannerFasterPrefix: "想要更快的结果，请试试 CLI：",
   bannerPipInstall: "pip install coarse-ink",
   bannerGithub: "GitHub",
 
+  // hero
   heroGreetingPrefix: "嘿 ",
   heroGreetingSuffix: " 能帮我评审这篇论文吗？",
   heroHeading: "‘coarse!",
@@ -33,15 +38,17 @@ export const zhHans: Messages = {
   heroManifesto:
     "学术同行评审依靠无偿的学术劳动运转。有些人却决定借此牟利。我们对此并不认同。",
 
+  // hero — score preview
   scoreVsOthers: "对比其他 AI 评审工具",
   statCostNum: "< $2*",
   statCostLabel: "每次评审",
-  statCostFootnote: "*通常情况下 :)",
+  statCostFootnote: "*通常如此 :)",
   statCommentsNum: "20+",
   statCommentsLabel: "条详细评论",
   statOpenSourceNum: "MIT",
   statOpenSourceLabel: "开源",
 
+  // hero — competitive comparison
   comparePrefix: "盲测对比",
   compareRefine: "refine.ink",
   compareStanford: "Stanford Agentic Reviewer",
@@ -50,6 +57,7 @@ export const zhHans: Messages = {
     "在覆盖度、针对性和深度上得分更高——而成本只是其中的一小部分。",
   compareLink: "查看并排对比 →",
 
+  // submit form — section heading + paper field
   formSubmitHeading: "提交论文",
   fieldPaper: "论文",
   dropzoneAriaLabel: "上传你的论文——拖入文件或点击浏览",
@@ -59,6 +67,7 @@ export const zhHans: Messages = {
   dropzoneBrowse: "浏览",
   dropzoneMaxSize: "最大 50 MB",
 
+  // submit form — email field
   fieldEmail: "电子邮箱 ",
   fieldEmailQualifier: "（仅用于网页评审）",
   emailPlaceholderUnavailable: "— 不可用 —",
@@ -69,14 +78,16 @@ export const zhHans: Messages = {
   emailHelperPrefix:
     "完成后我们会通过邮件通知你。如果没有收到，请检查你的垃圾邮件文件夹。",
 
+  // submit form — OpenRouter key field
   fieldKey: "OpenRouter 密钥",
-  fieldKeyGetOne: "获取一个 →",
-  keyOrPaste: "— 或粘贴一个密钥 —",
+  fieldKeyGetOne: "获取密钥 →",
+  keyOrPaste: "— 或粘贴密钥 —",
   keyPlaceholder: "sk-or-v1-…",
   keyAriaLabel: "OpenRouter API 密钥",
   keyHelper:
     "OAuth 密钥仅保留在此标签页中，关闭后即清除。绝不会保存在我们的服务器上。",
 
+  // submit form — author notes
   fieldNotes: "给评审者的备注",
   fieldNotesOptional: "（可选）",
   notesPlaceholder:
@@ -84,12 +95,14 @@ export const zhHans: Messages = {
   notesAriaLabel: "用于引导评审者的可选备注",
   notesHelper: "引导评审者的关注重点。不会覆盖评审标准。",
 
+  // submit form — cost estimate
   costEstimating: "正在估算费用...",
   costEstimatePrefix: "预计 API 费用：$",
   costUnavailable: "无法估算该模型的费用",
 
+  // submit form — Turnstile failure block
   turnstileFailedLine1Prefix:
-    "我们的人机验证无法完成。有什么东西在阻止或拖慢 ",
+    "我们的人机验证无法完成。有什么东西正在阻止或拖慢 ",
   turnstileChallengesHost: "challenges.cloudflare.com",
   turnstileFailedLine1Suffix:
     " ——通常是浏览器的严格隐私模式（例如 Safari 的跟踪保护或 Firefox ETP 严格模式）、内容/广告拦截器（Brave Shields、某些过滤列表中的 uBlock Origin），或者是缓慢或经过过滤的网络。",
@@ -101,21 +114,24 @@ export const zhHans: Messages = {
   turnstileUvxCommand: "uvx coarse-ink review paper.pdf",
   turnstileFailedLine3Suffix: "。",
 
+  // submit form — buttons + handoff picker
   submitButton: "评审我的论文",
   submitButtonBusy: "正在提交...",
   submitOr: "或",
   handoffButton: "用我的订阅来评审 ▾",
   handoffButtonBusy: "正在准备...",
 
+  // submit form — handoff progress messages
   handoffUploading: "正在上传论文...",
   handoffPreparing: "正在准备交接...",
 
+  // submit form — explanatory paragraphs
   explainReviewLabel: "评审我的论文：",
   explainReviewBody:
     " OpenRouter 全程处理一切。文件在处理后即被删除。评审密钥有效期为 90 天。通常不到 $2。",
   explainSubscriptionLabel: "用我的订阅来评审：",
   explainSubscriptionPart1:
-    "我们会给你一条 shell 命令，使用 ",
+    "我们会给你一条 shell 命令，让它使用 ",
   explainSubscriptionYour: "你自己的",
   explainSubscriptionClaudeCode: "Claude Code",
   explainSubscriptionCommaCodex: "、",
@@ -129,8 +145,9 @@ export const zhHans: Messages = {
     "你的文件不是 PDF，因此会完全跳过 Mistral OCR 步骤——整个运行都由你的订阅承担，无需 OpenRouter 密钥。",
   explainSubscriptionPart3: "完成后评审会显示在本页面上。",
   explainDisclaimer:
-    "使用你自己的 Claude Code、Codex 或 Gemini CLI 账户在你本地的机器上运行。coarse.ink 不会接收或存储你的提供商登录信息，并且你的提供商的条款、使用限额和组织政策均适用。coarse.ink 与 Anthropic、OpenAI 或 Google 无任何关联。",
+    "在你本地的机器上，使用你自己的 Claude Code、Codex 或 Gemini CLI 账户运行。coarse.ink 不会接收或存储你的提供商登录信息，并且你的提供商的条款、使用限额和组织政策均适用。coarse.ink 与 Anthropic、OpenAI 或 Google 无任何关联。",
 
+  // submit form — handoff result card
   handoffReviewWithPrefix: "用 ",
   handoffModelLabel: "模型",
   handoffEffortLabel: "强度",
@@ -139,7 +156,7 @@ export const zhHans: Messages = {
   handoffRunHint:
     "智能体会刷新 coarse-review 技能，在本地运行完整评审，耗时 10–25 分钟。你的提供商登录信息会保留在你的机器上。",
   handoffKeyNeededPrefix:
-    "你的 OpenRouter 密钥需要先放在你的机器上——请导出 ",
+    "你的 OpenRouter 密钥需要先放到你的机器上——请导出 ",
   handoffKeyEnvVar: "OPENROUTER_API_KEY",
   handoffKeyNeededMid1: "，或将其放入 ",
   handoffKeyEnvFile: ".env",
@@ -154,27 +171,30 @@ export const zhHans: Messages = {
   handoffInstallSuffix: " 吗？ ",
   handoffInstallLink: "安装它 →",
 
+  // retrieve
   findReviewHeading: "查找评审",
   findReviewPlaceholder: "粘贴你的评审密钥、完整评审链接或旧版评审 ID...",
   findReviewAriaLabel: "评审密钥",
   findReviewButton: "查找",
 
+  // footer
   footerPrivacy: "隐私",
   footerTerms: "条款",
   footerContact: "联系",
 
+  // status / errors (set in handlers)
   noticeKeyMigrated:
     "已将你保存的 OpenRouter 密钥移入仅限本标签页的存储。关闭此标签页时它将被清除。",
   errorLoginNoPersist:
     "已登录，但无法在本标签页中保留密钥。如果此页面重新加载，你需要再次粘贴它。",
   errorLoginFailed:
-    "OpenRouter 登录失败。请重试或手动粘贴一个密钥。",
+    "OpenRouter 登录失败。请重试，或手动粘贴密钥。",
   errorAuthFailed:
     "身份验证失败。在预览部署上，这通常意味着浏览器缓存的 Basic Auth 凭据在提交表单时没有被发送。请刷新标签页（Cmd/Ctrl+Shift+R），在密码提示处重新登录，然后重试。",
   errorServiceUnavailable: "服务暂时不可用——请一分钟后重试。",
   errorHttpMid: " (HTTP ",
   errorTurnstileBlockedPrefix:
-    "我们的人机验证小组件无法加载——很可能是浏览器扩展（Brave Shields、uBlock Origin、Firefox ETP 严格模式）拦截了 challenges.cloudflare.com。请尝试为以下对象停用它： ",
+    "我们的人机验证小组件无法加载——很可能是浏览器扩展（Brave Shields、uBlock Origin、Firefox ETP 严格模式）拦截了 challenges.cloudflare.com。请尝试为以下对象将其停用： ",
   errorTurnstileBlockedSuffix: "，或在本地运行 coarse：uvx coarse-ink review paper.pdf",
   errorTurnstileWaiting:
     "仍在等待人机验证加载——请稍等片刻再重试。",
@@ -186,13 +206,192 @@ export const zhHans: Messages = {
   launchOpeningCodex:
     "正在打开 Codex 桌面应用——编辑框应已预先填好。点击发送即可。",
   launchOpeningPrefix: "正在打开 ",
-  launchOpeningSuffix: " ——从剪贴板粘贴提示词（⌘V / Ctrl+V）。",
+  launchOpeningSuffix: " ——请从剪贴板粘贴提示词（⌘V / Ctrl+V）。",
   launchDidntOpenSuffix:
     " 桌面应用未能打开。如果你只安装了 CLI 版本，请改为将上面的命令粘贴到你的终端中。",
   errorLoginCouldNotStartPrefix: "OpenRouter 登录无法启动： ",
 
+  // review-language picker (LanguagePicker.tsx)
   reviewLanguageLabel: "评审语言",
   reviewLanguageAuto: "自动——匹配论文的语言",
   reviewLanguageHelper:
     "默认使用论文本身的语言；引文始终保留原文。",
+
+  // model picker (ModelPicker.tsx)
+  modelPickerLabel: "模型",
+  modelPickerUnavailableTitle: "当前不可用",
+  modelPickerSearchPlaceholder: "搜索模型...",
+  modelPickerLoading: "正在加载模型...",
+  modelPickerNoResults: "未找到模型。",
+  modelPickerSearch: "搜索模型...",
+
+  // OpenRouter login button (OpenRouterLoginButton.tsx)
+  openRouterConnected: "已连接到 OpenRouter",
+  openRouterLogOut: "退出登录",
+  openRouterLogIn: "使用 OpenRouter 登录 →",
+
+  // status page (status/[id]/page.tsx)
+  statusAccessErrorNeedsKey:
+    "查看此评审需要完整的安全评审链接或评审密钥。",
+  statusLoadFailed: "加载评审状态失败。请重试。",
+  statusCancelledByUser: "评审已被用户取消",
+  statusLoading: "正在加载",
+  statusAccessTokenRequired: "需要访问令牌。",
+  statusNotFoundHeading: "未找到评审。",
+  statusNotFoundBody: "请检查评审密钥后重试。",
+  statusCancelConfirmHeading: "取消评审？",
+  statusCancelConfirmBody: "确定吗？你将无法查看你的结果。",
+  statusCancelling: "正在取消...",
+  statusYesCancel: "是，取消",
+  statusGoBack: "返回",
+  statusLabelCancelled: "已取消",
+  statusLabelFailed: "失败",
+  statusLabelReviewing: "评审中",
+  statusLabelQueued: "排队中",
+  statusGithub: "GitHub ↗",
+  statusReadingHeading: "正在阅读你的论文。",
+  statusQueuedHeading: "已排队。",
+  statusRunningBody: "正在运行评审流水线（通常需要 30–60 分钟）。",
+  statusQueuedBody: "你的评审已排队，即将开始。",
+  statusEmailWhenDone: "完成后我们会通过邮件通知你。",
+  statusCancelledHeading: "评审已取消。",
+  statusCancelledBody:
+    "排队中的任务已被标记为取消。如果工作已经开始，工作进程可能需要一点时间才能停下来。",
+  statusFailedHeading: "失败。",
+  statusUnexpectedError: "发生了意外错误。",
+  statusResubmitPrefix: "请尝试重新提交，或在 ",
+  statusResubmitGithub: "Github",
+  statusResubmitSuffix: " 上反馈你的问题。",
+  statusTryAgain: "重试 →",
+  statusKeyBoxSave: "你的评审密钥——请保存好",
+  statusKeyBoxLegacy: "旧版评审链接",
+  statusCopied: "已复制",
+  statusCopyLink: "复制链接",
+  statusRedirectNote: "评审准备就绪后，本页面将自动跳转。",
+  statusCancelReview: "取消评审",
+
+  // review page chrome (ReviewPageClient.tsx)
+  reviewClientAccessErrorNeedsKey:
+    "查看此评审需要完整的安全评审链接或评审密钥。",
+  reviewClientLoadFailed: "加载评审失败。请重试。",
+  reviewClientLoading: "正在加载",
+  reviewClientNotFoundHeading: "未找到评审。",
+  reviewClientNotFoundBody: "请检查你的密钥后重试。",
+  reviewClientSubmitNewPaper: "提交新论文 →",
+  reviewClientAccessTokenRequired: "需要访问令牌。",
+  reviewClientBackHome: "返回首页 →",
+  reviewClientReadingHeading: "正在阅读你的论文。",
+  reviewClientQueuedHeading: "已排队。",
+  reviewClientRunningBody: "通常需要 30–60 分钟。本页面会自动更新。",
+  reviewClientQueuedBody: "处理即将开始。",
+  reviewClientFailedHeading: "评审失败。",
+  reviewClientUnexpectedError: "发生了意外错误。",
+  reviewClientTryAgain: "重试 →",
+  reviewClientCancelledHeading: "评审已取消。",
+  reviewClientCancelledBody: "此评审在完成前已被取消。",
+
+  // review page chrome (ReviewDisplay.tsx)
+  reviewShowLess: "收起",
+  reviewShowMore: "展开",
+  reviewShowInPaper: "在论文中显示",
+  reviewMarkActive: "标记为活跃",
+  reviewMarkDone: "标记为完成",
+  reviewDismiss: "忽略",
+  reviewDiscuss: "讨论",
+  reviewDiscussTitle: "与 AI 模型讨论此评论",
+  reviewShowDetails: "显示详情",
+  reviewStatusDone: "已完成",
+  reviewStatusDismissed: "已忽略",
+  reviewHide: "隐藏",
+  reviewFilterAll: "全部",
+  reviewFilterActive: "活跃",
+  reviewFilterDone: "已完成",
+  reviewFilterDismissed: "已忽略",
+  reviewSidebarOverallFeedback: "总体反馈",
+  reviewSidebarCommentsPrefix: "评论（",
+  reviewSidebarCommentsRemainingSuffix: " 条待处理）",
+  reviewRemainingSuffix: " 条待处理",
+  reviewDownload: "下载",
+  reviewDownloadMarkdown: "Markdown (.md)",
+  reviewDownloadPrint: "打印 / PDF",
+  reviewHidePaper: "隐藏论文",
+  reviewShowPaper: "显示论文",
+  reviewCopied: "已复制",
+  reviewShare: "分享",
+  reviewGithub: "GitHub",
+  reviewResizeAriaLabel: "拖动以调整论文面板大小",
+  reviewResizeTitle: "拖动以调整大小",
+  reviewOfPrefix: "评审： ",
+  reviewMetaModel: "模型",
+  reviewMetaDate: "日期",
+  reviewMetaDomain: "领域",
+  reviewMetaTime: "耗时",
+  reviewMetaCost: "费用",
+  reviewMetaReviewLanguage: "评审语言",
+  reviewMetaAutoDetectedSuffix: " · 自动检测",
+  reviewOverallFeedbackHeading: "总体反馈",
+  reviewDetailedCommentsPrefix: "详细评论（",
+  reviewDetailedCommentsSuffix: "）",
+  reviewGeneratedByPrefix: "由 ",
+  reviewGeneratedBySuffix: " 生成。当然了。",
+  reviewShareThisReview: "分享此评审",
+  reviewDeleteReview: "删除评审",
+  reviewDeleteConfirmHeading: "删除评审？",
+  reviewDeleteConfirmBody: "确定吗？你将无法查看你的结果。",
+  reviewDeleting: "正在删除...",
+  reviewYesDelete: "是，删除",
+  reviewGoBack: "返回",
+
+  // review page chrome — comment chat (CommentChat.tsx)
+  chatExamplePrompt1: "这条批评意见真的成立吗？",
+  chatExamplePrompt2: "我该如何修改才能解决它？",
+  chatExamplePrompt3: "论文中的哪一处适用于此？",
+  chatNoResponse: "模型没有响应。请重试或切换模型。",
+  chatSessionExpired: "你的 OpenRouter 会话已过期。请重新登录以继续。",
+  chatSomethingWrong: "出了点问题。",
+  chatDiscussKicker: "讨论 · ",
+  chatKickerComment: "评论 #",
+  chatKickerOverallFeedback: "总体反馈",
+  chatDiscussAriaPrefix: "讨论： ",
+  chatCloseAriaLabel: "关闭聊天",
+  chatDisconnectKeyTitle:
+    "断开你的 OpenRouter 密钥（它不会保存到本标签页之外）",
+  chatDisconnectKey: "断开密钥",
+  chatInputPlaceholder: "询问关于这条评论的问题…",
+  chatMessageAriaLabel: "消息",
+  chatStop: "停止",
+  chatSend: "发送",
+  chatModelDisclosurePrefix: "模型： ",
+  chatKeyGateIntro:
+    "连接 OpenRouter 即可讨论这条评论。你的密钥会直接发送给 OpenRouter——绝不会发送到我们的服务器——并在你关闭此标签页时清除。",
+  chatKeyGateOrPaste: "— 或粘贴密钥 —",
+  chatKeyGatePlaceholder: "sk-or-v1-…",
+  chatKeyGateAriaLabel: "OpenRouter API 密钥",
+  chatKeyGateUseKey: "使用密钥",
+  chatKeyGateHelper:
+    "OAuth 密钥仅保留在此标签页中，关闭后即清除。绝不会保存在我们的服务器上。",
+  chatEmptyHintPrefix: "可以就这条评论提出任何问题。每条消息都会将 ",
+  chatEmptyHintFullPaper: "整篇论文",
+  chatEmptyHintQuotedPassage: "引用的段落和反馈",
+  chatEmptyHintSuffix: " 作为上下文发送，并消耗你的 OpenRouter 额度运行。",
+  chatEmptyHintNoPaper:
+    "本评审未存储论文全文，因此回答仅依据引用的段落和反馈。",
+
+  // review page chrome — subscription handoff menu (SubscriptionHandoffMenu.tsx)
+  handoffMenuOpenedPromptPrefix: "已打开 ",
+  handoffMenuOpenedPromptMid: "，提示词已预先填好——请附上 coarse_",
+  handoffMenuOpenedPromptSuffix:
+    "_context.md，然后发送。（提示词也已复制，以防万一。）",
+  handoffMenuOpenedPlainMid: " ——请附上 coarse_",
+  handoffMenuOpenedPlainSuffix: "_context.md，并粘贴已复制的提示词。",
+  handoffMenuButtonTitle:
+    "将论文 + 评审发送到你自己的 AI 聊天（Claude、ChatGPT、Gemini、Grok、DeepSeek）",
+  handoffMenuButton: "与你的 AI 讨论",
+  handoffMenuDownloadsIntro: "下载论文 + 评审，然后打开：",
+
+  // review page chrome — paper panel (PaperPanel.tsx)
+  paperPanelHeading: "论文",
+  paperPanelDownload: "下载",
+  paperPanelDownloadAriaLabel: "下载论文 markdown",
+  paperPanelCloseAriaLabel: "关闭论文面板",
 };
