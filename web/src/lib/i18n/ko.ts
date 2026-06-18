@@ -393,4 +393,184 @@ export const ko: Messages = {
   paperPanelDownload: "다운로드",
   paperPanelDownloadAriaLabel: "논문 마크다운 다운로드",
   paperPanelCloseAriaLabel: "논문 패널 닫기",
+
+  // setup page (setup/page.tsx)
+  // setup page — tab switcher
+  setupTablistAriaLabel: "설정 경로",
+  setupTabOpenRouter: "OpenRouter 키",
+  setupTabSubscription: "내 구독 사용하기",
+  // setup page — OpenRouter tab intro
+  setupOrHeading: "OpenRouter 키 발급받기",
+  setupOrIntro:
+    "약 2분이 걸립니다. 시작하려면 ~$1의 크레딧을 위한 신용카드가 필요합니다 — 2단계에서 $20까지 충전하시게 됩니다.",
+  setupOrFasterLabel: "더 빠른 방법:",
+  setupOrFasterMid1: " 메인 폼에서 ",
+  setupOrFasterLogIn: "“OpenRouter로 로그인”",
+  setupOrFasterSuffix:
+    " 을(를) 클릭하면 coarse를 승인하고 수동 키 생성을 건너뛸 수 있습니다. 여전히 크레딧이 있는 OpenRouter 계정이 필요하며(아래 1단계와 2단계), 키별 지출 한도 설정(4단계)도 권장합니다.",
+  // setup page — OpenRouter step 1
+  setupOrStep1Title: "계정 만들기",
+  setupOrStep1BodyPrefix: "다음으로 이동하세요: ",
+  setupOrStep1BodySuffix: " 그런 다음 “Get API Key”를 클릭하거나 Google / GitHub으로 가입하세요.",
+  setupOrStep1Annotation: "홈페이지",
+  setupOrStep1MockButton: "Get API Key",
+  setupOrStep1MockTagline: "LLM을 위한 통합 API — 하나의 키로 여러 모델을.",
+  // setup page — OpenRouter step 2
+  setupOrStep2Title: "크레딧 추가",
+  setupOrStep2BodyPrefix: "다음으로 이동하세요: ",
+  setupOrStep2BodyLink: "Settings → Credits",
+  setupOrStep2BodySuffix:
+    ". 최소 $20를 추가하세요. 저렴한 오픈 소스 모델은 리뷰당 ~$0.25, Claude Opus나 GPT-5 같은 SOTA 모델은 긴 논문에서 $5–$10가 들 수 있습니다. 제출 전에 표시되는 비용 추정치는 대략적인 값일 뿐 상한선이 아닙니다. 여유를 두지 않으면 리뷰가 중간에 키를 소진하고 실패할 수 있습니다. 사용하지 않은 크레딧은 만료되지 않습니다.",
+  setupOrStep2Annotation: "크레딧 페이지",
+  setupOrStep2MockSettings: "Settings → Credits",
+  setupOrStep2MockAmount: "금액",
+  setupOrStep2MockButton: "Add credits",
+  setupOrStep2MockBalance: "Balance: $0.00",
+  // setup page — OpenRouter step 3
+  setupOrStep3Title: "API 키 만들기",
+  setupOrStep3BodyPrefix: "다음으로 이동하세요: ",
+  setupOrStep3BodyLink: "Settings → Keys",
+  setupOrStep3BodyMid: ", “Create Key”를 클릭하고 이름을 다음으로 지정하세요: ",
+  setupOrStep3BodySuffix: ".",
+  setupOrStep3Provisioning:
+    "반드시 일반 API 키여야 합니다 — integrations 섹션의 프로비저닝/관리 키가 아니어야 합니다. 프로비저닝 키는 다른 키를 생성하고 나열할 수 있지만 추론은 실행할 수 없으며, 이런 키를 붙여넣으면 coarse가 “User not found” 오류로 실패합니다.",
+  setupOrStep3CopyWarning: "지금 키를 복사하세요 — 다시 볼 수 없습니다.",
+  setupOrStep3Annotation: "키 페이지",
+  setupOrStep3MockSettings: "Settings → Keys",
+  setupOrStep3MockButton: "Create Key",
+  setupOrStep3MockKeyName: "키 이름",
+  setupOrStep3MockYourKey: "당신의 키",
+  // setup page — OpenRouter step 4
+  setupOrStep4Title: "키에 지출 한도 설정하기",
+  setupOrStep4BodyPrefix: "다음에서: ",
+  setupOrStep4BodyLink: "키 페이지",
+  setupOrStep4BodyMid1: ", 새 키 옆의 ",
+  setupOrStep4BodyMid2: " 메뉴를 클릭하고 “Edit”를 선택한 다음 크레딧 한도를 다음으로 설정하세요: ",
+  setupOrStep4BodyAtLeast: "최소 $20",
+  setupOrStep4BodySuffix:
+    ". 한도에 도달하면 키가 작동을 멈추므로 예상치 못한 청구는 불가능합니다. 하지만 너무 빡빡하게 설정하면 비싼 리뷰 하나가 실행 도중에 키를 소진시킬 수 있습니다.",
+  setupOrStep4Annotation: "키 메뉴",
+  setupOrStep4MockEdit: "Edit",
+  setupOrStep4MockLimitLabel: "이 키의 크레딧 한도",
+  setupOrStep4MockButton: "Save",
+  setupOrStep4WhyLabel: "이것이 중요한 이유:",
+  setupOrStep4WhyMid1: " coarse는 오픈 소스입니다 — 다음을 할 수 있습니다: ",
+  setupOrStep4WhyLink: "모든 코드 줄 읽어보기",
+  setupOrStep4WhySuffix:
+    ". 키는 리뷰를 실행하기 위해 OpenRouter로 직접 전송된 뒤 폐기되며 — 절대 저장되지 않습니다. 하지만 저희를 믿으실 필요는 없습니다: 키별 한도가 최악의 경우에도 허용한 금액 이상을 절대 쓸 수 없도록 보장합니다.",
+  setupOrStep4CostLabel: "비용 추정치에 관한 참고 사항:",
+  setupOrStep4CostBody:
+    " 제출 전에 표시되는 추정치는 ~15% 여유를 둔 휴리스틱이며 엄격한 상한선이 아닙니다. 긴 논문에 SOTA 모델을 사용하면 증명 검증과 비판 재작성이 작동하기 시작하면서 실제 비용이 추정치의 ~2배까지 들 수 있습니다. 키별 상한이 추정치에 딱 맞춰져 있으면 까다로운 리뷰 하나가 이를 소진하고 실행 도중에 실패할 수 있습니다. 항상 여유를 두세요.",
+  // setup page — OpenRouter step 5
+  setupOrStep5Title: "coarse에 붙여넣기",
+  setupOrStep5Body: "여기로 돌아와 키를 폼에 붙여넣고 PDF를 업로드하세요.",
+  setupOrStep5Annotation: "coarse 폼",
+  setupOrStep5MockEmail: "이메일",
+  setupOrStep5MockKey: "OpenRouter 키",
+  setupOrStep5MockButton: "내 논문 리뷰하기",
+  // setup page — shared footer CTA
+  setupReadyCta: "준비되셨나요? 논문을 리뷰하세요 →",
+  // setup page — subscription tab intro
+  setupSubHeading: "코딩 에이전트 구독 사용하기",
+  setupSubIntro1:
+    "이미 Claude Code, Codex 또는 Gemini CLI에 비용을 지불하고 있는 사용자를 위한 방법입니다. 리뷰는 사용자의 구독으로 실행되어 거기에 청구됩니다. OCR 단계에 대해서만 OpenRouter에 ~$0.15를 지불합니다.",
+  setupSubIntro2:
+    "자신의 Claude Code, Codex 또는 Gemini CLI 계정을 사용하여 사용자의 컴퓨터에서 로컬로 실행됩니다. coarse.ink는 사용자의 제공자 로그인을 수신하거나 저장하지 않습니다. 제공자의 약관과 사용 한도는 여전히 적용됩니다. coarse.ink는 Anthropic, OpenAI 또는 Google과 제휴 관계가 없습니다.",
+  // setup page — subscription step 1
+  setupSubStep1Title: "코딩 에이전트 설치하기",
+  setupSubStep1Body:
+    "비용을 지불하고 있는 것 중 아무거나 고르세요. 없다면 Gemini CLI에 무료 등급이 있습니다. 벤더의 자체 페이지에서 설치하세요 — 해당 문서가 최신 상태로 유지됩니다.",
+  setupSubStep1ClaudePrice: "Anthropic Pro 또는 Max",
+  setupSubStep1CodexPrice: "ChatGPT Plus, Pro 또는 Business",
+  setupSubStep1GeminiPrice: "대부분의 논문에는 무료 등급으로 충분합니다",
+  setupSubStep1InstallLabel: "설치 안내 ↗",
+  setupSubStep1Verify:
+    "테스트 명령을 실행하여 설치 + 로그인을 확인하세요. 응답이 출력되면 준비된 것입니다.",
+  setupSubStep1CardLogin: "로그인: ",
+  setupSubStep1CardTest: "테스트: ",
+  // setup page — subscription step 2
+  setupSubStep2Title: "사용자 컴퓨터에 OpenRouter 키 두기 (PDF만 해당)",
+  setupSubStep2BodyPrefix:
+    "이 단계는 PDF 논문에만 적용됩니다 — PDF가 아닌 소스(.tex, .md, .docx, …)는 OCR 없이 로컬에서 추출되므로 어디에도 OpenRouter 키가 필요 없으며 바로 3단계로 건너뛸 수 있습니다. PDF의 경우 coarse는 OCR 단계(논문당 ~$0.10)에 여전히 OpenRouter가 필요합니다. 다음 ",
+  setupSubStep2BodyTab: "OpenRouter 키",
+  setupSubStep2BodySuffix:
+    " 탭을 따라 계정을 만들고, $1의 크레딧을 추가하고, $2의 키별 한도를 설정하세요. OpenRouter 전용 경로의 $20 여유분은 여기서는 필요하지 않습니다. 리뷰 자체가 코딩 에이전트 구독으로 실행되기 때문입니다.",
+  setupSubStep2KeyPrefix: "그런 다음 키를 자신의 컴퓨터에 두세요: 다음을 실행하거나 ",
+  setupSubStep2KeyMid1: ", 다음에 넣거나 ",
+  setupSubStep2KeyMid2: ", 다음에 저장하세요 ",
+  setupSubStep2KeySuffix:
+    ". CLI가 추출을 실행할 때 로컬에서 키를 읽습니다. coarse.ink는 키를 절대 보지 않습니다.",
+  // setup page — subscription step 3
+  setupSubStep3Title: "논문 업로드하고 CLI 선택하기",
+  setupSubStep3BodyPrefix: "다음에서: ",
+  setupSubStep3BodyLink: "메인 페이지",
+  setupSubStep3BodyMid: ", 논문(PDF, .tex, .md, .docx, …)을 폼에 끌어다 놓은 다음 ",
+  setupSubStep3BodyButton: "내 구독으로 리뷰하기 ▾",
+  setupSubStep3BodySuffix:
+    " 드롭다운을 클릭하고 CLI를 선택하세요. coarse가 파일을 업로드하고 핸드오프 토큰을 발급한 뒤 다음 단계에서 붙여넣을 프롬프트를 보여줍니다. 여기 폼에는 OpenRouter 키를 붙여넣지 않습니다. CLI가 사용자의 컴퓨터에서 키를 읽습니다(2단계).",
+  // setup page — subscription step 4
+  setupSubStep4Title: "프롬프트를 CLI에 붙여넣기",
+  setupSubStep4BodyPrefix: "coarse가 하나의 자연어 프롬프트를 제공합니다. 패널에서 복사하여 다음 ",
+  setupSubStep4BodyMid1: ", ",
+  setupSubStep4BodyMid2: ", 또는 ",
+  setupSubStep4BodyMid3: " 세션에 붙여넣고 전송을 누르세요. 에이전트가 스킬 번들을 새로 고치고, 자체 하위 프로세스 호출로 전체 coarse 파이프라인을 실행한 뒤 완료되면 ",
+  setupSubStep4BodySuffix:
+    " URL을 출력합니다. 10–25분이 걸립니다. URL을 클릭하면 완성된 리뷰가 coarse.ink에서 열립니다.",
+  setupSubStep4TimeoutLabel: "코딩 에이전트에 붙여넣는 경우",
+  setupSubStep4TimeoutSuffix:
+    " (일반 터미널이 아닌 경우) 프롬프트를 전송하기 전에 bash 도구 타임아웃을 최소 45분으로 늘리세요. 기본 에이전트 타임아웃은 2분 정도로 낮을 수 있어 10–25분의 리뷰 실행 시간에 훨씬 못 미칩니다.",
+  // setup page — subscription step 5 (troubleshooting)
+  setupSubStep5Title: "문제가 발생하면",
+  setupSubTrouble1Symptom: "“Try opening Claude Code / Codex” 버튼을 눌러도 아무 일이 일어나지 않습니다.",
+  setupSubTrouble1Fix:
+    "이 버튼은 데스크톱 앱이 설치되어 있어야만 작동합니다. CLI만 설치된 경우 브라우저가 터미널을 대신 실행할 수 없습니다. 패널에서 프롬프트를 복사하여 CLI에 직접 붙여넣으세요.",
+  setupSubTrouble2Symptom: "에이전트 실행 중 “No such command ‘install-skills’”.",
+  setupSubTrouble2FixPrefix: "무시해도 안전합니다. 스킬 번들은 여전히 다음을 통해 직접 로드됩니다: ",
+  setupSubTrouble2FixSuffix: "; 에이전트는 리뷰 단계로 계속 진행합니다.",
+  setupSubTrouble3Symptom: "리뷰 후 Anthropic / OpenAI / Google 청구액이 늘었습니다.",
+  setupSubTrouble3FixPrefix: "다음을 확인하세요: ",
+  setupSubTrouble3FixMid1: ", ",
+  setupSubTrouble3FixMid2: ", 또는 ",
+  setupSubTrouble3FixSuffix:
+    " 가 셸 환경에 있는지 확인하세요. 설정되어 있으면 호스트 CLI가 구독 대신 API 계정에 청구합니다. v1.3.0+에서는 이를 자동으로 제거하지만 이전 버전에서는 그렇지 않았습니다.",
+  setupSubTrouble4Symptom: "평소보다 코멘트가 적습니다(15–25개 대신 ~10개).",
+  setupSubTrouble4FixPrefix: "한 섹션이 30분 타임아웃에 걸려 누락되었습니다. 기본 추론 강도에서는 드물지만 긴 논문에 ",
+  setupSubTrouble4FixSuffix:
+    " 을(를) 사용하면 더 흔합니다. 다시 실행하세요. 두 번 발생하면 추론 강도를 한 단계 낮추세요.",
+
+  // compare page (ComparePage.tsx)
+  comparePanelErrorBody: "이것을 렌더링할 수 없었습니다. 다른 모델이나 비교를 시도해 보세요.",
+  comparePaperCorticalCircuits: "Cortical Circuits",
+  comparePaperCosetCodes: "Coset Codes",
+  comparePaperPopulationGenetics: "Population Genetics",
+  comparePaperTargetingInterventions: "Targeting Interventions",
+  compareScoresShow: "보기",
+  compareScoresHide: "숨기기",
+  compareScoresToggleSuffix: " 논문별 전체 점수 ",
+  compareScoresColPaper: "논문",
+  compareScoresColReference: "참조",
+  compareScoresColGpt5Mini: "GPT-5 Mini",
+  compareScoresColGpt54: "GPT-5.4",
+  compareScoresColSonnet: "Sonnet 4.6",
+  compareScoresColKimi: "Kimi K2.5",
+  compareScoresFootnote:
+    "PDF 멀티모달 입력으로 Gemini 3.1 Pro가 평가했습니다. 5.0/5 = 참조 품질과 동등. 5.5+/5 = 그 이상.",
+  compareJudgeShow: "보기",
+  compareJudgeHide: "숨기기",
+  compareJudgeToggleSuffix: " Gemini 3.1 Pro에 전송된 심사 프롬프트 ",
+  compareJudgeExplain:
+    "알려진 LLM-as-judge 편향을 완화하기 위해, 심사자는 평가마다 두 리뷰의 제시 순서를 바꿔 두 번 실행되며 점수는 두 순서에 걸쳐 평균을 냅니다. 이는 심사자가 먼저 나오는 리뷰를 체계적으로 선호하는 위치 편향에 대응합니다. 프롬프트에는 또한 장황함 편향(분량을 내용보다 우대하지 않음), 확신 편향(올바른 신중함보다 단정적인 표현을 우대하지 않음), 권위 편향(정확성보다 전문 용어나 인용 수를 우대하지 않음), 관대함 편향(중간에 몰리지 않고 1-6점 척도 전체를 사용)에 대응하기 위한 구체적인 지침이 포함됩니다. 리뷰는 출처 기반 채점을 방지하기 위해 \"참조\"와 \"생성됨\" 대신 \"Review A\"와 \"Review B\"로 중립적으로 표시됩니다.",
+  compareJudgeSystemPromptLabel: "시스템 프롬프트",
+  compareJudgeUserPromptLabel: "사용자 프롬프트(논문 + 리뷰가 런타임에 삽입됨)",
+  compareVsMid: " vs ",
+  compareScoreOutOf: "/5",
+  compareMetricCoverage: "범위",
+  compareMetricSpecificity: "구체성",
+  compareMetricDepth: "깊이",
+  compareJumpTo: "이동",
+  compareSectionOverallFeedback: "전체 피드백",
+  compareSectionDetailedComments: "상세 코멘트",
+  compareVisitPrefix: "방문: ",
+  comparePdfReviewSuffix: " 리뷰",
+  comparePdfFallback: "iframe이 렌더링되지 않으면 PDF를 다운로드하세요 ↓",
 };

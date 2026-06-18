@@ -393,4 +393,184 @@ export const es: Messages = {
   paperPanelDownload: "Descargar",
   paperPanelDownloadAriaLabel: "Descargar el markdown del artículo",
   paperPanelCloseAriaLabel: "Cerrar el panel del artículo",
+
+  // setup page (setup/page.tsx)
+  // setup page — tab switcher
+  setupTablistAriaLabel: "Ruta de configuración",
+  setupTabOpenRouter: "Clave de OpenRouter",
+  setupTabSubscription: "Usar mi suscripción",
+  // setup page — OpenRouter tab intro
+  setupOrHeading: "Consigue tu clave de OpenRouter",
+  setupOrIntro:
+    "Lleva unos 2 minutos. Necesitarás una tarjeta de crédito para ~$1 en créditos para empezar — añadirás hasta $20 en el paso 2.",
+  setupOrFasterLabel: "Opción más rápida:",
+  setupOrFasterMid1: " en el formulario principal puedes hacer clic en ",
+  setupOrFasterLogIn: "“Iniciar sesión con OpenRouter”",
+  setupOrFasterSuffix:
+    " para autorizar a coarse y saltarte la creación manual de la clave. Aun así necesitas una cuenta de OpenRouter con créditos (pasos 1 y 2 más abajo), y seguimos recomendando establecer un límite de gasto por clave (paso 4).",
+  // setup page — OpenRouter step 1
+  setupOrStep1Title: "Crea una cuenta",
+  setupOrStep1BodyPrefix: "Ve a ",
+  setupOrStep1BodySuffix: " y haz clic en “Get API Key” o regístrate con Google / GitHub.",
+  setupOrStep1Annotation: "página de inicio",
+  setupOrStep1MockButton: "Get API Key",
+  setupOrStep1MockTagline: "Una API unificada para LLMs — una clave, muchos modelos.",
+  // setup page — OpenRouter step 2
+  setupOrStep2Title: "Añade créditos",
+  setupOrStep2BodyPrefix: "Navega a ",
+  setupOrStep2BodyLink: "Settings → Credits",
+  setupOrStep2BodySuffix:
+    ". Añade al menos $20. Los modelos baratos de código abierto cuestan ~$0,25 por revisión; los modelos de última generación como Claude Opus o GPT-5 pueden costar entre $5 y $10 en un artículo largo. La estimación de coste que se muestra antes del envío es orientativa, no un tope. Deja margen o la revisión puede agotar la clave a la mitad y fallar. Los créditos no utilizados no caducan.",
+  setupOrStep2Annotation: "página de créditos",
+  setupOrStep2MockSettings: "Settings → Credits",
+  setupOrStep2MockAmount: "Importe",
+  setupOrStep2MockButton: "Add credits",
+  setupOrStep2MockBalance: "Saldo: $0.00",
+  // setup page — OpenRouter step 3
+  setupOrStep3Title: "Crea una clave de API",
+  setupOrStep3BodyPrefix: "Ve a ",
+  setupOrStep3BodyLink: "Settings → Keys",
+  setupOrStep3BodyMid: ", haz clic en “Create Key” y ponle el nombre ",
+  setupOrStep3BodySuffix: ".",
+  setupOrStep3Provisioning:
+    "Asegúrate de que sea una clave de API normal — no una clave de aprovisionamiento/gestión de la sección de integraciones. Las claves de aprovisionamiento pueden crear y listar otras claves, pero no pueden ejecutar inferencia, y coarse fallará con “User not found” si pegas una.",
+  setupOrStep3CopyWarning: "Copia la clave ahora — no volverás a verla.",
+  setupOrStep3Annotation: "página de claves",
+  setupOrStep3MockSettings: "Settings → Keys",
+  setupOrStep3MockButton: "Create Key",
+  setupOrStep3MockKeyName: "Nombre de la clave",
+  setupOrStep3MockYourKey: "Tu clave",
+  // setup page — OpenRouter step 4
+  setupOrStep4Title: "Establece un límite de gasto en la clave",
+  setupOrStep4BodyPrefix: "En la ",
+  setupOrStep4BodyLink: "página de claves",
+  setupOrStep4BodyMid1: ", haz clic en el menú ",
+  setupOrStep4BodyMid2: " junto a tu nueva clave, elige “Edit” y establece el límite de crédito en ",
+  setupOrStep4BodyAtLeast: "al menos $20",
+  setupOrStep4BodySuffix:
+    ". La clave deja de funcionar una vez alcanzado el límite, así que los cargos sorpresa son imposibles. Pero si lo estableces demasiado ajustado, una sola revisión cara puede agotarlo a mitad de ejecución.",
+  setupOrStep4Annotation: "menú de la clave",
+  setupOrStep4MockEdit: "Edit",
+  setupOrStep4MockLimitLabel: "Límite de crédito para esta clave",
+  setupOrStep4MockButton: "Save",
+  setupOrStep4WhyLabel: "Por qué esto importa:",
+  setupOrStep4WhyMid1: " coarse es de código abierto — puedes ",
+  setupOrStep4WhyLink: "leer cada línea de código",
+  setupOrStep4WhySuffix:
+    ". Tu clave se envía directamente a OpenRouter para ejecutar la revisión y luego se descarta — nunca se almacena. Pero no tienes que confiar en nosotros: el límite por clave garantiza que nunca pueda gastar más de lo que permitas, ni siquiera en el peor de los casos.",
+  setupOrStep4CostLabel: "Una nota sobre las estimaciones de coste:",
+  setupOrStep4CostBody:
+    " la estimación que se muestra antes del envío es una heurística con un margen del ~15 %, no un tope rígido. El coste real en modelos de última generación con artículos largos puede llegar a ~2× la estimación una vez que entran en juego la verificación de pruebas y las reescrituras de la crítica. Si el tope por clave queda justo en la estimación, una revisión difícil puede vaciarlo y fallar a mitad de ejecución. Deja siempre margen.",
+  // setup page — OpenRouter step 5
+  setupOrStep5Title: "Pégala en coarse",
+  setupOrStep5Body: "Vuelve aquí, pega tu clave en el formulario y sube tu PDF.",
+  setupOrStep5Annotation: "formulario de coarse",
+  setupOrStep5MockEmail: "Correo electrónico",
+  setupOrStep5MockKey: "Clave de OpenRouter",
+  setupOrStep5MockButton: "Revisar mi artículo",
+  // setup page — shared footer CTA
+  setupReadyCta: "¿Listo? Revisa tu artículo →",
+  // setup page — subscription tab intro
+  setupSubHeading: "Usa la suscripción de tu agente de programación",
+  setupSubIntro1:
+    "Para usuarios que ya pagan por Claude Code, Codex o Gemini CLI. La revisión se ejecuta en tu suscripción y se factura ahí. Solo pagas a OpenRouter ~$0,15 por la pasada de OCR.",
+  setupSubIntro2:
+    "Se ejecuta en local en tu máquina usando tu propia cuenta de Claude Code, Codex o Gemini CLI. coarse.ink no recibe ni almacena el inicio de sesión de tu proveedor. Se siguen aplicando las condiciones y los límites de uso de tu proveedor. coarse.ink no está afiliado a Anthropic, OpenAI ni Google.",
+  // setup page — subscription step 1
+  setupSubStep1Title: "Instala un agente de programación",
+  setupSubStep1Body:
+    "Elige el que pagues. Gemini CLI tiene un nivel gratuito si no pagas ninguno. Instálalo desde la propia página del proveedor — su documentación se mantiene al día.",
+  setupSubStep1ClaudePrice: "Anthropic Pro o Max",
+  setupSubStep1CodexPrice: "ChatGPT Plus, Pro o Business",
+  setupSubStep1GeminiPrice: "El nivel gratuito sirve para la mayoría de los artículos",
+  setupSubStep1InstallLabel: "Instrucciones de instalación ↗",
+  setupSubStep1Verify:
+    "Ejecuta el comando de prueba para verificar la instalación y el inicio de sesión. Si imprime una respuesta, ya está listo.",
+  setupSubStep1CardLogin: "inicio de sesión: ",
+  setupSubStep1CardTest: "prueba: ",
+  // setup page — subscription step 2
+  setupSubStep2Title: "Pon una clave de OpenRouter en tu máquina (solo PDFs)",
+  setupSubStep2BodyPrefix:
+    "Este paso solo se aplica a los artículos en PDF — las fuentes que no son PDF (.tex, .md, .docx, …) se extraen en local sin OCR, así que no necesitan ninguna clave de OpenRouter en ningún sitio y puedes saltar directamente al paso 3. Para los PDFs, coarse aún necesita OpenRouter para el paso de OCR (~$0,10 por artículo). Sigue la pestaña ",
+  setupSubStep2BodyTab: "Clave de OpenRouter",
+  setupSubStep2BodySuffix:
+    " para crear una cuenta, añadir $1 de crédito y establecer un límite de $2 por clave. El margen de $20 de la ruta exclusiva de OpenRouter no hace falta aquí porque la revisión en sí se ejecuta en la suscripción de tu agente de programación.",
+  setupSubStep2KeyPrefix: "Luego pon la clave en tu propia máquina: ejecuta ",
+  setupSubStep2KeyMid1: ", ponla en un ",
+  setupSubStep2KeyMid2: ", o guárdala en ",
+  setupSubStep2KeySuffix:
+    ". Tu CLI la lee en local cuando ejecuta la extracción; coarse.ink nunca la ve.",
+  // setup page — subscription step 3
+  setupSubStep3Title: "Sube tu artículo y elige una CLI",
+  setupSubStep3BodyPrefix: "En la ",
+  setupSubStep3BodyLink: "página principal",
+  setupSubStep3BodyMid: ", arrastra tu artículo (PDF, .tex, .md, .docx, …) al formulario y luego haz clic en el desplegable ",
+  setupSubStep3BodyButton: "Revisar con mi suscripción ▾",
+  setupSubStep3BodySuffix:
+    " y elige tu CLI. coarse sube el archivo, acuña un token de transferencia y muestra la instrucción que pegarás en el siguiente paso. Aquí no pegas tu clave de OpenRouter en el formulario; la CLI la lee desde tu máquina (paso 2).",
+  // setup page — subscription step 4
+  setupSubStep4Title: "Pega la instrucción en tu CLI",
+  setupSubStep4BodyPrefix: "coarse te da una sola instrucción en lenguaje natural. Cópiala del panel, pégala en tu sesión de ",
+  setupSubStep4BodyMid1: ", ",
+  setupSubStep4BodyMid2: ", o ",
+  setupSubStep4BodyMid3: " y pulsa enviar. El agente actualiza su paquete de skills, ejecuta toda la pipeline de coarse en sus propias llamadas a subprocesos e imprime una URL de ",
+  setupSubStep4BodySuffix:
+    " cuando termina. De 10 a 25 minutos. Haz clic en la URL para abrir la revisión terminada en coarse.ink.",
+  setupSubStep4TimeoutLabel: "Si vas a pegarla en un agente de programación",
+  setupSubStep4TimeoutSuffix:
+    " (no en una terminal normal), sube el tiempo de espera de su herramienta bash a al menos 45 min antes de enviar la instrucción. Los tiempos de espera por defecto de los agentes pueden ser de tan solo 2 min, muy por debajo del tiempo de ejecución de la revisión de 10 a 25 min.",
+  // setup page — subscription step 5 (troubleshooting)
+  setupSubStep5Title: "Si algo sale mal",
+  setupSubTrouble1Symptom: "El botón “Intenta abrir Claude Code / Codex” no hace nada.",
+  setupSubTrouble1Fix:
+    "El botón solo funciona si tienes la app de escritorio instalada. Con una instalación solo de CLI, el navegador no puede abrirte una terminal. Copia la instrucción del panel y pégala en tu CLI manualmente.",
+  setupSubTrouble2Symptom: "“No such command ‘install-skills’” dentro de la ejecución del agente.",
+  setupSubTrouble2FixPrefix: "Se puede ignorar. El paquete de skills igualmente se carga directamente a través de ",
+  setupSubTrouble2FixSuffix: "; el agente continuará con el paso de la revisión.",
+  setupSubTrouble3Symptom: "Mi factura de Anthropic / OpenAI / Google subió tras una revisión.",
+  setupSubTrouble3FixPrefix: "Comprueba si hay ",
+  setupSubTrouble3FixMid1: ", ",
+  setupSubTrouble3FixMid2: ", o ",
+  setupSubTrouble3FixSuffix:
+    " en el entorno de tu shell. Si están definidas, la CLI anfitriona factura a la cuenta de la API en lugar de a tu suscripción. v1.3.0+ las elimina automáticamente, pero las versiones anteriores no.",
+  setupSubTrouble4Symptom: "Menos comentarios de lo habitual (~10 en lugar de 15–25).",
+  setupSubTrouble4FixPrefix: "Una sección alcanzó el tiempo de espera de 30 min y se descartó. Es raro con el esfuerzo por defecto, más común con ",
+  setupSubTrouble4FixSuffix:
+    " en artículos largos. Vuelve a ejecutarla; baja el esfuerzo un nivel si ocurre dos veces.",
+
+  // compare page (ComparePage.tsx)
+  comparePanelErrorBody: "No se pudo renderizar este. Prueba con otro modelo o comparación.",
+  comparePaperCorticalCircuits: "Circuitos Corticales",
+  comparePaperCosetCodes: "Códigos de Clases Laterales",
+  comparePaperPopulationGenetics: "Genética de Poblaciones",
+  comparePaperTargetingInterventions: "Focalización de Intervenciones",
+  compareScoresShow: "Mostrar",
+  compareScoresHide: "Ocultar",
+  compareScoresToggleSuffix: " todas las puntuaciones de los artículos ",
+  compareScoresColPaper: "Artículo",
+  compareScoresColReference: "Referencia",
+  compareScoresColGpt5Mini: "GPT-5 Mini",
+  compareScoresColGpt54: "GPT-5.4",
+  compareScoresColSonnet: "Sonnet 4.6",
+  compareScoresColKimi: "Kimi K2.5",
+  compareScoresFootnote:
+    "Evaluado por Gemini 3.1 Pro con entrada multimodal en PDF. 5,0/5 = iguala la calidad de la referencia. 5,5+/5 = la supera.",
+  compareJudgeShow: "Mostrar",
+  compareJudgeHide: "Ocultar",
+  compareJudgeToggleSuffix: " la instrucción del juez enviada a Gemini 3.1 Pro ",
+  compareJudgeExplain:
+    "Para mitigar los sesgos conocidos del LLM como juez, el juez se ejecuta dos veces por evaluación con las dos revisiones intercambiadas en el orden de presentación, y las puntuaciones se promedian entre ambos órdenes. Esto contrarresta el sesgo posicional, por el que los jueces favorecen sistemáticamente la revisión que aparece primero. La instrucción también incluye indicaciones específicas para contrarrestar el sesgo de verbosidad (no premiar la extensión por encima de la sustancia), el sesgo de confianza (no premiar el lenguaje categórico por encima de la cautela correcta), el sesgo de autoridad (no premiar la jerga ni el número de citas por encima de la exactitud) y el sesgo de indulgencia (usar todo el rango de puntuación del 1 al 6 en lugar de agruparse en el centro). Las revisiones se etiquetan de forma neutra como \"Revisión A\" y \"Revisión B\" en lugar de \"referencia\" y \"generada\" para evitar puntuar en función de la procedencia.",
+  compareJudgeSystemPromptLabel: "Instrucción del sistema",
+  compareJudgeUserPromptLabel: "Instrucción del usuario (el artículo y las revisiones se inyectan en tiempo de ejecución)",
+  compareVsMid: " frente a ",
+  compareScoreOutOf: "/5",
+  compareMetricCoverage: "Cobertura",
+  compareMetricSpecificity: "Especificidad",
+  compareMetricDepth: "Profundidad",
+  compareJumpTo: "Saltar a",
+  compareSectionOverallFeedback: "Comentarios generales",
+  compareSectionDetailedComments: "Comentarios detallados",
+  compareVisitPrefix: "Visita ",
+  comparePdfReviewSuffix: " revisión",
+  comparePdfFallback: "Descarga el PDF si el iframe no se renderiza ↓",
 };

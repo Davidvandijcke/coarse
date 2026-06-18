@@ -393,4 +393,184 @@ export const ja: Messages = {
   paperPanelDownload: "ダウンロード",
   paperPanelDownloadAriaLabel: "論文の Markdown をダウンロード",
   paperPanelCloseAriaLabel: "論文パネルを閉じる",
+
+  // setup page (setup/page.tsx)
+  // setup page — tab switcher
+  setupTablistAriaLabel: "セットアップの方法",
+  setupTabOpenRouter: "OpenRouter キー",
+  setupTabSubscription: "自分のサブスクリプションを使う",
+  // setup page — OpenRouter tab intro
+  setupOrHeading: "OpenRouter キーを取得する",
+  setupOrIntro:
+    "所要時間は約 2 分です。開始するにはクレジットカードと ~$1 のクレジットが必要です — ステップ 2 で $20 までチャージします。",
+  setupOrFasterLabel: "より速い方法:",
+  setupOrFasterMid1: " メインのフォームで ",
+  setupOrFasterLogIn: "「OpenRouter でログイン」",
+  setupOrFasterSuffix:
+    " をクリックすると、coarse を認可して手動でのキー作成をスキップできます。それでもクレジットのある OpenRouter アカウントは必要で（下記のステップ 1 と 2）、キーごとの利用上限を設定することを引き続きおすすめします（ステップ 4）。",
+  // setup page — OpenRouter step 1
+  setupOrStep1Title: "アカウントを作成する",
+  setupOrStep1BodyPrefix: "次にアクセスして ",
+  setupOrStep1BodySuffix: " 「Get API Key」をクリックするか、Google / GitHub でサインアップしてください。",
+  setupOrStep1Annotation: "ホームページ",
+  setupOrStep1MockButton: "Get API Key",
+  setupOrStep1MockTagline: "LLM のための統合 API — 1 つのキーで多数のモデルを。",
+  // setup page — OpenRouter step 2
+  setupOrStep2Title: "クレジットを追加する",
+  setupOrStep2BodyPrefix: "次に移動して ",
+  setupOrStep2BodyLink: "Settings → Credits",
+  setupOrStep2BodySuffix:
+    "。少なくとも $20 を追加してください。安価なオープンソースモデルは 1 回のレビューあたり ~$0.25 ですが、Claude Opus や GPT-5 のような最先端モデルは長い論文では $5–$10 かかることがあります。投稿前に表示される費用見積もりはおおよその目安であり、上限ではありません。余裕を持たせないと、レビューが途中でキーを使い切って失敗することがあります。未使用のクレジットは失効しません。",
+  setupOrStep2Annotation: "クレジットページ",
+  setupOrStep2MockSettings: "Settings → Credits",
+  setupOrStep2MockAmount: "金額",
+  setupOrStep2MockButton: "Add credits",
+  setupOrStep2MockBalance: "残高: $0.00",
+  // setup page — OpenRouter step 3
+  setupOrStep3Title: "API キーを作成する",
+  setupOrStep3BodyPrefix: "次にアクセスして ",
+  setupOrStep3BodyLink: "Settings → Keys",
+  setupOrStep3BodyMid: "「Create Key」をクリックし、次の名前を付けてください ",
+  setupOrStep3BodySuffix: "。",
+  setupOrStep3Provisioning:
+    "それが通常の API キーであることを確認してください — インテグレーションのセクションにあるプロビジョニング/管理用キーではありません。プロビジョニングキーは他のキーの作成や一覧表示はできますが推論を実行できず、それを貼り付けると coarse は「User not found」で失敗します。",
+  setupOrStep3CopyWarning: "今すぐキーをコピーしてください — 二度と表示されません。",
+  setupOrStep3Annotation: "キーページ",
+  setupOrStep3MockSettings: "Settings → Keys",
+  setupOrStep3MockButton: "Create Key",
+  setupOrStep3MockKeyName: "キー名",
+  setupOrStep3MockYourKey: "あなたのキー",
+  // setup page — OpenRouter step 4
+  setupOrStep4Title: "キーに利用上限を設定する",
+  setupOrStep4BodyPrefix: "次の場所で ",
+  setupOrStep4BodyLink: "Keys ページ",
+  setupOrStep4BodyMid1: "新しいキーの横にある ",
+  setupOrStep4BodyMid2: " メニューをクリックし、「Edit」を選んで、クレジット上限を次のように設定してください ",
+  setupOrStep4BodyAtLeast: "少なくとも $20",
+  setupOrStep4BodySuffix:
+    "。上限に達するとキーは動作を停止するため、想定外の請求が発生することはありません。ただし、設定が厳しすぎると、1 回の高額なレビューで途中で使い切ることがあります。",
+  setupOrStep4Annotation: "キーメニュー",
+  setupOrStep4MockEdit: "Edit",
+  setupOrStep4MockLimitLabel: "このキーのクレジット上限",
+  setupOrStep4MockButton: "Save",
+  setupOrStep4WhyLabel: "これが重要な理由:",
+  setupOrStep4WhyMid1: " coarse はオープンソースです — ",
+  setupOrStep4WhyLink: "すべてのコードを読む",
+  setupOrStep4WhySuffix:
+    "ことができます。あなたのキーはレビューを実行するために OpenRouter に直接送信され、その後破棄されます — 保存されることはありません。しかし当社を信用する必要はありません。キーごとの上限により、最悪の場合でも、あなたが許可した以上に使われることは決してないと保証されます。",
+  setupOrStep4CostLabel: "費用見積もりに関する注意:",
+  setupOrStep4CostBody:
+    " 投稿前に表示される見積もりは ~15% のバッファを持つヒューリスティックであり、確固たる上限ではありません。最先端モデルで長い論文の場合、証明の検証や批評の書き直しが始まると、実際の費用は見積もりの ~2 倍まで達することがあります。キーごとの上限が見積もりちょうどに設定されていると、難しいレビュー 1 回でそれを使い切って途中で失敗することがあります。常に余裕を持たせてください。",
+  // setup page — OpenRouter step 5
+  setupOrStep5Title: "coarse に貼り付ける",
+  setupOrStep5Body: "ここに戻ってきて、キーをフォームに貼り付け、PDF をアップロードしてください。",
+  setupOrStep5Annotation: "coarse フォーム",
+  setupOrStep5MockEmail: "メール",
+  setupOrStep5MockKey: "OpenRouter キー",
+  setupOrStep5MockButton: "論文をレビューする",
+  // setup page — shared footer CTA
+  setupReadyCta: "準備はいいですか？論文をレビューする →",
+  // setup page — subscription tab intro
+  setupSubHeading: "コーディングエージェントのサブスクリプションを使う",
+  setupSubIntro1:
+    "すでに Claude Code、Codex、または Gemini CLI に料金を支払っているユーザー向けです。レビューはあなたのサブスクリプションで実行され、そこに課金されます。OCR パスのために OpenRouter に ~$0.15 をお支払いいただくだけです。",
+  setupSubIntro2:
+    "ご自身の Claude Code、Codex、または Gemini CLI アカウントを使用して、ご自身のマシン上でローカルに実行されます。coarse.ink はあなたのプロバイダーのログイン情報を受信または保存しません。お使いのプロバイダーの利用規約と利用上限は引き続き適用されます。coarse.ink は Anthropic、OpenAI、Google とは提携していません。",
+  // setup page — subscription step 1
+  setupSubStep1Title: "コーディングエージェントをインストールする",
+  setupSubStep1Body:
+    "お支払いになっているものをどれでも選んでください。支払っていない場合は、Gemini CLI に無料枠があります。ベンダー自身のページからインストールしてください — そちらのドキュメントは最新の状態に保たれています。",
+  setupSubStep1ClaudePrice: "Anthropic Pro または Max",
+  setupSubStep1CodexPrice: "ChatGPT Plus、Pro、または Business",
+  setupSubStep1GeminiPrice: "無料枠でほとんどの論文に対応できます",
+  setupSubStep1InstallLabel: "インストール手順 ↗",
+  setupSubStep1Verify:
+    "テストコマンドを実行して、インストールとログインを確認してください。応答が表示されれば、準備完了です。",
+  setupSubStep1CardLogin: "ログイン: ",
+  setupSubStep1CardTest: "テスト: ",
+  // setup page — subscription step 2
+  setupSubStep2Title: "OpenRouter キーをマシンに用意する（PDF のみ）",
+  setupSubStep2BodyPrefix:
+    "このステップは PDF の論文にのみ当てはまります — PDF 以外のソース（.tex, .md, .docx, …）は OCR なしでローカルに抽出されるため、どこにも OpenRouter キーは不要で、ステップ 3 にそのまま進めます。PDF の場合、coarse は OCR ステップ（1 論文あたり ~$0.10）のために引き続き OpenRouter を必要とします。次に従ってください ",
+  setupSubStep2BodyTab: "OpenRouter キー",
+  setupSubStep2BodySuffix:
+    " のタブで、アカウントを作成し、$1 のクレジットを追加して、キーごとに $2 の上限を設定してください。OpenRouter 単独の方法で必要だった $20 のバッファはここでは不要です。レビュー自体はあなたのコーディングエージェントのサブスクリプションで実行されるためです。",
+  setupSubStep2KeyPrefix: "次に、キーをご自身のマシンに用意してください: 次を実行するか ",
+  setupSubStep2KeyMid1: "次に保存するか ",
+  setupSubStep2KeyMid2: "または次に保存してください ",
+  setupSubStep2KeySuffix:
+    "。抽出を実行するとき、CLI はそれをローカルで読み取ります。coarse.ink がそれを目にすることは決してありません。",
+  // setup page — subscription step 3
+  setupSubStep3Title: "論文をアップロードし、CLI を選ぶ",
+  setupSubStep3BodyPrefix: "次の場所で ",
+  setupSubStep3BodyLink: "メインページ",
+  setupSubStep3BodyMid: "論文（PDF, .tex, .md, .docx, …）をフォームにドロップし、次をクリックしてください ",
+  setupSubStep3BodyButton: "自分のサブスクリプションでレビュー ▾",
+  setupSubStep3BodySuffix:
+    " のドロップダウンを開いて CLI を選んでください。coarse はファイルをアップロードし、引き継ぎトークンを発行し、次のステップで貼り付けるプロンプトを表示します。ここではフォームに OpenRouter キーを貼り付けません。CLI があなたのマシンからそれを読み取ります（ステップ 2）。",
+  // setup page — subscription step 4
+  setupSubStep4Title: "プロンプトを CLI に貼り付ける",
+  setupSubStep4BodyPrefix: "coarse は自然言語のプロンプトを 1 つお渡しします。パネルからそれをコピーし、次の ",
+  setupSubStep4BodyMid1: "、 ",
+  setupSubStep4BodyMid2: "、または ",
+  setupSubStep4BodyMid3: " のセッションに貼り付け、送信を押してください。エージェントはスキルバンドルを更新し、独自のサブプロセス呼び出しで完全な coarse パイプラインを実行し、完了すると次を表示します ",
+  setupSubStep4BodySuffix:
+    " の URL です。所要時間は 10–25 分です。その URL をクリックすると、coarse.ink で完成したレビューが開きます。",
+  setupSubStep4TimeoutLabel: "コーディングエージェントに貼り付ける場合",
+  setupSubStep4TimeoutSuffix:
+    " (プレーンなターミナルではない場合)、プロンプトを送信する前に、その bash ツールのタイムアウトを少なくとも 45 分まで引き上げてください。エージェントのデフォルトのタイムアウトは 2 分ほどと短いことがあり、10–25 分のレビュー実行時間を大きく下回ります。",
+  // setup page — subscription step 5 (troubleshooting)
+  setupSubStep5Title: "うまくいかない場合",
+  setupSubTrouble1Symptom: "「Try opening Claude Code / Codex」ボタンを押しても何も起こらない。",
+  setupSubTrouble1Fix:
+    "このボタンはデスクトップアプリがインストールされている場合にのみ動作します。CLI のみのインストールでは、ブラウザがあなたのためにターミナルを起動できません。パネルからプロンプトをコピーし、手動で CLI に貼り付けてください。",
+  setupSubTrouble2Symptom: "エージェントの実行中に「No such command ‘install-skills’」が表示される。",
+  setupSubTrouble2FixPrefix: "無視して問題ありません。スキルバンドルは引き続き次を通じて直接読み込まれます ",
+  setupSubTrouble2FixSuffix: "。エージェントはレビューのステップへと続行します。",
+  setupSubTrouble3Symptom: "レビュー後に Anthropic / OpenAI / Google の請求が増えた。",
+  setupSubTrouble3FixPrefix: "次を確認してください ",
+  setupSubTrouble3FixMid1: "、 ",
+  setupSubTrouble3FixMid2: "、または ",
+  setupSubTrouble3FixSuffix:
+    " がシェル環境にないか。設定されていると、ホスト CLI はあなたのサブスクリプションではなく API アカウントに課金します。v1.3.0 以降はこれらを自動的に取り除きますが、それ以前のバージョンでは行いませんでした。",
+  setupSubTrouble4Symptom: "コメントがいつもより少ない（15–25 件ではなく ~10 件）。",
+  setupSubTrouble4FixPrefix: "あるセクションが 30 分のタイムアウトに達して除外されました。デフォルトの強度ではまれですが、次の場合に起きやすくなります ",
+  setupSubTrouble4FixSuffix:
+    " 長い論文の場合です。再実行してください。2 回起きるようなら強度を 1 段階下げてください。",
+
+  // compare page (ComparePage.tsx)
+  comparePanelErrorBody: "これは表示できませんでした。別のモデルか比較をお試しください。",
+  comparePaperCorticalCircuits: "皮質回路",
+  comparePaperCosetCodes: "剰余類符号",
+  comparePaperPopulationGenetics: "集団遺伝学",
+  comparePaperTargetingInterventions: "介入のターゲティング",
+  compareScoresShow: "表示",
+  compareScoresHide: "非表示",
+  compareScoresToggleSuffix: " 全論文にわたるすべてのスコア ",
+  compareScoresColPaper: "論文",
+  compareScoresColReference: "リファレンス",
+  compareScoresColGpt5Mini: "GPT-5 Mini",
+  compareScoresColGpt54: "GPT-5.4",
+  compareScoresColSonnet: "Sonnet 4.6",
+  compareScoresColKimi: "Kimi K2.5",
+  compareScoresFootnote:
+    "Gemini 3.1 Pro が PDF のマルチモーダル入力で評価しました。5.0/5 = リファレンスと同等の品質。5.5+/5 = それを上回ります。",
+  compareJudgeShow: "表示",
+  compareJudgeHide: "非表示",
+  compareJudgeToggleSuffix: " Gemini 3.1 Pro に送信された判定プロンプト ",
+  compareJudgeExplain:
+    "既知の LLM-as-judge バイアスを軽減するため、判定は評価ごとに 2 回実行され、2 つのレビューを提示順で入れ替え、両方の順序でスコアを平均します。これは、判定者が先に表示されたレビューを体系的に優遇する位置バイアスを打ち消します。プロンプトには、冗長性バイアス（中身よりも長さを評価しない）、自信バイアス（適切なヘッジングよりも断定的な言い回しを評価しない）、権威バイアス（正確さよりも専門用語や引用数を評価しない）、寛大さバイアス（中間に偏らず 1〜6 の全スコア範囲を使う）を打ち消すための具体的な指示も含まれています。レビューは出自に基づくスコアリングを防ぐため、「リファレンス」や「生成」ではなく中立的に「レビュー A」「レビュー B」とラベル付けされます。",
+  compareJudgeSystemPromptLabel: "システムプロンプト",
+  compareJudgeUserPromptLabel: "ユーザープロンプト（論文 + レビューは実行時に挿入されます）",
+  compareVsMid: " 対 ",
+  compareScoreOutOf: "/5",
+  compareMetricCoverage: "カバレッジ",
+  compareMetricSpecificity: "具体性",
+  compareMetricDepth: "深さ",
+  compareJumpTo: "ジャンプ先",
+  compareSectionOverallFeedback: "全体的なフィードバック",
+  compareSectionDetailedComments: "詳細なコメント",
+  compareVisitPrefix: "次にアクセス ",
+  comparePdfReviewSuffix: " のレビュー",
+  comparePdfFallback: "iframe が表示されない場合は PDF をダウンロードしてください ↓",
 };

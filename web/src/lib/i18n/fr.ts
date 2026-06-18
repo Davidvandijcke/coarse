@@ -372,4 +372,184 @@ export const fr: Messages = {
   paperPanelDownload: "Télécharger",
   paperPanelDownloadAriaLabel: "Télécharger l'article en markdown",
   paperPanelCloseAriaLabel: "Fermer le panneau de l'article",
+
+  // page de configuration (setup/page.tsx)
+  // page de configuration — sélecteur d'onglets
+  setupTablistAriaLabel: "Méthode de configuration",
+  setupTabOpenRouter: "Clé OpenRouter",
+  setupTabSubscription: "Utiliser mon abonnement",
+  // page de configuration — introduction de l'onglet OpenRouter
+  setupOrHeading: "Obtenez votre clé OpenRouter",
+  setupOrIntro:
+    "Cela prend environ 2 minutes. Vous aurez besoin d'une carte bancaire pour ~$1 de crédits afin de démarrer — vous compléterez jusqu'à $20 à l'étape 2.",
+  setupOrFasterLabel: "Option plus rapide :",
+  setupOrFasterMid1: " sur le formulaire principal, vous pouvez cliquer sur ",
+  setupOrFasterLogIn: "« Se connecter avec OpenRouter »",
+  setupOrFasterSuffix:
+    " pour autoriser coarse et éviter la création manuelle de clé. Vous avez toujours besoin d'un compte OpenRouter avec des crédits (étapes 1 et 2 ci-dessous), et nous recommandons toujours de définir une limite de dépense par clé (étape 4).",
+  // page de configuration — OpenRouter étape 1
+  setupOrStep1Title: "Créez un compte",
+  setupOrStep1BodyPrefix: "Rendez-vous sur ",
+  setupOrStep1BodySuffix: " et cliquez sur « Get API Key » ou inscrivez-vous avec Google / GitHub.",
+  setupOrStep1Annotation: "page d'accueil",
+  setupOrStep1MockButton: "Get API Key",
+  setupOrStep1MockTagline: "Une API unifiée pour les LLM — une clé, plusieurs modèles.",
+  // page de configuration — OpenRouter étape 2
+  setupOrStep2Title: "Ajoutez des crédits",
+  setupOrStep2BodyPrefix: "Accédez à ",
+  setupOrStep2BodyLink: "Settings → Credits",
+  setupOrStep2BodySuffix:
+    ". Ajoutez au moins $20. Les modèles open-source bon marché coûtent ~$0,25 par évaluation ; les modèles de pointe comme Claude Opus ou GPT-5 peuvent coûter $5–$10 sur un article long. L'estimation de coût affichée avant la soumission est un ordre de grandeur, pas un plafond. Laissez de la marge, sinon l'évaluation peut épuiser la clé à mi-parcours et échouer. Les crédits non utilisés n'expirent pas.",
+  setupOrStep2Annotation: "page des crédits",
+  setupOrStep2MockSettings: "Settings → Credits",
+  setupOrStep2MockAmount: "Montant",
+  setupOrStep2MockButton: "Add credits",
+  setupOrStep2MockBalance: "Solde : $0.00",
+  // page de configuration — OpenRouter étape 3
+  setupOrStep3Title: "Créez une clé API",
+  setupOrStep3BodyPrefix: "Rendez-vous sur ",
+  setupOrStep3BodyLink: "Settings → Keys",
+  setupOrStep3BodyMid: ", cliquez sur « Create Key », et nommez-la ",
+  setupOrStep3BodySuffix: ".",
+  setupOrStep3Provisioning:
+    "Assurez-vous qu'il s'agit d'une clé API ordinaire — pas d'une clé de provisionnement/gestion de la section intégrations. Les clés de provisionnement peuvent créer et lister d'autres clés mais ne peuvent pas exécuter d'inférence, et coarse échouera avec « User not found » si vous en collez une.",
+  setupOrStep3CopyWarning: "Copiez la clé maintenant — vous ne la reverrez plus.",
+  setupOrStep3Annotation: "page des clés",
+  setupOrStep3MockSettings: "Settings → Keys",
+  setupOrStep3MockButton: "Create Key",
+  setupOrStep3MockKeyName: "Nom de la clé",
+  setupOrStep3MockYourKey: "Votre clé",
+  // page de configuration — OpenRouter étape 4
+  setupOrStep4Title: "Définissez une limite de dépense sur la clé",
+  setupOrStep4BodyPrefix: "Sur la ",
+  setupOrStep4BodyLink: "page des clés",
+  setupOrStep4BodyMid1: ", cliquez sur le menu ",
+  setupOrStep4BodyMid2: " à côté de votre nouvelle clé, choisissez « Edit », et définissez la limite de crédit à ",
+  setupOrStep4BodyAtLeast: "au moins $20",
+  setupOrStep4BodySuffix:
+    ". La clé cesse de fonctionner une fois la limite atteinte, donc les frais surprises sont impossibles. Mais si vous la fixez trop bas, une seule évaluation coûteuse peut l'épuiser en cours d'exécution.",
+  setupOrStep4Annotation: "menu de la clé",
+  setupOrStep4MockEdit: "Edit",
+  setupOrStep4MockLimitLabel: "Limite de crédit pour cette clé",
+  setupOrStep4MockButton: "Save",
+  setupOrStep4WhyLabel: "Pourquoi c'est important :",
+  setupOrStep4WhyMid1: " coarse est open-source — vous pouvez ",
+  setupOrStep4WhyLink: "lire chaque ligne de code",
+  setupOrStep4WhySuffix:
+    ". Votre clé est envoyée directement à OpenRouter pour exécuter l'évaluation, puis supprimée — elle n'est jamais conservée. Mais vous n'avez pas à nous faire confiance : la limite par clé garantit qu'elle ne peut jamais dépenser plus que vous ne l'autorisez, même dans le pire des cas.",
+  setupOrStep4CostLabel: "Une note sur les estimations de coût :",
+  setupOrStep4CostBody:
+    " l'estimation affichée avant la soumission est une heuristique avec une marge de ~15 %, pas un plafond strict. Le coût réel sur les modèles de pointe avec des articles longs peut atteindre ~2× l'estimation une fois que la vérification des preuves et les réécritures de critique entrent en jeu. Si le plafond par clé est exactement au niveau de l'estimation, une évaluation difficile peut l'épuiser et échouer en cours d'exécution. Laissez toujours de la marge.",
+  // page de configuration — OpenRouter étape 5
+  setupOrStep5Title: "Collez dans coarse",
+  setupOrStep5Body: "Revenez ici, collez votre clé dans le formulaire et téléversez votre PDF.",
+  setupOrStep5Annotation: "formulaire coarse",
+  setupOrStep5MockEmail: "E-mail",
+  setupOrStep5MockKey: "Clé OpenRouter",
+  setupOrStep5MockButton: "Évaluer mon article",
+  // page de configuration — appel à l'action partagé en bas de page
+  setupReadyCta: "Prêt ? Évaluez votre article →",
+  // page de configuration — introduction de l'onglet abonnement
+  setupSubHeading: "Utilisez l'abonnement de votre agent de codage",
+  setupSubIntro1:
+    "Pour les utilisateurs qui paient déjà Claude Code, Codex ou Gemini CLI. L'évaluation s'exécute sur votre abonnement et y est facturée. Vous payez seulement ~$0,15 à OpenRouter pour la passe d'OCR.",
+  setupSubIntro2:
+    "S'exécute localement sur votre machine avec votre propre compte Claude Code, Codex ou Gemini CLI. coarse.ink ne reçoit ni ne conserve votre identifiant de connexion au fournisseur. Les conditions et limites d'utilisation de votre fournisseur s'appliquent toujours. coarse.ink n'est pas affilié à Anthropic, OpenAI ou Google.",
+  // page de configuration — abonnement étape 1
+  setupSubStep1Title: "Installez un agent de codage",
+  setupSubStep1Body:
+    "Choisissez celui que vous payez. Gemini CLI propose une offre gratuite si ce n'est pas le cas. Installez-le depuis la page du fournisseur — leur documentation reste à jour.",
+  setupSubStep1ClaudePrice: "Anthropic Pro ou Max",
+  setupSubStep1CodexPrice: "ChatGPT Plus, Pro ou Business",
+  setupSubStep1GeminiPrice: "L'offre gratuite suffit pour la plupart des articles",
+  setupSubStep1InstallLabel: "Instructions d'installation ↗",
+  setupSubStep1Verify:
+    "Exécutez la commande de test pour vérifier l'installation + la connexion. Si elle affiche une réponse, vous êtes prêt.",
+  setupSubStep1CardLogin: "connexion : ",
+  setupSubStep1CardTest: "test : ",
+  // page de configuration — abonnement étape 2
+  setupSubStep2Title: "Placez une clé OpenRouter sur votre machine (PDF uniquement)",
+  setupSubStep2BodyPrefix:
+    "Cette étape ne s'applique qu'aux articles PDF — les sources non PDF (.tex, .md, .docx, …) sont extraites localement sans OCR, donc elles n'ont besoin d'aucune clé OpenRouter nulle part et vous pouvez passer directement à l'étape 3. Pour les PDF, coarse a toujours besoin d'OpenRouter pour l'étape d'OCR (~$0,10 par article). Suivez l'onglet ",
+  setupSubStep2BodyTab: "Clé OpenRouter",
+  setupSubStep2BodySuffix:
+    " pour créer un compte, ajouter $1 de crédit et définir une limite de $2 par clé. La marge de $20 de la méthode OpenRouter seule n'est pas nécessaire ici, car l'évaluation elle-même s'exécute sur l'abonnement de votre agent de codage.",
+  setupSubStep2KeyPrefix: "Placez ensuite la clé sur votre propre machine : exécutez ",
+  setupSubStep2KeyMid1: ", déposez-la dans un ",
+  setupSubStep2KeyMid2: ", ou enregistrez-la dans ",
+  setupSubStep2KeySuffix:
+    ". Votre CLI la lit localement lorsqu'elle exécute l'extraction ; coarse.ink ne la voit jamais.",
+  // page de configuration — abonnement étape 3
+  setupSubStep3Title: "Téléversez votre article et choisissez une CLI",
+  setupSubStep3BodyPrefix: "Sur la ",
+  setupSubStep3BodyLink: "page principale",
+  setupSubStep3BodyMid: ", déposez votre article (PDF, .tex, .md, .docx, …) sur le formulaire, puis cliquez sur le menu déroulant ",
+  setupSubStep3BodyButton: "Évaluer avec mon abonnement ▾",
+  setupSubStep3BodySuffix:
+    " et choisissez votre CLI. coarse téléverse le fichier, génère un jeton de transfert et affiche l'invite que vous collerez à l'étape suivante. Vous ne collez pas votre clé OpenRouter sur le formulaire ici ; la CLI la lit depuis votre machine (étape 2).",
+  // page de configuration — abonnement étape 4
+  setupSubStep4Title: "Collez l'invite dans votre CLI",
+  setupSubStep4BodyPrefix: "coarse vous donne une invite en langage naturel. Copiez-la depuis le panneau, collez-la dans votre session ",
+  setupSubStep4BodyMid1: ", ",
+  setupSubStep4BodyMid2: ", ou ",
+  setupSubStep4BodyMid3: ", et appuyez sur envoyer. L'agent actualise son lot de compétences, exécute tout le pipeline coarse via ses propres appels de sous-processus, et affiche une URL ",
+  setupSubStep4BodySuffix:
+    " une fois terminé. 10–25 minutes. Cliquez sur l'URL pour ouvrir l'évaluation terminée sur coarse.ink.",
+  setupSubStep4TimeoutLabel: "Si vous collez dans un agent de codage",
+  setupSubStep4TimeoutSuffix:
+    " (et non un simple terminal), augmentez le délai d'expiration de son outil bash à au moins 45 min avant d'envoyer l'invite. Les délais par défaut des agents peuvent descendre jusqu'à 2 min, bien en deçà de la durée d'évaluation de 10–25 min.",
+  // page de configuration — abonnement étape 5 (dépannage)
+  setupSubStep5Title: "En cas de problème",
+  setupSubTrouble1Symptom: "Le bouton « Essayer d'ouvrir Claude Code / Codex » ne fait rien.",
+  setupSubTrouble1Fix:
+    "Le bouton ne fonctionne que si l'application de bureau est installée. Avec une installation CLI uniquement, le navigateur ne peut pas lancer de terminal à votre place. Copiez l'invite depuis le panneau et collez-la manuellement dans votre CLI.",
+  setupSubTrouble2Symptom: "« No such command 'install-skills' » pendant l'exécution de l'agent.",
+  setupSubTrouble2FixPrefix: "Sans danger, à ignorer. Le lot de compétences se charge quand même directement via ",
+  setupSubTrouble2FixSuffix: " ; l'agent passera à l'étape d'évaluation.",
+  setupSubTrouble3Symptom: "Ma facture Anthropic / OpenAI / Google a augmenté après une évaluation.",
+  setupSubTrouble3FixPrefix: "Vérifiez la présence de ",
+  setupSubTrouble3FixMid1: ", ",
+  setupSubTrouble3FixMid2: ", ou ",
+  setupSubTrouble3FixSuffix:
+    " dans l'environnement de votre shell. Si elle est définie, la CLI hôte facture le compte API au lieu de votre abonnement. La version v1.3.0+ les supprime automatiquement, mais les versions plus anciennes ne le faisaient pas.",
+  setupSubTrouble4Symptom: "Moins de commentaires que d'habitude (~10 au lieu de 15–25).",
+  setupSubTrouble4FixPrefix: "Une section a atteint le délai d'expiration de 30 min et a été abandonnée. Rare avec l'effort par défaut, plus fréquent avec ",
+  setupSubTrouble4FixSuffix:
+    " sur les articles longs. Relancez ; réduisez l'effort d'un cran si cela se produit deux fois.",
+
+  // page de comparaison (ComparePage.tsx)
+  comparePanelErrorBody: "Impossible d'afficher celle-ci. Essayez un autre modèle ou une autre comparaison.",
+  comparePaperCorticalCircuits: "Circuits corticaux",
+  comparePaperCosetCodes: "Codes de cosets",
+  comparePaperPopulationGenetics: "Génétique des populations",
+  comparePaperTargetingInterventions: "Ciblage des interventions",
+  compareScoresShow: "Afficher",
+  compareScoresHide: "Masquer",
+  compareScoresToggleSuffix: " tous les scores pour tous les articles ",
+  compareScoresColPaper: "Article",
+  compareScoresColReference: "Référence",
+  compareScoresColGpt5Mini: "GPT-5 Mini",
+  compareScoresColGpt54: "GPT-5.4",
+  compareScoresColSonnet: "Sonnet 4.6",
+  compareScoresColKimi: "Kimi K2.5",
+  compareScoresFootnote:
+    "Évalué par Gemini 3.1 Pro avec une entrée PDF multimodale. 5,0/5 = égale la qualité de référence. 5,5+/5 = la dépasse.",
+  compareJudgeShow: "Afficher",
+  compareJudgeHide: "Masquer",
+  compareJudgeToggleSuffix: " l'invite du juge envoyée à Gemini 3.1 Pro ",
+  compareJudgeExplain:
+    "Pour atténuer les biais connus du LLM-juge, le juge est exécuté deux fois par évaluation avec les deux relectures présentées dans un ordre inversé, et les scores sont moyennés sur les deux ordres. Cela contrecarre le biais de position, où les juges favorisent systématiquement la relecture présentée en premier. L'invite inclut aussi des instructions spécifiques pour contrecarrer le biais de verbosité (ne pas récompenser la longueur au détriment du fond), le biais de confiance (ne pas récompenser un ton affirmatif au détriment d'une prudence justifiée), le biais d'autorité (ne pas récompenser le jargon ou le nombre de citations au détriment de l'exactitude) et le biais de clémence (utiliser toute la plage de notation de 1 à 6 plutôt que de se regrouper au milieu). Les relectures sont étiquetées de façon neutre « Relecture A » et « Relecture B » plutôt que « référence » et « générée » afin d'éviter une notation fondée sur la provenance.",
+  compareJudgeSystemPromptLabel: "Invite système",
+  compareJudgeUserPromptLabel: "Invite utilisateur (article + relectures injectés à l'exécution)",
+  compareVsMid: " vs ",
+  compareScoreOutOf: "/5",
+  compareMetricCoverage: "Couverture",
+  compareMetricSpecificity: "Spécificité",
+  compareMetricDepth: "Profondeur",
+  compareJumpTo: "Aller à",
+  compareSectionOverallFeedback: "Retour global",
+  compareSectionDetailedComments: "Commentaires détaillés",
+  compareVisitPrefix: "Visiter ",
+  comparePdfReviewSuffix: " évaluation",
+  comparePdfFallback: "Téléchargez le PDF si l'iframe ne s'affiche pas ↓",
 };

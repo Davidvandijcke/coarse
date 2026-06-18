@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-### Changed
+### Added
+
+- **The setup (configuration) and compare (side-by-side) pages now follow the selected site language (issue #239).** These were the last two routes still rendering hardcoded English after a language switch. Both are now wired to the existing site-i18n layer (each wraps its client tree in `SiteLanguageProvider` via a `*Body` split; the choice persists in `localStorage`). 140 new keys (108 for `setup/page.tsx`, 32 for `ComparePage.tsx`) were externalized into the catalog and translated into all 11 non-English locales by per-language Opus-4.8 agents (additive-only — the existing 292 audited values are untouched), bringing every catalog to **432 keys**. Localized **UI chrome only**: the embedded example reviews/papers on the compare page and the LLM-judge prompt constants stay as data/English. English render is byte-identical (en values copy the prior literals verbatim). Coverage: `tests/test_web_site_i18n.py` updated to assert 432 keys; the `test_setup_page_warns_about_provisioning_keys` drift guard repointed to the catalog (where the "User not found" provisioning-key copy now lives). With this, **every** user-facing page — submit, status, review, setup, compare — follows the site language. Web-only; Vercel build is the TS gate.
 
 - **Dutch (`nl`) site-UI wording refinements** (issue #235). A pass over the Dutch site-UI catalog to make a handful of strings read more naturally — e.g. `spammap`→`spamfolder`, `We e-mailen je`→`We mailen je`, and a couple of smoother phrasings. Word-choice only: all 292 keys, fragment spacing, and brand tokens unchanged. `web/src/lib/i18n/nl.ts` only — web-only, no PyPI release.
 
