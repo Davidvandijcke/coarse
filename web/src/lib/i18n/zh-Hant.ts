@@ -390,4 +390,184 @@ export const zhHant: Messages = {
   paperPanelDownload: "下載",
   paperPanelDownloadAriaLabel: "下載論文 markdown",
   paperPanelCloseAriaLabel: "關閉論文面板",
+
+  // setup page (setup/page.tsx)
+  // setup page — tab switcher
+  setupTablistAriaLabel: "設定路徑",
+  setupTabOpenRouter: "OpenRouter 金鑰",
+  setupTabSubscription: "使用我的訂閱",
+  // setup page — OpenRouter tab intro
+  setupOrHeading: "取得您的 OpenRouter 金鑰",
+  setupOrIntro:
+    "大約需要 2 分鐘。您需要一張信用卡來購買約 ~$1 的額度才能開始——在步驟 2 中您會儲值到 $20。",
+  setupOrFasterLabel: "更快的選項：",
+  setupOrFasterMid1: " 在主表單上，您可以點擊 ",
+  setupOrFasterLogIn: "「使用 OpenRouter 登入」",
+  setupOrFasterSuffix:
+    " 來授權 coarse 並省去手動建立金鑰的步驟。您仍需要一個有額度的 OpenRouter 帳號（下方步驟 1 和 2），而且我們仍建議設定每組金鑰的支出上限（步驟 4）。",
+  // setup page — OpenRouter step 1
+  setupOrStep1Title: "建立帳號",
+  setupOrStep1BodyPrefix: "前往 ",
+  setupOrStep1BodySuffix: " 並點擊「Get API Key」，或使用 Google／GitHub 註冊。",
+  setupOrStep1Annotation: "首頁",
+  setupOrStep1MockButton: "Get API Key",
+  setupOrStep1MockTagline: "一個整合各家 LLM 的統一 API——一把金鑰，多種模型。",
+  // setup page — OpenRouter step 2
+  setupOrStep2Title: "加入額度",
+  setupOrStep2BodyPrefix: "前往 ",
+  setupOrStep2BodyLink: "Settings → Credits",
+  setupOrStep2BodySuffix:
+    "。至少加入 $20。便宜的開放原始碼模型每次審查約 ~$0.25；像 Claude Opus 或 GPT-5 這類頂尖模型在長論文上可能需要 $5–$10。提交前顯示的費用估算只是大略數字，不是上限。請保留充裕的餘額，否則審查可能進行到一半就把金鑰用完而失敗。未使用的額度不會過期。",
+  setupOrStep2Annotation: "額度頁面",
+  setupOrStep2MockSettings: "Settings → Credits",
+  setupOrStep2MockAmount: "金額",
+  setupOrStep2MockButton: "Add credits",
+  setupOrStep2MockBalance: "Balance: $0.00",
+  // setup page — OpenRouter step 3
+  setupOrStep3Title: "建立 API 金鑰",
+  setupOrStep3BodyPrefix: "前往 ",
+  setupOrStep3BodyLink: "Settings → Keys",
+  setupOrStep3BodyMid: "，點擊「Create Key」，並將它命名為 ",
+  setupOrStep3BodySuffix: "。",
+  setupOrStep3Provisioning:
+    "請確認它是一般的 API 金鑰——而非整合區段中的佈建／管理金鑰。佈建金鑰可以建立並列出其他金鑰，但無法執行推理，若您貼上這種金鑰，coarse 會以「User not found」失敗。",
+  setupOrStep3CopyWarning: "立即複製金鑰——您不會再看到它。",
+  setupOrStep3Annotation: "金鑰頁面",
+  setupOrStep3MockSettings: "Settings → Keys",
+  setupOrStep3MockButton: "Create Key",
+  setupOrStep3MockKeyName: "金鑰名稱",
+  setupOrStep3MockYourKey: "您的金鑰",
+  // setup page — OpenRouter step 4
+  setupOrStep4Title: "為金鑰設定支出上限",
+  setupOrStep4BodyPrefix: "在 ",
+  setupOrStep4BodyLink: "Keys 頁面",
+  setupOrStep4BodyMid1: "上，點擊新金鑰旁的 ",
+  setupOrStep4BodyMid2: " 選單，選擇「Edit」，並將額度上限設為 ",
+  setupOrStep4BodyAtLeast: "至少 $20",
+  setupOrStep4BodySuffix:
+    "。一旦達到上限，金鑰就會停止運作，因此不可能出現意外的費用。但若設得太緊，單次昂貴的審查就可能在執行途中把它耗盡。",
+  setupOrStep4Annotation: "金鑰選單",
+  setupOrStep4MockEdit: "Edit",
+  setupOrStep4MockLimitLabel: "此金鑰的額度上限",
+  setupOrStep4MockButton: "Save",
+  setupOrStep4WhyLabel: "為什麼這很重要：",
+  setupOrStep4WhyMid1: " coarse 是開放原始碼的——您可以 ",
+  setupOrStep4WhyLink: "閱讀每一行程式碼",
+  setupOrStep4WhySuffix:
+    "。您的金鑰會直接送往 OpenRouter 來執行審查，然後即丟棄——絕不會被儲存。但您不必信任我們：每組金鑰的上限保證它在最壞的情況下也絕不會花費超過您所允許的額度。",
+  setupOrStep4CostLabel: "關於費用估算的說明：",
+  setupOrStep4CostBody:
+    " 提交前顯示的估算是一種帶有約 ~15% 緩衝的啟發式推算，並非硬性上限。在頂尖模型搭配長論文時，一旦證明驗證與批評改寫啟動，實際費用可能高達估算的約 ~2 倍。若每組金鑰的上限正好卡在估算值上，一次棘手的審查就可能把它耗盡並在執行途中失敗。請務必保留充裕的餘額。",
+  // setup page — OpenRouter step 5
+  setupOrStep5Title: "貼到 coarse",
+  setupOrStep5Body: "回到這裡，將您的金鑰貼到表單中，然後上傳您的 PDF。",
+  setupOrStep5Annotation: "coarse 表單",
+  setupOrStep5MockEmail: "電子郵件",
+  setupOrStep5MockKey: "OpenRouter 金鑰",
+  setupOrStep5MockButton: "審查我的論文",
+  // setup page — shared footer CTA
+  setupReadyCta: "準備好了嗎？審查您的論文 →",
+  // setup page — subscription tab intro
+  setupSubHeading: "使用您的編程代理人訂閱",
+  setupSubIntro1:
+    "適合已經在付費使用 Claude Code、Codex 或 Gemini CLI 的使用者。審查會在您的訂閱上執行並計費。您只需為 OCR 步驟向 OpenRouter 支付約 ~$0.15。",
+  setupSubIntro2:
+    "在您自己的機器上使用您自己的 Claude Code、Codex 或 Gemini CLI 帳號於本機執行。coarse.ink 不會接收或儲存您的供應商登入資訊。您供應商的條款與使用限制仍然適用。coarse.ink 與 Anthropic、OpenAI 或 Google 並無任何隸屬關係。",
+  // setup page — subscription step 1
+  setupSubStep1Title: "安裝編程代理人",
+  setupSubStep1Body:
+    "選擇您有付費的那一個。若都沒有，Gemini CLI 提供免費方案。請從供應商自己的頁面安裝它——他們的文件會保持最新。",
+  setupSubStep1ClaudePrice: "Anthropic Pro 或 Max",
+  setupSubStep1CodexPrice: "ChatGPT Plus、Pro 或 Business",
+  setupSubStep1GeminiPrice: "免費方案足以應付大多數論文",
+  setupSubStep1InstallLabel: "安裝說明 ↗",
+  setupSubStep1Verify:
+    "執行測試指令以驗證安裝與登入。若它印出回應，您就設定完成了。",
+  setupSubStep1CardLogin: "登入： ",
+  setupSubStep1CardTest: "測試： ",
+  // setup page — subscription step 2
+  setupSubStep2Title: "在您的機器上放置 OpenRouter 金鑰（僅限 PDF）",
+  setupSubStep2BodyPrefix:
+    "此步驟僅適用於 PDF 論文——非 PDF 來源（.tex, .md, .docx, …）會在本機擷取而不需要 OCR，因此任何地方都不需要 OpenRouter 金鑰，您可以直接跳到步驟 3。對於 PDF，coarse 在 OCR 步驟仍需要 OpenRouter（每篇論文約 ~$0.10）。請依照 ",
+  setupSubStep2BodyTab: "OpenRouter 金鑰",
+  setupSubStep2BodySuffix:
+    " 分頁來建立帳號、加入 $1 的額度，並設定每組金鑰 $2 的上限。此處不需要僅用 OpenRouter 路徑時的 $20 緩衝，因為審查本身是在您的編程代理人訂閱上執行的。",
+  setupSubStep2KeyPrefix: "接著將金鑰放到您自己的機器上：執行 ",
+  setupSubStep2KeyMid1: "，將它放進 ",
+  setupSubStep2KeyMid2: "，或將它儲存到 ",
+  setupSubStep2KeySuffix:
+    "。您的 CLI 在執行擷取時會於本機讀取它；coarse.ink 絕不會看到它。",
+  // setup page — subscription step 3
+  setupSubStep3Title: "上傳您的論文並挑選一個 CLI",
+  setupSubStep3BodyPrefix: "在 ",
+  setupSubStep3BodyLink: "主頁面",
+  setupSubStep3BodyMid: "上，將您的論文（PDF, .tex, .md, .docx, …）拖曳到表單上，然後點擊 ",
+  setupSubStep3BodyButton: "用我的訂閱審查 ▾",
+  setupSubStep3BodySuffix:
+    " 下拉選單並挑選您的 CLI。coarse 會上傳檔案、產生一組交接權杖，並顯示您將在下一步貼上的提示。您在此處不需要在表單上貼上您的 OpenRouter 金鑰；CLI 會從您的機器讀取它（步驟 2）。",
+  // setup page — subscription step 4
+  setupSubStep4Title: "將提示貼到您的 CLI",
+  setupSubStep4BodyPrefix: "coarse 會給您一段自然語言提示。從面板複製它，貼到您的 ",
+  setupSubStep4BodyMid1: "、 ",
+  setupSubStep4BodyMid2: "或 ",
+  setupSubStep4BodyMid3: " 工作階段，然後按送出。代理人會重新整理它的技能組合，在自己的子程序呼叫上執行完整的 coarse 流程，並在完成時印出一個 ",
+  setupSubStep4BodySuffix:
+    " URL。需時 10–25 分鐘。點擊該 URL 即可在 coarse.ink 上開啟完成的審查。",
+  setupSubStep4TimeoutLabel: "如果您是貼到編程代理人裡",
+  setupSubStep4TimeoutSuffix:
+    " （而非單純的終端機），請在送出提示前將它的 bash 工具逾時調高到至少 45 分鐘。代理人的預設逾時可能低至 2 分鐘，遠低於 10–25 分鐘的審查執行時間。",
+  // setup page — subscription step 5 (troubleshooting)
+  setupSubStep5Title: "如果出了狀況",
+  setupSubTrouble1Symptom: "「Try opening Claude Code / Codex」按鈕沒有反應。",
+  setupSubTrouble1Fix:
+    "該按鈕只有在您安裝了桌面應用程式時才有效。若僅安裝 CLI 版本，瀏覽器無法為您啟動終端機。請從面板複製提示，並手動貼到您的 CLI。",
+  setupSubTrouble2Symptom: "代理人執行中出現「No such command ‘install-skills’」。",
+  setupSubTrouble2FixPrefix: "可以放心忽略。技能組合仍會直接透過 ",
+  setupSubTrouble2FixSuffix: "載入；代理人會繼續進行審查步驟。",
+  setupSubTrouble3Symptom: "審查後我的 Anthropic／OpenAI／Google 帳單增加了。",
+  setupSubTrouble3FixPrefix: "請檢查您的 shell 環境中是否有 ",
+  setupSubTrouble3FixMid1: "、 ",
+  setupSubTrouble3FixMid2: "或 ",
+  setupSubTrouble3FixSuffix:
+    " 。若有設定，主機 CLI 會向 API 帳號計費，而非您的訂閱。v1.3.0+ 會自動移除這些，但舊版本不會。",
+  setupSubTrouble4Symptom: "意見比平常少（約 ~10 則而非 15–25 則）。",
+  setupSubTrouble4FixPrefix: "某個章節觸及了 30 分鐘逾時而被捨棄。在預設推理強度下很少見，搭配 ",
+  setupSubTrouble4FixSuffix:
+    " 處理長論文時較常發生。請重新執行；若發生兩次，請將推理強度調低一級。",
+
+  // compare page (ComparePage.tsx)
+  comparePanelErrorBody: "無法呈現這一則。請嘗試其他模型或比較。",
+  comparePaperCorticalCircuits: "皮質迴路",
+  comparePaperCosetCodes: "陪集碼",
+  comparePaperPopulationGenetics: "族群遺傳學",
+  comparePaperTargetingInterventions: "目標式介入",
+  compareScoresShow: "顯示",
+  compareScoresHide: "隱藏",
+  compareScoresToggleSuffix: " 各篇論文的所有分數 ",
+  compareScoresColPaper: "論文",
+  compareScoresColReference: "參考標準",
+  compareScoresColGpt5Mini: "GPT-5 Mini",
+  compareScoresColGpt54: "GPT-5.4",
+  compareScoresColSonnet: "Sonnet 4.6",
+  compareScoresColKimi: "Kimi K2.5",
+  compareScoresFootnote:
+    "由 Gemini 3.1 Pro 以 PDF 多模態輸入進行評估。5.0/5 = 達到參考標準的品質。5.5+/5 = 超越它。",
+  compareJudgeShow: "顯示",
+  compareJudgeHide: "隱藏",
+  compareJudgeToggleSuffix: " 送往 Gemini 3.1 Pro 的評審提示 ",
+  compareJudgeExplain:
+    "為了減輕已知的 LLM-as-judge 偏誤，評審會在每次評估時以兩篇審查互換呈現順序的方式執行兩次，分數則跨兩種排序取平均。這可抵消位置偏誤，亦即評審會系統性地偏好排在前面的審查。提示中也包含具體指示，以抵消冗長偏誤（不因篇幅長而非實質內容給分）、自信偏誤（不因斷言式語氣而非正確的審慎保留給分）、權威偏誤（不因術語或引用數量而非準確性給分）以及寬鬆偏誤（使用完整的 1-6 評分區間，而非集中在中間）。審查會以中性的「Review A」與「Review B」標示，而非「參考」與「生成」，以防止基於來源的評分。",
+  compareJudgeSystemPromptLabel: "系統提示",
+  compareJudgeUserPromptLabel: "使用者提示（論文與審查於執行時注入）",
+  compareVsMid: " vs ",
+  compareScoreOutOf: "/5",
+  compareMetricCoverage: "涵蓋度",
+  compareMetricSpecificity: "具體性",
+  compareMetricDepth: "深度",
+  compareJumpTo: "跳至",
+  compareSectionOverallFeedback: "整體回饋",
+  compareSectionDetailedComments: "詳細意見",
+  compareVisitPrefix: "造訪 ",
+  comparePdfReviewSuffix: " 審查",
+  comparePdfFallback: "若 iframe 未能呈現，請下載 PDF ↓",
 };

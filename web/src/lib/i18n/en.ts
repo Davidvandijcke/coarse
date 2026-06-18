@@ -394,4 +394,184 @@ export const en = {
   paperPanelDownload: "Download",
   paperPanelDownloadAriaLabel: "Download paper markdown",
   paperPanelCloseAriaLabel: "Close paper panel",
+
+  // setup page (setup/page.tsx)
+  // setup page — tab switcher
+  setupTablistAriaLabel: "Setup path",
+  setupTabOpenRouter: "OpenRouter key",
+  setupTabSubscription: "Use my subscription",
+  // setup page — OpenRouter tab intro
+  setupOrHeading: "Get your OpenRouter key",
+  setupOrIntro:
+    "Takes about 2 minutes. You'll need a credit card for ~$1 in credits to get started — you'll top up to $20 in step 2.",
+  setupOrFasterLabel: "Faster option:",
+  setupOrFasterMid1: " on the main form you can click ",
+  setupOrFasterLogIn: "“Log in with OpenRouter”",
+  setupOrFasterSuffix:
+    " to authorize coarse and skip manual key creation. You still need an OpenRouter account with credits (steps 1 and 2 below), and we still recommend setting a per-key spend limit (step 4).",
+  // setup page — OpenRouter step 1
+  setupOrStep1Title: "Create an account",
+  setupOrStep1BodyPrefix: "Go to ",
+  setupOrStep1BodySuffix: " and click “Get API Key” or sign up with Google / GitHub.",
+  setupOrStep1Annotation: "homepage",
+  setupOrStep1MockButton: "Get API Key",
+  setupOrStep1MockTagline: "A unified API for LLMs — one key, many models.",
+  // setup page — OpenRouter step 2
+  setupOrStep2Title: "Add credits",
+  setupOrStep2BodyPrefix: "Navigate to ",
+  setupOrStep2BodyLink: "Settings → Credits",
+  setupOrStep2BodySuffix:
+    ". Add at least $20. Cheap open-source models cost ~$0.25 per review; SOTA models like Claude Opus or GPT-5 can run $5–$10 on a long paper. The cost estimate shown before submission is a ballpark, not a ceiling. Leave headroom or the review can exhaust the key halfway and fail. Unused credits don't expire.",
+  setupOrStep2Annotation: "credits page",
+  setupOrStep2MockSettings: "Settings → Credits",
+  setupOrStep2MockAmount: "Amount",
+  setupOrStep2MockButton: "Add credits",
+  setupOrStep2MockBalance: "Balance: $0.00",
+  // setup page — OpenRouter step 3
+  setupOrStep3Title: "Create an API key",
+  setupOrStep3BodyPrefix: "Go to ",
+  setupOrStep3BodyLink: "Settings → Keys",
+  setupOrStep3BodyMid: ", click “Create Key”, and name it ",
+  setupOrStep3BodySuffix: ".",
+  setupOrStep3Provisioning:
+    "Make sure it's a regular API key — not a provisioning/management key from the integrations section. Provisioning keys can create and list other keys but can't run inference, and coarse will fail with “User not found” if you paste one.",
+  setupOrStep3CopyWarning: "Copy the key now — you won't see it again.",
+  setupOrStep3Annotation: "keys page",
+  setupOrStep3MockSettings: "Settings → Keys",
+  setupOrStep3MockButton: "Create Key",
+  setupOrStep3MockKeyName: "Key name",
+  setupOrStep3MockYourKey: "Your key",
+  // setup page — OpenRouter step 4
+  setupOrStep4Title: "Set a spending limit on the key",
+  setupOrStep4BodyPrefix: "On the ",
+  setupOrStep4BodyLink: "Keys page",
+  setupOrStep4BodyMid1: ", click the ",
+  setupOrStep4BodyMid2: " menu next to your new key, choose “Edit”, and set the credit limit to ",
+  setupOrStep4BodyAtLeast: "at least $20",
+  setupOrStep4BodySuffix:
+    ". The key stops working once the limit is hit, so surprise charges are impossible. But set it too tight and a single expensive review can exhaust it mid-run.",
+  setupOrStep4Annotation: "key menu",
+  setupOrStep4MockEdit: "Edit",
+  setupOrStep4MockLimitLabel: "Credit limit for this key",
+  setupOrStep4MockButton: "Save",
+  setupOrStep4WhyLabel: "Why this matters:",
+  setupOrStep4WhyMid1: " coarse is open-source — you can ",
+  setupOrStep4WhyLink: "read every line of code",
+  setupOrStep4WhySuffix:
+    ". Your key is sent directly to OpenRouter to run the review, then discarded — it is never stored. But you don't have to trust us: the per-key limit guarantees it can never spend more than you allow, even in the worst case.",
+  setupOrStep4CostLabel: "A note on cost estimates:",
+  setupOrStep4CostBody:
+    " the estimate shown before submission is a heuristic with a ~15% buffer, not a hard ceiling. Actual cost on SOTA models with long papers can run up to ~2× the estimate once proof-verification and critique rewrites kick in. If the per-key cap sits right at the estimate, one tough review can drain it and fail mid-run. Always leave headroom.",
+  // setup page — OpenRouter step 5
+  setupOrStep5Title: "Paste into coarse",
+  setupOrStep5Body: "Come back here, paste your key into the form, and upload your PDF.",
+  setupOrStep5Annotation: "coarse form",
+  setupOrStep5MockEmail: "Email",
+  setupOrStep5MockKey: "OpenRouter key",
+  setupOrStep5MockButton: "Review my paper",
+  // setup page — shared footer CTA
+  setupReadyCta: "Ready? Review your paper →",
+  // setup page — subscription tab intro
+  setupSubHeading: "Use your coding-agent subscription",
+  setupSubIntro1:
+    "For users already paying for Claude Code, Codex, or Gemini CLI. The review runs on your subscription and bills there. You only pay OpenRouter ~$0.15 for the OCR pass.",
+  setupSubIntro2:
+    "Runs locally on your machine using your own Claude Code, Codex, or Gemini CLI account. coarse.ink does not receive or store your provider login. Your provider's terms and usage limits still apply. coarse.ink is not affiliated with Anthropic, OpenAI, or Google.",
+  // setup page — subscription step 1
+  setupSubStep1Title: "Install a coding agent",
+  setupSubStep1Body:
+    "Pick whichever one you pay for. Gemini CLI has a free tier if you don't. Install it from the vendor's own page — their docs stay up to date.",
+  setupSubStep1ClaudePrice: "Anthropic Pro or Max",
+  setupSubStep1CodexPrice: "ChatGPT Plus, Pro, or Business",
+  setupSubStep1GeminiPrice: "Free tier works for most papers",
+  setupSubStep1InstallLabel: "Install instructions ↗",
+  setupSubStep1Verify:
+    "Run the test command to verify install + login. If it prints a response, you're set.",
+  setupSubStep1CardLogin: "login: ",
+  setupSubStep1CardTest: "test: ",
+  // setup page — subscription step 2
+  setupSubStep2Title: "Put an OpenRouter key on your machine (PDFs only)",
+  setupSubStep2BodyPrefix:
+    "This step only applies to PDF papers — non-PDF sources (.tex, .md, .docx, …) are extracted locally without OCR, so they need no OpenRouter key anywhere and you can skip straight to step 3. For PDFs, coarse still needs OpenRouter for the OCR step (~$0.10 per paper). Follow the ",
+  setupSubStep2BodyTab: "OpenRouter key",
+  setupSubStep2BodySuffix:
+    " tab to create an account, add $1 of credit, and set a $2 per-key limit. The $20 buffer from the OpenRouter-only path isn't needed here because the review itself runs on your coding-agent subscription.",
+  setupSubStep2KeyPrefix: "Then put the key on your own machine: run ",
+  setupSubStep2KeyMid1: ", drop it in a ",
+  setupSubStep2KeyMid2: ", or save it to ",
+  setupSubStep2KeySuffix:
+    ". Your CLI reads it locally when it runs the extraction; coarse.ink never sees it.",
+  // setup page — subscription step 3
+  setupSubStep3Title: "Upload your paper and pick a CLI",
+  setupSubStep3BodyPrefix: "On the ",
+  setupSubStep3BodyLink: "main page",
+  setupSubStep3BodyMid: ", drop your paper (PDF, .tex, .md, .docx, …) onto the form, then click the ",
+  setupSubStep3BodyButton: "Review with my subscription ▾",
+  setupSubStep3BodySuffix:
+    " dropdown and pick your CLI. coarse uploads the file, mints a handoff token, and shows the prompt you'll paste in the next step. You don't paste your OpenRouter key on the form here; the CLI reads it from your machine (step 2).",
+  // setup page — subscription step 4
+  setupSubStep4Title: "Paste the prompt into your CLI",
+  setupSubStep4BodyPrefix: "coarse gives you one natural-language prompt. Copy it from the panel, paste it into your ",
+  setupSubStep4BodyMid1: ", ",
+  setupSubStep4BodyMid2: ", or ",
+  setupSubStep4BodyMid3: " session, and hit send. The agent refreshes its skill bundle, runs the full coarse pipeline on its own subprocess calls, and prints a ",
+  setupSubStep4BodySuffix:
+    " URL when it's done. 10–25 minutes. Click the URL to open the finished review on coarse.ink.",
+  setupSubStep4TimeoutLabel: "If you're pasting into a coding agent",
+  setupSubStep4TimeoutSuffix:
+    " (not a plain terminal), bump its bash-tool timeout to at least 45 min before you send the prompt. Default agent timeouts can be as low as 2 min, way under the 10–25 min review runtime.",
+  // setup page — subscription step 5 (troubleshooting)
+  setupSubStep5Title: "If something goes wrong",
+  setupSubTrouble1Symptom: "The “Try opening Claude Code / Codex” button does nothing.",
+  setupSubTrouble1Fix:
+    "The button only works if you have the desktop app installed. With a CLI-only install, the browser can't launch a terminal for you. Copy the prompt from the panel and paste it into your CLI manually.",
+  setupSubTrouble2Symptom: "“No such command ‘install-skills’” inside the agent run.",
+  setupSubTrouble2FixPrefix: "Safe to ignore. The skill bundle still loads directly through ",
+  setupSubTrouble2FixSuffix: "; the agent will continue to the review step.",
+  setupSubTrouble3Symptom: "My Anthropic / OpenAI / Google bill went up after a review.",
+  setupSubTrouble3FixPrefix: "Check for ",
+  setupSubTrouble3FixMid1: ", ",
+  setupSubTrouble3FixMid2: ", or ",
+  setupSubTrouble3FixSuffix:
+    " in your shell environment. If set, the host CLI bills the API account instead of your subscription. v1.3.0+ strips these automatically, but older versions didn't.",
+  setupSubTrouble4Symptom: "Fewer comments than usual (~10 instead of 15–25).",
+  setupSubTrouble4FixPrefix: "A section hit the 30-min timeout and got dropped. Rare on default effort, more common with ",
+  setupSubTrouble4FixSuffix:
+    " on long papers. Re-run; drop effort one notch if it happens twice.",
+
+  // compare page (ComparePage.tsx)
+  comparePanelErrorBody: "Couldn't render this one. Try another model or comparison.",
+  comparePaperCorticalCircuits: "Cortical Circuits",
+  comparePaperCosetCodes: "Coset Codes",
+  comparePaperPopulationGenetics: "Population Genetics",
+  comparePaperTargetingInterventions: "Targeting Interventions",
+  compareScoresShow: "Show",
+  compareScoresHide: "Hide",
+  compareScoresToggleSuffix: " all scores across papers ",
+  compareScoresColPaper: "Paper",
+  compareScoresColReference: "Reference",
+  compareScoresColGpt5Mini: "GPT-5 Mini",
+  compareScoresColGpt54: "GPT-5.4",
+  compareScoresColSonnet: "Sonnet 4.6",
+  compareScoresColKimi: "Kimi K2.5",
+  compareScoresFootnote:
+    "Evaluated by Gemini 3.1 Pro with PDF multimodal input. 5.0/5 = matches reference quality. 5.5+/5 = exceeds it.",
+  compareJudgeShow: "Show",
+  compareJudgeHide: "Hide",
+  compareJudgeToggleSuffix: " judge prompt sent to Gemini 3.1 Pro ",
+  compareJudgeExplain:
+    "To mitigate known LLM-as-judge biases, the judge is run twice per evaluation with the two reviews swapped in presentation order, and scores are averaged across both orderings. This counteracts positional bias, where judges systematically favor whichever review appears first. The prompt also includes specific instructions to counteract verbosity bias (not rewarding length over substance), confidence bias (not rewarding assertive language over correct hedging), authority bias (not rewarding jargon or citation count over accuracy), and leniency bias (using the full 1-6 scoring range rather than clustering in the middle). Reviews are labeled neutrally as \"Review A\" and \"Review B\" rather than \"reference\" and \"generated\" to prevent provenance-based scoring.",
+  compareJudgeSystemPromptLabel: "System prompt",
+  compareJudgeUserPromptLabel: "User prompt (paper + reviews injected at runtime)",
+  compareVsMid: " vs ",
+  compareScoreOutOf: "/5",
+  compareMetricCoverage: "Coverage",
+  compareMetricSpecificity: "Specificity",
+  compareMetricDepth: "Depth",
+  compareJumpTo: "Jump to",
+  compareSectionOverallFeedback: "Overall Feedback",
+  compareSectionDetailedComments: "Detailed Comments",
+  compareVisitPrefix: "Visit ",
+  comparePdfReviewSuffix: " review",
+  comparePdfFallback: "Download PDF if iframe doesn't render ↓",
 } as const;

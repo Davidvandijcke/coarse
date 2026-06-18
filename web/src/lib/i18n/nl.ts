@@ -372,4 +372,184 @@ export const nl: Messages = {
   paperPanelDownload: "Downloaden",
   paperPanelDownloadAriaLabel: "Artikel-markdown downloaden",
   paperPanelCloseAriaLabel: "Artikelpaneel sluiten",
+
+  // setup page (setup/page.tsx)
+  // setup page — tab switcher
+  setupTablistAriaLabel: "Setup-pad",
+  setupTabOpenRouter: "OpenRouter-sleutel",
+  setupTabSubscription: "Mijn abonnement gebruiken",
+  // setup page — OpenRouter tab intro
+  setupOrHeading: "Haal je OpenRouter-sleutel op",
+  setupOrIntro:
+    "Duurt ongeveer 2 minuten. Je hebt een kredietkaart nodig voor ~$1 aan tegoed om te starten — in stap 2 vul je aan tot $20.",
+  setupOrFasterLabel: "Snellere optie:",
+  setupOrFasterMid1: " op het hoofdformulier kun je klikken op ",
+  setupOrFasterLogIn: "“Inloggen met OpenRouter”",
+  setupOrFasterSuffix:
+    " om coarse te autoriseren en het handmatig aanmaken van een sleutel over te slaan. Je hebt nog steeds een OpenRouter-account met tegoed nodig (stappen 1 en 2 hieronder), en we raden nog steeds aan om een uitgavenlimiet per sleutel in te stellen (stap 4).",
+  // setup page — OpenRouter step 1
+  setupOrStep1Title: "Maak een account aan",
+  setupOrStep1BodyPrefix: "Ga naar ",
+  setupOrStep1BodySuffix: " en klik op “Get API Key” of meld je aan met Google / GitHub.",
+  setupOrStep1Annotation: "homepage",
+  setupOrStep1MockButton: "Get API Key",
+  setupOrStep1MockTagline: "Eén uniforme API voor LLM's — één sleutel, veel modellen.",
+  // setup page — OpenRouter step 2
+  setupOrStep2Title: "Voeg tegoed toe",
+  setupOrStep2BodyPrefix: "Navigeer naar ",
+  setupOrStep2BodyLink: "Settings → Credits",
+  setupOrStep2BodySuffix:
+    ". Voeg minstens $20 toe. Goedkope open-source modellen kosten ~$0,25 per review; SOTA-modellen zoals Claude Opus of GPT-5 kunnen op een lang artikel $5–$10 lopen. De kostenschatting die voor het indienen wordt getoond, is een ruwe inschatting, geen plafond. Laat speling over, anders kan de review de sleutel halverwege uitputten en mislukken. Ongebruikt tegoed verloopt niet.",
+  setupOrStep2Annotation: "tegoedpagina",
+  setupOrStep2MockSettings: "Settings → Credits",
+  setupOrStep2MockAmount: "Bedrag",
+  setupOrStep2MockButton: "Add credits",
+  setupOrStep2MockBalance: "Saldo: $0.00",
+  // setup page — OpenRouter step 3
+  setupOrStep3Title: "Maak een API-sleutel aan",
+  setupOrStep3BodyPrefix: "Ga naar ",
+  setupOrStep3BodyLink: "Settings → Keys",
+  setupOrStep3BodyMid: ", klik op “Create Key” en noem hem ",
+  setupOrStep3BodySuffix: ".",
+  setupOrStep3Provisioning:
+    "Zorg dat het een gewone API-sleutel is — niet een provisioning-/managementsleutel uit de integraties-sectie. Provisioning-sleutels kunnen andere sleutels aanmaken en opsommen, maar kunnen geen inferentie draaien, en coarse mislukt met “User not found” als je er zo een plakt.",
+  setupOrStep3CopyWarning: "Kopieer de sleutel nu — je krijgt hem niet opnieuw te zien.",
+  setupOrStep3Annotation: "sleutelpagina",
+  setupOrStep3MockSettings: "Settings → Keys",
+  setupOrStep3MockButton: "Create Key",
+  setupOrStep3MockKeyName: "Sleutelnaam",
+  setupOrStep3MockYourKey: "Je sleutel",
+  // setup page — OpenRouter step 4
+  setupOrStep4Title: "Stel een uitgavenlimiet in op de sleutel",
+  setupOrStep4BodyPrefix: "Op de ",
+  setupOrStep4BodyLink: "sleutelpagina",
+  setupOrStep4BodyMid1: ", klik op het ",
+  setupOrStep4BodyMid2: "-menu naast je nieuwe sleutel, kies “Edit” en stel de tegoedlimiet in op ",
+  setupOrStep4BodyAtLeast: "minstens $20",
+  setupOrStep4BodySuffix:
+    ". De sleutel stopt met werken zodra de limiet is bereikt, dus onverwachte kosten zijn onmogelijk. Maar stel je hem te krap in, dan kan één dure review hem middenin uitputten.",
+  setupOrStep4Annotation: "sleutelmenu",
+  setupOrStep4MockEdit: "Edit",
+  setupOrStep4MockLimitLabel: "Tegoedlimiet voor deze sleutel",
+  setupOrStep4MockButton: "Save",
+  setupOrStep4WhyLabel: "Waarom dit belangrijk is:",
+  setupOrStep4WhyMid1: " coarse is open-source — je kunt ",
+  setupOrStep4WhyLink: "elke regel code lezen",
+  setupOrStep4WhySuffix:
+    ". Je sleutel wordt rechtstreeks naar OpenRouter gestuurd om de review te draaien en daarna weggegooid — hij wordt nooit bewaard. Maar je hoeft ons niet te vertrouwen: de limiet per sleutel garandeert dat hij nooit meer kan uitgeven dan jij toestaat, zelfs in het slechtste geval.",
+  setupOrStep4CostLabel: "Een opmerking over kostenschattingen:",
+  setupOrStep4CostBody:
+    " de schatting die voor het indienen wordt getoond, is een heuristiek met een buffer van ~15%, geen hard plafond. De werkelijke kosten op SOTA-modellen met lange artikels kunnen oplopen tot ~2× de schatting zodra proefverificatie en kritiekherschrijvingen op gang komen. Als de limiet per sleutel precies op de schatting zit, kan één lastige review hem leegmaken en middenin mislukken. Laat altijd speling over.",
+  // setup page — OpenRouter step 5
+  setupOrStep5Title: "Plak in coarse",
+  setupOrStep5Body: "Kom hierheen terug, plak je sleutel in het formulier en upload je PDF.",
+  setupOrStep5Annotation: "coarse-formulier",
+  setupOrStep5MockEmail: "E-mail",
+  setupOrStep5MockKey: "OpenRouter-sleutel",
+  setupOrStep5MockButton: "Review mijn artikel",
+  // setup page — shared footer CTA
+  setupReadyCta: "Klaar? Review je artikel →",
+  // setup page — subscription tab intro
+  setupSubHeading: "Gebruik je coding-agent-abonnement",
+  setupSubIntro1:
+    "Voor gebruikers die al betalen voor Claude Code, Codex of Gemini CLI. De review draait op je abonnement en wordt daar gefactureerd. Je betaalt OpenRouter alleen ~$0,15 voor de OCR-stap.",
+  setupSubIntro2:
+    "Draait lokaal op je eigen machine met je eigen Claude Code-, Codex- of Gemini CLI-account. coarse.ink ontvangt of bewaart je provider-login niet. De voorwaarden en gebruikslimieten van je provider blijven van toepassing. coarse.ink is niet gelieerd aan Anthropic, OpenAI of Google.",
+  // setup page — subscription step 1
+  setupSubStep1Title: "Installeer een coding-agent",
+  setupSubStep1Body:
+    "Kies de agent waarvoor je betaalt. Gemini CLI heeft een gratis laag als je dat niet doet. Installeer hem vanaf de eigen pagina van de leverancier — hun docs blijven actueel.",
+  setupSubStep1ClaudePrice: "Anthropic Pro of Max",
+  setupSubStep1CodexPrice: "ChatGPT Plus, Pro of Business",
+  setupSubStep1GeminiPrice: "Gratis laag volstaat voor de meeste artikels",
+  setupSubStep1InstallLabel: "Installatie-instructies ↗",
+  setupSubStep1Verify:
+    "Draai het testcommando om installatie + login te verifiëren. Als het een reactie afdrukt, ben je klaar.",
+  setupSubStep1CardLogin: "login: ",
+  setupSubStep1CardTest: "test: ",
+  // setup page — subscription step 2
+  setupSubStep2Title: "Zet een OpenRouter-sleutel op je machine (alleen PDF's)",
+  setupSubStep2BodyPrefix:
+    "Deze stap geldt alleen voor PDF-artikels — niet-PDF-bronnen (.tex, .md, .docx, …) worden lokaal geëxtraheerd zonder OCR, dus die hebben nergens een OpenRouter-sleutel nodig en je kunt meteen door naar stap 3. Voor PDF's heeft coarse OpenRouter nog steeds nodig voor de OCR-stap (~$0,10 per artikel). Volg het tabblad ",
+  setupSubStep2BodyTab: "OpenRouter-sleutel",
+  setupSubStep2BodySuffix:
+    " om een account aan te maken, $1 tegoed toe te voegen en een limiet van $2 per sleutel in te stellen. De buffer van $20 uit het OpenRouter-only pad is hier niet nodig, omdat de review zelf op je coding-agent-abonnement draait.",
+  setupSubStep2KeyPrefix: "Zet de sleutel daarna op je eigen machine: draai ",
+  setupSubStep2KeyMid1: ", zet hem in een ",
+  setupSubStep2KeyMid2: ", of bewaar hem in ",
+  setupSubStep2KeySuffix:
+    ". Je CLI leest hem lokaal wanneer die de extractie draait; coarse.ink ziet hem nooit.",
+  // setup page — subscription step 3
+  setupSubStep3Title: "Upload je artikel en kies een CLI",
+  setupSubStep3BodyPrefix: "Op de ",
+  setupSubStep3BodyLink: "hoofdpagina",
+  setupSubStep3BodyMid: ", sleep je artikel (PDF, .tex, .md, .docx, …) op het formulier en klik daarna op de dropdown ",
+  setupSubStep3BodyButton: "Review met mijn abonnement ▾",
+  setupSubStep3BodySuffix:
+    " en kies je CLI. coarse uploadt het bestand, maakt een overdrachtstoken aan en toont de prompt die je in de volgende stap plakt. Je plakt je OpenRouter-sleutel hier niet op het formulier; de CLI leest hem van je machine (stap 2).",
+  // setup page — subscription step 4
+  setupSubStep4Title: "Plak de prompt in je CLI",
+  setupSubStep4BodyPrefix: "coarse geeft je één prompt in natuurlijke taal. Kopieer hem uit het paneel, plak hem in je ",
+  setupSubStep4BodyMid1: ", ",
+  setupSubStep4BodyMid2: ", of ",
+  setupSubStep4BodyMid3: "-sessie en druk op verzenden. De agent vernieuwt zijn skill-bundel, draait de volledige coarse-pipeline op zijn eigen subprocess-calls en drukt een ",
+  setupSubStep4BodySuffix:
+    "-URL af als die klaar is. 10–25 minuten. Klik op de URL om de voltooide review op coarse.ink te openen.",
+  setupSubStep4TimeoutLabel: "Als je in een coding-agent plakt",
+  setupSubStep4TimeoutSuffix:
+    " (geen gewone terminal), verhoog dan de timeout van zijn bash-tool naar minstens 45 min voordat je de prompt verstuurt. Standaard agent-timeouts kunnen zo laag als 2 min zijn, ver onder de reviewlooptijd van 10–25 min.",
+  // setup page — subscription step 5 (troubleshooting)
+  setupSubStep5Title: "Als er iets misgaat",
+  setupSubTrouble1Symptom: "De knop “Probeer Claude Code / Codex te openen” doet niets.",
+  setupSubTrouble1Fix:
+    "De knop werkt alleen als je de desktopapp hebt geïnstalleerd. Met een CLI-only installatie kan de browser geen terminal voor je starten. Kopieer de prompt uit het paneel en plak hem handmatig in je CLI.",
+  setupSubTrouble2Symptom: "“No such command ‘install-skills’” binnen de agent-run.",
+  setupSubTrouble2FixPrefix: "Veilig te negeren. De skill-bundel laadt nog steeds rechtstreeks via ",
+  setupSubTrouble2FixSuffix: "; de agent gaat door naar de reviewstap.",
+  setupSubTrouble3Symptom: "Mijn Anthropic-/OpenAI-/Google-rekening ging omhoog na een review.",
+  setupSubTrouble3FixPrefix: "Controleer op ",
+  setupSubTrouble3FixMid1: ", ",
+  setupSubTrouble3FixMid2: ", of ",
+  setupSubTrouble3FixSuffix:
+    " in je shell-omgeving. Als die is ingesteld, factureert de host-CLI het API-account in plaats van je abonnement. v1.3.0+ verwijdert deze automatisch, maar oudere versies deden dat niet.",
+  setupSubTrouble4Symptom: "Minder opmerkingen dan gebruikelijk (~10 in plaats van 15–25).",
+  setupSubTrouble4FixPrefix: "Een sectie liep tegen de timeout van 30 min aan en is weggevallen. Zeldzaam bij standaardinspanning, vaker met ",
+  setupSubTrouble4FixSuffix:
+    " op lange artikels. Draai opnieuw; verlaag de inspanning één stap als het twee keer gebeurt.",
+
+  // compare page (ComparePage.tsx)
+  comparePanelErrorBody: "Kon deze niet weergeven. Probeer een ander model of een andere vergelijking.",
+  comparePaperCorticalCircuits: "Cortical Circuits",
+  comparePaperCosetCodes: "Coset Codes",
+  comparePaperPopulationGenetics: "Population Genetics",
+  comparePaperTargetingInterventions: "Targeting Interventions",
+  compareScoresShow: "Toon",
+  compareScoresHide: "Verberg",
+  compareScoresToggleSuffix: " alle scores over alle artikels ",
+  compareScoresColPaper: "Artikel",
+  compareScoresColReference: "Referentie",
+  compareScoresColGpt5Mini: "GPT-5 Mini",
+  compareScoresColGpt54: "GPT-5.4",
+  compareScoresColSonnet: "Sonnet 4.6",
+  compareScoresColKimi: "Kimi K2.5",
+  compareScoresFootnote:
+    "Geëvalueerd door Gemini 3.1 Pro met multimodale PDF-invoer. 5.0/5 = evenaart de referentiekwaliteit. 5.5+/5 = overtreft die.",
+  compareJudgeShow: "Toon",
+  compareJudgeHide: "Verberg",
+  compareJudgeToggleSuffix: " de juryprompt die naar Gemini 3.1 Pro is gestuurd ",
+  compareJudgeExplain:
+    "Om bekende biases van LLM-als-jury tegen te gaan, wordt de jury per evaluatie twee keer gedraaid met de twee reviews in omgekeerde presentatievolgorde, en worden de scores over beide volgordes gemiddeld. Dit counteret positionele bias, waarbij jury's systematisch de review verkiezen die als eerste verschijnt. De prompt bevat ook specifieke instructies om verbositeitsbias tegen te gaan (lengte niet belonen boven inhoud), confidentiebias (assertief taalgebruik niet belonen boven correcte voorzichtigheid), autoriteitsbias (jargon of aantal citaties niet belonen boven juistheid) en mildheidsbias (het volledige scorebereik van 1-6 gebruiken in plaats van in het midden te clusteren). Reviews worden neutraal gelabeld als \"Review A\" en \"Review B\" in plaats van \"referentie\" en \"gegenereerd\" om scoren op basis van herkomst te voorkomen.",
+  compareJudgeSystemPromptLabel: "Systeemprompt",
+  compareJudgeUserPromptLabel: "Gebruikersprompt (artikel + reviews tijdens runtime ingevoegd)",
+  compareVsMid: " vs ",
+  compareScoreOutOf: "/5",
+  compareMetricCoverage: "Dekking",
+  compareMetricSpecificity: "Specificiteit",
+  compareMetricDepth: "Diepgang",
+  compareJumpTo: "Spring naar",
+  compareSectionOverallFeedback: "Algemene feedback",
+  compareSectionDetailedComments: "Gedetailleerde opmerkingen",
+  compareVisitPrefix: "Bezoek ",
+  comparePdfReviewSuffix: " review",
+  comparePdfFallback: "Download de PDF als de iframe niet weergeeft ↓",
 };

@@ -395,4 +395,184 @@ export const ar: Messages = {
   paperPanelDownload: "تنزيل",
   paperPanelDownloadAriaLabel: "تنزيل ملف Markdown الخاص بالورقة",
   paperPanelCloseAriaLabel: "إغلاق لوحة الورقة",
+
+  // setup page (setup/page.tsx)
+  // setup page — tab switcher
+  setupTablistAriaLabel: "مسار الإعداد",
+  setupTabOpenRouter: "مفتاح OpenRouter",
+  setupTabSubscription: "استخدام اشتراكي",
+  // setup page — OpenRouter tab intro
+  setupOrHeading: "احصل على مفتاح OpenRouter",
+  setupOrIntro:
+    "يستغرق نحو دقيقتين. ستحتاج إلى بطاقة ائتمان بقيمة نحو $1 من الرصيد للبدء — وسترفع الرصيد إلى $20 في الخطوة 2.",
+  setupOrFasterLabel: "خيار أسرع:",
+  setupOrFasterMid1: " في النموذج الرئيسي يمكنك النقر على ",
+  setupOrFasterLogIn: "“سجّل الدخول عبر OpenRouter”",
+  setupOrFasterSuffix:
+    " لتفويض coarse وتخطّي إنشاء المفتاح يدويًا. ستظل تحتاج إلى حساب OpenRouter به رصيد (الخطوتان 1 و2 أدناه)، وما زلنا ننصح بضبط حد إنفاق لكل مفتاح (الخطوة 4).",
+  // setup page — OpenRouter step 1
+  setupOrStep1Title: "أنشئ حسابًا",
+  setupOrStep1BodyPrefix: "اذهب إلى ",
+  setupOrStep1BodySuffix: " وانقر على “Get API Key” أو سجّل عبر Google / GitHub.",
+  setupOrStep1Annotation: "الصفحة الرئيسية",
+  setupOrStep1MockButton: "Get API Key",
+  setupOrStep1MockTagline: "واجهة برمجة موحّدة لنماذج اللغة الكبيرة — مفتاح واحد، نماذج كثيرة.",
+  // setup page — OpenRouter step 2
+  setupOrStep2Title: "أضف رصيدًا",
+  setupOrStep2BodyPrefix: "انتقل إلى ",
+  setupOrStep2BodyLink: "Settings → Credits",
+  setupOrStep2BodySuffix:
+    ". أضف $20 على الأقل. تكلّف النماذج المفتوحة المصدر الرخيصة نحو $0.25 لكل مراجعة؛ أما النماذج الأحدث مثل Claude Opus أو GPT-5 فقد تصل إلى $5–$10 على ورقة طويلة. تقدير التكلفة المعروض قبل الإرسال تقريبي وليس سقفًا. اترك هامشًا وإلا فقد تستنفد المراجعة المفتاح في منتصفها وتفشل. ولا تنتهي صلاحية الرصيد غير المستخدَم.",
+  setupOrStep2Annotation: "صفحة الرصيد",
+  setupOrStep2MockSettings: "Settings → Credits",
+  setupOrStep2MockAmount: "Amount",
+  setupOrStep2MockButton: "Add credits",
+  setupOrStep2MockBalance: "Balance: $0.00",
+  // setup page — OpenRouter step 3
+  setupOrStep3Title: "أنشئ مفتاح API",
+  setupOrStep3BodyPrefix: "اذهب إلى ",
+  setupOrStep3BodyLink: "Settings → Keys",
+  setupOrStep3BodyMid: "، وانقر على “Create Key”، وسمِّه ",
+  setupOrStep3BodySuffix: ".",
+  setupOrStep3Provisioning:
+    "تأكّد من أنه مفتاح API عادي — لا مفتاح تزويد/إدارة من قسم التكاملات. يمكن لمفاتيح التزويد إنشاء مفاتيح أخرى وسردها لكنها لا تستطيع إجراء الاستدلال، وسيفشل coarse برسالة “User not found” إذا لصقت واحدًا.",
+  setupOrStep3CopyWarning: "انسخ المفتاح الآن — لن تراه مرة أخرى.",
+  setupOrStep3Annotation: "صفحة المفاتيح",
+  setupOrStep3MockSettings: "Settings → Keys",
+  setupOrStep3MockButton: "Create Key",
+  setupOrStep3MockKeyName: "Key name",
+  setupOrStep3MockYourKey: "Your key",
+  // setup page — OpenRouter step 4
+  setupOrStep4Title: "اضبط حد إنفاق على المفتاح",
+  setupOrStep4BodyPrefix: "في ",
+  setupOrStep4BodyLink: "صفحة المفاتيح",
+  setupOrStep4BodyMid1: "، انقر على قائمة ",
+  setupOrStep4BodyMid2: " بجوار مفتاحك الجديد، واختر “Edit”، واضبط حد الرصيد على ",
+  setupOrStep4BodyAtLeast: "‏$20 على الأقل",
+  setupOrStep4BodySuffix:
+    ". يتوقف المفتاح عن العمل بمجرد بلوغ الحد، لذا تستحيل الرسوم المفاجئة. لكن إن ضبطته ضيّقًا جدًا فقد تستنفده مراجعة واحدة باهظة في منتصف تشغيلها.",
+  setupOrStep4Annotation: "قائمة المفتاح",
+  setupOrStep4MockEdit: "Edit",
+  setupOrStep4MockLimitLabel: "Credit limit for this key",
+  setupOrStep4MockButton: "Save",
+  setupOrStep4WhyLabel: "لماذا يهم هذا:",
+  setupOrStep4WhyMid1: " إنّ coarse مفتوح المصدر — يمكنك ",
+  setupOrStep4WhyLink: "قراءة كل سطر من الشيفرة",
+  setupOrStep4WhySuffix:
+    ". يُرسَل مفتاحك مباشرةً إلى OpenRouter لإجراء المراجعة، ثم يُتلَف — ولا يُخزَّن أبدًا. لكنك لست مضطرًا إلى الوثوق بنا: يضمن الحد لكل مفتاح أنه لا يمكن أبدًا أن ينفق أكثر مما تسمح به، حتى في أسوأ الحالات.",
+  setupOrStep4CostLabel: "ملاحظة عن تقديرات التكلفة:",
+  setupOrStep4CostBody:
+    " التقدير المعروض قبل الإرسال هو تقدير تقريبي بهامش نحو 15%، وليس سقفًا صارمًا. قد تصل التكلفة الفعلية على النماذج الأحدث مع الأوراق الطويلة إلى نحو ضعف التقدير بمجرد بدء التحقق من البراهين وإعادة كتابة النقد. وإذا كان الحد لكل مفتاح عند مستوى التقدير تمامًا، فقد تستنزفه مراجعة صعبة واحدة وتفشل في منتصف التشغيل. اترك هامشًا دائمًا.",
+  // setup page — OpenRouter step 5
+  setupOrStep5Title: "الصق في coarse",
+  setupOrStep5Body: "عُد إلى هنا، والصق مفتاحك في النموذج، وارفع ملف الـ PDF الخاص بك.",
+  setupOrStep5Annotation: "نموذج coarse",
+  setupOrStep5MockEmail: "Email",
+  setupOrStep5MockKey: "OpenRouter key",
+  setupOrStep5MockButton: "Review my paper",
+  // setup page — shared footer CTA
+  setupReadyCta: "جاهز؟ راجِع ورقتك →",
+  // setup page — subscription tab intro
+  setupSubHeading: "استخدم اشتراك وكيل البرمجة لديك",
+  setupSubIntro1:
+    "للمستخدمين الذين يدفعون بالفعل مقابل Claude Code أو Codex أو Gemini CLI. تعمل المراجعة على اشتراكك وتُحتسَب تكلفتها هناك. تدفع OpenRouter نحو $0.15 فقط مقابل خطوة الـ OCR.",
+  setupSubIntro2:
+    "يعمل محليًا على جهازك باستخدام حسابك الخاص في Claude Code أو Codex أو Gemini CLI. لا يتلقّى coarse.ink بيانات تسجيل دخول مزوّدك ولا يخزّنها. وتظل شروط مزوّدك وحدود استخدامه سارية. وليس coarse.ink تابعًا لـ Anthropic أو OpenAI أو Google.",
+  // setup page — subscription step 1
+  setupSubStep1Title: "ثبّت وكيل برمجة",
+  setupSubStep1Body:
+    "اختر أيًّا كان الذي تدفع مقابله. يتوفّر لـ Gemini CLI طبقة مجانية إن لم تكن تدفع. ثبّته من صفحة المورّد نفسها — فوثائقهم تبقى محدّثة.",
+  setupSubStep1ClaudePrice: "Anthropic Pro أو Max",
+  setupSubStep1CodexPrice: "ChatGPT Plus أو Pro أو Business",
+  setupSubStep1GeminiPrice: "الطبقة المجانية تكفي لمعظم الأوراق",
+  setupSubStep1InstallLabel: "تعليمات التثبيت ↗",
+  setupSubStep1Verify:
+    "شغّل أمر الاختبار للتحقق من التثبيت + تسجيل الدخول. إذا طبع استجابة، فأنت جاهز.",
+  setupSubStep1CardLogin: "تسجيل الدخول: ",
+  setupSubStep1CardTest: "الاختبار: ",
+  // setup page — subscription step 2
+  setupSubStep2Title: "ضع مفتاح OpenRouter على جهازك (ملفات PDF فقط)",
+  setupSubStep2BodyPrefix:
+    "تنطبق هذه الخطوة على أوراق الـ PDF فقط — أما المصادر غير الـ PDF (.tex, .md, .docx، …) فتُستخرَج محليًا دون OCR، لذا لا تحتاج إلى مفتاح OpenRouter في أي مكان ويمكنك الانتقال مباشرةً إلى الخطوة 3. أما لملفات الـ PDF، فما زال coarse يحتاج إلى OpenRouter لخطوة الـ OCR (نحو $0.10 لكل ورقة). اتبع تبويبة ",
+  setupSubStep2BodyTab: "مفتاح OpenRouter",
+  setupSubStep2BodySuffix:
+    " لإنشاء حساب، وإضافة $1 من الرصيد، وضبط حد قدره $2 لكل مفتاح. لا حاجة هنا إلى هامش الـ $20 الخاص بمسار OpenRouter وحده لأن المراجعة نفسها تعمل على اشتراك وكيل البرمجة لديك.",
+  setupSubStep2KeyPrefix: "ثم ضع المفتاح على جهازك الخاص: شغّل ",
+  setupSubStep2KeyMid1: "، أو ضعه في ملف ",
+  setupSubStep2KeyMid2: "، أو احفظه في ",
+  setupSubStep2KeySuffix:
+    ". تقرأه واجهة سطر الأوامر لديك محليًا عند تشغيل الاستخراج؛ ولا يراه coarse.ink أبدًا.",
+  // setup page — subscription step 3
+  setupSubStep3Title: "ارفع ورقتك واختر واجهة سطر أوامر",
+  setupSubStep3BodyPrefix: "في ",
+  setupSubStep3BodyLink: "الصفحة الرئيسية",
+  setupSubStep3BodyMid: "، أفلِت ورقتك (PDF، .tex، .md، .docx، …) على النموذج، ثم انقر على قائمة ",
+  setupSubStep3BodyButton: "راجِع باستخدام اشتراكي ▾",
+  setupSubStep3BodySuffix:
+    " المنسدلة واختر واجهة سطر الأوامر لديك. يرفع coarse الملف، ويصدر رمز تسليم، ويعرض الموجِّه الذي ستلصقه في الخطوة التالية. لا تلصق مفتاح OpenRouter الخاص بك في النموذج هنا؛ تقرأه واجهة سطر الأوامر من جهازك (الخطوة 2).",
+  // setup page — subscription step 4
+  setupSubStep4Title: "الصق الموجِّه في واجهة سطر الأوامر لديك",
+  setupSubStep4BodyPrefix: "يمنحك coarse موجِّهًا واحدًا بلغة طبيعية. انسخه من اللوحة، والصقه في جلسة ",
+  setupSubStep4BodyMid1: "، ",
+  setupSubStep4BodyMid2: "، أو ",
+  setupSubStep4BodyMid3: "، واضغط على إرسال. يحدّث الوكيل حزمة مهاراته، ويشغّل خط أنابيب coarse الكامل عبر استدعاءاته الفرعية الخاصة، ويطبع عنوان ",
+  setupSubStep4BodySuffix:
+    " عند الانتهاء. 10–25 دقيقة. انقر على العنوان لفتح المراجعة المكتملة على coarse.ink.",
+  setupSubStep4TimeoutLabel: "إذا كنت تلصق في وكيل برمجة",
+  setupSubStep4TimeoutSuffix:
+    " (لا في طرفية عادية)، فارفع مهلة أداة bash لديه إلى 45 دقيقة على الأقل قبل إرسال الموجِّه. قد تكون مهل الوكلاء الافتراضية منخفضة إلى دقيقتين، أي أقل بكثير من زمن تشغيل المراجعة البالغ 10–25 دقيقة.",
+  // setup page — subscription step 5 (troubleshooting)
+  setupSubStep5Title: "إذا حدث خطأ ما",
+  setupSubTrouble1Symptom: "زر “جرّب فتح Claude Code / Codex” لا يفعل شيئًا.",
+  setupSubTrouble1Fix:
+    "يعمل الزر فقط إذا كان لديك تطبيق سطح المكتب مثبّتًا. مع تثبيت واجهة سطر الأوامر فقط، لا يستطيع المتصفح تشغيل طرفية نيابةً عنك. انسخ الموجِّه من اللوحة والصقه في واجهة سطر الأوامر لديك يدويًا.",
+  setupSubTrouble2Symptom: "“No such command ‘install-skills’” داخل تشغيل الوكيل.",
+  setupSubTrouble2FixPrefix: "آمن التجاهل. ما زالت حزمة المهارات تُحمَّل مباشرةً عبر ",
+  setupSubTrouble2FixSuffix: "؛ وسيتابع الوكيل إلى خطوة المراجعة.",
+  setupSubTrouble3Symptom: "ارتفعت فاتورة Anthropic / OpenAI / Google لديّ بعد مراجعة.",
+  setupSubTrouble3FixPrefix: "تحقّق من وجود ",
+  setupSubTrouble3FixMid1: "، ",
+  setupSubTrouble3FixMid2: "، أو ",
+  setupSubTrouble3FixSuffix:
+    " في بيئة الصدفة لديك. إن كانت مضبوطة، فإن واجهة سطر الأوامر المضيفة تحتسب التكلفة على حساب الـ API بدلًا من اشتراكك. تزيلها الإصدارات v1.3.0+ تلقائيًا، لكن الإصدارات الأقدم لم تكن تفعل.",
+  setupSubTrouble4Symptom: "تعليقات أقل من المعتاد (نحو 10 بدلًا من 15–25).",
+  setupSubTrouble4FixPrefix: "بلغ أحد الأقسام مهلة الـ 30 دقيقة وأُسقط. نادر على الجهد الافتراضي، وأكثر شيوعًا مع ",
+  setupSubTrouble4FixSuffix:
+    " على الأوراق الطويلة. أعِد التشغيل؛ واخفض الجهد درجة واحدة إن تكرّر مرتين.",
+
+  // compare page (ComparePage.tsx)
+  comparePanelErrorBody: "تعذّر عرض هذه المقارنة. جرّب نموذجًا آخر أو مقارنة أخرى.",
+  comparePaperCorticalCircuits: "الدوائر القشرية",
+  comparePaperCosetCodes: "شيفرات الأصناف المشتركة",
+  comparePaperPopulationGenetics: "علم وراثة المجموعات السكانية",
+  comparePaperTargetingInterventions: "استهداف التدخلات",
+  compareScoresShow: "إظهار",
+  compareScoresHide: "إخفاء",
+  compareScoresToggleSuffix: " جميع الدرجات عبر الأوراق ",
+  compareScoresColPaper: "الورقة",
+  compareScoresColReference: "المرجع",
+  compareScoresColGpt5Mini: "GPT-5 Mini",
+  compareScoresColGpt54: "GPT-5.4",
+  compareScoresColSonnet: "Sonnet 4.6",
+  compareScoresColKimi: "Kimi K2.5",
+  compareScoresFootnote:
+    "قيّمها Gemini 3.1 Pro بإدخال متعدد الوسائط من ملف PDF. 5.0/5 = تطابق جودة المرجع. 5.5+/5 = تتجاوزها.",
+  compareJudgeShow: "إظهار",
+  compareJudgeHide: "إخفاء",
+  compareJudgeToggleSuffix: " موجِّه الحَكَم المُرسَل إلى Gemini 3.1 Pro ",
+  compareJudgeExplain:
+    "للحدّ من تحيّزات الحَكَم المعروفة في نماذج اللغة، يُشغَّل الحَكَم مرتين لكل تقييم مع تبديل ترتيب عرض المراجعتين، وتُحسَب الدرجات بالمتوسط عبر الترتيبين. يقاوم هذا التحيّز الموضعي، حيث يفضّل الحكّام منهجيًا أي مراجعة تظهر أولًا. ويتضمّن الموجِّه أيضًا تعليمات محدّدة لمقاومة تحيّز الإسهاب (عدم مكافأة الطول على المضمون)، وتحيّز الثقة (عدم مكافأة اللغة الجازمة على التحفّظ الصحيح)، وتحيّز السلطة (عدم مكافأة المصطلحات أو عدد الاستشهادات على الدقة)، وتحيّز التساهل (استخدام نطاق التقييم الكامل من 1 إلى 6 بدلًا من التجمّع في الوسط). وتُوسَم المراجعتان بحياد بوصفهما \"Review A\" و\"Review B\" بدلًا من \"المرجع\" و\"المُولَّدة\" لمنع التقييم القائم على المصدر.",
+  compareJudgeSystemPromptLabel: "موجِّه النظام",
+  compareJudgeUserPromptLabel: "موجِّه المستخدم (تُدرَج الورقة + المراجعات وقت التشغيل)",
+  compareVsMid: " مقابل ",
+  compareScoreOutOf: "/5",
+  compareMetricCoverage: "الشمول",
+  compareMetricSpecificity: "الدقة",
+  compareMetricDepth: "العمق",
+  compareJumpTo: "انتقل إلى",
+  compareSectionOverallFeedback: "الملاحظات العامة",
+  compareSectionDetailedComments: "التعليقات المفصّلة",
+  compareVisitPrefix: "زُر ",
+  comparePdfReviewSuffix: " مراجعة",
+  comparePdfFallback: "نزّل ملف PDF إذا لم يُعرَض الإطار ↓",
 };

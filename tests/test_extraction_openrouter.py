@@ -69,19 +69,29 @@ def test_setup_page_warns_about_provisioning_keys() -> None:
     classifier returns, so the drift surfaces at CI time rather than
     in a confused user's status page.
     """
-    setup = Path(__file__).resolve().parents[1] / "web" / "src" / "app" / "setup" / "page.tsx"
+    root = Path(__file__).resolve().parents[1]
+    setup = root / "web" / "src" / "app" / "setup" / "page.tsx"
     assert setup.exists(), "web/src/app/setup/page.tsx must exist"
     src = setup.read_text(encoding="utf-8")
 
-    assert "provisioning" in src.lower(), (
-        "setup page Step 3 must name the wrong key type ('provisioning' / "
-        "'management') so users can self-diagnose. See the classifier "
-        "message in src/coarse/extraction_openrouter.py."
+    # The Step-3 provisioning-key guidance was externalized to the site-UI i18n
+    # catalog when the setup page was localized; setup/page.tsx now renders it via
+    # t("setupOrStep3Provisioning"). Assert the page still surfaces that key AND
+    # the English catalog still carries the exact cross-referenced copy.
+    assert "setupOrStep3Provisioning" in src, (
+        "setup page Step 3 must still render the provisioning-key warning via "
+        "t('setupOrStep3Provisioning')."
     )
-    assert "User not found" in src, (
-        "setup page Step 3 must quote the exact 'User not found' error "
-        "string users will see if they paste a provisioning key; drops "
-        "the cross-reference with _classify_api_error otherwise."
+    en_catalog = (root / "web" / "src" / "lib" / "i18n" / "en.ts").read_text(encoding="utf-8")
+    assert "provisioning" in en_catalog.lower(), (
+        "en.ts must name the wrong key type ('provisioning' / 'management') so "
+        "users can self-diagnose. See the classifier message in "
+        "src/coarse/extraction_openrouter.py."
+    )
+    assert "User not found" in en_catalog, (
+        "en.ts must quote the exact 'User not found' error string users will see "
+        "if they paste a provisioning key; drops the cross-reference with "
+        "_classify_api_error otherwise."
     )
 
 

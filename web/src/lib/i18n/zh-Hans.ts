@@ -394,4 +394,184 @@ export const zhHans: Messages = {
   paperPanelDownload: "下载",
   paperPanelDownloadAriaLabel: "下载论文 markdown",
   paperPanelCloseAriaLabel: "关闭论文面板",
+
+  // setup page (setup/page.tsx)
+  // setup page — tab switcher
+  setupTablistAriaLabel: "设置方式",
+  setupTabOpenRouter: "OpenRouter 密钥",
+  setupTabSubscription: "使用我的订阅",
+  // setup page — OpenRouter tab intro
+  setupOrHeading: "获取你的 OpenRouter 密钥",
+  setupOrIntro:
+    "大约需要 2 分钟。你需要一张信用卡来充值约 $1 的额度以便开始——你将在第 2 步中充值到 $20。",
+  setupOrFasterLabel: "更快的方式：",
+  setupOrFasterMid1: " 在主表单上你可以点击 ",
+  setupOrFasterLogIn: "“使用 OpenRouter 登录”",
+  setupOrFasterSuffix:
+    " 来授权 coarse 并跳过手动创建密钥。你仍然需要一个有额度的 OpenRouter 账户（下面的第 1 步和第 2 步），并且我们仍然建议设置单个密钥的消费限额（第 4 步）。",
+  // setup page — OpenRouter step 1
+  setupOrStep1Title: "创建账户",
+  setupOrStep1BodyPrefix: "前往 ",
+  setupOrStep1BodySuffix: " 并点击“Get API Key”，或使用 Google / GitHub 注册。",
+  setupOrStep1Annotation: "主页",
+  setupOrStep1MockButton: "Get API Key",
+  setupOrStep1MockTagline: "面向 LLM 的统一 API——一把密钥，多种模型。",
+  // setup page — OpenRouter step 2
+  setupOrStep2Title: "充值额度",
+  setupOrStep2BodyPrefix: "导航到 ",
+  setupOrStep2BodyLink: "Settings → Credits",
+  setupOrStep2BodySuffix:
+    "。至少充值 $20。便宜的开源模型每次评审约 $0.25；像 Claude Opus 或 GPT-5 这样的 SOTA 模型在长论文上可能花费 $5–$10。提交前显示的费用估算只是一个大致范围，不是上限。请预留余量，否则评审可能会中途耗尽密钥而失败。未使用的额度不会过期。",
+  setupOrStep2Annotation: "额度页面",
+  setupOrStep2MockSettings: "Settings → Credits",
+  setupOrStep2MockAmount: "金额",
+  setupOrStep2MockButton: "Add credits",
+  setupOrStep2MockBalance: "Balance: $0.00",
+  // setup page — OpenRouter step 3
+  setupOrStep3Title: "创建 API 密钥",
+  setupOrStep3BodyPrefix: "前往 ",
+  setupOrStep3BodyLink: "Settings → Keys",
+  setupOrStep3BodyMid: "，点击“Create Key”，并将其命名为 ",
+  setupOrStep3BodySuffix: "。",
+  setupOrStep3Provisioning:
+    "请确保它是常规 API 密钥——而不是集成部分的预配/管理密钥。预配密钥可以创建和列出其他密钥，但无法运行推理，如果你粘贴了这种密钥，coarse 会报错“User not found”。",
+  setupOrStep3CopyWarning: "立即复制密钥——你不会再看到它了。",
+  setupOrStep3Annotation: "密钥页面",
+  setupOrStep3MockSettings: "Settings → Keys",
+  setupOrStep3MockButton: "Create Key",
+  setupOrStep3MockKeyName: "密钥名称",
+  setupOrStep3MockYourKey: "你的密钥",
+  // setup page — OpenRouter step 4
+  setupOrStep4Title: "为密钥设置消费限额",
+  setupOrStep4BodyPrefix: "在 ",
+  setupOrStep4BodyLink: "Keys 页面",
+  setupOrStep4BodyMid1: " 上，点击你新密钥旁边的 ",
+  setupOrStep4BodyMid2: " 菜单，选择“Edit”，并将额度限额设置为 ",
+  setupOrStep4BodyAtLeast: "至少 $20",
+  setupOrStep4BodySuffix:
+    "。一旦达到限额，密钥就会停止工作，因此不可能产生意外费用。但如果设置得太紧，单次昂贵的评审就可能在运行中途耗尽它。",
+  setupOrStep4Annotation: "密钥菜单",
+  setupOrStep4MockEdit: "Edit",
+  setupOrStep4MockLimitLabel: "此密钥的额度限额",
+  setupOrStep4MockButton: "Save",
+  setupOrStep4WhyLabel: "为什么这很重要：",
+  setupOrStep4WhyMid1: " coarse 是开源的——你可以 ",
+  setupOrStep4WhyLink: "阅读每一行代码",
+  setupOrStep4WhySuffix:
+    "。你的密钥会直接发送给 OpenRouter 以运行评审，然后即被丢弃——它绝不会被存储。但你不必信任我们：单个密钥的限额保证了即使在最坏的情况下，它的花费也绝不会超过你所允许的额度。",
+  setupOrStep4CostLabel: "关于费用估算的说明：",
+  setupOrStep4CostBody:
+    " 提交前显示的估算是一个带有约 15% 缓冲的启发式数值，不是硬性上限。在长论文上使用 SOTA 模型时，一旦证明验证和批评重写启动，实际费用可能高达估算的约 2 倍。如果单个密钥的上限正好卡在估算值上，一次棘手的评审就可能把它耗尽并在运行中途失败。请始终预留余量。",
+  // setup page — OpenRouter step 5
+  setupOrStep5Title: "粘贴到 coarse 中",
+  setupOrStep5Body: "回到这里，将你的密钥粘贴到表单中，然后上传你的 PDF。",
+  setupOrStep5Annotation: "coarse 表单",
+  setupOrStep5MockEmail: "电子邮箱",
+  setupOrStep5MockKey: "OpenRouter 密钥",
+  setupOrStep5MockButton: "评审我的论文",
+  // setup page — shared footer CTA
+  setupReadyCta: "准备好了吗？评审你的论文 →",
+  // setup page — subscription tab intro
+  setupSubHeading: "使用你的编码智能体订阅",
+  setupSubIntro1:
+    "适用于已经在为 Claude Code、Codex 或 Gemini CLI 付费的用户。评审在你的订阅上运行并在那里计费。你只需为 OCR 环节向 OpenRouter 支付约 ~$0.15。",
+  setupSubIntro2:
+    "在你本地的机器上，使用你自己的 Claude Code、Codex 或 Gemini CLI 账户运行。coarse.ink 不会接收或存储你的提供商登录信息。你的提供商的条款和使用限额仍然适用。coarse.ink 与 Anthropic、OpenAI 或 Google 无任何关联。",
+  // setup page — subscription step 1
+  setupSubStep1Title: "安装编码智能体",
+  setupSubStep1Body:
+    "选择你为之付费的那一个。如果你没有付费，Gemini CLI 有免费层级。请从供应商自己的页面安装——他们的文档保持最新。",
+  setupSubStep1ClaudePrice: "Anthropic Pro 或 Max",
+  setupSubStep1CodexPrice: "ChatGPT Plus、Pro 或 Business",
+  setupSubStep1GeminiPrice: "免费层级足以应对大多数论文",
+  setupSubStep1InstallLabel: "安装说明 ↗",
+  setupSubStep1Verify:
+    "运行测试命令以验证安装 + 登录。如果它打印出响应，你就准备好了。",
+  setupSubStep1CardLogin: "登录： ",
+  setupSubStep1CardTest: "测试： ",
+  // setup page — subscription step 2
+  setupSubStep2Title: "在你的机器上放一把 OpenRouter 密钥（仅限 PDF）",
+  setupSubStep2BodyPrefix:
+    "此步骤仅适用于 PDF 论文——非 PDF 来源（.tex, .md, .docx, …）会在本地提取而无需 OCR，因此它们在任何地方都不需要 OpenRouter 密钥，你可以直接跳到第 3 步。对于 PDF，coarse 的 OCR 步骤仍需要 OpenRouter（每篇论文约 $0.10）。请按照 ",
+  setupSubStep2BodyTab: "OpenRouter 密钥",
+  setupSubStep2BodySuffix:
+    " 标签页来创建账户、充值 $1 额度，并设置 $2 的单个密钥限额。这里不需要 OpenRouter-only 路径中的 $20 缓冲，因为评审本身是在你的编码智能体订阅上运行的。",
+  setupSubStep2KeyPrefix: "然后把密钥放到你自己的机器上：运行 ",
+  setupSubStep2KeyMid1: "，将其放入 ",
+  setupSubStep2KeyMid2: "，或将其保存到 ",
+  setupSubStep2KeySuffix:
+    "。你的 CLI 在运行提取时会在本地读取它；coarse.ink 绝不会看到它。",
+  // setup page — subscription step 3
+  setupSubStep3Title: "上传你的论文并选择一个 CLI",
+  setupSubStep3BodyPrefix: "在 ",
+  setupSubStep3BodyLink: "主页面",
+  setupSubStep3BodyMid: " 上，将你的论文（PDF、.tex、.md、.docx、…）拖到表单上，然后点击 ",
+  setupSubStep3BodyButton: "用我的订阅来评审 ▾",
+  setupSubStep3BodySuffix:
+    " 下拉菜单并选择你的 CLI。coarse 会上传文件、铸造一个交接令牌，并显示你将在下一步粘贴的提示词。你不需要在这里的表单上粘贴你的 OpenRouter 密钥；CLI 会从你的机器上读取它（第 2 步）。",
+  // setup page — subscription step 4
+  setupSubStep4Title: "将提示词粘贴到你的 CLI 中",
+  setupSubStep4BodyPrefix: "coarse 会给你一条自然语言提示词。从面板中复制它，将其粘贴到你的 ",
+  setupSubStep4BodyMid1: "、",
+  setupSubStep4BodyMid2: " 或 ",
+  setupSubStep4BodyMid3: " 会话中，然后点击发送。智能体会刷新其技能包，在自己的子进程调用上运行完整的 coarse 流水线，并在完成后打印出一个 ",
+  setupSubStep4BodySuffix:
+    " URL。耗时 10–25 分钟。点击该 URL 即可在 coarse.ink 上打开完成的评审。",
+  setupSubStep4TimeoutLabel: "如果你是粘贴到编码智能体中",
+  setupSubStep4TimeoutSuffix:
+    "（而非普通终端），请在发送提示词之前将其 bash 工具超时调高到至少 45 分钟。智能体的默认超时可能低至 2 分钟，远低于 10–25 分钟的评审运行时间。",
+  // setup page — subscription step 5 (troubleshooting)
+  setupSubStep5Title: "如果出了问题",
+  setupSubTrouble1Symptom: "“Try opening Claude Code / Codex”按钮没有任何反应。",
+  setupSubTrouble1Fix:
+    "该按钮仅在你安装了桌面应用时才有效。如果只安装了 CLI，浏览器无法为你启动终端。请从面板中复制提示词并手动将其粘贴到你的 CLI 中。",
+  setupSubTrouble2Symptom: "智能体运行中出现“No such command ‘install-skills’”。",
+  setupSubTrouble2FixPrefix: "可以放心忽略。技能包仍会直接通过 ",
+  setupSubTrouble2FixSuffix: " 加载；智能体会继续进行到评审步骤。",
+  setupSubTrouble3Symptom: "评审之后我的 Anthropic / OpenAI / Google 账单上涨了。",
+  setupSubTrouble3FixPrefix: "请检查你的 shell 环境中是否有 ",
+  setupSubTrouble3FixMid1: "、",
+  setupSubTrouble3FixMid2: " 或 ",
+  setupSubTrouble3FixSuffix:
+    "。如果设置了，宿主 CLI 会向 API 账户计费，而不是你的订阅。v1.3.0+ 会自动剥离这些变量，但旧版本不会。",
+  setupSubTrouble4Symptom: "评论比平时少（约 10 条而不是 15–25 条）。",
+  setupSubTrouble4FixPrefix: "某个章节触发了 30 分钟超时并被丢弃。在默认强度下很少见，使用 ",
+  setupSubTrouble4FixSuffix:
+    " 处理长论文时更常见。请重新运行；如果发生两次，就把强度降低一档。",
+
+  // compare page (ComparePage.tsx)
+  comparePanelErrorBody: "无法渲染这一个。请尝试其他模型或对比。",
+  comparePaperCorticalCircuits: "皮层环路",
+  comparePaperCosetCodes: "陪集码",
+  comparePaperPopulationGenetics: "群体遗传学",
+  comparePaperTargetingInterventions: "精准干预",
+  compareScoresShow: "显示",
+  compareScoresHide: "隐藏",
+  compareScoresToggleSuffix: " 各篇论文的全部得分 ",
+  compareScoresColPaper: "论文",
+  compareScoresColReference: "参考",
+  compareScoresColGpt5Mini: "GPT-5 Mini",
+  compareScoresColGpt54: "GPT-5.4",
+  compareScoresColSonnet: "Sonnet 4.6",
+  compareScoresColKimi: "Kimi K2.5",
+  compareScoresFootnote:
+    "由 Gemini 3.1 Pro 通过 PDF 多模态输入评估。5.0/5 = 与参考质量相当。5.5+/5 = 超过参考质量。",
+  compareJudgeShow: "显示",
+  compareJudgeHide: "隐藏",
+  compareJudgeToggleSuffix: " 发送给 Gemini 3.1 Pro 的评判提示词 ",
+  compareJudgeExplain:
+    "为减轻已知的 LLM-as-judge 偏差，评判器在每次评估中以两篇评审的呈现顺序互换的方式运行两次，并对两种顺序下的得分取平均。这可以抵消位置偏差，即评判者系统性地偏好排在前面的那篇评审。提示词还包含具体指令，以抵消冗长偏差（不因篇幅而非实质给予奖励）、自信偏差（不因断言性措辞而非恰当的保留给予奖励）、权威偏差（不因术语或引用数量而非准确性给予奖励）以及宽容偏差（使用完整的 1-6 评分区间，而非聚集在中间）。两篇评审被中性地标记为“Review A”和“Review B”，而非“参考”和“生成”，以防止基于来源的评分。",
+  compareJudgeSystemPromptLabel: "系统提示词",
+  compareJudgeUserPromptLabel: "用户提示词（论文 + 评审在运行时注入）",
+  compareVsMid: " vs ",
+  compareScoreOutOf: "/5",
+  compareMetricCoverage: "覆盖度",
+  compareMetricSpecificity: "针对性",
+  compareMetricDepth: "深度",
+  compareJumpTo: "跳转到",
+  compareSectionOverallFeedback: "总体反馈",
+  compareSectionDetailedComments: "详细评论",
+  compareVisitPrefix: "访问 ",
+  comparePdfReviewSuffix: " 评审",
+  comparePdfFallback: "如果 iframe 未渲染，请下载 PDF ↓",
 };
