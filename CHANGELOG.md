@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.8.0 — 2026-06-18
+
 ### Added
 
 - **Experiment record: review-output language does not degrade review quality (PR-F decision).** A local, $0 experiment (four Opus-4.8 reviewer subagents reviewing one econometrics paper, one per output language — English baseline, Spanish, Chinese, Arabic — scored with the production quote verifier plus an English-only judge, alongside a ~19-source literature review) backs keeping **Design A** (generate directly in the target language, quotes kept verbatim in the source language) and **not** building Design B (English-pivot + translate). Quote fidelity was perfect under Design A (0 dropped quotes in every language, including Arabic); issue-finding did not degrade (all four languages found the same hardest issues; the non-English reviews even surfaced real issues English missed); and the literature shows translating a structured output silently corrupts verbatim quote blocks at 8–50% rates. Write-up, raw data, and a re-runnable scorer in `docs/experiments/`. Docs-only — no package change.
