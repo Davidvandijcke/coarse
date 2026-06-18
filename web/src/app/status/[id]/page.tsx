@@ -5,8 +5,21 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import type { Review } from "@/lib/types";
 import { CharcoalRule, PageMarks } from "@/components/charcoal";
 import { buildReviewKey, buildReviewPath, buildReviewUrl } from "@/lib/reviewAccess";
+import { SiteLanguageProvider, useSiteLanguageContext } from "@/lib/i18n";
 
 export default function StatusPage() {
+  // The site-language context must sit ABOVE every consumer, so the provider
+  // wraps the body here and the actual page content lives in StatusBody, which
+  // reads the context (mirrors page.tsx's PageBody pattern).
+  return (
+    <SiteLanguageProvider>
+      <StatusBody />
+    </SiteLanguageProvider>
+  );
+}
+
+function StatusBody() {
+  const { t } = useSiteLanguageContext();
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -33,7 +46,7 @@ export default function StatusPage() {
       if (cancelled) return;
 
       if (res.status === 401) {
-        setAccessError("This review needs the full secure review link or review key.");
+        setAccessError(t("statusAccessErrorNeedsKey"));
         setLoading(false);
         clearInterval(interval);
         return;
@@ -45,7 +58,7 @@ export default function StatusPage() {
         return;
       }
       if (!res.ok) {
-        let message = "Failed to load the review status. Please try again.";
+        let message = t("statusLoadFailed");
         try {
           const body = (await res.json()) as { error?: string };
           if (body.error) message = body.error;
@@ -78,6 +91,10 @@ export default function StatusPage() {
       cancelled = true;
       clearInterval(interval);
     };
+    // Mount-only poller: `t` is read only inside closures for error text at
+    // call time, so it's intentionally omitted from the deps — including it
+    // would tear down + re-fetch the poll on every site-language toggle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, router, token]);
 
   function copyLink() {
@@ -104,7 +121,7 @@ export default function StatusPage() {
         setCancelling(false);
         setReview((prev) =>
           prev
-            ? { ...prev, status: "cancelled", error_message: "Review cancelled by user" }
+            ? { ...prev, status: "cancelled", error_message: t("statusCancelledByUser") }
             : prev,
         );
       } else {
@@ -141,7 +158,7 @@ export default function StatusPage() {
             fontSize: "1.1rem",
           }}
         >
-          Loading<span className="blink">_</span>
+          {t("statusLoading")}<span className="blink">_</span>
         </span>
       </div>
     );
@@ -171,7 +188,7 @@ export default function StatusPage() {
             margin: "0 0 1rem",
           }}
         >
-          Access token required.
+          {t("statusAccessTokenRequired")}
         </p>
         <p
           style={{
@@ -212,7 +229,7 @@ export default function StatusPage() {
             margin: "0 0 1rem",
           }}
         >
-          Review not found.
+          {t("statusNotFoundHeading")}
         </p>
         <p
           style={{
@@ -223,7 +240,7 @@ export default function StatusPage() {
             margin: 0,
           }}
         >
-          Check the review key and try again.
+          {t("statusNotFoundBody")}
         </p>
       </div>
     );
@@ -277,7 +294,7 @@ export default function StatusPage() {
               color: "var(--ink)",
             }}
           >
-            Cancel review?
+            {t("statusCancelConfirmHeading")}
           </h1>
 
           <p
@@ -290,7 +307,7 @@ export default function StatusPage() {
               margin: "0 0 2.5rem",
             }}
           >
-            Are you sure? You will not be able to see your results.
+            {t("statusCancelConfirmBody")}
           </p>
 
           <div style={{ display: "flex", gap: "1rem" }}>
@@ -310,7 +327,7 @@ export default function StatusPage() {
                 opacity: cancelling ? 0.5 : 1,
               }}
             >
-              {cancelling ? "Cancelling..." : "Yes, cancel"}
+              {cancelling ? t("statusCancelling") : t("statusYesCancel")}
             </button>
             <button
               onClick={() => setShowCancelConfirm(false)}
@@ -327,7 +344,7 @@ export default function StatusPage() {
                 cursor: cancelling ? "default" : "pointer",
               }}
             >
-              Go back
+              {t("statusGoBack")}
             </button>
           </div>
         </main>
@@ -371,7 +388,7 @@ export default function StatusPage() {
               color: "var(--muted)",
             }}
           >
-            {isCancelled ? "cancelled" : isFailed ? "failed" : isRunning ? "reviewing" : "queued"}
+            {isCancelled ? t("statusLabelCancelled") : isFailed ? t("statusLabelFailed") : isRunning ? t("statusLabelReviewing") : t("statusLabelQueued")}
           </span>
           <a
             href="https://github.com/Davidvandijcke/coarse"
@@ -388,7 +405,7 @@ export default function StatusPage() {
               padding: "0.375rem 0.875rem",
             }}
           >
-            GitHub ↗
+            {t("statusGithub")}
           </a>
         </div>
       </header>
@@ -415,7 +432,7 @@ export default function StatusPage() {
                 color: "var(--ink)",
               }}
             >
-              {isRunning ? "Reading your paper." : "Queued."}
+              {isRunning ? t("statusReadingHeading") : t("statusQueuedHeading")}
             </h1>
 
             {/* Scanning line */}
@@ -432,8 +449,8 @@ export default function StatusPage() {
               }}
             >
               {isRunning
-                ? "Running the review pipeline (usually 30–60 minutes)."
-                : "Your review is queued and will start shortly."}
+                ? t("statusRunningBody")
+                : t("statusQueuedBody")}
             </p>
 
             <p
@@ -445,7 +462,7 @@ export default function StatusPage() {
                 fontStyle: "italic",
               }}
             >
-              We&apos;ll email you when it&apos;s done.
+              {t("statusEmailWhenDone")}
             </p>
           </>
         ) : isCancelled ? (
@@ -462,7 +479,7 @@ export default function StatusPage() {
                 color: "var(--ink)",
               }}
             >
-              Review cancelled.
+              {t("statusCancelledHeading")}
             </h1>
             <p
               style={{
@@ -474,8 +491,7 @@ export default function StatusPage() {
                 margin: 0,
               }}
             >
-              The queued job was marked cancelled. If work had already started,
-              the worker may take a little time to wind down.
+              {t("statusCancelledBody")}
             </p>
           </>
         ) : (
@@ -492,7 +508,7 @@ export default function StatusPage() {
                 color: "var(--accent)",
               }}
             >
-              Failed.
+              {t("statusFailedHeading")}
             </h1>
             <p
               style={{
@@ -504,7 +520,7 @@ export default function StatusPage() {
                 margin: "0 0 1.25rem",
               }}
             >
-              {review?.error_message ?? "An unexpected error occurred."}
+              {review?.error_message ?? t("statusUnexpectedError")}
             </p>
             <p
               style={{
@@ -514,16 +530,16 @@ export default function StatusPage() {
                 margin: "0 0 1.25rem",
               }}
             >
-              Please try resubmitting, or post your issue on the{" "}
+              {t("statusResubmitPrefix")}
               <a
                 href="https://github.com/Davidvandijcke/coarse/issues"
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ color: "var(--accent)", textDecoration: "underline", textUnderlineOffset: "2px" }}
               >
-                Github
+                {t("statusResubmitGithub")}
               </a>
-              .
+              {t("statusResubmitSuffix")}
             </p>
             <a
               href="/"
@@ -536,7 +552,7 @@ export default function StatusPage() {
                 textDecoration: "none",
               }}
             >
-              Try again →
+              {t("statusTryAgain")}
             </a>
           </>
         )}
@@ -555,7 +571,7 @@ export default function StatusPage() {
                 margin: "0 0 0.625rem",
               }}
             >
-              {hasSecureAccess ? "Your review key — save this" : "Legacy review link"}
+              {hasSecureAccess ? t("statusKeyBoxSave") : t("statusKeyBoxLegacy")}
             </p>
             <p
               style={{
@@ -583,7 +599,7 @@ export default function StatusPage() {
                 cursor: "pointer",
               }}
             >
-              {copied ? "Copied" : "Copy link"}
+              {copied ? t("statusCopied") : t("statusCopyLink")}
             </button>
           </div>
           <CharcoalRule />
@@ -596,7 +612,7 @@ export default function StatusPage() {
               marginTop: "1.25rem",
             }}
           >
-            This page will redirect automatically when your review is ready.
+            {t("statusRedirectNote")}
           </p>
         </div>
 
@@ -619,7 +635,7 @@ export default function StatusPage() {
                 textUnderlineOffset: "2px",
               }}
             >
-              Cancel review
+              {t("statusCancelReview")}
             </button>
           </div>
         )}

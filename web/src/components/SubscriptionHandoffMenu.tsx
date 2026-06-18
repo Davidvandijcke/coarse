@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AI_SERVICES, startAiHandoff, type AiService } from "@/lib/aiHandoff";
 import type { ReviewJson } from "@/lib/types";
+import { useSiteLanguageContext } from "@/lib/i18n";
 
 /** Header dropdown that hands the paper + review + structured JSON off to an
  * external AI chat service (Claude, ChatGPT, Gemini, Grok, DeepSeek). */
@@ -21,6 +22,7 @@ export default function SubscriptionHandoffMenu({
   resultJson?: ReviewJson | null;
   reviewLanguageName?: string | null;
 }) {
+  const { t } = useSiteLanguageContext();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -49,8 +51,8 @@ export default function SubscriptionHandoffMenu({
     setOpen(false);
     setNote(
       service.promptParam
-        ? `Opened ${service.label} with the prompt prefilled — attach coarse_${reviewId}_context.md, then send. (Prompt also copied, just in case.)`
-        : `Opened ${service.label} — attach coarse_${reviewId}_context.md and paste the copied prompt.`,
+        ? `${t("handoffMenuOpenedPromptPrefix")}${service.label}${t("handoffMenuOpenedPromptMid")}${reviewId}${t("handoffMenuOpenedPromptSuffix")}`
+        : `${t("handoffMenuOpenedPromptPrefix")}${service.label}${t("handoffMenuOpenedPlainMid")}${reviewId}${t("handoffMenuOpenedPlainSuffix")}`,
     );
     if (noteTimer.current) clearTimeout(noteTimer.current);
     noteTimer.current = setTimeout(() => setNote(null), 12000);
@@ -73,7 +75,7 @@ export default function SubscriptionHandoffMenu({
     <div ref={ref} style={{ position: "relative" }}>
       <button
         onClick={() => setOpen((v) => !v)}
-        title="Send the paper + review to your own AI chat (Claude, ChatGPT, Gemini, Grok, DeepSeek)"
+        title={t("handoffMenuButtonTitle")}
         style={{
           background: "transparent",
           border: "1.5px solid var(--chalk)",
@@ -87,7 +89,7 @@ export default function SubscriptionHandoffMenu({
           whiteSpace: "nowrap",
         }}
       >
-        Discuss with your AI
+        {t("handoffMenuButton")}
       </button>
 
       {open && (
@@ -114,7 +116,7 @@ export default function SubscriptionHandoffMenu({
               lineHeight: 1.4,
             }}
           >
-            Downloads the paper + review, then opens:
+            {t("handoffMenuDownloadsIntro")}
           </div>
           {AI_SERVICES.map((s) => (
             <button

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 import { formatPromptPrice } from "@/lib/estimateCost";
+import { useSiteLanguageContext } from "@/lib/i18n";
 
 /* ── Default model options ─────────────────────────────────── */
 type DefaultModel = {
@@ -51,6 +52,7 @@ function SearchModal({
   onSelect: (id: string, label: string) => void;
   onClose: () => void;
 }) {
+  const { t } = useSiteLanguageContext();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<OpenRouterModel[]>([]);
   const [allModels, setAllModels] = useState<OpenRouterModel[]>([]);
@@ -140,7 +142,7 @@ function SearchModal({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search models..."
+            placeholder={t("modelPickerSearchPlaceholder")}
             className="field-line-mono"
             style={{ width: "100%", fontSize: "1rem" }}
           />
@@ -158,7 +160,7 @@ function SearchModal({
                 fontSize: "1.1rem",
               }}
             >
-              Loading models...
+              {t("modelPickerLoading")}
             </p>
           ) : results.length === 0 ? (
             <p
@@ -170,7 +172,7 @@ function SearchModal({
                 fontSize: "1.1rem",
               }}
             >
-              No models found.
+              {t("modelPickerNoResults")}
             </p>
           ) : (
             results.map((m) => (
@@ -250,6 +252,7 @@ export default function ModelPicker({
   value: string;
   onChange: (modelId: string) => void;
 }) {
+  const { t } = useSiteLanguageContext();
   const [showSearch, setShowSearch] = useState(false);
   const [customLabel, setCustomLabel] = useState<string | null>(null);
 
@@ -278,7 +281,7 @@ export default function ModelPicker({
           marginBottom: "0.5rem",
         }}
       >
-        Model
+        {t("modelPickerLabel")}
       </span>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -290,7 +293,7 @@ export default function ModelPicker({
               key={m.id}
               type="button"
               disabled={unavailable}
-              title={unavailable ? "Currently unavailable" : undefined}
+              title={unavailable ? t("modelPickerUnavailableTitle") : undefined}
               onClick={() => {
                 if (unavailable) return;
                 onChange(m.id);
@@ -336,7 +339,7 @@ export default function ModelPicker({
             whiteSpace: "nowrap",
           }}
         >
-          {!isDefault && value ? displayLabel : "search models..."}
+          {!isDefault && value ? displayLabel : t("modelPickerSearch")}
         </button>
       </div>
 

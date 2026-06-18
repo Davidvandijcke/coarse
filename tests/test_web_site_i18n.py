@@ -52,8 +52,9 @@ def test_all_locale_catalogs_exist():
 
 
 def test_english_catalog_has_expected_key_count():
-    # 139 keys per the extraction contract; guards an accidental key drop in en.
-    assert len(_keys(_read("en"))) == 139
+    # 292 keys after the status/review-page localization follow-up (was 139 for
+    # the submit page + chrome alone). Guards an accidental key drop in en.
+    assert len(_keys(_read("en"))) == 292
 
 
 def test_every_locale_defines_exactly_the_english_keys():
