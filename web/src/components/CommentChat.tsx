@@ -46,6 +46,7 @@ export interface CommentChatProps {
   overallFeedbackText: string;
   commentSeverity?: string | null;
   commentConfidence?: string | null;
+  reviewLanguageName?: string | null;
   defaultModel: string;
   initialMessages?: ChatMessage[];
 
@@ -67,6 +68,7 @@ export default function CommentChat({
   overallFeedbackText,
   commentSeverity,
   commentConfidence,
+  reviewLanguageName,
   defaultModel,
   initialMessages,
   apiKey,
@@ -157,6 +159,7 @@ export default function CommentChat({
           comment,
           severity: commentSeverity,
           confidence: commentConfidence,
+          reviewLanguageName,
         }),
       };
 

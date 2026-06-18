@@ -399,6 +399,12 @@ export default function ReviewPageClient({ id }: { id: string }) {
           durationSeconds={review.duration_seconds}
           costUsd={review.cost_usd}
           resultJson={review.result_json}
+          reviewLanguage={review.review_language ?? review.result_json?.language?.review_language ?? null}
+          paperLanguage={review.paper_language ?? review.result_json?.language?.paper_language ?? null}
+          textDirectionCol={review.text_direction ?? review.result_json?.language?.text_direction ?? null}
+          paperLanguageSource={
+            review.paper_language_source ?? review.result_json?.language?.paper_language_source ?? null
+          }
         />
       )}
 
