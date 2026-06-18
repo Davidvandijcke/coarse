@@ -28,6 +28,7 @@ const DEFAULT_MODELS: DefaultModel[] = [
   { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4", provider: "DeepSeek" },
   { id: "x-ai/grok-4.3", label: "Grok 4.3", provider: "xAI" },
   { id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", provider: "Meta" },
+  { id: "z-ai/glm-5.2", label: "GLM 5.2", provider: "Z.ai" },
   // OpenRouter Fusion: a multi-model deliberation panel with web search.
   // Higher latency and variable (usage-based) cost than a single model — see
   // the FUSION_MODEL note in src/coarse/models.py. showProvider tags the chip
