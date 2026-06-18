@@ -97,3 +97,29 @@ def test_language_catalog_python_ts_in_sync():
         "languages.ts and languages.py catalogs drifted — codes/names/directions/"
         f"order must match.\nPython: {py_catalog}\nTS: {ts_catalog}"
     )
+
+
+def test_review_labels_python_ts_in_sync():
+    """The TS review-label mirror must cover the same language codes and contain
+    every Python translation value verbatim. The legacy markdown parser
+    (parseReview.ts) relies on this mirror to parse a localized review, so drift
+    would silently break parsing of a localized review that lacks result_json.
+
+    Value-presence (not structural parse) keeps this robust to the `en: EN`
+    reference entry and to formatting differences."""
+    import json
+
+    from coarse.review_labels import _LABELS
+
+    ts = _read("web/src/lib/reviewLabels.ts")
+    # Every language code must be a key in the TS LABELS object.
+    for code in _LABELS:
+        key_form = f'"{code}":' if "-" in code else f"{code}:"
+        assert key_form in ts, f"reviewLabels.ts missing language key '{code}'"
+    # Every Python label value must appear verbatim as a TS string literal
+    # (json.dumps gives the correctly-escaped/quoted JS string form).
+    for code, table in _LABELS.items():
+        for key, value in table.items():
+            assert json.dumps(value, ensure_ascii=False) in ts, (
+                f"reviewLabels.ts missing value for {code}.{key}: {value!r}"
+            )

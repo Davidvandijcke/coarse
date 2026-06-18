@@ -94,8 +94,11 @@ export default function ReviewPageClient({ id }: { id: string }) {
   }, [id, token]);
 
   const parsed = useMemo(
-    () => (review?.result_markdown ? parseReview(review.result_markdown) : null),
-    [review?.result_markdown]
+    () =>
+      review?.result_markdown
+        ? parseReview(review.result_markdown, review.review_language)
+        : null,
+    [review?.result_markdown, review?.review_language]
   );
 
   /* ── Loading ───────────────────────────────────────────── */
