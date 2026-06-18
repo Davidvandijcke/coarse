@@ -1,0 +1,62 @@
+[
+  {
+    "quote": "$=P(T=1\\mid X=x)E[Q_{Y}(q)\\mid X=x]-P(T=1\\mid X=x)E[Q_{Y}(q)\\mid X=x]$",
+    "feedback": "这一步对协方差 $\\sigma_{12}(q,q'\\mid X=x)=\\mathrm{Cov}(Q_Y(q),T\\mid X=x)$ 等于零的\"证明\"在数学上是空洞且不正确的：所给的每一行都是 $A-A+B-B=0$ 的恒等式，并没有真正计算协方差。真实的协方差为 $E[Q_Y(q)T\\mid X=x]-E[Q_Y(q)\\mid X=x]\\,E[T\\mid X=x]$，而 $E[Q_Y(q)T\\mid X=x]=P(T=1\\mid X=x)\\,E[Q_Y(q)\\mid T=1,X=x]$。在 sharp 设计中 $T$ 给定 $X$ 是常数，协方差确实平凡为零；但在 fuzzy 设计中 $T$ 给定 $X$ 是随机的，依从者（compliers）是否接受处理通常与其结果分布相关，故 $Q_Y(q)$ 与 $T$ 在给定 $X$ 下一般并不独立，$\\sigma_{12}\\neq 0$。这会直接影响 F3D 估计量极限过程 $\\mathbb{G}^{\\mathrm{F3D}}$ 的协方差结构与 bootstrap 方差，可能导致 fuzzy 置信带失真。建议：要么明确把该论断限制在 sharp 设计（此时给定 $X$ 后 $T$ 退化），要么在 fuzzy 设计中保留 $\\sigma_{12}$ 项并重新推导 Theorem 1/2 的协方差核，并在模拟中加入一个真正的 fuzzy DGP（依从与结果相关）来验证覆盖率。",
+    "gloss_en": "The proof that the quantile-treatment covariance sigma_12 equals zero is a vacuous identity and is false for the fuzzy design, affecting F3D variance."
+  },
+  {
+    "quote": "In particular, they allow one to study what happens to the outcome distribution of the “average” unit when it crosses the cutoff and receives treatment.",
+    "feedback": "对 LAQTE 因果含义的这一表述具有误导性。$\\tau^{R3D}(q)=E[Q_{Y^1}(q)\\mid X=0]-E[Q_{Y^0}(q)\\mid X=0]$ 是两个 Wasserstein 重心（barycenter）的分位数函数之差，而\"重心之差\"一般并不等于\"差的重心\"，也不对应任何具体单位的分位数处理效应，更不是\"平均单位\"在跨过断点后其分布所经历的变化——因为不存在秩不变性（rank invariance）的假设把 $Y^0_i$ 的第 $q$ 分位与 $Y^1_i$ 的第 $q$ 分位联系到同一个体。换言之，LAQTE 是对\"无条件平均分位数\"的差分，类似于 unconditional QTE，而非任何单位层面分布变化的刻画。建议：(i) 明确区分 LAQTE 与\"平均分布的处理效应\"$Q_{\\bar Y^1}(q)-Q_{\\bar Y^0}(q)$（二者因 $E$ 与 $Q$ 不可交换通常不同，且需澄清你估计的是哪一个）；(ii) 删去或弱化\"平均单位分布变化\"的因果叙述，改为强调它是对跨单位平均分位曲线跳跃的描述；(iii) 讨论在何种附加假设（如秩相似性）下 LAQTE 才能获得单位层面的反事实解读。",
+    "gloss_en": "LAQTE is a difference of Wasserstein barycenters with no unit-level causal interpretation; the 'average unit's distribution' framing presumes unjustified rank invariance."
+  },
+  {
+    "quote": "Further, I winsorize the distribution at the 95th percentile to account for top-coding in the CPS. In practice, I estimate the quantile function on an equally spaced grid of 95 points between $[1\\times 10^{-6},0.95+1\\times 10^{-6}]$, where the $1\\times 10^{-6}$ offset ensures I work on a compact subset of $[0,1]$ as required by the theoretical results.",
+    "feedback": "这里存在与核心实证结论直接冲突的问题。文章的标志性发现是\"最高 10% 收入者（85–95 分位）收入下降约 1.5 倍贫困线\"，且唯一在 90% 水平上一致显著的也正是这一最高区段。然而你恰恰在第 95 百分位处对分布进行了 winsorize，并把估计网格上限设在 0.95——也就是说，驱动主要结论的那段上尾分位正是被截尾/压缩处理的区域。Winsorize 会人为压低顶端分位值并削减其跨州方差，既可能放大也可能扭曲所观测到的顶端效应，使该结论对这一数据处理高度敏感。建议：(i) 报告不 winsorize、或在更高分位（如 0.97/0.99）截尾的稳健性结果；(ii) 说明 CPS top-coding 的具体机制（区间截顶 vs. 均值替换）及其对顶端分位估计的影响；(iii) 既然顶端是关键，考虑使用 CPS 提供的 top-code 替换值或外部高收入数据，并量化 winsorize 对 1.5 倍贫困线这一数字的影响。",
+    "gloss_en": "Winsorizing income at the 95th percentile distorts exactly the top-decile quantiles that drive (and uniquely make significant) the headline finding."
+  },
+  {
+    "quote": "$\\{(Y_i, T_i, X_i)\\}_{i=1}^n$ are i.i.d. copies of a random element $(Y, T, X)$ defined on a probability space $(\\Omega^x, \\mathcal{F}^x, P^x)$.",
+    "feedback": "实证应用与该 i.i.d. 抽样假设（L1(i)）不一致，而全部一致渐近理论与乘子 bootstrap 都建立在它之上。样本是 1984–2010 年的 356 个\"州–年\"组合：同一个州在多个选举年反复出现，州内的收入分布在时间上高度序列相关，相邻州之间也存在空间相关；这些都违反跨\"单位\"独立性。更关键的是，标准 RD 部分（表 A-1）你已按州/州–年聚类标准误，但 R3D 的乘子 bootstrap（M1）是对每个观测独立抽取 $N(0,1)$ 乘子、并未在州层面聚类，因此应用中的一致置信带很可能低估了不确定性。建议：(i) 把渐近理论与 bootstrap 推广到\"州层面聚类/弱相依\"情形（如块乘子 bootstrap 或在州层面共享乘子），或至少给出聚类稳健的版本；(ii) 报告以州为聚类单元重抽样后的置信带，检验顶端 10% 的显著性是否稳健；(iii) 讨论在面板型 close-election 设置中独立性假设的合理性。",
+    "gloss_en": "Repeated state-years violate the i.i.d. assumption underpinning the theory, and the multiplier bootstrap does not cluster at the state level, likely understating uncertainty."
+  },
+  {
+    "quote": "**L4 (Average Strict Monotonicity).** For each $x \\in \\mathcal{N} \\coloneqq (-\\epsilon, \\epsilon) \\setminus \\{0\\}$ for $\\epsilon > 0$ and $q \\in [a, b] \\subset (0, 1)$, there exist constants $0 < \\kappa \\leq K & < \\infty$ such that $\\kappa \\leq \\frac{\\partial}{\\partial q} E[Q_Y(q) \\mid X = x] \\leq K$ for a.e. $q \\in [a, b]$.",
+    "feedback": "Fréchet 估计量的全部一致推断（Theorem 4、Corollary 1–2）都依赖于投影算子 $\\Pi_{\\mathcal{Q}}$ 在极限点处的 Hadamard 导数等于恒等算子，而这又严格依赖 L4，即平均分位函数以 $\\kappa>0$ 的下界严格单调。问题在于该假设在实证中很可能在低分位失效：家庭收入以贫困线为单位、底端存在大量接近或处于 0/贫困线的家庭，平均分位函数在 $q\\to 0$ 附近可能近乎平坦（导数趋于 0）。一旦 L4 在低分位不成立，投影在该处\"激活\"，Hadamard 导数不再是恒等算子，正态近似与 bootstrap 置信带恰恰在你声称\"底端 10% 收入上升半个贫困线\"的区域失效。建议：(i) 经验性地检验并报告估计的 $\\partial_q m_{\\pm}(q)$ 是否在所用网格 $[a,b]$ 上有下界（尤其低分位）；(ii) 把 $[a,b]$ 限制在单调性确有保障的内部区间，或给出当 L4 仅\"边界性\"成立时导数为投影到切锥的非平凡极限分布；(iii) 在底端平坦的 DGP 下做模拟，检查覆盖率。",
+    "gloss_en": "The identity-derivative argument for Fréchet inference requires strict monotonicity (L4), which plausibly fails at low income quantiles, invalidating the bottom-quantile bands."
+  },
+  {
+    "quote": "However, in the statistical results below, I show that both estimators converge to the same asymptotic limit. Leveraging this fact, one can show that, for a given $h$, $\\|\\hat{\\tau}_{\\oplus,p}^{\\mathrm{R3D}}-\\hat{\\tau}_{p}^{\\mathrm{R3D}}\\|_{l^{\\infty}([a,b])}=o_{p}(1)$ (see Lemma A-9), that is, the difference between the two estimators vanishes asymptotically.",
+    "feedback": "用\"两估计量渐近等价\"来为 Fréchet 的单一 IMSE 带宽辩护存在循环论证与实质性隐患。Lemma A-9 只在\"给定同一个 $h$\"下成立，因此它能说明的是：若两者用同一带宽则差异可忽略；但它并不能证明\"对整条分布只用一个带宽\"是好的选择。事实上，逐点 MSE 最优带宽 $h^*(q)$（式 13）通过偏差项 $\\partial^{s+1}m_{\\pm}(q)/\\partial x^{s+1}$ 依赖于 $q$，不同分位的最优带宽可能相差数量级（顶端/底端曲率往往远大于中段）。把它们整合成单一 $h_{\\oplus}$ 会在曲率大的分位上严重欠/过平滑——而这恰是你关注的顶端。换言之，Fréchet 的优良性被论证为\"等价于逐点估计量\"，但逐点估计量的最优性又要求分位特定带宽，论证因此自相矛盾。建议：(i) 量化单一带宽相对逐点最优带宽在各分位上的效率损失（理论或模拟）；(ii) 报告应用中顶端分位的逐点最优带宽与所用 0.22 的差距；(iii) 考虑允许带宽随 $q$ 缓慢变化（如 $h\\,c_1(q)$，文中 K2 已留有 $c_1(q)$ 的接口）的折中方案。",
+    "gloss_en": "Justifying a single Fréchet bandwidth via asymptotic equivalence is circular: pointwise-optimal bandwidths are quantile-specific and can differ by orders of magnitude, especially at the tails."
+  },
+  {
+    "quote": "Simulations demonstrate strong performance and reveal that standard quantile RDD is biased and inconsistent in this setting.",
+    "feedback": "\"标准分位 RD 在该设置下有偏且不一致\"这一反复出现的论断在表述上不够严谨，且与文中他处的更准确说法（\"this is not a defect of Q-RD per se; it targets a different estimand\"）相矛盾。Q-RD 对它自己的估计目标——汇集/混合分布的条件分位的跳跃——通常是一致的；它\"有偏且不一致\"只是相对于 R3D 的目标 LAQTE 而言，即这是一个错配（misspecification/目标不同）问题，而非估计量自身缺乏一致性。把\"目标不同\"说成\"有偏且不一致\"会让读者误以为 Q-RD 在技术上失败。建议：在摘要、引言与第 2.4 节统一改述为\"Q-RD 一致地估计的是混合分布的分位跳跃，与 LAQTE 不是同一个对象；用 Q-RD 来估计 LAQTE 因而是有偏、不一致的\"，并在比较中始终标明二者目标量的差异。",
+    "gloss_en": "Calling Q-RD 'biased and inconsistent' overclaims: it is consistent for a different estimand; the issue is target mismatch, not lack of consistency."
+  },
+  {
+    "quote": "Taken together, these results suggest a classical equality–efficiency trade–off under Democratic governorship, with some redistribution of income achieved at the cost of a loss of income for upper-income earners *(Okun, 1975)*.",
+    "feedback": "实证结论的因果与机制叙述超出了证据所能支持的范围。第一，效应仅在最高 10% 分位一致显著，nullity 与 homogeneity 检验的 p 值分别为 0.043 与 0.069（后者仅在 10% 水平边缘显著），证据相当脆弱，却被提升为\"经典的平等–效率权衡\"这一强结论。第二，\"顶端收入下降\"驱动了再分配这一机制是被断言而非检验的：在 close-election RD 中，效应是 50% 选票阈值附近的局部 LATE，且分位是对\"平均分位曲线\"的处理效应，并不追踪同一批高收入家庭，因此无法据此推断\"高收入者收入被压低\"这一个体层面机制（可能是组成/迁移/参与等变化所致，尽管图 A-8 的迁移稳健性检验有所缓解但不充分）。建议：(i) 显著弱化因果措辞，改为\"与平等–效率权衡相一致\"；(ii) 报告效应在替代规范下顶端显著性的稳定性，并明确这是阈值附近的局部效应；(iii) 用机制性证据（如分行业/税收/转移支付分解）支撑\"顶端下降驱动\"的解读，否则避免做个体层面的机制断言。",
+    "gloss_en": "The 'equality-efficiency trade-off' causal/mechanism narrative over-interprets a fragile, top-decile-only local effect with marginal p-values and no unit-level rank tracking."
+  },
+  {
+    "quote": "$\\sqrt{nh}\\ \\max_{1\\leq i\\leq n}r_{n_{i}}\\ \\longrightarrow\\ 0.$",
+    "feedback": "经验分位扩展所依赖的速率条件（Q1）在实证中既未被验证、也很可能成立性存疑，但它是 Proposition 2/Corollary 3 成立的前提。该条件要求\"最差\"的州内样本（$\\max_i r_{n_i}$）也要比跨单位速率 $\\sqrt{nh}$ 收敛得更快。在 CPS 中各州家庭数 $n_i$ 差异巨大，小州（如怀俄明、佛蒙特）每年家庭样本可能仅有数十到上百，对应的 $r_{n_i}$ 较大；当 $n=356$、$h=0.22$ 时 $\\sqrt{nh}\\approx 9$，要求所有州（含最小州）的分位估计误差被 $1/\\sqrt{nh}$ 主导并不显然。此外，标准分位估计在尾部（接近 0.95）收敛更慢，而你恰在尾部 winsorize 并下结论，进一步削弱 Q1 在关键分位的可信度。建议：(i) 报告各州 $n_i$ 的分布（最小值、分位数），并据此论证 $\\max_i r_{n_i}\\sqrt{nh}\\to 0$ 大致成立；(ii) 讨论小州/尾部分位的有限样本影响，或对 $n_i$ 过小的州做敏感性分析（剔除/合并）；(iii) 明确 CPS 抽样误差是否已纳入 bootstrap，因为 Q1 仅保证其\"渐近可忽略\"。",
+    "gloss_en": "The empirical-quantile rate condition Q1 (worst within-group rate must beat sqrt(nh)) is unverified and dubious given small CPS states and slow tail convergence under winsorizing."
+  },
+  {
+    "quote": "The identification assumption is that the outcome of interest evolves smoothly with the party’s vote share in a small window around the 50% electoral threshold that puts the party in power.",
+    "feedback": "close-election RD 应用缺少标准的设计有效性检验，而这些检验在该文献中已是规范要求。文中仅以假设 I2（断点处密度存在且为正）来排除操纵，但没有报告：(i) 运行变量（民主党得票份额）在 50% 处的密度连续性检验（McCrary 2008 / Cattaneo-Jansson-Ma 密度检验），以排除现任优势导致的精确控制/分类操纵——这是 close-election RD 的经典争议（Caughey-Sekhon 2011 vs. Eggers et al. 2015）；(ii) 预设协变量（如选前收入、人口、上届结果）在断点处的平衡/连续性；(iii) 安慰剂断点。值得肯定的是，你用\"选举当年收入\"做了反向因果的安慰剂（图 A-7）。但密度与协变量平衡检验对识别更为根本。建议：补充 McCrary/密度检验、协变量连续性图与表、以及若干安慰剂断点，作为 R3D 识别假设 I1–I2 的经验支撑。",
+    "gloss_en": "The close-election application omits standard RD validity checks: no McCrary/density manipulation test, no covariate-balance/continuity, no placebo cutoffs."
+  },
+  {
+    "quote": "| Homogen. | 500 | 92.64 | 92.64 | 92.64 | 500 | 92.52 | 92.52 | 92.52 |",
+    "feedback": "表 2 的模拟结果需要更充分的解释，部分数值的呈现方式会引起对实现正确性的疑问。其一，\"Unif. CIs\"与\"Homogen.\"两行在 $\\Delta=0,1.14,2.27$ 三列上逐字节完全相同（如 92.64 重复三次）。对均匀置信带的覆盖率而言，因其对真实效应的位置不变，这是可以接受的；但对同质性检验，至少应说明：在 DGP1（常数效应）下零假设对任意 $\\Delta$ 均成立，故接受率本应与 $\\Delta$ 无关——并明确这是因为 $\\Delta$ 在该 DGP 中仅作为可被抵消的位移项进入。否则三列完全相同会让人怀疑是否对不同 $\\Delta$ 复用了同一组模拟抽样。其二，几乎所有覆盖率都呈现系统性\"欠覆盖\"（$n=2000$ 时仍约 94% 而非 95%），且随 $n$ 单调上升尚未达到名义水平；应报告更大 $n$ 以确认收敛到 95%，并讨论这是否会传导到应用中（你用了 Calonico et al. 2018 的覆盖校正，但仅在应用、未在模拟中体现）。建议：补充对相同数值来源的说明、对欠覆盖的诊断（偏差校正是否充分），以及在模拟里加入覆盖校正后的对照。",
+    "gloss_en": "Table 2 needs explanation: byte-identical coverage entries across effect sizes and persistent systematic undercoverage at n=2000 warrant clarification and larger-n checks."
+  },
+  {
+    "quote": "- Indefinites: $I=\\{\\omega:T^{1}(\\omega)=T^{0}(\\omega)\\}\\setminus\\{\\omega:T^{1}(\\omega)=T^{0}(\\omega)\\in\\{0,1\\}\\}$.",
+    "feedback": "fuzzy 设计中\"Indefinites\"集合的定义在数学上是自相矛盾（实为空集），这影响 Definition 2 与 Lemma 3 中 complier-LAQTE 的严谨性。由于 $T^0,T^1\\in\\{0,1\\}$，事件 $\\{T^1=T^0\\}$ 必然意味着 $T^1=T^0\\in\\{0,1\\}$，因此被减去的集合等于被减集合本身，按字面 $I=\\varnothing$；这与随后 I5 中\"$P(\\text{Indefinites})=0$\"以及把总体划分为 compliers/always-takers/never-takers/indefinites 的意图不符。看上去本意或许是要刻画 $T^0,T^1$ 取值不确定（非退化）或 defiers 的情形，但当前写法无法承担该角色。此外，Lemma 3 的证明中出现 $Q_{Y(\\omega)}(q)\\mathbf{1}\\{\\mathrm{not\\,C}\\}$ 项在取差分后被消去，依赖于 always-takers/never-takers 的分布在断点两侧连续抵消，这一步也应与\"Indefinites\"的正确定义一起明确陈述。建议：(i) 重新给出 compliers/defiers/always-takers/never-takers 的标准划分，并把\"$I$\"定义为意图所指的对象（或直接用单调性 I5 排除 defiers）；(ii) 在 Lemma 3 证明中显式写出非依从者项如何在 $0^+$ 与 $0^-$ 抵消，依赖哪条连续性假设。",
+    "gloss_en": "The fuzzy-design 'Indefinites' set is defined as an empty/self-contradictory set, undermining the rigor of the complier-LAQTE definition and the fuzzy identification proof."
+  }
+]

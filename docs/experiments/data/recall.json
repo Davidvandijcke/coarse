@@ -1,0 +1,68 @@
+{
+  "per_language": {
+    "es": {
+      "matched_en": [1, 2, 3, 4, 8, 11],
+      "recall": 0.5,
+      "unique_issues": [
+        "IMSE bandwidth 0.22 on vote share is far too wide for a close-election RD (3x the scalar RD's 0.08), undermining identification.",
+        "The proof that the quantile-treatment cross-covariance sigma_12=0 is a vacuous algebraic cancellation; fuzzy-design covariance may be misspecified.",
+        "Fuzzy 'monotonicity' I5 forces all near-cutoff units to be compliers, far stronger than standard no-defiers; mislabeled as standard.",
+        "Calling Q-RD 'biased and inconsistent' is a category error: it consistently estimates a different (pooled-mixture) estimand, not the barycenter.",
+        "Matching outcomes to the governor's final tenure year (~3-year lag, state-specific offset) lets common macro shocks confound the RD; not addressed."
+      ],
+      "weak_or_unjustified": [
+        {"n": 4, "why": "A design-specific IMSE bandwidth being ~3x a different (scalar) design's bandwidth is normal; the leap to 'undermines identification' is unjustified."},
+        {"n": 5, "why": "The displayed sigma_12 step is a correct algebraic cancellation; branding it 'vacuous' and inferring fuzzy misspecification overstates a corroborated point."}
+      ]
+    },
+    "zh": {
+      "matched_en": [1, 2, 3, 4, 6, 8, 9, 11, 12],
+      "recall": 0.75,
+      "unique_issues": [
+        "The proof that the quantile-treatment covariance sigma_12 equals zero is a vacuous identity and is false for the fuzzy design, affecting F3D variance.",
+        "The identity-derivative argument for Fréchet inference requires strict monotonicity (L4), which plausibly fails at low income quantiles, invalidating the bottom-quantile bands.",
+        "Calling Q-RD 'biased and inconsistent' overclaims: it is consistent for a different estimand; the issue is target mismatch, not lack of consistency."
+      ],
+      "weak_or_unjustified": [
+        {"n": 5, "why": "Asserts L4 fails specifically at low income quantiles without evidence on the density there; the failure region is claimed, not shown."}
+      ]
+    },
+    "ar": {
+      "matched_en": [1, 2, 3, 4, 7, 8, 9, 12],
+      "recall": 0.6666666666666666,
+      "unique_issues": [
+        "The proof that cross-covariance sigma_12 = 0 is invalid for the fuzzy design; it omits the joint moment E[Q_Y(q)T|x], so the fuzzy-Wald variance is wrong.",
+        "Table 2 coverage/homogeneity acceptance is byte-identical across all Delta values within each n, statistically implausible and suggesting a tabulation/coding bug.",
+        "Lemma 2's 'no-regret in all L_p including L_infinity' does not follow generically from an L^2 projection and the per-x indexing is a notational error.",
+        "The Proposition A-3 derivation equates an L2-squared distance to an un-squared W_2 distance and has sign errors, leaving the core Frechet equivalence unproven as written.",
+        "Calling the DGP1 treatment effect 'closed-form N(Delta,2)' conflates a constant scalar effect tau(q)=Delta with a distribution; the variance '2' is unexplained."
+      ],
+      "weak_or_unjustified": [
+        {"n": 12, "why": "Likely misreads notation: N(Delta,2) almost certainly specifies the outcome DGP (mean shift Delta, variance 2), not a claim that the treatment effect itself is a distribution."},
+        {"n": 11, "why": "Asserts 'sign errors' in Proposition A-3 without exhibiting them; the L2-squared-vs-W2 point may be real but the claim is stated, not demonstrated."}
+      ]
+    }
+  },
+  "english_issue_coverage": [
+    {"en_n": 1, "found_in": ["es", "zh", "ar"]},
+    {"en_n": 2, "found_in": ["es", "zh", "ar"]},
+    {"en_n": 3, "found_in": ["es", "zh", "ar"]},
+    {"en_n": 4, "found_in": ["es", "zh", "ar"]},
+    {"en_n": 5, "found_in": []},
+    {"en_n": 6, "found_in": ["zh"]},
+    {"en_n": 7, "found_in": ["ar"]},
+    {"en_n": 8, "found_in": ["es", "zh", "ar"]},
+    {"en_n": 9, "found_in": ["zh", "ar"]},
+    {"en_n": 10, "found_in": []},
+    {"en_n": 11, "found_in": ["es", "zh"]},
+    {"en_n": 12, "found_in": ["zh", "ar"]}
+  ],
+  "consensus": {
+    "in_all_4": 5,
+    "in_at_least_3": 10,
+    "in_at_least_2": 15,
+    "in_exactly_1": 7,
+    "core_problems_total": 22
+  },
+  "verdict": "The non-English conditions did not collapse: all three recovered the same five strongest English problems (winsorizing/L4, asymptotic-equivalence-vs-superiority, i.i.d. state-years/clustering, the Q1 small-group rate, and the barycenter-not-causal LAQTE), and several surfaced legitimate issues English missed entirely (the sigma_12 fuzzy-covariance proof and the byte-identical Table 2 entries each appear in all three non-English reviews). Recall on the 12 English issues is uneven but not degraded in depth: Chinese is strongest at 0.75 and tracks English most closely, Arabic is 0.67 and trades English's empirical/specification-search concerns (no manipulation test, the 2010 cutoff) for deeper formal proof-level critiques (Lemma 2, Proposition A-3), while Spanish is weakest at 0.50, missing more core items and carrying the shakiest unique claims. The one mild sign of language-specific degradation is Spanish: it has the lowest recall and its two least-justified issues (bandwidth-too-wide 'undermines identification' and the 'vacuous' covariance framing) are weaker than anything in the Chinese review, though no language shows outright fabrication."
+}
