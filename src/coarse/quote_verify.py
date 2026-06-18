@@ -15,6 +15,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from coarse.garble import garble_ratio as _passage_garble_score
+from coarse.textscript import is_cjk_heavy
 from coarse.types import DetailedComment
 
 logger = logging.getLogger(__name__)
@@ -205,6 +206,19 @@ def _tokenize(text: str) -> set[str]:
     return set(text.lower().split())
 
 
+def _char_ngrams(text: str, n: int = 2) -> set[str]:
+    """Lowercased character n-grams, for spaceless-script candidate prefiltering.
+
+    CJK text has no inter-word spaces, so whitespace tokenization collapses a
+    passage to one giant token and Jaccard degenerates to ~0 for every window.
+    Character n-grams give a meaningful overlap signal for those scripts.
+    """
+    lowered = text.lower()
+    if len(lowered) < n:
+        return {lowered} if lowered else set()
+    return {lowered[i : i + n] for i in range(len(lowered) - n + 1)}
+
+
 def _jaccard(a: set[str], b: set[str]) -> float:
     """Jaccard similarity between two token sets."""
     if not a or not b:
@@ -242,12 +256,18 @@ def _find_candidate_passages(
     window_size = max(int(quote_len * window_factor), _MIN_WINDOW_SIZE)
     step = max(1, quote_len // 4)
 
-    quote_tokens = _tokenize(quote)
+    # Spaceless CJK scripts have no word boundaries, so whitespace-token Jaccard
+    # is degenerate (~0 for every window) and can exclude the truly-matching
+    # passage from the top-K refinement set. Score those by character-n-gram
+    # overlap instead. Latin/English text keeps the exact same Jaccard prefilter.
+    featurize = _char_ngrams if is_cjk_heavy(quote) or is_cjk_heavy(paper_text) else _tokenize
+    quote_key = featurize(quote)
+
     stop = max(1, len(paper_text) - window_size + 1)
     candidates: list[tuple[float, int]] = []
     for i in range(0, stop, step):
         chunk = paper_text[i : i + window_size]
-        score = _jaccard(quote_tokens, _tokenize(chunk))
+        score = _jaccard(quote_key, featurize(chunk))
         candidates.append((score, i))
 
     candidates.sort(key=lambda x: x[0], reverse=True)

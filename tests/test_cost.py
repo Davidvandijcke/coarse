@@ -98,6 +98,49 @@ def test_total_cost_matches_sum_with_buffer():
     assert abs(estimate.total_cost_usd - stage_sum * 1.30) < 1e-10
 
 
+def test_cjk_paper_quotes_higher_cost_and_more_sections_than_latin():
+    """A CJK paper and an English paper of the SAME character length must NOT
+    quote the same cost: CJK packs ~4-6x more tokens/char, so the script-aware
+    token_estimate from extraction drives a higher cost and section count.
+
+    This is the user-facing payoff — the cost-approval gate stops under-quoting
+    CJK papers (where the user would approve a low number then pay more).
+    """
+    from coarse.extraction import _estimate_tokens
+
+    n_chars = 12_000
+    latin_tokens = _estimate_tokens("a " * (n_chars // 2))
+    cjk_tokens = _estimate_tokens("中" * n_chars)
+    # CJK token_estimate is materially higher for equal char length: with the
+    # keystone's 1.6 vs 4 chars/token constants the pure-CJK multiplier is 2.5x.
+    assert cjk_tokens > latin_tokens * 2
+
+    latin_est = build_cost_estimate(_paper(tokens=latin_tokens), _config())
+    cjk_est = build_cost_estimate(_paper(tokens=cjk_tokens), _config())
+    assert cjk_est.total_cost_usd > latin_est.total_cost_usd
+
+    latin_sections = len([s for s in latin_est.stages if s.name.startswith("section_")])
+    cjk_sections = len([s for s in cjk_est.stages if s.name.startswith("section_")])
+    assert cjk_sections > latin_sections
+
+
+def test_latin_cost_unchanged_by_script_aware_estimate():
+    """INVARIANT: an English paper's cost quote is identical whether the
+    token_estimate came from len//4 or the script-aware estimator — they return
+    the same number for Latin text, so the dollar total is byte-for-byte equal.
+    """
+    from coarse.extraction import _estimate_tokens
+
+    text = "The quick brown fox jumps over the lazy dog. " * 200
+    script_aware = _estimate_tokens(text)
+    legacy = len(text) // 4
+    assert script_aware == legacy
+
+    from_script = build_cost_estimate(_paper(tokens=script_aware), _config())
+    from_legacy = build_cost_estimate(_paper(tokens=legacy), _config())
+    assert from_script.total_cost_usd == from_legacy.total_cost_usd
+
+
 def test_section_count_respected():
     estimate = build_cost_estimate(_paper(), _config(), section_count=5)
     section_stages = [s for s in estimate.stages if s.name.startswith("section_")]

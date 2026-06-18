@@ -169,6 +169,33 @@ def test_token_estimate_heuristic() -> None:
     assert _estimate_tokens(text2) == len(text2) // 4
 
 
+def test_token_estimate_latin_equals_len_over_4_invariant() -> None:
+    """INVARIANT: pure-Latin text gets the same estimate as the old len//4.
+
+    Guards the promise that English/Latin cost quotes and section counts are
+    unchanged by the script-aware switch.
+    """
+    for text in ["", "x", "abstract", "The quick brown fox. " * 50, "a" * 1234]:
+        assert _estimate_tokens(text) == len(text) // 4
+
+
+def test_token_estimate_cjk_counts_materially_higher() -> None:
+    """CJK text packs ~1.6 chars/token vs Latin's ~4, so the script-aware
+    estimate is materially higher than the old len//4 (which under-counted it).
+
+    With the keystone's constants (1.6 vs 4 chars/token) the multiplier on a
+    pure-CJK string is exactly 4/1.6 = 2.5x — i.e. len//4 saw only ~40% of the
+    real tokens, which is what was making the cost gate under-quote CJK papers.
+    """
+    cjk = "这是一篇中文论文的摘要内容" * 50  # all Han characters
+    old_len_over_4 = len(cjk) // 4
+    new_estimate = _estimate_tokens(cjk)
+    ratio = new_estimate / old_len_over_4
+    assert 2.4 <= ratio <= 2.6
+    # Han packs ~1.6 chars/token → estimate is len/1.6, not len/4.
+    assert new_estimate == int(len(cjk) / 1.6)
+
+
 def test_extract_text_caching(minimal_pdf: Path, mock_ocr_pages) -> None:
     """Extraction result should be cached and reloaded on second call."""
     mock_fn = MagicMock(return_value=_mock_ocr_response(mock_ocr_pages))

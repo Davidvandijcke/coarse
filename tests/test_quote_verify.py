@@ -181,3 +181,62 @@ def test_math_quote_exact_match_kept():
     result = verify_quotes([comment], MATH_PAPER)
     assert len(result) == 1
     assert r"\phi^3" in result[0].quote
+
+
+# --- CJK (spaceless script) quote verification ---
+
+# A Chinese paragraph with no inter-word spaces. Whitespace .split() collapses
+# this to a single token, so the legacy Jaccard prefilter degenerates to 0 for
+# every window. The character-n-gram prefilter must still surface the matching
+# passage for SequenceMatcher refinement.
+CJK_PAPER = (
+    "本文提出了一种用于分布值工具变量回归的新方法。"
+    "我们建立了识别条件，在该条件下可以从可观测数据中恢复分布处理效应。"
+    "关键假设是工具仅通过处理变量影响结果。"
+)
+
+
+def test_cjk_verbatim_quote_verified():
+    """A Chinese quote that appears verbatim in a Chinese passage is verified."""
+    comment = _make_comment("我们建立了识别条件，在该条件下可以从可观测数据中恢复分布处理效应")
+    result = verify_quotes([comment], CJK_PAPER)
+    assert len(result) == 1
+    assert "[approximate]" not in result[0].quote
+    assert "识别条件" in result[0].quote
+
+
+def test_cjk_near_miss_quote_recovered():
+    """A near-verbatim CJK quote (one altered char) is recovered, not dropped.
+
+    This exercises the candidate-selection fix specifically: the quote is NOT an
+    exact substring, so it must reach _find_candidate_passages, where the legacy
+    whitespace Jaccard would score every window 0 and could drop the true match.
+    The character-n-gram prefilter surfaces it for fuzzy correction.
+    """
+    # Source has '恢复'; the quote has '回复' (a one-character drift).
+    near_miss = "我们建立了识别条件，在该条件下可以从可观测数据中回复分布处理效应"
+    comment = _make_comment(near_miss)
+    result = verify_quotes([comment], CJK_PAPER)
+    assert len(result) == 1
+    # Corrected to the real source span containing the original character.
+    assert "[approximate]" not in result[0].quote
+    assert "恢复" in result[0].quote
+
+
+def test_cjk_absent_quote_dropped():
+    """A CJK quote that is not present in the paper is dropped (default)."""
+    comment = _make_comment("量子纠缠在黑洞中的统计力学性质完全不同于经典理论")
+    result = verify_quotes([comment], CJK_PAPER)
+    assert len(result) == 0
+
+
+def test_cjk_path_does_not_affect_english():
+    """The CJK branch must not fire for Latin text; English behavior is unchanged."""
+    # Verbatim English quote still verifies.
+    comment = _make_comment("the treatment variable (exclusion restriction)")
+    result = verify_quotes([comment], PAPER_TEXT)
+    assert len(result) == 1
+    assert "[approximate]" not in result[0].quote
+    # Unrelated English quote still dropped.
+    bad = _make_comment("quantum entanglement in black holes")
+    assert verify_quotes([bad], PAPER_TEXT) == []
