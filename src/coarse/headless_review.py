@@ -214,12 +214,13 @@ def _patch_llmclient(host: str, model: str | None, effort: str):
 
 def _patch_extraction(pre_extracted: Path) -> None:
     """Monkey-patch extract_file to return the pre-extracted markdown."""
+    from coarse.textscript import estimate_tokens
     from coarse.types import PaperText
 
     md_text = pre_extracted.read_text(encoding="utf-8")
     paper_text = PaperText(
         full_markdown=md_text,
-        token_estimate=len(md_text) // 4,
+        token_estimate=estimate_tokens(md_text),
         garble_ratio=0.0,
     )
 

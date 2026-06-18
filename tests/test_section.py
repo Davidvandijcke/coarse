@@ -348,6 +348,15 @@ def test_is_low_value_quote_classifies_short_and_latex_tokens():
     assert not _is_low_value_quote("\\rho is the spectral radius of the matrix M here.")
 
 
+def test_is_low_value_quote_cjk_floor():
+    # CJK quotes use the 8-char floor (mirrors DetailedComment._check_quote_length),
+    # so a valid 8-19 char CJK quote is NOT dropped before strict re-validation.
+    assert not _is_low_value_quote("识别条件可恢复处理效应")  # 11 CJK chars
+    assert _is_low_value_quote("方法")  # 2 CJK chars — still too short
+    # Latin floor unchanged at 20.
+    assert _is_low_value_quote("under twenty")  # 12 Latin chars
+
+
 def test_section_agent_drops_low_value_quote_comments_without_raising():
     """#198: a stray short / LaTeX-token quote is dropped post-parse rather than
     failing the whole batch's validation and losing the section."""

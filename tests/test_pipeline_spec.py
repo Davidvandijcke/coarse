@@ -204,6 +204,50 @@ console.log(JSON.stringify({
     assert out["unknownDynamic"] is None
 
 
+def test_ts_token_estimator_is_script_aware_and_matches_python():
+    """The web token estimator (estimateTokensFromString) must mirror Python's
+    textscript.estimate_tokens: identical to len//4 for Latin, ~4-6x higher for
+    CJK. This keeps the web cost quote in sync with the CLI on CJK papers."""
+    from coarse.textscript import estimate_tokens
+
+    repo_root = Path(__file__).resolve().parents[1]
+    latin = "The quick brown fox jumps over the lazy dog. " * 100
+    cjk = "这是一篇中文论文的摘要内容" * 100
+    script = f"""
+import {{ estimateTokensFromString }} from "./web/src/lib/estimateCost.ts";
+console.log(JSON.stringify({{
+  latin: estimateTokensFromString({json.dumps(latin)}),
+  cjk: estimateTokensFromString({json.dumps(cjk)}),
+}}));
+"""
+    out = _run_node(repo_root, script)
+    # TS↔Python parity on the token count itself.
+    assert out["latin"] == estimate_tokens(latin)
+    assert out["cjk"] == estimate_tokens(cjk)
+    # Latin invariant: equals the old len//4.
+    assert out["latin"] == len(latin) // 4
+    # CJK materially higher than the old len//4 under-count (2.5x with the
+    # keystone's 1.6 vs 4 chars/token constants).
+    assert out["cjk"] >= (len(cjk) // 4) * 2
+
+
+def test_ts_token_estimator_handles_supplementary_plane_cjk():
+    """A supplementary-plane ideograph (CJK Ext B+) is one CJK character in both
+    estimators — TS iterates code points, not UTF-16 units, matching Python."""
+    from coarse.textscript import estimate_tokens
+
+    repo_root = Path(__file__).resolve().parents[1]
+    # U+20000 (𠀀) repeated — purely supplementary-plane Han.
+    cjk_supp = "\U00020000" * 50
+    script = f"""
+import {{ estimateTokensFromString }} from "./web/src/lib/estimateCost.ts";
+console.log(JSON.stringify(estimateTokensFromString({json.dumps(cjk_supp)})));
+"""
+    out = _run_node(repo_root, script)
+    assert out == estimate_tokens(cjk_supp)
+    assert out == int(50 / 1.6)  # 50 CJK chars at ~1.6 chars/token, not 100
+
+
 def test_ts_format_prompt_price_branches():
     repo_root = Path(__file__).resolve().parents[1]
     script = """

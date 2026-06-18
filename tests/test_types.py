@@ -302,6 +302,54 @@ def test_detailed_comment_accepts_long_quote():
     assert len(c.quote) >= 20
 
 
+def test_detailed_comment_accepts_short_cjk_quote():
+    """A CJK quote of 8+ characters is accepted under the lower script-aware floor.
+
+    8 Han characters carry ~10-20 words of meaning, so the flat 20-char minimum
+    rejected valid short CJK quotes. The script-aware validator allows them.
+    """
+    quote = "识别条件可恢复处理效应"  # 11 CJK chars, < 20, > 8
+    assert len(quote) < 20
+    c = DetailedComment(
+        number=1,
+        title="Issue",
+        quote=quote,
+        feedback="Feedback text.",
+    )
+    assert c.quote == quote
+
+
+def test_detailed_comment_rejects_too_short_cjk_quote():
+    """A CJK quote shorter than the 8-char floor is still rejected."""
+    with pytest.raises(ValidationError):
+        DetailedComment(
+            number=1,
+            title="Issue",
+            quote="识别条件",  # 4 CJK chars, < 8
+            feedback="Feedback text.",
+        )
+
+
+def test_detailed_comment_english_floor_unchanged():
+    """English quotes keep the original 20-char minimum exactly."""
+    # 19-char English quote still rejected.
+    with pytest.raises(ValidationError):
+        DetailedComment(
+            number=1,
+            title="Issue",
+            quote="x" * 19,
+            feedback="Feedback text.",
+        )
+    # 20-char English quote accepted.
+    c = DetailedComment(
+        number=1,
+        title="Issue",
+        quote="x" * 20,
+        feedback="Feedback text.",
+    )
+    assert len(c.quote) == 20
+
+
 # --- OverviewFeedback new fields: recommendation & revision_targets ---
 
 

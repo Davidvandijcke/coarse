@@ -185,6 +185,191 @@ def test_classify_unknown():
 
 
 # ---------------------------------------------------------------------------
+# Multilingual _classify_section_type tests
+# ---------------------------------------------------------------------------
+
+# Representative non-English headings across all supported languages, including
+# CJK (Chinese/Japanese/Korean) and RTL (Arabic). Each must map to the same
+# canonical SectionType as its English counterpart so that downstream stages
+# (reference exclusion, literature routing, cross-section synthesis) still fire
+# on non-English papers.
+_NON_ENGLISH_HEADING_CASES = [
+    # Abstract
+    ("Resumen", SectionType.ABSTRACT),  # es
+    ("Résumé", SectionType.ABSTRACT),  # fr
+    ("Zusammenfassung", SectionType.ABSTRACT),  # de
+    ("Samenvatting", SectionType.ABSTRACT),  # nl
+    ("Resumo", SectionType.ABSTRACT),  # pt
+    ("Riassunto", SectionType.ABSTRACT),  # it
+    ("摘要", SectionType.ABSTRACT),  # zh (CJK)
+    ("要旨", SectionType.ABSTRACT),  # ja (CJK)
+    ("초록", SectionType.ABSTRACT),  # ko (CJK)
+    ("الملخص", SectionType.ABSTRACT),  # ar (RTL)
+    # Introduction
+    ("Introducción", SectionType.INTRODUCTION),  # es
+    ("Einleitung", SectionType.INTRODUCTION),  # de
+    ("Inleiding", SectionType.INTRODUCTION),  # nl
+    ("Introdução", SectionType.INTRODUCTION),  # pt
+    ("Introduzione", SectionType.INTRODUCTION),  # it
+    ("引言", SectionType.INTRODUCTION),  # zh (CJK)
+    ("はじめに", SectionType.INTRODUCTION),  # ja (CJK, kana)
+    ("서론", SectionType.INTRODUCTION),  # ko (CJK)
+    ("مقدمة", SectionType.INTRODUCTION),  # ar (RTL)
+    # Methodology
+    ("Métodos", SectionType.METHODOLOGY),  # es/pt
+    ("Méthodes", SectionType.METHODOLOGY),  # fr
+    ("Methoden", SectionType.METHODOLOGY),  # de/nl
+    ("Metodologia", SectionType.METHODOLOGY),  # pt/it
+    ("方法", SectionType.METHODOLOGY),  # zh/ja (CJK)
+    ("手法", SectionType.METHODOLOGY),  # ja (CJK)
+    ("방법", SectionType.METHODOLOGY),  # ko (CJK)
+    ("المنهجية", SectionType.METHODOLOGY),  # ar (RTL)
+    # Results
+    ("Resultados", SectionType.RESULTS),  # es/pt
+    ("Résultats", SectionType.RESULTS),  # fr
+    ("Ergebnisse", SectionType.RESULTS),  # de
+    ("Resultaten", SectionType.RESULTS),  # nl
+    ("Risultati", SectionType.RESULTS),  # it
+    ("结果", SectionType.RESULTS),  # zh (CJK)
+    ("結果", SectionType.RESULTS),  # zh-traditional/ja (CJK)
+    ("결과", SectionType.RESULTS),  # ko (CJK)
+    ("النتائج", SectionType.RESULTS),  # ar (RTL)
+    # Discussion
+    ("Discusión", SectionType.DISCUSSION),  # es
+    ("Diskussion", SectionType.DISCUSSION),  # de
+    ("Discussie", SectionType.DISCUSSION),  # nl
+    ("Discussão", SectionType.DISCUSSION),  # pt
+    ("Discussione", SectionType.DISCUSSION),  # it
+    ("讨论", SectionType.DISCUSSION),  # zh (CJK)
+    ("考察", SectionType.DISCUSSION),  # ja (CJK)
+    ("논의", SectionType.DISCUSSION),  # ko (CJK)
+    ("المناقشة", SectionType.DISCUSSION),  # ar (RTL)
+    # Conclusion
+    ("Conclusión", SectionType.CONCLUSION),  # es
+    ("Schlussfolgerung", SectionType.CONCLUSION),  # de
+    ("Conclusie", SectionType.CONCLUSION),  # nl
+    ("Conclusão", SectionType.CONCLUSION),  # pt
+    ("Conclusione", SectionType.CONCLUSION),  # it
+    ("结论", SectionType.CONCLUSION),  # zh (CJK)
+    ("結論", SectionType.CONCLUSION),  # zh-traditional/ja (CJK)
+    ("결론", SectionType.CONCLUSION),  # ko (CJK)
+    ("الخاتمة", SectionType.CONCLUSION),  # ar (RTL)
+    # References
+    ("Referencias", SectionType.REFERENCES),  # es
+    ("Références", SectionType.REFERENCES),  # fr
+    ("Literatur", SectionType.REFERENCES),  # de
+    ("Referenzen", SectionType.REFERENCES),  # de
+    ("Referenties", SectionType.REFERENCES),  # nl
+    ("Referências", SectionType.REFERENCES),  # pt
+    ("Bibliografia", SectionType.REFERENCES),  # it/pt
+    ("Riferimenti", SectionType.REFERENCES),  # it
+    ("参考文献", SectionType.REFERENCES),  # zh/ja (CJK)
+    ("參考文獻", SectionType.REFERENCES),  # zh-traditional (CJK)
+    ("참고문헌", SectionType.REFERENCES),  # ko (CJK)
+    ("المراجع", SectionType.REFERENCES),  # ar (RTL)
+    # Appendix
+    ("Apéndice", SectionType.APPENDIX),  # es
+    ("Annexe", SectionType.APPENDIX),  # fr
+    ("Anhang", SectionType.APPENDIX),  # de
+    ("Bijlage", SectionType.APPENDIX),  # nl
+    ("Apêndice", SectionType.APPENDIX),  # pt
+    ("Appendice", SectionType.APPENDIX),  # it/fr
+    ("附录", SectionType.APPENDIX),  # zh (CJK)
+    ("付録", SectionType.APPENDIX),  # ja (CJK)
+    ("부록", SectionType.APPENDIX),  # ko (CJK)
+    ("الملحق", SectionType.APPENDIX),  # ar (RTL)
+]
+
+
+@pytest.mark.parametrize("heading, expected", _NON_ENGLISH_HEADING_CASES)
+def test_classify_non_english_headings(heading, expected):
+    """Non-English headings (incl. CJK and Arabic RTL) map to the canonical
+    SectionType, so reference exclusion / literature routing / cross-section
+    synthesis still fire on non-English papers."""
+    assert _classify_section_type(heading) == expected
+
+
+def test_classify_non_english_with_numbering():
+    """Numbered non-English headings classify like their bare form."""
+    assert _classify_section_type("1. Introducción") == SectionType.INTRODUCTION
+    assert _classify_section_type("3 Méthodes") == SectionType.METHODOLOGY
+    assert _classify_section_type("4 Résultats") == SectionType.RESULTS
+
+
+def test_classify_arabic_with_definite_article():
+    """Arabic headings classify with or without the definite article (ال)."""
+    # With article
+    assert _classify_section_type("الملخص") == SectionType.ABSTRACT
+    assert _classify_section_type("المراجع") == SectionType.REFERENCES
+    # Without article
+    assert _classify_section_type("ملخص") == SectionType.ABSTRACT
+    assert _classify_section_type("مراجع") == SectionType.REFERENCES
+
+
+def test_classify_accented_and_unaccented_abstract():
+    """Both accented (résumé) and unaccented-Spanish (resumen) abstract
+    headings classify as ABSTRACT — accents are preserved in the keyword
+    table, not stripped."""
+    assert _classify_section_type("Résumé") == SectionType.ABSTRACT
+    assert _classify_section_type("Resumen") == SectionType.ABSTRACT
+
+
+# Representative English headings whose classification must be byte-for-byte
+# identical before and after multilingual support was added. These are the
+# exact types asserted by the single-purpose English tests above; this list is
+# the explicit regression guard against a non-English keyword being a substring
+# of an English heading and silently re-classifying it.
+_ENGLISH_REGRESSION_CASES = [
+    ("Abstract", SectionType.ABSTRACT),
+    ("1 Introduction", SectionType.INTRODUCTION),
+    ("2 Related Work", SectionType.RELATED_WORK),
+    ("Literature Review", SectionType.RELATED_WORK),
+    ("Prior Work", SectionType.RELATED_WORK),
+    ("3 Background", SectionType.RELATED_WORK),
+    ("4 Methods", SectionType.METHODOLOGY),
+    ("Methodology", SectionType.METHODOLOGY),
+    ("Our Approach", SectionType.METHODOLOGY),
+    ("The Model", SectionType.METHODOLOGY),
+    ("5 Identification", SectionType.METHODOLOGY),
+    ("Estimation Strategy", SectionType.METHODOLOGY),
+    ("6 Results", SectionType.RESULTS),
+    ("4 Results and Discussion", SectionType.RESULTS),
+    ("Main Findings", SectionType.RESULTS),
+    ("7 Experiments", SectionType.RESULTS),
+    ("Monte Carlo Simulations", SectionType.RESULTS),
+    ("Empirical Results", SectionType.RESULTS),
+    ("8 Discussion", SectionType.DISCUSSION),
+    ("9 Conclusion", SectionType.CONCLUSION),
+    ("Concluding Remarks", SectionType.CONCLUSION),
+    ("Summary", SectionType.CONCLUSION),
+    ("Appendix A", SectionType.APPENDIX),
+    ("Supplementary Material", SectionType.APPENDIX),
+    ("References", SectionType.REFERENCES),
+    ("Bibliography", SectionType.REFERENCES),
+    # Headings that must remain OTHER — the riskiest regression class, since a
+    # stray non-English substring would flip one of these away from OTHER.
+    ("7 Widgets and Gadgets", SectionType.OTHER),
+    ("Acknowledgements", SectionType.OTHER),
+    ("Data Availability", SectionType.OTHER),
+    ("Notation", SectionType.OTHER),
+    ("Preliminaries", SectionType.OTHER),
+    ("Theoretical Framework", SectionType.OTHER),
+    ("Robustness Checks", SectionType.OTHER),
+    ("Welfare Analysis", SectionType.OTHER),
+    ("Policy Implications", SectionType.OTHER),
+    ("Limitations", SectionType.OTHER),
+]
+
+
+@pytest.mark.parametrize("heading, expected", _ENGLISH_REGRESSION_CASES)
+def test_classify_english_unchanged(heading, expected):
+    """Regression: English headings classify EXACTLY as before multilingual
+    support was added. No non-English keyword may be a substring that
+    re-classifies an English heading (the byte-stability invariant)."""
+    assert _classify_section_type(heading) == expected
+
+
+# ---------------------------------------------------------------------------
 # _extract_title tests
 # ---------------------------------------------------------------------------
 

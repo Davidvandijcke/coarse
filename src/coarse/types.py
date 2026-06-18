@@ -266,8 +266,7 @@ class DetailedComment(BaseModel):
         description="Short title summarizing the comment",
     )
     quote: str = Field(
-        min_length=20,
-        description="Verbatim quote from the paper (min 20 chars)",
+        description="Verbatim quote from the paper (min 20 chars, or 8 for CJK text)",
     )
     feedback: str = Field(
         description="Constructive feedback with remediation guidance",
@@ -284,6 +283,26 @@ class DetailedComment(BaseModel):
         default="medium",
         description="Reviewer confidence",
     )
+
+    @field_validator("quote")
+    @classmethod
+    def _check_quote_length(cls, v: str) -> str:
+        """Require ≥20 chars for normal text, but ≥8 for spaceless CJK quotes.
+
+        CJK is dense: 8 characters of Han/Kana already carries ~10-20 words of
+        meaning, so the flat 20-char floor rejected valid short CJK quotes (and
+        instructor would then retry/fail). Latin text keeps the original 20-char
+        minimum exactly.
+        """
+        from coarse.textscript import is_cjk_heavy
+
+        minimum = 8 if is_cjk_heavy(v) else 20
+        if len(v) < minimum:
+            raise ValueError(
+                f"quote must be at least {minimum} characters "
+                f"({'CJK' if minimum == 8 else 'default'} minimum), got {len(v)}"
+            )
+        return v
 
 
 class Review(BaseModel):
