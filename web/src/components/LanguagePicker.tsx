@@ -1,6 +1,7 @@
 "use client";
 
 import { SUPPORTED_LANGUAGES } from "@/lib/languages";
+import { useSiteLanguageContext } from "@/lib/i18n";
 
 /* ── Review-language picker ────────────────────────────────────
  * Presentational dropdown that mirrors ModelPicker's label styling.
@@ -17,6 +18,7 @@ export default function LanguagePicker({
   onChange: (code: string) => void;
   disabled?: boolean;
 }) {
+  const { t } = useSiteLanguageContext();
   return (
     <div>
       <span
@@ -28,14 +30,14 @@ export default function LanguagePicker({
           marginBottom: "0.5rem",
         }}
       >
-        Review language
+        {t("reviewLanguageLabel")}
       </span>
 
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        aria-label="Review language"
+        aria-label={t("reviewLanguageLabel")}
         style={{
           padding: "0.4rem 0.85rem",
           background: "var(--board-surface)",
@@ -48,7 +50,7 @@ export default function LanguagePicker({
           opacity: disabled ? 0.55 : 1,
         }}
       >
-        <option value="">Auto — match the paper&apos;s language</option>
+        <option value="">{t("reviewLanguageAuto")}</option>
         {SUPPORTED_LANGUAGES.map((lang) => (
           <option key={lang.code} value={lang.code}>
             {lang.name}
@@ -64,8 +66,7 @@ export default function LanguagePicker({
           marginTop: "0.4rem",
         }}
       >
-        Defaults to the paper&apos;s own language; quotes always stay in the
-        original.
+        {t("reviewLanguageHelper")}
       </p>
     </div>
   );

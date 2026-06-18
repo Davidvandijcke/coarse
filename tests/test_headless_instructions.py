@@ -104,7 +104,10 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     # flag (#186): two buildAgentPrompt call sites + buildLaunchUrl. See
     # test_handoff_key_guidance_is_pdf_conditional for the branch content.
     assert handoff_page.count("isPdf: handoffState.isPdf") >= 3
-    assert "coarse.ink does not receive or store your" in handoff_page
+    # The disclaimer copy was externalized to the i18n catalog in PR-H (site UI
+    # localization); page.tsx now references it via t("explainDisclaimer"). Assert
+    # the copy survives in the English catalog rather than inline in page.tsx.
+    assert "coarse.ink does not receive or store your" in _read("web/src/lib/i18n/en.ts")
 
     # The /h/<token> landing-page HTML renderer shares its core runCmd
     # derivation with `buildCliCommands` via `buildHandoffLandingCommands`
@@ -167,7 +170,9 @@ def test_handoff_key_guidance_is_pdf_conditional() -> None:
     # And the modal + explainer copy branch on it.
     assert "handoffState.isPdf ?" in handoff_page
     assert "selectedFileIsPdf" in handoff_page
-    assert "No OpenRouter key needed for this paper" in handoff_page
+    # The non-PDF no-key note copy was externalized to the i18n catalog in PR-H;
+    # page.tsx branches on selectedFileIsPdf and renders t("handoffKeyNotNeeded").
+    assert "No OpenRouter key needed for this paper" in _read("web/src/lib/i18n/en.ts")
 
     # The /h/<token> landing page derives the flag from the stored
     # filename extension and renders the matching key note.
