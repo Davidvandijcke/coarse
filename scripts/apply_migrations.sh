@@ -30,6 +30,9 @@ create table if not exists schema_migrations (
   name text primary key,
   applied_at timestamptz not null default now()
 );
+-- Lock the bookkeeping table from the PostgREST/anon API; the service role
+-- (this connection) bypasses RLS, so migrations still work. Idempotent.
+alter table schema_migrations enable row level security;
 "
 
 APPLIED="$(psql_exec -c 'select name from schema_migrations')"

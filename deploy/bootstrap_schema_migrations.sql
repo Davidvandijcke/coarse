@@ -19,6 +19,12 @@ create table if not exists schema_migrations (
   applied_at timestamptz not null default now()
 );
 
+-- Lock this internal bookkeeping table from the PostgREST/anon API (Supabase
+-- Security Advisor flags public tables without RLS). Only the service-role
+-- migration path writes it, and the service role bypasses RLS, so no policies
+-- are needed. Idempotent.
+alter table schema_migrations enable row level security;
+
 insert into schema_migrations (name) values
   ('migrate_active_review_capacity'),
   ('migrate_email_phase1'),
