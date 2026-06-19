@@ -28,7 +28,7 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
   - If `uv` exists but `uvx` does not, replace `uvx --python 3.12 --from ...` below with
     `uv tool run --python 3.12 --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
-  `uvx --python 3.12 --from 'coarse-ink==1.7.0' coarse install-skills --all --force`
+  `uvx --python 3.12 --from 'coarse-ink==1.8.0' coarse install-skills --all --force`
   (If that fails with `No such command 'install-skills'`, you're on a
   PyPI release that predates the command — upgrade or ignore; the skill
   bundle is also loadable directly via `uvx --from` without install.)
@@ -42,13 +42,13 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 
   > I need an OpenRouter API key for the OCR extraction step (~$0.10 per paper). A few options:
   >
-  > 1. Paste the key here and I'll save it to `~/.coarse/config.toml` via `uvx --python 3.12 --from 'coarse-ink==1.7.0' coarse setup`. Note the key passes through the LLM provider (OpenAI) on its way to me, so treat it as slightly less private than one you typed into a local terminal — rotate at https://openrouter.ai/settings/keys if that worries you.
+  > 1. Paste the key here and I'll save it to `~/.coarse/config.toml` via `uvx --python 3.12 --from 'coarse-ink==1.8.0' coarse setup`. Note the key passes through the LLM provider (OpenAI) on its way to me, so treat it as slightly less private than one you typed into a local terminal — rotate at https://openrouter.ai/settings/keys if that worries you.
   > 2. Set it yourself in a separate terminal: `export OPENROUTER_API_KEY=sk-or-v1-...` or add it to `.env` in your current directory, then re-ask me.
-  > 3. Run `uvx --python 3.12 --from 'coarse-ink==1.7.0' coarse setup` in a separate terminal yourself and paste the key into its interactive prompt — the key never touches this chat.
+  > 3. Run `uvx --python 3.12 --from 'coarse-ink==1.8.0' coarse setup` in a separate terminal yourself and paste the key into its interactive prompt — the key never touches this chat.
   >
   > Which do you want?
 
-  If the user pastes a key here, save it via `uvx --python 3.12 --from 'coarse-ink==1.7.0' coarse setup` with the pasted value and confirm it's stored. Their chat, their choice.
+  If the user pastes a key here, save it via `uvx --python 3.12 --from 'coarse-ink==1.8.0' coarse setup` with the pasted value and confirm it's stored. Their chat, their choice.
 - `codex` CLI logged in: `codex login`.
 
 ## How to run
@@ -61,12 +61,12 @@ Step 1 detaches the worker (~2 seconds) and writes `<log>.pid`. Step 2 uses `--a
 LOG=/tmp/coarse-review-$(basename <paper_path> .pdf).log
 
 # STEP 2a — launch (returns in ~2s)
-uvx --python 3.12 --from 'coarse-ink==1.7.0' \
+uvx --python 3.12 --from 'coarse-ink==1.8.0' \
   coarse-review --detach --log-file "$LOG" \
   <paper_path> --host codex [--model gpt-5.4] [--effort high]
 
 # STEP 2b — wait (one blocking call, ~10-25 min, emits heartbeats)
-uvx --python 3.12 --from 'coarse-ink==1.7.0' \
+uvx --python 3.12 --from 'coarse-ink==1.8.0' \
   coarse-review --attach "$LOG"
 ```
 
@@ -96,12 +96,12 @@ These map to Codex's internal reasoning effort:
 LOG=/tmp/coarse-review-$(date +%s).log
 
 # STEP 2a — launch
-uvx --python 3.12 --from 'coarse-ink==1.7.0' \
+uvx --python 3.12 --from 'coarse-ink==1.8.0' \
   coarse-review --detach --log-file "$LOG" \
   --handoff https://coarse.ink/h/<token> --host codex
 
 # STEP 2b — wait
-uvx --python 3.12 --from 'coarse-ink==1.7.0' \
+uvx --python 3.12 --from 'coarse-ink==1.8.0' \
   coarse-review --attach "$LOG"
 ```
 
