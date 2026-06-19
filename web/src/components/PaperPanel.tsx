@@ -7,6 +7,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { splitIntoBlocks, findQuoteInBlocks } from "@/lib/quoteMatch";
 import { preprocessLatex } from "@/lib/preprocessLatex";
+import { useSiteLanguageContext } from "@/lib/i18n";
 
 const katexOptions = { strict: false, throwOnError: false };
 
@@ -23,6 +24,7 @@ export default function PaperPanel({
   reviewId?: string;
   width?: string;
 }) {
+  const { t } = useSiteLanguageContext();
   const scrollRef = useRef<HTMLDivElement>(null);
   const blocks = useMemo(() => splitIntoBlocks(preprocessLatex(markdown)), [markdown]);
 
@@ -96,7 +98,7 @@ export default function PaperPanel({
             color: "var(--dust)",
           }}
         >
-          Paper
+          {t("paperPanelHeading")}
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <button
@@ -120,9 +122,9 @@ export default function PaperPanel({
               textTransform: "uppercase",
               padding: "0.25rem",
             }}
-            aria-label="Download paper markdown"
+            aria-label={t("paperPanelDownloadAriaLabel")}
           >
-            Download
+            {t("paperPanelDownload")}
           </button>
           <button
             onClick={onClose}
@@ -135,7 +137,7 @@ export default function PaperPanel({
               fontSize: "1.05rem",
               padding: "0.25rem",
             }}
-            aria-label="Close paper panel"
+            aria-label={t("paperPanelCloseAriaLabel")}
           >
             {"\u00d7"}
           </button>

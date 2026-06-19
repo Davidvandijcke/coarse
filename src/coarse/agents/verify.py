@@ -38,6 +38,7 @@ class ProofVerifyAgent(ReviewAgent):
         abstract: str = "",
         document_form: DocumentForm = "manuscript",
         author_notes: str | None = None,
+        language: str | None = None,
     ) -> list[DetailedComment]:
         section = truncate_section(section)
 
@@ -50,7 +51,7 @@ class ProofVerifyAgent(ReviewAgent):
         # Append form-specific addendum (empty for manuscript) so an outline
         # or partial draft whose "Proof" heading contains stub text doesn't
         # trigger the full adversarial verifier frame.
-        system_prompt = feedback_system_prompt(PROOF_VERIFY_SYSTEM, document_form)
+        system_prompt = feedback_system_prompt(PROOF_VERIFY_SYSTEM, document_form, language)
         messages = self._build_messages(system_prompt, user_text)
         result = self.client.complete(
             messages,

@@ -20,6 +20,7 @@ from coarse.agents.verify import ProofVerifyAgent
 from coarse.config import CoarseConfig, load_config
 from coarse.cost import run_cost_gate
 from coarse.extraction import extract_file
+from coarse.languages import resolve_language_context
 from coarse.llm import LLMClient
 from coarse.pipeline_spec import (
     MAX_REVIEWABLE_SECTIONS,
@@ -355,6 +356,8 @@ def review_paper(
     skip_cost_gate: bool = False,
     config: CoarseConfig | None = None,
     author_notes: str | None = None,
+    language: str | None = None,
+    site_language: str | None = None,
     progress_callback: PipelineProgressCallback | None = None,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
@@ -379,6 +382,21 @@ def review_paper(
             instructions that override the review rubric. Trimmed/truncated to
             2000 chars by ``author_notes_block`` in prompts.py. ``None`` or an
             empty/ whitespace-only string is a byte-identical no-op.
+        language: Optional explicit review-output language — a human-readable
+            NAME ("French", "Simplified Chinese") or a BCP-47 code ("fr",
+            "zh-Hans"). Treated as the user's explicit override. Falls back to
+            ``config.review_language`` when not passed. The effective output
+            language is resolved AFTER detection by
+            ``coarse.languages.resolve_language_context`` (explicit > detected
+            paper language > site language > English). The resolved language NAME
+            is forwarded to every feedback agent so the reviewer writes its prose
+            in that language while keeping verbatim quotes in the paper's source
+            language and LaTeX unchanged. An English/unknown paper with no
+            explicit or site language resolves to ``None`` ⇒ byte-identical
+            English output.
+        site_language: Optional BCP-47 code for the site/UI locale, used only as
+            the lowest-priority fallback when there is no explicit language and
+            the paper is detected as English/unknown. ``None`` is the default.
         progress_callback: Optional callback receiving best-effort pipeline
             progress updates, including cumulative actual token spend.
 
@@ -398,6 +416,10 @@ def review_paper(
         config = load_config()
 
     resolved_model = model or config.default_model
+    # Explicit user/config choice for the review-output language. The EFFECTIVE
+    # language is resolved after detection (see resolve_language_context below),
+    # so this is only the highest-priority candidate, not the final answer.
+    explicit_language = language or config.review_language
     progress = _PipelineProgressReporter(progress_callback)
     client = LLMClient(model=resolved_model, config=config, cost_callback=progress.update_cost)
     run_qa = False
@@ -472,6 +494,18 @@ def review_paper(
             "The PDF may be scanned/image-only with no extractable text."
         )
     progress.complete("structure", "Analyzed paper structure", client.cost_usd)
+
+    # Resolve the effective review-output language now that detection has run.
+    # Priority (handled inside resolve_language_context): explicit user/config
+    # choice > detected paper language > site language > English. directive_name
+    # is the language NAME injected into the feedback agents (None on the English
+    # default path → byte-identical English output); lang_ctx is attached to the
+    # final Review for the web/persistence layer.
+    directive_name, lang_ctx = resolve_language_context(
+        explicit=explicit_language,
+        detected_code=structure.paper_language,
+        site_code=site_language,
+    )
 
     reviewable_sections = [
         s
@@ -559,7 +593,11 @@ def review_paper(
     # --- Phase 1: Overview (single-pass, full paper text) ---
     progress.start("overview", "Generating overview", client.cost_usd)
     overview = overview_agent.run(
-        structure, calibration, literature_context, author_notes=author_notes
+        structure,
+        calibration,
+        literature_context,
+        author_notes=author_notes,
+        language=directive_name,
     )
     progress.complete("overview", "Generated overview", client.cost_usd)
 
@@ -573,6 +611,7 @@ def review_paper(
             calibration=calibration,
             contribution_context=contribution_context,
             author_notes=author_notes,
+            language=directive_name,
         )
         overview = merge_overview(overview, completeness_issues, max_total=12)
     except Exception:
@@ -612,6 +651,7 @@ def review_paper(
                     sec_abstract,
                     document_form=structure.document_form,
                     author_notes=author_notes,
+                    language=directive_name,
                 )
             ] = (i, section.title)
 
@@ -659,6 +699,7 @@ def review_paper(
                         abstract=structure.abstract,
                         document_form=structure.document_form,
                         author_notes=author_notes,
+                        language=directive_name,
                     )
                 ] = (i, disc_sec)
             completed_futures = set()
@@ -711,6 +752,7 @@ def review_paper(
         contribution_context=contribution_context,
         document_form=structure.document_form,
         author_notes=author_notes,
+        language=directive_name,
     )
     progress.complete("editorial", "Completed editorial filter", client.cost_usd)
 
@@ -733,6 +775,7 @@ def review_paper(
         date=datetime.date.today().strftime("%m/%d/%Y"),
         overall_feedback=overview,
         detailed_comments=final_comments,
+        language=lang_ctx,
     )
 
     progress.start("synthesis", "Rendering final markdown", client.cost_usd)

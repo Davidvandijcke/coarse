@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from coarse.synthesis import render_review
-from coarse.types import DetailedComment, OverviewFeedback, OverviewIssue, Review
+from coarse.types import (
+    DetailedComment,
+    LanguageContext,
+    OverviewFeedback,
+    OverviewIssue,
+    Review,
+)
 
 
 def _make_review(
@@ -348,3 +354,135 @@ def test_render_review_revision_targets_empty():
     review = _make_review()
     result = render_review(review)
     assert "**Key revision targets**" not in result
+
+
+# --- Label localization ---
+#
+# render_review localizes the fixed structural labels (Date, Overall Feedback,
+# Quote, ...) based on Review.language.review_language. English (None / "" /
+# "en") must stay byte-identical to the pre-localization output; a non-English
+# review_language swaps the labels (but never the user content).
+
+
+def test_render_review_english_byte_identical_none_vs_en():
+    """The English path is byte-identical whether Review.language is None
+    (English default) or a populated LanguageContext whose review_language is
+    "en". This is the invariant that keeps existing English output stable."""
+    baseline = _make_review()
+    assert baseline.language is None
+    baseline_md = render_review(baseline)
+
+    en = _make_review()
+    en.language = LanguageContext(
+        site_language="en",
+        review_language="en",
+        paper_language="en",
+        text_direction="ltr",
+        paper_language_source="detected",
+    )
+    en_md = render_review(en)
+
+    assert en_md == baseline_md
+
+
+def test_render_review_english_golden_labels():
+    """Golden check on the exact English label lines so a future label change
+    (or a regression in the catalog) is caught. These literals are the
+    pre-localization English strings."""
+    review = _make_review(
+        title="Golden Paper",
+        domain="social_sciences/economics",
+        taxonomy="academic/research_paper",
+        date="3/3/2026, 11:23:50 AM",
+        comments=[
+            DetailedComment(
+                number=1,
+                title="Comment One",
+                quote="A verbatim quote from the paper.",
+                feedback="Some feedback.",
+            )
+        ],
+    )
+    result = render_review(review)
+
+    assert "# Golden Paper" in result
+    assert "**Date**: 3/3/2026, 11:23:50 AM" in result
+    assert "**Domain**: social_sciences/economics" in result
+    assert "**Taxonomy**: academic/research_paper" in result
+    assert "**Filter**: Active comments" in result
+    assert "## Overall Feedback" in result
+    assert "Here are some overall reactions to the document." in result
+    assert "**Status**: [Pending]" in result
+    assert "## Detailed Comments (1)" in result
+    assert "**Quote**:" in result
+    assert "**Feedback**:" in result
+
+
+def test_render_review_localized_spanish_labels():
+    """A Spanish review_language swaps every fixed label to its Spanish form;
+    the English labels must not appear anywhere in the output."""
+    issues = [OverviewIssue(title=f"I{i}", body=f"b{i}") for i in range(1, 5)]
+    overview = OverviewFeedback(
+        summary="This paper studies X.",
+        issues=issues,
+        recommendation="Major revision.",
+        revision_targets=["Strengthen the identification strategy."],
+    )
+    review = Review(
+        title="Documento de prueba",
+        domain="social_sciences/economics",
+        taxonomy="academic/research_paper",
+        date="3/3/2026, 11:23:50 AM",
+        overall_feedback=overview,
+        detailed_comments=[
+            DetailedComment(
+                number=1,
+                title="Comentario uno",
+                quote="Una cita textual del documento.",
+                feedback="Algún comentario.",
+            )
+        ],
+    )
+    review.language = LanguageContext(
+        site_language="es",
+        review_language="es",
+        paper_language="es",
+        text_direction="ltr",
+        paper_language_source="detected",
+    )
+    result = render_review(review)
+
+    # Localized labels present.
+    assert "**Fecha**:" in result
+    assert "**Dominio**:" in result
+    assert "**Taxonomía**:" in result
+    assert "**Filtro**: Comentarios activos" in result
+    assert "## Valoración general" in result
+    assert "Estas son algunas reacciones generales al documento." in result
+    assert "**Resumen**" in result
+    assert "**Recomendación**: Major revision." in result
+    assert "**Objetivos clave de revisión**:" in result
+    assert "**Estado**: [Pendiente]" in result
+    assert "## Comentarios detallados (1)" in result
+    assert "**Cita**:" in result
+    assert "**Comentarios**:" in result
+
+    # English labels must NOT appear.
+    assert "**Date**:" not in result
+    assert "**Domain**:" not in result
+    assert "**Taxonomy**:" not in result
+    assert "**Filter**: Active comments" not in result
+    assert "## Overall Feedback" not in result
+    assert "Here are some overall reactions to the document." not in result
+    assert "**Outline**" not in result
+    assert "**Recommendation**:" not in result
+    assert "**Key revision targets**:" not in result
+    assert "**Status**: [Pending]" not in result
+    assert "## Detailed Comments" not in result
+    assert "**Quote**:" not in result
+    assert "**Feedback**:" not in result
+
+    # User content is untouched by localization.
+    assert "# Documento de prueba" in result
+    assert "Una cita textual del documento." in result
+    assert "Algún comentario." in result

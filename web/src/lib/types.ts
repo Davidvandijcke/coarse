@@ -29,6 +29,24 @@ export interface ReviewJson {
   date: string;
   overall_feedback: ReviewJsonOverall;
   detailed_comments: ReviewJsonComment[];
+  language?: LanguageContext | null;
+}
+
+/**
+ * Language contract carried across the web, pipeline, and rendering layers
+ * (mirrors `src/coarse/types.py::LanguageContext`). Additive; an unset context
+ * is the English default path. An empty `review_language` means "follow the
+ * detected `paper_language`". There is intentionally no `analysis_language`
+ * (deferred to the contingent English-pivot design — see MULTILINGUAL_PLAN.md).
+ */
+export type TextDirection = "ltr" | "rtl";
+
+export interface LanguageContext {
+  site_language: string;
+  review_language: string;
+  paper_language: string | null;
+  text_direction: TextDirection;
+  paper_language_source?: "detected" | "user" | "default";
 }
 
 export interface Review {
@@ -38,6 +56,12 @@ export interface Review {
   paper_title: string | null;
   model: string | null;
   domain: string | null;
+  taxonomy: string | null;
+  site_language: string | null;
+  review_language: string | null;
+  paper_language: string | null;
+  paper_language_source: "detected" | "user" | "default" | null;
+  text_direction: TextDirection | null;
   result_markdown: string | null;
   result_json: ReviewJson | null;
   paper_markdown: string | null;

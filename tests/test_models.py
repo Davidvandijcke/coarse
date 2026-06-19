@@ -6,9 +6,13 @@ from coarse.models import (
     _NON_REASONING_SUBSTRINGS,
     CHEAP_MODELS,
     DEFAULT_MODEL,
+    FUSION_INPUT_COST_PER_TOKEN,
+    FUSION_MODEL,
+    FUSION_OUTPUT_COST_PER_TOKEN,
     JSON_MODE_PREFIXES,
     MARKDOWN_JSON_PREFIXES,
     OCR_MODEL,
+    OPENROUTER_NAMESPACE_MODELS,
     QUALITY_MODEL,
     REASONING_EFFORT_DEFAULT,
     REASONING_MAX_TOKENS_MULTIPLIER,
@@ -38,6 +42,26 @@ def test_all_models_have_provider_prefix():
 def test_cheap_models_have_provider_prefix():
     for env_var, model_id in CHEAP_MODELS.items():
         assert "/" in model_id, f"CHEAP_MODELS[{env_var}] missing prefix: {model_id}"
+
+
+def test_fusion_model_is_in_openrouter_namespace_set():
+    # The double-prefix routing fix in llm._normalize_model keys off this set.
+    assert FUSION_MODEL in OPENROUTER_NAMESPACE_MODELS
+
+
+def test_openrouter_namespace_models_are_single_segment_openrouter_slugs():
+    # These need doubling precisely because they are `openrouter/<model>` with
+    # no further provider segment (which would already carry the routing prefix).
+    for model_id in OPENROUTER_NAMESPACE_MODELS:
+        assert model_id.startswith("openrouter/"), model_id
+        assert model_id.count("/") == 1, model_id
+
+
+def test_fusion_representative_pricing_is_positive():
+    # OpenRouter reports dynamic (-1) pricing; these are the substitute rates
+    # the cost estimators rely on, so they must be real positive numbers.
+    assert FUSION_INPUT_COST_PER_TOKEN > 0
+    assert FUSION_OUTPUT_COST_PER_TOKEN > 0
 
 
 def test_json_and_markdown_prefixes_no_overlap():

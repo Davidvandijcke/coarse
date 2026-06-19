@@ -33,6 +33,7 @@ from coarse.prompts import (
     editorial_system,
     editorial_user,
     feedback_system_prompt,
+    language_directive,
     math_detection_user,
     metadata_user,
     overview_paper_context,
@@ -226,6 +227,75 @@ def test_feedback_system_prompt_keeps_document_form_notice():
     composed = feedback_system_prompt(OVERVIEW_SYSTEM, "draft")
     assert MATH_FORMATTING_GUIDANCE in composed
     assert composed != OVERVIEW_SYSTEM + MATH_FORMATTING_GUIDANCE  # notice present
+
+
+# --- Output-language directive (multilingual rollout) ---
+
+
+def test_language_directive_empty_for_none_and_blank():
+    """None/empty/whitespace = no directive, so the English path stays a no-op."""
+    assert language_directive(None) == ""
+    assert language_directive("") == ""
+    assert language_directive("   ") == ""
+
+
+def test_language_directive_names_language_and_protects_quotes():
+    out = language_directive("French")
+    assert "French" in out
+    assert "OUTPUT LANGUAGE" in out
+    # The integrity anchor: quotes stay verbatim in the source language.
+    assert "verbatim" in out.lower()
+    assert "never translate" in out.lower()
+    # Neutralizes the English humanizer word-list rather than applying it literally.
+    assert "english" in out.lower()
+
+
+def test_feedback_system_prompt_byte_identical_when_language_unset():
+    """Merge-safety invariant: language None/empty appends nothing, so the
+    default (English) system prompt is byte-identical to before the feature."""
+    base = OVERVIEW_SYSTEM
+    baseline = feedback_system_prompt(base, "manuscript")
+    assert feedback_system_prompt(base, "manuscript", None) == baseline
+    assert feedback_system_prompt(base, "manuscript", "") == baseline
+    assert feedback_system_prompt(base, "manuscript", "   ") == baseline
+
+
+def test_feedback_system_prompt_appends_language_directive_when_set():
+    base = OVERVIEW_SYSTEM
+    baseline = feedback_system_prompt(base, "manuscript")
+    composed = feedback_system_prompt(base, "manuscript", "Simplified Chinese")
+    assert composed.startswith(baseline)  # appended, not rewritten
+    assert "Simplified Chinese" in composed
+    assert composed != baseline
+
+
+# --- Metadata system prompt now also detects the paper's language ---
+
+
+def test_metadata_system_requests_language_detection():
+    """The cheap metadata call must ask for the paper's primary language as a
+    code, and steer the model toward the BODY (not the front matter), so CJK
+    journals with an English abstract don't get mis-detected as English."""
+    sys = METADATA_SYSTEM.lower()
+    assert "language" in sys
+    assert "body" in sys  # detect the body text, not just the title page
+
+
+def test_metadata_system_lists_exact_supported_codes():
+    """The instruction must enumerate the exact supported code set so the LLM
+    can't return an arbitrary tag the pipeline would then drop."""
+    for code in ("en", "es", "fr", "de", "nl", "pt", "it", "ja", "ko", "ar"):
+        assert code in METADATA_SYSTEM
+    # Both Chinese script variants must be offered explicitly.
+    assert "zh-Hans" in METADATA_SYSTEM
+    assert "zh-Hant" in METADATA_SYSTEM
+
+
+def test_metadata_system_keeps_existing_contract():
+    """Adding language must not drop the title/domain/taxonomy/document_form
+    contract the structure parser still depends on."""
+    for field in ("title", "domain", "taxonomy", "document_form"):
+        assert field in METADATA_SYSTEM
 
 
 def test_crossref_system_mentions_deduplication():

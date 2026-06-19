@@ -516,6 +516,14 @@ class ReviewRequest(BaseModel):
     # the overview/section/editorial agents. Default None = no-op, so older
     # in-flight spawn() payloads without this field still deserialize cleanly.
     author_notes: str | None = None
+    # Review-output language contract (multilingual rollout, see
+    # docs/MULTILINGUAL_PLAN.md). Forwarded from the web submit body. The worker
+    # resolves the *effective* review language after it detects the paper's
+    # language (consumed in PR-B); PR-A just carries the fields so the transport
+    # exists. Default None = the English path, so older in-flight spawn()
+    # payloads without these fields still deserialize cleanly.
+    review_language: str | None = None
+    site_language: str | None = None
 
 
 def _fetch_user_key(db, job_id: str) -> str | None:
@@ -809,6 +817,7 @@ def do_review(req_dict: dict):
         from coarse import review_paper
         from coarse.config import CoarseConfig
         from coarse.extraction_openrouter import signed_url_ctx
+        from coarse.review_labels import email_completion_labels
 
         # Read os.environ directly — the previous version inferred from local
         # variables, which could lie about the actual state reaching litellm
@@ -830,6 +839,8 @@ def do_review(req_dict: dict):
                 skip_cost_gate=True,
                 config=config,
                 author_notes=author_notes,
+                language=req.review_language,
+                site_language=req.site_language,
             )
         finally:
             signed_url_ctx.reset(signed_url_token)
@@ -850,19 +861,37 @@ def do_review(req_dict: dict):
         # markdown (see _review_result_json).
         result_json = _review_result_json(review)
 
-        db.table("reviews").update(
-            {
-                "status": "done",
-                "paper_title": review.title,
-                "model": model,
-                "domain": review.domain,
-                "result_markdown": _strip_nul_bytes(markdown),
-                "result_json": result_json,
-                "paper_markdown": _strip_nul_bytes(paper_text.full_markdown),
-                "duration_seconds": duration,
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-            }
-        ).eq("id", job_id).execute()
+        update_payload = {
+            "status": "done",
+            "paper_title": review.title,
+            "model": model,
+            "domain": review.domain,
+            "result_markdown": _strip_nul_bytes(markdown),
+            "result_json": result_json,
+            "paper_markdown": _strip_nul_bytes(paper_text.full_markdown),
+            "duration_seconds": duration,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Persist the resolved language metadata into the dedicated columns so the
+        # web layer can index/filter on it (the same data also rides in
+        # result_json via review.language, but jsonb is awkward to query).
+        # review_paper() always sets review.language; the guard covers Review
+        # objects built without it. These are the authoritative resolved values
+        # (for English the review_language is empty, text_direction 'ltr', which
+        # the web treats as English).
+        lang = getattr(review, "language", None)
+        if lang is not None:
+            update_payload.update(
+                {
+                    "review_language": lang.review_language,
+                    "paper_language": lang.paper_language,
+                    "paper_language_source": lang.paper_language_source,
+                    "text_direction": lang.text_direction,
+                }
+            )
+
+        db.table("reviews").update(update_payload).eq("id", job_id).execute()
 
         # Terminal success → the user's OpenRouter key is no longer needed. The
         # DELETE used to happen at worker start, but Modal preemption retries
@@ -881,20 +910,22 @@ def do_review(req_dict: dict):
         except Exception:
             pass  # Non-critical; cleanup cron will sweep it
 
-        # Send completion email
+        # Send completion email, localized to the resolved review language
+        # (English for an English/unset review — byte-identical copy).
         if email:
             access_token = _sign_review_access_token(job_id)
             review_url = f"{site_url}/review/{job_id}?token={access_token}"
             review_key = f"{job_id}.{access_token}"
+            email_l = email_completion_labels(lang.review_language if lang else "")
             try:
                 _send_email(
                     to=email,
-                    subject="Your paper review is ready",
+                    subject=email_l["subject"],
                     html=(
-                        f"<p>Your review is ready.</p>"
-                        f'<p><a href="{review_url}">View your review →</a></p>'
-                        f"<p><strong>Review key:</strong> <code>{review_key}</code><br>"
-                        f"Save this key to return to your review later.</p>"
+                        f"<p>{email_l['ready']}</p>"
+                        f'<p><a href="{review_url}">{email_l["view"]}</a></p>'
+                        f"<p><strong>{email_l['key_label']}</strong> <code>{review_key}</code><br>"
+                        f"{email_l['key_hint']}</p>"
                         f"<p>— coarse</p>"
                     ),
                 )

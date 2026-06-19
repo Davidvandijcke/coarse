@@ -21,6 +21,7 @@ from coarse import extraction_openrouter as _openrouter
 from coarse.extraction_cache import _load_cache, _save_cache
 from coarse.garble import garble_ratio as compute_garble_ratio
 from coarse.garble import normalize_ocr_garble
+from coarse.textscript import estimate_tokens
 from coarse.types import ExtractionError, PaperText
 
 logger = logging.getLogger(__name__)
@@ -206,11 +207,16 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
     full_markdown = normalize_mistral_artifacts(full_markdown)
     full_markdown = _strip_nul_bytes(full_markdown)
 
+    # Normalize known OCR artifacts unconditionally. It's a no-op on clean text,
+    # but must run regardless of the garble ratio: some artifacts (notably the ®
+    # fi-ligature) are deliberately excluded from the ratio so they don't flag
+    # legitimately-accented non-English text, yet still need repairing — gating
+    # normalization on the ratio would leave those in the document. The ratio
+    # computed afterward drives the extraction-QA auto-trigger and is stored.
+    full_markdown = normalize_ocr_garble(full_markdown)
     garble = compute_garble_ratio(full_markdown)
     if garble > 0.001:
-        logger.info("Garble ratio %.4f detected, applying OCR normalization", garble)
-        full_markdown = normalize_ocr_garble(full_markdown)
-        garble = compute_garble_ratio(full_markdown)
+        logger.info("Residual garble ratio %.4f after OCR normalization", garble)
 
     full_markdown = _finalize_markdown_or_raise(full_markdown, path)
 
@@ -227,8 +233,13 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
 
 
 def _estimate_tokens(text: str) -> int:
-    """Rough token estimate using the len // 4 heuristic."""
-    return len(text) // 4
+    """Script-aware token estimate.
+
+    Delegates to ``textscript.estimate_tokens`` so CJK papers (which pack
+    ~1-1.5 tokens/char) aren't under-counted by the old ``len // 4`` Latin
+    heuristic. For pure-Latin text this returns the same value as ``len // 4``.
+    """
+    return estimate_tokens(text)
 
 
 def _has_meaningful_markdown(text: str) -> bool:

@@ -7,8 +7,22 @@ import { PageMarks } from "@/components/charcoal";
 import { parseReview } from "@/lib/parseReview";
 import ReviewDisplay from "@/components/ReviewDisplay";
 import { REVIEW_RETURN_TOKEN_KEY } from "@/lib/useOpenRouterKey";
+import { SiteLanguageProvider, useSiteLanguageContext } from "@/lib/i18n";
 
 export default function ReviewPageClient({ id }: { id: string }) {
+  // The site-language context must sit ABOVE every consumer (this body + the
+  // ReviewDisplay tree), so the provider wraps the body here and the actual
+  // page content lives in ReviewPageBody, which reads the context (mirrors
+  // page.tsx's PageBody pattern).
+  return (
+    <SiteLanguageProvider>
+      <ReviewPageBody id={id} />
+    </SiteLanguageProvider>
+  );
+}
+
+function ReviewPageBody({ id }: { id: string }) {
+  const { t } = useSiteLanguageContext();
   const [review, setReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -53,7 +67,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
       if (cancelled) return;
 
       if (res.status === 401) {
-        setAccessError("This review needs the full secure review link or review key.");
+        setAccessError(t("reviewClientAccessErrorNeedsKey"));
         setLoading(false);
         return;
       }
@@ -63,7 +77,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
         return;
       }
       if (!res.ok) {
-        let message = "Failed to load the review. Please try again.";
+        let message = t("reviewClientLoadFailed");
         try {
           const body = (await res.json()) as { error?: string };
           if (body.error) message = body.error;
@@ -91,11 +105,18 @@ export default function ReviewPageClient({ id }: { id: string }) {
       cancelled = true;
       if (interval) clearInterval(interval);
     };
+    // Mount-only poller: `t` is read only inside closures for error text at
+    // call time, so it's intentionally omitted from the deps — including it
+    // would tear down + re-fetch the poll on every site-language toggle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, token]);
 
   const parsed = useMemo(
-    () => (review?.result_markdown ? parseReview(review.result_markdown) : null),
-    [review?.result_markdown]
+    () =>
+      review?.result_markdown
+        ? parseReview(review.result_markdown, review.review_language)
+        : null,
+    [review?.result_markdown, review?.review_language]
   );
 
   /* ── Loading ───────────────────────────────────────────── */
@@ -118,7 +139,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
             fontSize: "1.1rem",
           }}
         >
-          Loading<span className="blink">_</span>
+          {t("reviewClientLoading")}<span className="blink">_</span>
         </span>
       </div>
     );
@@ -149,7 +170,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
             margin: "0 0 0.75rem",
           }}
         >
-          Review not found.
+          {t("reviewClientNotFoundHeading")}
         </p>
         <p
           style={{
@@ -160,7 +181,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
             margin: "0 0 1.25rem",
           }}
         >
-          Check your key and try again.
+          {t("reviewClientNotFoundBody")}
         </p>
         <a
           href="/"
@@ -173,7 +194,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
             textDecoration: "none",
           }}
         >
-          Submit a new paper →
+          {t("reviewClientSubmitNewPaper")}
         </a>
       </div>
     );
@@ -203,7 +224,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
             margin: "0 0 0.75rem",
           }}
         >
-          Access token required.
+          {t("reviewClientAccessTokenRequired")}
         </p>
         <p
           style={{
@@ -227,7 +248,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
             textDecoration: "none",
           }}
         >
-          Back home →
+          {t("reviewClientBackHome")}
         </a>
       </div>
     );
@@ -258,7 +279,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
               color: "var(--chalk-bright)",
             }}
           >
-            {review.status === "running" ? "Reading your paper." : "Queued."}
+            {review.status === "running" ? t("reviewClientReadingHeading") : t("reviewClientQueuedHeading")}
           </h1>
           <div className="scan-track" style={{ maxWidth: "320px", margin: "0 auto 1.5rem" }} />
           <p
@@ -270,8 +291,8 @@ export default function ReviewPageClient({ id }: { id: string }) {
             }}
           >
             {review.status === "running"
-              ? "Usually 30\u201360 minutes. This page updates automatically."
-              : "Processing begins shortly."}
+              ? t("reviewClientRunningBody")
+              : t("reviewClientQueuedBody")}
           </p>
         </div>
       )}
@@ -301,7 +322,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
                 margin: "0 0 0.5rem",
               }}
             >
-              Review failed.
+              {t("reviewClientFailedHeading")}
             </p>
             <p
               style={{
@@ -312,7 +333,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
                 margin: "0 0 1rem",
               }}
             >
-              {review.error_message ?? "An unexpected error occurred."}
+              {review.error_message ?? t("reviewClientUnexpectedError")}
             </p>
             <a
               href="/"
@@ -325,7 +346,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
                 textDecoration: "none",
               }}
             >
-              Try again →
+              {t("reviewClientTryAgain")}
             </a>
           </div>
         </div>
@@ -355,7 +376,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
                 margin: "0 0 0.5rem",
               }}
             >
-              Review cancelled.
+              {t("reviewClientCancelledHeading")}
             </p>
             <p
               style={{
@@ -366,7 +387,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
                 margin: "0 0 1rem",
               }}
             >
-              {review.error_message ?? "This review was cancelled before completion."}
+              {review.error_message ?? t("reviewClientCancelledBody")}
             </p>
             <a
               href="/"
@@ -379,7 +400,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
                 textDecoration: "none",
               }}
             >
-              Submit a new paper →
+              {t("reviewClientSubmitNewPaper")}
             </a>
           </div>
         </div>
@@ -399,6 +420,12 @@ export default function ReviewPageClient({ id }: { id: string }) {
           durationSeconds={review.duration_seconds}
           costUsd={review.cost_usd}
           resultJson={review.result_json}
+          reviewLanguage={review.review_language ?? review.result_json?.language?.review_language ?? null}
+          paperLanguage={review.paper_language ?? review.result_json?.language?.paper_language ?? null}
+          textDirectionCol={review.text_direction ?? review.result_json?.language?.text_direction ?? null}
+          paperLanguageSource={
+            review.paper_language_source ?? review.result_json?.language?.paper_language_source ?? null
+          }
         />
       )}
 

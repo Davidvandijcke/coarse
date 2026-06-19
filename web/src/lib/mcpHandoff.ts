@@ -1,9 +1,9 @@
 // Handoff helpers for the "Review with my subscription" button on the
 // coarse web form. The flow is:
 //
-//   1. User uploads PDF via /api/presign + direct Supabase Storage PUT
-//      (same path as the regular OpenRouter review — no extraction
-//      triggered).
+//   1. User uploads the paper (any supported format) via /api/presign +
+//      direct Supabase Storage PUT (same path as the regular OpenRouter
+//      review — no extraction triggered).
 //   2. User clicks "Review with Claude Code / Codex / Gemini CLI".
 //   3. Frontend POSTs to /api/cli-handoff which mints a short-lived
 //      finalize_token (3h, see FINALIZE_TOKEN_TTL_MINUTES) bound to
@@ -17,9 +17,12 @@
 //          [--effort ...]`
 //   5. The user's local `coarse-review` command:
 //        a. Fetches the bundle from /h/<token> as JSON
-//        b. Downloads the raw PDF from the signed URL inside the bundle
-//        c. Extracts locally with their OpenRouter key (from
-//           ~/.coarse/config.toml or .env)
+//        b. Downloads the raw source file from the signed URL inside
+//           the bundle
+//        c. Extracts locally. Only PDFs need the user's OpenRouter key
+//           (from ~/.coarse/config.toml or .env) for Mistral OCR;
+//           non-PDF sources (.tex, .md, .docx, …) parse locally with
+//           no key at all (#186)
 //        d. Runs the full coarse pipeline, routing every LLM call
 //           through the chosen headless CLI
 //        e. POSTs the rendered review back to /api/mcp-finalize with
@@ -34,6 +37,8 @@
 // No server-side extraction. No OpenRouter key on the web backend. The
 // handoff URL is the only thing that crosses the browser→terminal
 // boundary, and it's copy-pasted from a modal.
+
+import { languageName } from "@/lib/languages";
 
 export type ChatHost = "claude-code" | "codex" | "gemini-cli";
 
@@ -86,13 +91,13 @@ export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 // The variable is still called `DEFAULT_MCP_UVX_FROM` for backward
 // compatibility with the `test_release_blocker_pin_is_coupled_to_unreleased_version`
 // drift test that enforces the pin matches `__version__`.
-const DEFAULT_MCP_UVX_FROM = "coarse-ink==1.7.0";
+const DEFAULT_MCP_UVX_FROM = "coarse-ink==1.8.0";
 
 export function resolvePinnedUvFrom(): string {
   const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();
   if (!raw) return DEFAULT_MCP_UVX_FROM;
   // Allowlist for `NEXT_PUBLIC_COARSE_UVX_FROM` overrides. Accepts:
-  //   1. Plain semver pin: `coarse-ink==1.7.0` (production default).
+  //   1. Plain semver pin: `coarse-ink==1.8.0` (production default).
   //   2. `[mcp]` extra form for operators who want the MCP path.
   //   3. Commit-sha git ref for pinned dev testing.
   //   4. `@dev` or `@main` branch ref — self-updating Preview default,
@@ -154,15 +159,63 @@ export const HOST_LAUNCH_HINT: Record<ChatHost, string> = {
  * so Claude Code's Bash tool sees stdout activity. One agent-visible
  * Bash call covers the full 10-25min wait instead of 10-25 separate
  * per-poll approval prompts.
+ *
+ * ``isPdf`` gates STEP 2 (the OpenRouter key check). Only PDF sources
+ * run Mistral OCR; non-PDF uploads (.tex, .md, .docx, …) extract
+ * locally with no OpenRouter key, so for them STEP 2 explicitly tells
+ * the agent NOT to ask for or configure a key (#186). Without this
+ * gate, agents stopped a key-free .tex review to demand a key it
+ * would never use.
  */
 export function buildAgentPrompt(args: {
   setupCmd: string;
   runCmd: string;
   attachCmd: string;
   logFile: string;
+  isPdf: boolean;
+  reviewLanguage?: string;
 }): string {
-  const { setupCmd, runCmd, attachCmd, logFile } = args;
+  const { setupCmd, runCmd, attachCmd, logFile, isPdf, reviewLanguage } = args;
   const configCmd = setupCmd.replace("coarse install-skills --all --force", "coarse setup");
+  // One-line language directive, only when the user picked a non-auto
+  // language. Empty/undefined → "" so the prompt is byte-identical to
+  // the pre-i18n output.
+  const langName = languageName(reviewLanguage);
+  const languageNote = langName
+    ? `\n\nWrite the review in ${langName} (keep quotes in the paper's original language).`
+    : "";
+  const step2 = isPdf
+    ? `STEP 2 — Check for an OpenRouter API key without printing its ` +
+      `value. Prefer presence-only probes so the key doesn't needlessly ` +
+      `show up in the chat transcript:\n\n` +
+      `  test -n "$OPENROUTER_API_KEY" && echo "env: set" || echo "env: missing"\n` +
+      `  test -f .env && grep -q '^OPENROUTER_API_KEY=' .env && echo ".env: set" || echo ".env: missing"\n\n` +
+      `If neither probe reports "set", tell me:\n\n` +
+      `  "I need an OpenRouter API key for the Mistral OCR extraction step ` +
+      `(~$0.10 per paper). A few options:\n` +
+      `   1. Paste the key here and I'll save it to ~/.coarse/config.toml ` +
+      `via \`${configCmd}\`. Heads up that whatever you paste here passes ` +
+      `through the LLM provider (Anthropic / OpenAI / Google), so treat ` +
+      `the key as slightly less private than one you typed into a local ` +
+      `terminal — rotate at https://openrouter.ai/settings/keys if that ` +
+      `worries you.\n` +
+      `   2. Set it yourself in a separate terminal and come back: ` +
+      `\`export OPENROUTER_API_KEY=sk-or-v1-...\` or add it to a \`.env\` ` +
+      `file in your current directory.\n` +
+      `   3. Run \`${configCmd}\` in a separate terminal yourself and ` +
+      `paste the key into its interactive prompt — the key lands in ` +
+      `~/.coarse/config.toml without touching this chat at all.\n` +
+      `   Which do you want?"\n\n` +
+      `If I paste the key into chat, just save it — run \`${configCmd}\` ` +
+      `with the pasted value and confirm it's stored. No need to lecture ` +
+      `me about it; I already know what I'm doing.`
+    : `STEP 2 — No OpenRouter API key is needed for this review. The ` +
+      `paper is not a PDF, so coarse-review extracts it locally without ` +
+      `the Mistral OCR step. (If a key happens to be configured it is ` +
+      `only used opportunistically for the ~$0.03 Perplexity literature ` +
+      `search; without one, a free arXiv fallback runs instead.) Do NOT ` +
+      `ask me for an OpenRouter key and do NOT pause the workflow to ` +
+      `configure one.`;
   return (
     `Please review an academic paper for me using the coarse-review skill. ` +
     `The paper is a REMOTE resource — its source URL is already embedded ` +
@@ -187,30 +240,7 @@ export function buildAgentPrompt(args: {
     `either way because uvx is already loading the coarse bundle via ` +
     `\`--from\`.\n\n` +
     `${setupCmd}\n\n` +
-    `STEP 2 — Check for an OpenRouter API key without printing its ` +
-    `value. Prefer presence-only probes so the key doesn't needlessly ` +
-    `show up in the chat transcript:\n\n` +
-    `  test -n "$OPENROUTER_API_KEY" && echo "env: set" || echo "env: missing"\n` +
-    `  test -f .env && grep -q '^OPENROUTER_API_KEY=' .env && echo ".env: set" || echo ".env: missing"\n\n` +
-    `If neither probe reports "set", tell me:\n\n` +
-    `  "I need an OpenRouter API key for the Mistral OCR extraction step ` +
-    `(~$0.10 per paper). A few options:\n` +
-    `   1. Paste the key here and I'll save it to ~/.coarse/config.toml ` +
-    `via \`${configCmd}\`. Heads up that whatever you paste here passes ` +
-    `through the LLM provider (Anthropic / OpenAI / Google), so treat ` +
-    `the key as slightly less private than one you typed into a local ` +
-    `terminal — rotate at https://openrouter.ai/settings/keys if that ` +
-    `worries you.\n` +
-    `   2. Set it yourself in a separate terminal and come back: ` +
-    `\`export OPENROUTER_API_KEY=sk-or-v1-...\` or add it to a \`.env\` ` +
-    `file in your current directory.\n` +
-    `   3. Run \`${configCmd}\` in a separate terminal yourself and ` +
-    `paste the key into its interactive prompt — the key lands in ` +
-    `~/.coarse/config.toml without touching this chat at all.\n` +
-    `   Which do you want?"\n\n` +
-    `If I paste the key into chat, just save it — run \`${configCmd}\` ` +
-    `with the pasted value and confirm it's stored. No need to lecture ` +
-    `me about it; I already know what I'm doing.\n\n` +
+    `${step2}\n\n` +
     `STEP 3 — Launch the detached review. Run the EXACT command below, ` +
     `verbatim. Do not substitute, rewrite, or interpret any argument — ` +
     `every piece is already filled in. The \`--handoff\` URL is the ` +
@@ -288,7 +318,8 @@ export function buildAgentPrompt(args: {
     `where there is no graphical display.\n` +
     `  - The local markdown path (the \`local:\` line)\n` +
     `  - A summary of the recommendation (accept / revise / reject)\n` +
-    `  - The top 3 macro issues from the overview section`
+    `  - The top 3 macro issues from the overview section` +
+    languageNote
   );
 }
 
@@ -309,9 +340,11 @@ export function buildLaunchUrl(args: {
   setupCmd: string;
   attachCmd: string;
   logFile: string;
+  isPdf: boolean;
+  reviewLanguage?: string;
 }): string {
-  const { host, runCmd, setupCmd, attachCmd, logFile } = args;
-  const prompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile });
+  const { host, runCmd, setupCmd, attachCmd, logFile, isPdf, reviewLanguage } = args;
+  const prompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile, isPdf, reviewLanguage });
 
   if (host === "codex") {
     // Codex supports codex://new?prompt=<text> deep links that pre-fill
@@ -393,8 +426,9 @@ export interface HandoffCliCommands {
 export function buildHandoffLandingCommands(args: {
   handoffUrl: string;
   paperId: string;
+  reviewLanguage?: string;
 }): HandoffCliCommands {
-  const { handoffUrl, paperId } = args;
+  const { handoffUrl, paperId, reviewLanguage } = args;
   const quotedUvFrom = shellQuote(MCP_UVX_FROM);
   const logFile = `/tmp/coarse-review-${paperId}.log`;
   // The handoff URL MUST be single-quoted in the shell. After the
@@ -413,7 +447,15 @@ export function buildHandoffLandingCommands(args: {
   const quotedHandoffUrl = shellQuote(handoffUrl);
   const quotedLogFile = shellQuote(logFile);
   const setupCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse install-skills --all --force`;
-  const runCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach --log-file ${quotedLogFile} --handoff ${quotedHandoffUrl}`;
+  // `--language <name>` is appended only when the user picked a non-auto
+  // language; empty/undefined leaves the command byte-identical to today.
+  // Use the human-readable name (fall back to the raw code if unknown);
+  // it's shell-quoted because names like "Simplified Chinese" contain a
+  // space — the same quoting discipline as the URL and log file above.
+  const langSuffix = reviewLanguage
+    ? ` --language ${shellQuote(languageName(reviewLanguage) ?? reviewLanguage)}`
+    : "";
+  const runCmd = `uvx --python 3.12 --from ${quotedUvFrom} coarse-review --detach --log-file ${quotedLogFile} --handoff ${quotedHandoffUrl}${langSuffix}`;
   // Single blocking watch command that replaces the legacy per-60s
   // tail polling loop. See buildAgentPrompt STEP 4 and the
   // _run_attach docstring in src/coarse/cli_review.py for the full
@@ -437,10 +479,11 @@ export function buildCliCommands(args: {
   model: string;
   effort: EffortLevel;
   paperId: string;
+  reviewLanguage?: string;
 }): HandoffCliCommands {
-  const { handoffUrl, host, model, effort, paperId } = args;
+  const { handoffUrl, host, model, effort, paperId, reviewLanguage } = args;
   const cliName = HOST_CLI_NAME[host];
-  const base = buildHandoffLandingCommands({ handoffUrl, paperId });
+  const base = buildHandoffLandingCommands({ handoffUrl, paperId, reviewLanguage });
   const runCmd = `${base.runCmd} --host ${cliName} --model ${model} --effort ${effort}`;
   return { ...base, runCmd };
 }

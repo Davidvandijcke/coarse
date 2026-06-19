@@ -26,9 +26,13 @@ from coarse.config import (
 )
 from coarse.models import (
     DEFAULT_MODEL,
+    FUSION_INPUT_COST_PER_TOKEN,
+    FUSION_MODEL,
+    FUSION_OUTPUT_COST_PER_TOKEN,
     JSON_MODE_PREFIXES,
     KIMI_K2_5_MODEL,
     MARKDOWN_JSON_PREFIXES,
+    OPENROUTER_NAMESPACE_MODELS,
     REASONING_EFFORT_DEFAULT,
     REASONING_MAX_TOKENS_MULTIPLIER,
     is_reasoning_model,
@@ -63,6 +67,17 @@ _CUSTOM_MODEL_INFO: dict[str, dict] = {
         "max_output_tokens": 32_768,
         "input_cost_per_token": 0.35e-6,
         "output_cost_per_token": 0.7e-6,
+    },
+    # OpenRouter Fusion reports dynamic pricing (-1) on /api/v1/models, so it is
+    # absent from litellm's registry and cost lookups would zero out. Register
+    # the measured representative rates (see FUSION_MODEL note in models.py).
+    # The loop below also registers the doubled `openrouter/openrouter/fusion`
+    # routing form, which is what `self._model` becomes after _normalize_model.
+    FUSION_MODEL: {
+        "max_tokens": 1_000_000,
+        "max_output_tokens": 32_768,
+        "input_cost_per_token": FUSION_INPUT_COST_PER_TOKEN,
+        "output_cost_per_token": FUSION_OUTPUT_COST_PER_TOKEN,
     },
 }
 for _model_id, _info in _CUSTOM_MODEL_INFO.items():
@@ -685,6 +700,14 @@ def _normalize_model(model: str, config: CoarseConfig | None = None) -> str:
     key is available, rewrite to 'openrouter/<model>' so the call goes through
     OpenRouter. Config-file keys count — not just env vars.
     """
+    # OpenRouter's own meta-models (e.g. openrouter/fusion) live under the
+    # `openrouter/` vendor namespace, which collides with litellm's
+    # provider-routing prefix: litellm strips the leading `openrouter/` and
+    # would POST a bare `fusion`, which OpenRouter 502s on. Double the slug so
+    # litellm forwards the canonical id intact. Idempotent — the doubled form
+    # already starts with `openrouter/` and falls through the guard below.
+    if model in OPENROUTER_NAMESPACE_MODELS:
+        return "openrouter/" + model
     if model.startswith("openrouter/"):
         return model
     prefix = model.split("/")[0].lower() if "/" in model else ""

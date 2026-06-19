@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 
+from coarse.review_labels import review_labels
 from coarse.types import Review
 
 # HTML tags that could execute code or load external resources
@@ -34,22 +35,25 @@ def render_review(review: Review) -> str:
 
     Pure deterministic function; makes no LLM calls.
     """
+    lang_code = review.language.review_language if review.language else ""
+    L = review_labels(lang_code)
+
     parts: list[str] = []
 
     # --- Header block ---
     parts.append(f"# {review.title}\n")
-    parts.append(f"**Date**: {review.date}")
-    parts.append(f"**Domain**: {review.domain}")
-    parts.append(f"**Taxonomy**: {review.taxonomy}")
-    parts.append("**Filter**: Active comments\n")
+    parts.append(f"**{L['date']}**: {review.date}")
+    parts.append(f"**{L['domain']}**: {review.domain}")
+    parts.append(f"**{L['taxonomy']}**: {review.taxonomy}")
+    parts.append(f"**{L['filter']}**: {L['active_comments']}\n")
     parts.append("---\n")
 
     # --- Overall Feedback ---
-    parts.append("## Overall Feedback\n")
-    parts.append("Here are some overall reactions to the document.\n")
+    parts.append(f"## {L['overall_feedback']}\n")
+    parts.append(f"{L['overall_intro']}\n")
 
     if review.overall_feedback.summary:
-        parts.append("**Outline**\n")
+        parts.append(f"**{L['outline']}**\n")
         parts.append(f"{_sanitize_html(review.overall_feedback.summary)}\n")
 
     if review.overall_feedback.assessment:
@@ -61,31 +65,31 @@ def render_review(review: Review) -> str:
 
     if review.overall_feedback.recommendation:
         rec = _sanitize_html(review.overall_feedback.recommendation)
-        parts.append(f"**Recommendation**: {rec}\n")
+        parts.append(f"**{L['recommendation']}**: {rec}\n")
 
     if review.overall_feedback.revision_targets:
-        parts.append("**Key revision targets**:\n")
+        parts.append(f"**{L['revision_targets']}**:\n")
         for i, target in enumerate(review.overall_feedback.revision_targets, 1):
             parts.append(f"{i}. {_sanitize_html(target)}")
         parts.append("")  # blank line
 
-    parts.append("**Status**: [Pending]\n")
+    parts.append(f"**{L['status']}**: [{L['pending']}]\n")
     parts.append("---\n")
 
     # --- Detailed Comments (pipeline order) ---
     n = len(review.detailed_comments)
-    parts.append(f"## Detailed Comments ({n})\n")
+    parts.append(f"## {L['detailed_comments']} ({n})\n")
 
     for comment in review.detailed_comments:
         title = _sanitize_html(comment.title)
         quote = _sanitize_html(comment.quote)
         feedback = _sanitize_html(comment.feedback)
         parts.append(f"### {comment.number}. {title}\n")
-        parts.append("**Status**: [Pending]\n")
+        parts.append(f"**{L['status']}**: [{L['pending']}]\n")
         # Prefix every line of the quote with "> " for multi-line block-quotes
         quoted_lines = "\n> ".join(quote.splitlines())
-        parts.append(f"**Quote**:\n> {quoted_lines}\n")
-        parts.append(f"**Feedback**:\n{feedback}\n")
+        parts.append(f"**{L['quote']}**:\n> {quoted_lines}\n")
+        parts.append(f"**{L['feedback']}**:\n{feedback}\n")
         parts.append("---\n")
 
     return "\n".join(parts)

@@ -48,6 +48,11 @@ import { checkRateLimit } from "@/lib/rateLimit";
 import { signReviewAccessToken } from "@/lib/reviewAuth";
 import { buildReviewUrl } from "@/lib/reviewAccess";
 import { getSiteOriginForRequest } from "@/lib/siteOrigin";
+import {
+  parseLanguageFields,
+  validateLanguageFields,
+  languageUpdateFields,
+} from "@/lib/language";
 
 export const maxDuration = 30;
 
@@ -105,6 +110,10 @@ export async function POST(request: NextRequest) {
   const markdownRaw = String(body.markdown ?? "");
   const paperMarkdownRaw = String(body.paper_markdown ?? "");
   const model = String(body.model ?? "mcp-host").trim().slice(0, 128);
+  // Language fields the CLI/handoff sends through (all optional). The CLI is
+  // the source of truth for the handoff path — it already ran the review — so
+  // we persist what it sends rather than resolving anything here.
+  const lang = parseLanguageFields(body);
 
   if (!token || !isValidUuid(token)) {
     return NextResponse.json({ error: "Invalid token" }, { status: 400 });
@@ -130,6 +139,10 @@ export async function POST(request: NextRequest) {
       { error: "paper_markdown exceeds 4 MB cap" },
       { status: 413 },
     );
+  }
+  const languageError = validateLanguageFields(lang);
+  if (languageError) {
+    return NextResponse.json({ error: languageError }, { status: 400 });
   }
 
   const markdown = scrubMarkdown(markdownRaw);
@@ -220,6 +233,7 @@ export async function POST(request: NextRequest) {
   const { error: upsertErr } = await supabase
     .from("reviews")
     .update({
+      ...languageUpdateFields(lang),
       paper_title: paperTitle || undefined,
       domain: domain || undefined,
       taxonomy: taxonomy || undefined,

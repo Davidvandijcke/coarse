@@ -24,7 +24,9 @@ import {
   loadPersistedChat,
   type ChatMessage,
 } from "@/lib/openrouterChat";
-import type { ReviewJson } from "@/lib/types";
+import type { ReviewJson, TextDirection } from "@/lib/types";
+import { languageName, textDirection } from "@/lib/languages";
+import { useSiteLanguageContext } from "@/lib/i18n";
 
 const katexOptions = { strict: false, throwOnError: false };
 
@@ -67,6 +69,7 @@ function QuoteBlock({
   text: string;
   onShowInPaper?: () => void;
 }) {
+  const { t } = useSiteLanguageContext();
   const [expanded, setExpanded] = useState(false);
   const lines = text.split("\n");
   const isLong = lines.length > 4 || text.length > 300;
@@ -115,7 +118,7 @@ function QuoteBlock({
               padding: "0.25rem 0 0",
             }}
           >
-            {expanded ? "Show less" : "Show more"}
+            {expanded ? t("reviewShowLess") : t("reviewShowMore")}
           </button>
         )}
         {onShowInPaper && (
@@ -134,7 +137,7 @@ function QuoteBlock({
               padding: "0.25rem 0 0",
             }}
           >
-            {"\u2190"} Show in paper
+            {"\u2190"} {t("reviewShowInPaper")}
           </button>
         )}
       </div>
@@ -162,11 +165,12 @@ function StatusButtons({
   status: CommentStatus;
   onStatusChange: (s: CommentStatus) => void;
 }) {
+  const { t } = useSiteLanguageContext();
   return (
     <div style={{ display: "flex", gap: "0.35rem", marginLeft: "auto", flexShrink: 0 }}>
       <button
         onClick={() => onStatusChange(status === "done" ? "active" : "done")}
-        title={status === "done" ? "Mark as active" : "Mark as done"}
+        title={status === "done" ? t("reviewMarkActive") : t("reviewMarkDone")}
         style={{
           ...actionBtnStyle,
           color: status === "done" ? "#6B9E6B" : "var(--dust)",
@@ -179,7 +183,7 @@ function StatusButtons({
         onClick={() =>
           onStatusChange(status === "dismissed" ? "active" : "dismissed")
         }
-        title={status === "dismissed" ? "Mark as active" : "Dismiss"}
+        title={status === "dismissed" ? t("reviewMarkActive") : t("reviewDismiss")}
         style={{
           ...actionBtnStyle,
           color: status === "dismissed" ? "var(--red-chalk)" : "var(--dust)",
@@ -208,6 +212,7 @@ function CommentCard({
   onShowInPaper?: () => void;
   onDiscuss?: () => void;
 }) {
+  const { t } = useSiteLanguageContext();
   const [showDismissed, setShowDismissed] = useState(false);
   const isDone = commentStatus === "done";
   const isDismissed = commentStatus === "dismissed";
@@ -261,10 +266,10 @@ function CommentCard({
           {onDiscuss && (
             <button
               onClick={onDiscuss}
-              title="Discuss this comment with an AI model"
+              title={t("reviewDiscussTitle")}
               style={{ ...actionBtnStyle, color: "var(--blue-chalk)" }}
             >
-              Discuss
+              {t("reviewDiscuss")}
             </button>
           )}
           <StatusButtons status={commentStatus} onStatusChange={onStatusChange} />
@@ -287,7 +292,7 @@ function CommentCard({
             padding: "0.5rem 0 0",
           }}
         >
-          Show details
+          {t("reviewShowDetails")}
         </button>
       ) : (
         <>
@@ -328,7 +333,7 @@ function CommentCard({
               borderRadius: "2px",
             }}
           >
-            {isDone ? "Done" : isDismissed ? "Dismissed" : comment.status}
+            {isDone ? t("reviewStatusDone") : isDismissed ? t("reviewStatusDismissed") : comment.status}
           </span>
 
           {/* Collapse button for dismissed */}
@@ -347,7 +352,7 @@ function CommentCard({
                 padding: "0 0 0 0.75rem",
               }}
             >
-              Hide
+              {t("reviewHide")}
             </button>
           )}
         </>
@@ -368,6 +373,7 @@ function IssueCard({
   onStatusChange: (s: CommentStatus) => void;
   onDiscuss: () => void;
 }) {
+  const { t } = useSiteLanguageContext();
   const isDone = status === "done";
   const isDismissed = status === "dismissed";
   return (
@@ -414,10 +420,10 @@ function IssueCard({
         >
           <button
             onClick={onDiscuss}
-            title="Discuss this comment with an AI model"
+            title={t("reviewDiscussTitle")}
             style={{ ...actionBtnStyle, color: "var(--blue-chalk)" }}
           >
-            Discuss
+            {t("reviewDiscuss")}
           </button>
           <StatusButtons status={status} onStatusChange={onStatusChange} />
         </div>
@@ -435,12 +441,13 @@ function IssueCard({
 }
 
 /* ── Filter tabs ───────────────────────────────────────────── */
-const FILTERS: { key: CommentFilter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "active", label: "Active" },
-  { key: "done", label: "Done" },
-  { key: "dismissed", label: "Dismissed" },
-];
+const FILTER_KEYS: CommentFilter[] = ["all", "active", "done", "dismissed"];
+const FILTER_LABEL_KEYS = {
+  all: "reviewFilterAll",
+  active: "reviewFilterActive",
+  done: "reviewFilterDone",
+  dismissed: "reviewFilterDismissed",
+} as const;
 
 function FilterTabs({
   current,
@@ -449,6 +456,7 @@ function FilterTabs({
   current: CommentFilter;
   onChange: (f: CommentFilter) => void;
 }) {
+  const { t } = useSiteLanguageContext();
   return (
     <div
       style={{
@@ -458,7 +466,7 @@ function FilterTabs({
         flexWrap: "wrap",
       }}
     >
-      {FILTERS.map(({ key, label }) => (
+      {FILTER_KEYS.map((key) => (
         <button
           key={key}
           onClick={() => onChange(key)}
@@ -477,7 +485,7 @@ function FilterTabs({
             transition: "all 0.15s",
           }}
         >
-          {label}
+          {t(FILTER_LABEL_KEYS[key])}
         </button>
       ))}
     </div>
@@ -502,6 +510,7 @@ function Sidebar({
   filter: CommentFilter;
   onFilterChange: (f: CommentFilter) => void;
 }) {
+  const { t } = useSiteLanguageContext();
   return (
     <nav
       className="review-sidebar"
@@ -538,7 +547,7 @@ function Sidebar({
           borderRadius: "2px",
         }}
       >
-        Overall Feedback
+        {t("reviewSidebarOverallFeedback")}
       </button>
 
       {/* Divider */}
@@ -561,7 +570,7 @@ function Sidebar({
           padding: "0.25rem 0.5rem 0",
         }}
       >
-        Comments ({remaining}/{parsed.detailedComments.length} remaining)
+        {t("reviewSidebarCommentsPrefix")}{remaining}/{parsed.detailedComments.length}{t("reviewSidebarCommentsRemainingSuffix")}
       </div>
 
       {/* Filter tabs */}
@@ -634,6 +643,7 @@ function DownloadMenu({
   reviewId: string;
   model?: string | null;
 }) {
+  const { t } = useSiteLanguageContext();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -697,7 +707,7 @@ function DownloadMenu({
           cursor: "pointer",
         }}
       >
-        Download
+        {t("reviewDownload")}
       </button>
       {open && (
         <div
@@ -723,7 +733,7 @@ function DownloadMenu({
               (e.currentTarget.style.background = "transparent")
             }
           >
-            Markdown (.md)
+            {t("reviewDownloadMarkdown")}
           </button>
           <button
             onClick={printPdf}
@@ -735,7 +745,7 @@ function DownloadMenu({
               (e.currentTarget.style.background = "transparent")
             }
           >
-            Print / PDF
+            {t("reviewDownloadPrint")}
           </button>
         </div>
       )}
@@ -769,6 +779,10 @@ export default function ReviewDisplay({
   durationSeconds,
   costUsd,
   resultJson,
+  reviewLanguage,
+  paperLanguage,
+  textDirectionCol,
+  paperLanguageSource,
 }: {
   parsed: ParsedReview;
   markdown: string;
@@ -781,8 +795,25 @@ export default function ReviewDisplay({
   durationSeconds?: number | null;
   costUsd?: number | null;
   resultJson?: ReviewJson | null;
+  reviewLanguage?: string | null;
+  paperLanguage?: string | null;
+  textDirectionCol?: TextDirection | null;
+  paperLanguageSource?: "detected" | "user" | "default" | null;
 }) {
+  const { t } = useSiteLanguageContext();
   const router = useRouter();
+
+  // Language / direction. The review content follows the review language; the
+  // paper panel follows the paper's own language. Both default to English/ltr,
+  // so an English review renders exactly as before. Prefer the stored column
+  // direction; fall back to deriving it from the review language.
+  const reviewDir: TextDirection =
+    textDirectionCol ?? textDirection(reviewLanguage);
+  const paperDir: TextDirection = textDirection(paperLanguage);
+  const reviewLangName = languageName(reviewLanguage);
+  const showLangBadge =
+    !!reviewLanguage && reviewLanguage !== "en" && !!reviewLangName;
+
   const [activeId, setActiveId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [paperPanelOpen, setPaperPanelOpen] = useState(!!paperMarkdown);
@@ -1038,7 +1069,7 @@ export default function ReviewDisplay({
               color: "var(--chalk-bright)",
             }}
           >
-            Delete review?
+            {t("reviewDeleteConfirmHeading")}
           </h1>
 
           <p
@@ -1051,7 +1082,7 @@ export default function ReviewDisplay({
               margin: "0 0 2.5rem",
             }}
           >
-            Are you sure? You will not be able to see your results.
+            {t("reviewDeleteConfirmBody")}
           </p>
 
           <div style={{ display: "flex", gap: "1rem" }}>
@@ -1071,7 +1102,7 @@ export default function ReviewDisplay({
                 opacity: deleting ? 0.5 : 1,
               }}
             >
-              {deleting ? "Deleting..." : "Yes, delete"}
+              {deleting ? t("reviewDeleting") : t("reviewYesDelete")}
             </button>
             <button
               onClick={() => setShowDeleteConfirm(false)}
@@ -1088,7 +1119,7 @@ export default function ReviewDisplay({
                 cursor: deleting ? "default" : "pointer",
               }}
             >
-              Go back
+              {t("reviewGoBack")}
             </button>
           </div>
         </main>
@@ -1098,6 +1129,21 @@ export default function ReviewDisplay({
 
   return (
     <>
+      {/* Math is language-neutral and must stay left-to-right even when the
+          surrounding review/paper text is RTL (Arabic). Only injected when an
+          RTL context is present, so the English/LTR path is untouched. */}
+      {(reviewDir === "rtl" || paperDir === "rtl") && (
+        <style jsx global>{`
+          [dir="rtl"] .katex,
+          [dir="rtl"] .katex-display {
+            direction: ltr;
+          }
+          [dir="rtl"] .katex-display {
+            text-align: left;
+          }
+        `}</style>
+      )}
+
       {/* ── Header ──────────────────────────────────────────── */}
       <header
         className="review-header"
@@ -1136,7 +1182,7 @@ export default function ReviewDisplay({
               color: "var(--yellow-chalk)",
             }}
           >
-            {remaining}/{parsed.detailedComments.length} remaining
+            {remaining}/{parsed.detailedComments.length}{t("reviewRemainingSuffix")}
           </span>
 
           {/* Paper toggle */}
@@ -1145,12 +1191,12 @@ export default function ReviewDisplay({
               onClick={() => setPaperPanelOpen((v) => !v)}
               style={headerBtnStyle}
             >
-              {paperPanelOpen ? "Hide Paper" : "Show Paper"}
+              {paperPanelOpen ? t("reviewHidePaper") : t("reviewShowPaper")}
             </button>
           )}
 
           <button onClick={copyLink} style={headerBtnStyle}>
-            {copied ? "Copied" : "Share"}
+            {copied ? t("reviewCopied") : t("reviewShare")}
           </button>
 
           <SubscriptionHandoffMenu
@@ -1159,6 +1205,7 @@ export default function ReviewDisplay({
             paperMarkdown={paperMarkdown}
             markdown={markdown}
             resultJson={resultJson}
+            reviewLanguageName={reviewLangName ?? undefined}
           />
 
           <DownloadMenu markdown={markdown} reviewId={reviewId} model={model} />
@@ -1176,7 +1223,7 @@ export default function ReviewDisplay({
               textDecoration: "none",
             }}
           >
-            GitHub
+            {t("reviewGithub")}
           </a>
         </div>
       </header>
@@ -1196,19 +1243,24 @@ export default function ReviewDisplay({
         {/* Paper panel + draggable divider */}
         {paperPanelOpen && paperMarkdown && (
           <>
-            <PaperPanel
-              markdown={paperMarkdown}
-              highlightQuote={highlightQuote}
-              onClose={() => setPaperPanelOpen(false)}
-              reviewId={reviewId}
-              width={`${paperWidthPct}%`}
-            />
+            {/* display:contents keeps PaperPanel as the flex item while still
+                letting dir/lang inherit to the paper content (set per the
+                paper's own language, which may differ from the review). */}
+            <div dir={paperDir} lang={paperLanguage || undefined} style={{ display: "contents" }}>
+              <PaperPanel
+                markdown={paperMarkdown}
+                highlightQuote={highlightQuote}
+                onClose={() => setPaperPanelOpen(false)}
+                reviewId={reviewId}
+                width={`${paperWidthPct}%`}
+              />
+            </div>
             <div
               className="paper-resize-handle"
               role="separator"
               aria-orientation="vertical"
-              aria-label="Drag to resize the paper panel"
-              title="Drag to resize"
+              aria-label={t("reviewResizeAriaLabel")}
+              title={t("reviewResizeTitle")}
               onMouseDown={onResizeStart}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--blue-chalk)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "var(--tray)")}
@@ -1243,6 +1295,8 @@ export default function ReviewDisplay({
         <main
           ref={mainRef}
           className="review-main"
+          dir={reviewDir}
+          lang={reviewLanguage || undefined}
           style={{
             flex: 1,
             minWidth: 0,
@@ -1261,7 +1315,7 @@ export default function ReviewDisplay({
               color: "var(--chalk-bright)",
             }}
           >
-            Review of {paperTitle || parsed.title}
+            {t("reviewOfPrefix")}{paperTitle || parsed.title}
           </h1>
 
           {/* Meta row */}
@@ -1274,22 +1328,32 @@ export default function ReviewDisplay({
             }}
           >
             {model && (
-              <MetaTag label="Model" value={formatModelName(model)} />
+              <MetaTag label={t("reviewMetaModel")} value={formatModelName(model)} />
             )}
             {parsed.metadata.date && (
-              <MetaTag label="Date" value={parsed.metadata.date} />
+              <MetaTag label={t("reviewMetaDate")} value={parsed.metadata.date} />
             )}
             {(domain || parsed.metadata.domain) && (
               <MetaTag
-                label="Domain"
+                label={t("reviewMetaDomain")}
                 value={(domain || parsed.metadata.domain).replace(/_/g, " / ")}
               />
             )}
             {durationSeconds != null && (
-              <MetaTag label="Time" value={`${durationSeconds}s`} />
+              <MetaTag label={t("reviewMetaTime")} value={`${durationSeconds}s`} />
             )}
             {costUsd != null && (
-              <MetaTag label="Cost" value={`$${Number(costUsd).toFixed(2)}`} />
+              <MetaTag label={t("reviewMetaCost")} value={`$${Number(costUsd).toFixed(2)}`} />
+            )}
+            {showLangBadge && (
+              <MetaTag
+                label={t("reviewMetaReviewLanguage")}
+                value={
+                  paperLanguageSource === "detected"
+                    ? `${reviewLangName}${t("reviewMetaAutoDetectedSuffix")}`
+                    : (reviewLangName as string)
+                }
+              />
             )}
           </div>
 
@@ -1312,7 +1376,7 @@ export default function ReviewDisplay({
                 borderBottom: "1px solid var(--tray)",
               }}
             >
-              Overall Feedback
+              {t("reviewOverallFeedbackHeading")}
             </h2>
 
             {parsed.overallFeedback.summary && (
@@ -1360,7 +1424,7 @@ export default function ReviewDisplay({
                 borderBottom: "1px solid var(--tray)",
               }}
             >
-              Detailed Comments ({parsed.detailedComments.length})
+              {t("reviewDetailedCommentsPrefix")}{parsed.detailedComments.length}{t("reviewDetailedCommentsSuffix")}
             </h2>
 
             {parsed.detailedComments.map((comment) => {
@@ -1421,7 +1485,7 @@ export default function ReviewDisplay({
                   color: "var(--dust)",
                 }}
               >
-                Generated by{" "}
+                {t("reviewGeneratedByPrefix")}
                 <a
                   href="/"
                   style={{
@@ -1432,7 +1496,7 @@ export default function ReviewDisplay({
                 >
                   &lsquo;coarse
                 </a>
-                . Of course.
+                {t("reviewGeneratedBySuffix")}
               </span>
               <button
                 onClick={copyLink}
@@ -1448,7 +1512,7 @@ export default function ReviewDisplay({
                   cursor: "pointer",
                 }}
               >
-                {copied ? "Copied" : "Share this review"}
+                {copied ? t("reviewCopied") : t("reviewShareThisReview")}
               </button>
             </div>
             <div style={{ marginTop: "1.5rem", textAlign: "right" }}>
@@ -1468,7 +1532,7 @@ export default function ReviewDisplay({
                   textUnderlineOffset: "2px",
                 }}
               >
-                Delete review
+                {t("reviewDeleteReview")}
               </button>
             </div>
           </div>
@@ -1486,6 +1550,7 @@ export default function ReviewDisplay({
           overallFeedbackText={overallFeedbackText}
           commentSeverity={structuredChatComment?.severity}
           commentConfidence={structuredChatComment?.confidence}
+          reviewLanguageName={reviewLangName ?? undefined}
           defaultModel={model || ""}
           initialMessages={chatInitialMessages}
           apiKey={orKey.apiKey}

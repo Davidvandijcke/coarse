@@ -14,6 +14,17 @@ create table reviews (
   model text,
   domain text,
   taxonomy text,
+  -- Multilingual contract (additive; populated starting with the language
+  -- rollout — see docs/MULTILINGUAL_PLAN.md). All nullable; unset = the English
+  -- default path. review_language empty = "follow detected paper_language"
+  -- (resolved in the worker). Verbatim quotes always stay in the paper's source
+  -- language regardless of these. Structured output reuses result_json (below);
+  -- there is intentionally no separate review_json column.
+  site_language text,
+  review_language text,
+  paper_language text,
+  paper_language_source text,
+  text_direction text check (text_direction in ('ltr', 'rtl')),
   result_markdown text,
   -- Structured Review JSON (Pydantic model dump): stable per-comment numbers,
   -- severity, confidence, and structured overall feedback. Powers the
@@ -67,6 +78,9 @@ alter table review_secrets enable row level security;
 
 create index idx_review_secrets_created_at on review_secrets (created_at);
 create index idx_reviews_status_created_at on reviews (status, created_at);
+create index idx_reviews_review_language on reviews (review_language);
+create index idx_reviews_paper_language on reviews (paper_language);
+create index idx_reviews_site_language on reviews (site_language);
 
 -- ============================================================================
 -- Review handoff secrets (browser proof-of-possession for follow-up routes)

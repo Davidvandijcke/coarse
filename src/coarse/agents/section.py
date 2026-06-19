@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from coarse.agents.base import ReviewAgent, truncate_section
 from coarse.prompts import (
@@ -14,6 +14,7 @@ from coarse.prompts import (
     feedback_system_prompt,
     section_user,
 )
+from coarse.textscript import is_cjk_heavy
 from coarse.types import (
     DetailedComment,
     DocumentForm,
@@ -35,12 +36,15 @@ def _is_low_value_quote(quote: str) -> bool:
     """True for a quote that should be dropped rather than anchored to a comment.
 
     Catches the two shapes that break the ``DetailedComment.quote`` contract:
-    anything under 20 characters once stripped, and a bare run of LaTeX control
-    tokens with no prose (e.g. ``\\cmidrule(lr){2-5}``, 18 chars). See
-    ``_LooseSectionComment`` for why this filtering happens here (#198).
+    too-short quotes (script-aware floor — 20 chars for Latin, 8 for CJK, matching
+    ``DetailedComment._check_quote_length`` so valid short CJK quotes survive),
+    and a bare run of LaTeX control tokens with no prose (e.g.
+    ``\\cmidrule(lr){2-5}``, 18 chars). See ``_LooseSectionComment`` for why this
+    filtering happens here (#198).
     """
     q = quote.strip()
-    return len(q) < 20 or bool(_LATEX_ONLY_QUOTE_RE.match(q))
+    minimum = 8 if is_cjk_heavy(q) else 20
+    return len(q) < minimum or bool(_LATEX_ONLY_QUOTE_RE.match(q))
 
 
 class _LooseSectionComment(DetailedComment):
@@ -65,6 +69,15 @@ class _LooseSectionComment(DetailedComment):
     model_config = ConfigDict(from_attributes=True)
 
     quote: str = Field(min_length=1, description="Verbatim quote from the paper")
+
+    @field_validator("quote")
+    @classmethod
+    def _check_quote_length(cls, v: str) -> str:
+        # Intentionally permissive (#198): overrides the strict, script-aware
+        # quote-length floor inherited from DetailedComment so the batch parses.
+        # SectionAgent.run then drops low-value quotes (via _is_low_value_quote)
+        # and re-validates the survivors as strict DetailedComment instances.
+        return v
 
 
 class _SectionComments(BaseModel):
@@ -109,6 +122,7 @@ class SectionAgent(ReviewAgent):
         abstract: str = "",
         document_form: DocumentForm = "manuscript",
         author_notes: str | None = None,
+        language: str | None = None,
     ) -> list[DetailedComment]:
         truncated = truncate_section(section)
 
@@ -116,7 +130,7 @@ class SectionAgent(ReviewAgent):
         # Empty for manuscript/preprint so the default peer-review path is
         # unchanged.
         base_system = SECTION_SYSTEM_MAP.get(focus, SECTION_SYSTEM)
-        system_prompt = feedback_system_prompt(base_system, document_form)
+        system_prompt = feedback_system_prompt(base_system, document_form, language)
         user_text = author_notes_block(author_notes) + section_user(
             paper_title,
             truncated,

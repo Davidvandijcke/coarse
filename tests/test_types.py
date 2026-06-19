@@ -8,8 +8,10 @@ from coarse.types import (
     CostEstimate,
     CostStage,
     DetailedComment,
+    LanguageContext,
     OverviewFeedback,
     OverviewIssue,
+    PaperMetadata,
     PaperStructure,
     PaperText,
     Review,
@@ -300,6 +302,54 @@ def test_detailed_comment_accepts_long_quote():
     assert len(c.quote) >= 20
 
 
+def test_detailed_comment_accepts_short_cjk_quote():
+    """A CJK quote of 8+ characters is accepted under the lower script-aware floor.
+
+    8 Han characters carry ~10-20 words of meaning, so the flat 20-char minimum
+    rejected valid short CJK quotes. The script-aware validator allows them.
+    """
+    quote = "识别条件可恢复处理效应"  # 11 CJK chars, < 20, > 8
+    assert len(quote) < 20
+    c = DetailedComment(
+        number=1,
+        title="Issue",
+        quote=quote,
+        feedback="Feedback text.",
+    )
+    assert c.quote == quote
+
+
+def test_detailed_comment_rejects_too_short_cjk_quote():
+    """A CJK quote shorter than the 8-char floor is still rejected."""
+    with pytest.raises(ValidationError):
+        DetailedComment(
+            number=1,
+            title="Issue",
+            quote="识别条件",  # 4 CJK chars, < 8
+            feedback="Feedback text.",
+        )
+
+
+def test_detailed_comment_english_floor_unchanged():
+    """English quotes keep the original 20-char minimum exactly."""
+    # 19-char English quote still rejected.
+    with pytest.raises(ValidationError):
+        DetailedComment(
+            number=1,
+            title="Issue",
+            quote="x" * 19,
+            feedback="Feedback text.",
+        )
+    # 20-char English quote accepted.
+    c = DetailedComment(
+        number=1,
+        title="Issue",
+        quote="x" * 20,
+        feedback="Feedback text.",
+    )
+    assert len(c.quote) == 20
+
+
 # --- OverviewFeedback new fields: recommendation & revision_targets ---
 
 
@@ -361,3 +411,131 @@ def test_review_roundtrip_json_with_new_fields():
     assert deserialized == review
     assert deserialized.overall_feedback.recommendation == overview.recommendation
     assert deserialized.overall_feedback.revision_targets == overview.revision_targets
+
+
+# --- LanguageContext (multilingual contract) ---
+
+
+def test_language_context_defaults_are_english_noop():
+    """An unset LanguageContext is the English default path."""
+    ctx = LanguageContext()
+    assert ctx.site_language == "en"
+    # Empty review_language means "follow the detected paper language" (resolved
+    # in the worker), NOT a hardcoded English default — this is what makes
+    # "review my Chinese paper in Chinese" the zero-config behavior.
+    assert ctx.review_language == ""
+    assert ctx.paper_language == ""
+    assert ctx.text_direction == "ltr"
+    assert ctx.paper_language_source == "default"
+
+
+def test_language_context_has_no_analysis_language():
+    """analysis_language is deferred to the contingent English-pivot design
+    (PR-G). Shipping a field with no consumer under the generation-time MVP
+    would be speculative config — guard against it reappearing."""
+    assert "analysis_language" not in LanguageContext.model_fields
+
+
+def test_language_context_round_trips_values():
+    ctx = LanguageContext(
+        site_language="fr",
+        review_language="zh-Hant",
+        paper_language="de",
+        text_direction="rtl",
+        paper_language_source="user",
+    )
+    assert ctx.model_dump() == {
+        "site_language": "fr",
+        "review_language": "zh-Hant",
+        "paper_language": "de",
+        "text_direction": "rtl",
+        "paper_language_source": "user",
+    }
+
+
+def test_language_context_rejects_bad_text_direction():
+    with pytest.raises(ValidationError):
+        LanguageContext(text_direction="sideways")  # type: ignore[arg-type]
+
+
+def test_language_context_rejects_bad_paper_language_source():
+    with pytest.raises(ValidationError):
+        LanguageContext(paper_language_source="guessed")  # type: ignore[arg-type]
+
+
+# --- PaperMetadata.language (detected source language) ---
+
+
+def test_paper_metadata_language_defaults_to_empty():
+    """The detected-language field defaults to '' so existing callers that
+    don't set it (and English/unknown papers) keep the byte-identical path."""
+    meta = PaperMetadata(title="T", domain="d", taxonomy="academic/research_paper")
+    assert meta.language == ""
+
+
+def test_paper_metadata_language_parses_supported_code():
+    """A BCP-47 code from the supported set round-trips onto the model."""
+    meta = PaperMetadata(
+        title="T",
+        domain="d",
+        taxonomy="academic/research_paper",
+        language="zh-Hans",
+    )
+    assert meta.language == "zh-Hans"
+
+
+# --- PaperStructure.paper_language ---
+
+
+def test_paper_structure_paper_language_defaults_to_empty():
+    ps = PaperStructure(
+        title="t",
+        domain="x",
+        taxonomy="y",
+        abstract="a",
+        sections=[make_section(1, SectionType.INTRODUCTION)],
+    )
+    assert ps.paper_language == ""
+
+
+def test_paper_structure_paper_language_round_trips():
+    ps = PaperStructure(
+        title="t",
+        domain="x",
+        taxonomy="y",
+        abstract="a",
+        sections=[make_section(1, SectionType.INTRODUCTION)],
+        paper_language="es",
+    )
+    assert ps.paper_language == "es"
+
+
+# --- Review.language (resolved LanguageContext) ---
+
+
+def test_review_language_defaults_to_none():
+    """A Review with no language is the English default path."""
+    review = make_review()
+    assert review.language is None
+
+
+def test_review_language_round_trips_through_json():
+    """Review.language survives model_dump_json + model_validate, both when
+    None (English) and when populated with a resolved LanguageContext."""
+    # None path
+    english = make_review()
+    assert Review.model_validate(json.loads(english.model_dump_json())).language is None
+
+    # Populated path
+    ctx = LanguageContext(
+        site_language="en",
+        review_language="es",
+        paper_language="es",
+        text_direction="ltr",
+        paper_language_source="detected",
+    )
+    spanish = make_review()
+    spanish.language = ctx
+    deserialized = Review.model_validate(json.loads(spanish.model_dump_json()))
+    assert deserialized == spanish
+    assert deserialized.language == ctx

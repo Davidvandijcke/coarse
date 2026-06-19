@@ -40,6 +40,9 @@ export interface BuildSystemPromptArgs {
   /** Reviewer's severity/confidence from the structured review, when available. */
   severity?: string | null;
   confidence?: string | null;
+  /** Human-readable review language (e.g. "Spanish"); when set, the model is
+   * asked to reply in it. Empty/unset keeps the default (English) behaviour. */
+  reviewLanguageName?: string | null;
 }
 
 /**
@@ -58,6 +61,7 @@ export function buildChatSystemPrompt({
   comment,
   severity,
   confidence,
+  reviewLanguageName,
 }: BuildSystemPromptArgs): string {
   const paperBlock = paperMarkdown?.trim()
     ? paperMarkdown.trim()
@@ -106,6 +110,9 @@ export function buildChatSystemPrompt({
     "",
     "Answer the author's questions about THIS comment.",
   );
+  if (reviewLanguageName?.trim()) {
+    lines.push("", `Respond in ${reviewLanguageName.trim()}.`);
+  }
   return lines.join("\n");
 }
 

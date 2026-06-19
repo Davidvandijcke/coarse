@@ -214,12 +214,13 @@ def _patch_llmclient(host: str, model: str | None, effort: str):
 
 def _patch_extraction(pre_extracted: Path) -> None:
     """Monkey-patch extract_file to return the pre-extracted markdown."""
+    from coarse.textscript import estimate_tokens
     from coarse.types import PaperText
 
     md_text = pre_extracted.read_text(encoding="utf-8")
     paper_text = PaperText(
         full_markdown=md_text,
-        token_estimate=len(md_text) // 4,
+        token_estimate=estimate_tokens(md_text),
         garble_ratio=0.0,
     )
 
@@ -237,6 +238,7 @@ def run_headless_review(
     model: str | None,
     effort: str,
     pre_extracted: Path | None = None,
+    language: str | None = None,
 ):
     """Run the full coarse pipeline with a headless CLI backend.
 
@@ -267,6 +269,7 @@ def run_headless_review(
         str(paper_path),
         model=f"headless-{host}",
         skip_cost_gate=True,
+        language=language,
     )
 
 
@@ -293,6 +296,11 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("COARSE_HEADLESS_EFFORT", "high"),
         choices=["low", "medium", "high", "max"],
         help="Reasoning effort (low/medium/high/max)",
+    )
+    parser.add_argument(
+        "--language",
+        default=os.environ.get("COARSE_REVIEW_LANGUAGE"),
+        help="Language for the review output (e.g. 'Spanish', 'French'); default English.",
     )
     parser.add_argument("paper_path", type=Path)
     parser.add_argument("pre_extracted_md", type=Path, nargs="?", default=None)
@@ -342,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
             effort=args.effort,
             pre_extracted=pre_extracted,
+            language=args.language,
         )
     except ImportError as exc:
         print(

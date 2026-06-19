@@ -3,11 +3,13 @@
 import { useState } from "react";
 
 import { CharcoalRule } from "@/components/charcoal";
+import { SiteLanguageProvider, useSiteLanguageContext } from "@/lib/i18n";
 
 type SetupTab = "openrouter" | "subscription";
 
 /* ── Header (matching landing page) ──────────────────────── */
 function Header() {
+  const { t } = useSiteLanguageContext();
   return (
     <header
       style={{
@@ -39,7 +41,7 @@ function Header() {
             color: "var(--dust)",
           }}
         >
-          peer review is a public good.
+          {t("headerTagline")}
         </span>
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: "1.5rem" }}>
@@ -50,7 +52,7 @@ function Header() {
             color: "var(--chalk)",
           }}
         >
-          setup
+          {t("navSetup")}
         </span>
         <a
           href="/compare"
@@ -62,7 +64,7 @@ function Header() {
             transition: "color 0.2s",
           }}
         >
-          side-by-side
+          {t("navSideBySide")}
         </a>
         <a
           href="https://github.com/Davidvandijcke/coarse"
@@ -76,7 +78,7 @@ function Header() {
             transition: "color 0.2s",
           }}
         >
-          github ↗
+          {t("navGithub")}
         </a>
       </div>
     </header>
@@ -239,6 +241,7 @@ function TabSwitcher({
   active: SetupTab;
   onChange: (tab: SetupTab) => void;
 }) {
+  const { t } = useSiteLanguageContext();
   const tabStyle = (isActive: boolean): React.CSSProperties => ({
     padding: "0.625rem 1.25rem",
     fontFamily: "var(--font-chalk)",
@@ -255,7 +258,7 @@ function TabSwitcher({
   return (
     <div
       role="tablist"
-      aria-label="Setup path"
+      aria-label={t("setupTablistAriaLabel")}
       style={{
         display: "flex",
         gap: "0.75rem",
@@ -271,7 +274,7 @@ function TabSwitcher({
         onClick={() => onChange("openrouter")}
         style={tabStyle(active === "openrouter")}
       >
-        OpenRouter key
+        {t("setupTabOpenRouter")}
       </button>
       <button
         role="tab"
@@ -280,7 +283,7 @@ function TabSwitcher({
         onClick={() => onChange("subscription")}
         style={tabStyle(active === "subscription")}
       >
-        Use my subscription
+        {t("setupTabSubscription")}
       </button>
     </div>
   );
@@ -288,6 +291,7 @@ function TabSwitcher({
 
 /* ── OpenRouter tab (direct key flow) ────────────────────── */
 function OpenRouterTab() {
+  const { t } = useSiteLanguageContext();
   return (
     <>
       <section style={{ padding: "1.5rem 0 2.5rem" }}>
@@ -302,7 +306,7 @@ function OpenRouterTab() {
             color: "var(--chalk-bright)",
           }}
         >
-          Get your OpenRouter key
+          {t("setupOrHeading")}
         </h1>
         <p
           style={{
@@ -313,8 +317,7 @@ function OpenRouterTab() {
             fontSize: "1.05rem",
           }}
         >
-          Takes about 2 minutes. You&apos;ll need a credit card for ~$1 in
-          credits to get started &mdash; you&apos;ll top up to $20 in step 2.
+          {t("setupOrIntro")}
         </p>
           <div
             style={{
@@ -334,12 +337,10 @@ function OpenRouterTab() {
                 margin: 0,
               }}
             >
-              <strong style={{ color: "var(--chalk-bright)" }}>Faster option:</strong>{" "}
-              on the main form you can click{" "}
-              <strong style={{ color: "var(--chalk-bright)" }}>&ldquo;Log in with OpenRouter&rdquo;</strong>{" "}
-              to authorize coarse and skip manual key creation. You still need an
-              OpenRouter account with credits (steps 1 and 2 below), and we still
-              recommend setting a per-key spend limit (step 4).
+              <strong style={{ color: "var(--chalk-bright)" }}>{t("setupOrFasterLabel")}</strong>
+              {t("setupOrFasterMid1")}
+              <strong style={{ color: "var(--chalk-bright)" }}>{t("setupOrFasterLogIn")}</strong>
+              {t("setupOrFasterSuffix")}
             </p>
           </div>
         </section>
@@ -348,7 +349,7 @@ function OpenRouterTab() {
 
         <div style={{ paddingTop: "2.5rem" }}>
           {/* Step 1 */}
-          <Step number={1} title="Create an account">
+          <Step number={1} title={t("setupOrStep1Title")}>
             <p
               style={{
                 fontFamily: "Georgia, serif",
@@ -358,7 +359,7 @@ function OpenRouterTab() {
                 margin: "0 0 0.75rem",
               }}
             >
-              Go to{" "}
+              {t("setupOrStep1BodyPrefix")}
               <a
                 href="https://openrouter.ai"
                 target="_blank"
@@ -370,11 +371,11 @@ function OpenRouterTab() {
                 }}
               >
                 openrouter.ai
-              </a>{" "}
-              and click &ldquo;Get API Key&rdquo; or sign up with Google / GitHub.
+              </a>
+              {t("setupOrStep1BodySuffix")}
             </p>
 
-            <ChalkSketch annotation="homepage">
+            <ChalkSketch annotation={t("setupOrStep1Annotation")}>
               <div
                 style={{
                   display: "flex",
@@ -391,7 +392,7 @@ function OpenRouterTab() {
                 >
                   openrouter.ai
                 </span>
-                <MockButton highlight>Get API Key</MockButton>
+                <MockButton highlight>{t("setupOrStep1MockButton")}</MockButton>
               </div>
               <div
                 style={{
@@ -402,13 +403,13 @@ function OpenRouterTab() {
                   lineHeight: 1.6,
                 }}
               >
-                A unified API for LLMs — one key, many models.
+                {t("setupOrStep1MockTagline")}
               </div>
             </ChalkSketch>
           </Step>
 
           {/* Step 2 */}
-          <Step number={2} title="Add credits">
+          <Step number={2} title={t("setupOrStep2Title")}>
             <p
               style={{
                 fontFamily: "Georgia, serif",
@@ -418,7 +419,7 @@ function OpenRouterTab() {
                 margin: "0 0 0.75rem",
               }}
             >
-              Navigate to{" "}
+              {t("setupOrStep2BodyPrefix")}
               <a
                 href="https://openrouter.ai/settings/credits"
                 target="_blank"
@@ -429,18 +430,13 @@ function OpenRouterTab() {
                   textUnderlineOffset: "2px",
                 }}
               >
-                Settings → Credits
+                {t("setupOrStep2BodyLink")}
               </a>
-              . Add at least $20. Cheap open-source models cost
-              ~$0.25 per review; SOTA models like Claude Opus or GPT-5 can
-              run $5&ndash;$10 on a long paper. The cost estimate shown
-              before submission is a ballpark, not a ceiling. Leave headroom
-              or the review can exhaust the key halfway and fail. Unused
-              credits don&apos;t expire.
+              {t("setupOrStep2BodySuffix")}
             </p>
 
-            <ChalkSketch annotation="credits page">
-              <MockLabel>Settings → Credits</MockLabel>
+            <ChalkSketch annotation={t("setupOrStep2Annotation")}>
+              <MockLabel>{t("setupOrStep2MockSettings")}</MockLabel>
               <div
                 style={{
                   display: "flex",
@@ -450,7 +446,7 @@ function OpenRouterTab() {
                 }}
               >
                 <div style={{ flex: 1 }}>
-                  <MockLabel>Amount</MockLabel>
+                  <MockLabel>{t("setupOrStep2MockAmount")}</MockLabel>
                   <div
                     style={{
                       borderBottom: "1px solid var(--tray)",
@@ -463,7 +459,7 @@ function OpenRouterTab() {
                     $20.00
                   </div>
                 </div>
-                <MockButton highlight>Add credits</MockButton>
+                <MockButton highlight>{t("setupOrStep2MockButton")}</MockButton>
               </div>
               <div
                 style={{
@@ -473,13 +469,13 @@ function OpenRouterTab() {
                   color: "var(--dust)",
                 }}
               >
-                Balance: $0.00
+                {t("setupOrStep2MockBalance")}
               </div>
             </ChalkSketch>
           </Step>
 
           {/* Step 3 */}
-          <Step number={3} title="Create an API key">
+          <Step number={3} title={t("setupOrStep3Title")}>
             <p
               style={{
                 fontFamily: "Georgia, serif",
@@ -489,7 +485,7 @@ function OpenRouterTab() {
                 margin: "0 0 0.75rem",
               }}
             >
-              Go to{" "}
+              {t("setupOrStep3BodyPrefix")}
               <a
                 href="https://openrouter.ai/settings/keys"
                 target="_blank"
@@ -500,9 +496,9 @@ function OpenRouterTab() {
                   textUnderlineOffset: "2px",
                 }}
               >
-                Settings → Keys
+                {t("setupOrStep3BodyLink")}
               </a>
-              , click &ldquo;Create Key&rdquo;, and name it{" "}
+              {t("setupOrStep3BodyMid")}
               <span
                 style={{
                   fontFamily: "var(--font-space-mono), monospace",
@@ -512,7 +508,7 @@ function OpenRouterTab() {
               >
                 coarse
               </span>
-              .
+              {t("setupOrStep3BodySuffix")}
             </p>
 
             <p
@@ -524,11 +520,7 @@ function OpenRouterTab() {
                 margin: "0 0 0.75rem",
               }}
             >
-              Make sure it&apos;s a regular API key — not a
-              provisioning/management key from the integrations section.
-              Provisioning keys can create and list other keys but
-              can&apos;t run inference, and coarse will fail with
-              &ldquo;User not found&rdquo; if you paste one.
+              {t("setupOrStep3Provisioning")}
             </p>
 
             <p
@@ -541,10 +533,10 @@ function OpenRouterTab() {
                 margin: "0 0 0.75rem",
               }}
             >
-              Copy the key now — you won&apos;t see it again.
+              {t("setupOrStep3CopyWarning")}
             </p>
 
-            <ChalkSketch annotation="keys page">
+            <ChalkSketch annotation={t("setupOrStep3Annotation")}>
               <div
                 style={{
                   display: "flex",
@@ -552,11 +544,11 @@ function OpenRouterTab() {
                   alignItems: "center",
                 }}
               >
-                <MockLabel>Settings → Keys</MockLabel>
-                <MockButton highlight>Create Key</MockButton>
+                <MockLabel>{t("setupOrStep3MockSettings")}</MockLabel>
+                <MockButton highlight>{t("setupOrStep3MockButton")}</MockButton>
               </div>
               <div style={{ marginTop: "1rem" }}>
-                <MockLabel>Key name</MockLabel>
+                <MockLabel>{t("setupOrStep3MockKeyName")}</MockLabel>
                 <MockInput placeholder="coarse" />
               </div>
               <div
@@ -567,7 +559,7 @@ function OpenRouterTab() {
                   borderRadius: "2px",
                 }}
               >
-                <MockLabel>Your key</MockLabel>
+                <MockLabel>{t("setupOrStep3MockYourKey")}</MockLabel>
                 <span
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
@@ -583,7 +575,7 @@ function OpenRouterTab() {
           </Step>
 
           {/* Step 4 — Per-key spend limit */}
-          <Step number={4} title="Set a spending limit on the key">
+          <Step number={4} title={t("setupOrStep4Title")}>
             <p
               style={{
                 fontFamily: "Georgia, serif",
@@ -593,7 +585,7 @@ function OpenRouterTab() {
                 margin: "0 0 0.75rem",
               }}
             >
-              On the{" "}
+              {t("setupOrStep4BodyPrefix")}
               <a
                 href="https://openrouter.ai/settings/keys"
                 target="_blank"
@@ -604,21 +596,18 @@ function OpenRouterTab() {
                   textUnderlineOffset: "2px",
                 }}
               >
-                Keys page
+                {t("setupOrStep4BodyLink")}
               </a>
-              , click the{" "}
+              {t("setupOrStep4BodyMid1")}
               <strong style={{ color: "var(--chalk-bright)" }}>&#8942;</strong>
-              {" "}menu next to your new key, choose &ldquo;Edit&rdquo;, and
-              set the credit limit to{" "}
+              {t("setupOrStep4BodyMid2")}
               <strong style={{ color: "var(--chalk-bright)" }}>
-                at least $20
+                {t("setupOrStep4BodyAtLeast")}
               </strong>
-              . The key stops working once the limit is hit, so surprise
-              charges are impossible. But set it too tight and a single
-              expensive review can exhaust it mid-run.
+              {t("setupOrStep4BodySuffix")}
             </p>
 
-            <ChalkSketch annotation="key menu">
+            <ChalkSketch annotation={t("setupOrStep4Annotation")}>
               <div
                 style={{
                   display: "flex",
@@ -666,13 +655,13 @@ function OpenRouterTab() {
                         color: "var(--yellow-chalk)",
                       }}
                     >
-                      Edit
+                      {t("setupOrStep4MockEdit")}
                     </div>
                   </div>
                 </div>
               </div>
               <div style={{ marginTop: "1rem" }}>
-                <MockLabel>Credit limit for this key</MockLabel>
+                <MockLabel>{t("setupOrStep4MockLimitLabel")}</MockLabel>
                 <div
                   style={{
                     display: "flex",
@@ -693,7 +682,7 @@ function OpenRouterTab() {
                   >
                     $20.00
                   </div>
-                  <MockButton highlight>Save</MockButton>
+                  <MockButton highlight>{t("setupOrStep4MockButton")}</MockButton>
                 </div>
               </div>
             </ChalkSketch>
@@ -717,9 +706,9 @@ function OpenRouterTab() {
                 }}
               >
                 <strong style={{ color: "var(--chalk-bright)" }}>
-                  Why this matters:
-                </strong>{" "}
-                coarse is open-source — you can{" "}
+                  {t("setupOrStep4WhyLabel")}
+                </strong>
+                {t("setupOrStep4WhyMid1")}
                 <a
                   href="https://github.com/Davidvandijcke/coarse"
                   target="_blank"
@@ -730,12 +719,9 @@ function OpenRouterTab() {
                     textUnderlineOffset: "2px",
                   }}
                 >
-                  read every line of code
+                  {t("setupOrStep4WhyLink")}
                 </a>
-                . Your key is sent directly to OpenRouter to run the review, then
-                discarded — it is never stored. But you don&apos;t have to trust
-                us: the per-key limit guarantees it can never spend more than you
-                allow, even in the worst case.
+                {t("setupOrStep4WhySuffix")}
               </p>
             </div>
 
@@ -758,20 +744,15 @@ function OpenRouterTab() {
                 }}
               >
                 <strong style={{ color: "var(--chalk-bright)" }}>
-                  A note on cost estimates:
-                </strong>{" "}
-                the estimate shown before submission is a heuristic with a
-                ~15% buffer, not a hard ceiling. Actual cost on SOTA models
-                with long papers can run up to ~2&times; the estimate once
-                proof-verification and critique rewrites kick in. If the
-                per-key cap sits right at the estimate, one tough review can
-                drain it and fail mid-run. Always leave headroom.
+                  {t("setupOrStep4CostLabel")}
+                </strong>
+                {t("setupOrStep4CostBody")}
               </p>
             </div>
           </Step>
 
           {/* Step 5 */}
-          <Step number={5} title="Paste into coarse">
+          <Step number={5} title={t("setupOrStep5Title")}>
             <p
               style={{
                 fontFamily: "Georgia, serif",
@@ -781,10 +762,10 @@ function OpenRouterTab() {
                 margin: "0 0 0.75rem",
               }}
             >
-              Come back here, paste your key into the form, and upload your PDF.
+              {t("setupOrStep5Body")}
             </p>
 
-            <ChalkSketch annotation="coarse form">
+            <ChalkSketch annotation={t("setupOrStep5Annotation")}>
               <div
                 style={{
                   display: "grid",
@@ -793,11 +774,11 @@ function OpenRouterTab() {
                 }}
               >
                 <div>
-                  <MockLabel>Email</MockLabel>
+                  <MockLabel>{t("setupOrStep5MockEmail")}</MockLabel>
                   <MockInput placeholder="you@university.edu" />
                 </div>
                 <div>
-                  <MockLabel>OpenRouter key</MockLabel>
+                  <MockLabel>{t("setupOrStep5MockKey")}</MockLabel>
                   <div
                     style={{
                       borderBottom: "1px solid var(--yellow-chalk)",
@@ -812,7 +793,7 @@ function OpenRouterTab() {
                 </div>
               </div>
               <div style={{ marginTop: "1rem" }}>
-                <MockButton highlight>Review my paper</MockButton>
+                <MockButton highlight>{t("setupOrStep5MockButton")}</MockButton>
               </div>
             </ChalkSketch>
           </Step>
@@ -830,7 +811,7 @@ function OpenRouterTab() {
             textDecoration: "none",
           }}
         >
-          Ready? Review your paper →
+          {t("setupReadyCta")}
         </a>
       </section>
     </>
@@ -839,6 +820,7 @@ function OpenRouterTab() {
 
 /* ── Subscription tab (Claude Code / Codex / Gemini CLI) ─── */
 function SubscriptionTab() {
+  const { t } = useSiteLanguageContext();
   return (
     <>
       <section style={{ padding: "1.5rem 0 2.5rem" }}>
@@ -853,7 +835,7 @@ function SubscriptionTab() {
             color: "var(--chalk-bright)",
           }}
         >
-          Use your coding-agent subscription
+          {t("setupSubHeading")}
         </h1>
         <p
           style={{
@@ -864,9 +846,7 @@ function SubscriptionTab() {
             fontSize: "1.05rem",
           }}
         >
-          For users already paying for Claude Code, Codex, or Gemini CLI.
-          The review runs on your subscription and bills there. You only
-          pay OpenRouter ~$0.15 for the OCR pass.
+          {t("setupSubIntro1")}
         </p>
         <p
           style={{
@@ -878,11 +858,7 @@ function SubscriptionTab() {
             maxWidth: "620px",
           }}
         >
-          Runs locally on your machine using your own Claude Code, Codex,
-          or Gemini CLI account. coarse.ink does not receive or store your
-          provider login. Your provider&apos;s terms and usage limits still
-          apply. coarse.ink is not affiliated with Anthropic, OpenAI, or
-          Google.
+          {t("setupSubIntro2")}
         </p>
       </section>
 
@@ -890,7 +866,7 @@ function SubscriptionTab() {
 
       <div style={{ paddingTop: "2.5rem" }}>
         {/* Step 1 */}
-        <Step number={1} title="Install a coding agent">
+        <Step number={1} title={t("setupSubStep1Title")}>
           <p
             style={{
               fontFamily: "Georgia, serif",
@@ -900,9 +876,7 @@ function SubscriptionTab() {
               margin: "0 0 0.75rem",
             }}
           >
-            Pick whichever one you pay for. Gemini CLI has a free tier if
-            you don&apos;t. Install it from the vendor&apos;s own page &mdash;
-            their docs stay up to date.
+            {t("setupSubStep1Body")}
           </p>
 
           <div
@@ -914,25 +888,25 @@ function SubscriptionTab() {
           >
             <AgentCard
               name="Claude Code"
-              price="Anthropic Pro or Max"
+              price={t("setupSubStep1ClaudePrice")}
               installHref="https://docs.claude.com/en/docs/claude-code/setup"
-              installLabel="Install instructions ↗"
+              installLabel={t("setupSubStep1InstallLabel")}
               loginCmd="claude login"
               testCmd="claude -p 'say hi'"
             />
             <AgentCard
               name="Codex"
-              price="ChatGPT Plus, Pro, or Business"
+              price={t("setupSubStep1CodexPrice")}
               installHref="https://developers.openai.com/codex/cli"
-              installLabel="Install instructions ↗"
+              installLabel={t("setupSubStep1InstallLabel")}
               loginCmd="codex login"
               testCmd="codex exec 'say hi'"
             />
             <AgentCard
               name="Gemini CLI"
-              price="Free tier works for most papers"
+              price={t("setupSubStep1GeminiPrice")}
               installHref="https://github.com/google-gemini/gemini-cli#quickstart"
-              installLabel="Install instructions ↗"
+              installLabel={t("setupSubStep1InstallLabel")}
               loginCmd="gemini"
               testCmd="gemini -p 'say hi'"
             />
@@ -947,13 +921,12 @@ function SubscriptionTab() {
               color: "var(--chalk)",
             }}
           >
-            Run the test command to verify install + login. If it prints a
-            response, you&apos;re set.
+            {t("setupSubStep1Verify")}
           </p>
         </Step>
 
         {/* Step 2 */}
-        <Step number={2} title="Put an OpenRouter key on your machine">
+        <Step number={2} title={t("setupSubStep2Title")}>
           <p
             style={{
               fontFamily: "Georgia, serif",
@@ -963,15 +936,11 @@ function SubscriptionTab() {
               margin: "0 0 0.75rem",
             }}
           >
-            coarse still needs OpenRouter for the OCR step (~$0.10 per
-            paper). Follow the{" "}
+            {t("setupSubStep2BodyPrefix")}
             <strong style={{ color: "var(--chalk-bright)" }}>
-              OpenRouter key
-            </strong>{" "}
-            tab to create an account, add $1 of credit, and set a $2
-            per-key limit. The $20 buffer from the OpenRouter-only path
-            isn&apos;t needed here because the review itself runs on
-            your coding-agent subscription.
+              {t("setupSubStep2BodyTab")}
+            </strong>
+            {t("setupSubStep2BodySuffix")}
           </p>
           <p
             style={{
@@ -982,7 +951,7 @@ function SubscriptionTab() {
               margin: 0,
             }}
           >
-            Then put the key on your own machine: run{" "}
+            {t("setupSubStep2KeyPrefix")}
             <code
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
@@ -992,7 +961,7 @@ function SubscriptionTab() {
             >
               export OPENROUTER_API_KEY=sk-or-v1-...
             </code>
-            , drop it in a{" "}
+            {t("setupSubStep2KeyMid1")}
             <code
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
@@ -1002,7 +971,7 @@ function SubscriptionTab() {
             >
               .env
             </code>
-            , or save it to{" "}
+            {t("setupSubStep2KeyMid2")}
             <code
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
@@ -1012,13 +981,12 @@ function SubscriptionTab() {
             >
               ~/.coarse/config.toml
             </code>
-            . Your CLI reads it locally when it runs the extraction;
-            coarse.ink never sees it.
+            {t("setupSubStep2KeySuffix")}
           </p>
         </Step>
 
         {/* Step 3 */}
-        <Step number={3} title="Upload your paper and pick a CLI">
+        <Step number={3} title={t("setupSubStep3Title")}>
           <p
             style={{
               fontFamily: "Georgia, serif",
@@ -1028,7 +996,7 @@ function SubscriptionTab() {
               margin: 0,
             }}
           >
-            On the{" "}
+            {t("setupSubStep3BodyPrefix")}
             <a
               href="/"
               style={{
@@ -1037,21 +1005,18 @@ function SubscriptionTab() {
                 textUnderlineOffset: "2px",
               }}
             >
-              main page
+              {t("setupSubStep3BodyLink")}
             </a>
-            , drop your PDF onto the form, then click the{" "}
+            {t("setupSubStep3BodyMid")}
             <strong style={{ color: "var(--chalk-bright)" }}>
-              Review with my subscription ▾
-            </strong>{" "}
-            dropdown and pick your CLI. coarse uploads the file, mints a
-            handoff token, and shows the prompt you&apos;ll paste in the
-            next step. You don&apos;t paste your OpenRouter key on the
-            form here; the CLI reads it from your machine (step 2).
+              {t("setupSubStep3BodyButton")}
+            </strong>
+            {t("setupSubStep3BodySuffix")}
           </p>
         </Step>
 
         {/* Step 4 */}
-        <Step number={4} title="Paste the prompt into your CLI">
+        <Step number={4} title={t("setupSubStep4Title")}>
           <p
             style={{
               fontFamily: "Georgia, serif",
@@ -1061,8 +1026,7 @@ function SubscriptionTab() {
               margin: "0 0 0.75rem",
             }}
           >
-            coarse gives you one natural-language prompt. Copy it from
-            the panel, paste it into your{" "}
+            {t("setupSubStep4BodyPrefix")}
             <code
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
@@ -1072,7 +1036,7 @@ function SubscriptionTab() {
             >
               claude -p
             </code>
-            ,{" "}
+            {t("setupSubStep4BodyMid1")}
             <code
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
@@ -1082,7 +1046,7 @@ function SubscriptionTab() {
             >
               codex exec
             </code>
-            , or{" "}
+            {t("setupSubStep4BodyMid2")}
             <code
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
@@ -1091,10 +1055,8 @@ function SubscriptionTab() {
               }}
             >
               gemini -p
-            </code>{" "}
-            session, and hit send. The agent refreshes its skill bundle,
-            runs the full coarse pipeline on its own subprocess calls,
-            and prints a{" "}
+            </code>
+            {t("setupSubStep4BodyMid3")}
             <code
               style={{
                 fontFamily: "var(--font-space-mono), monospace",
@@ -1103,9 +1065,8 @@ function SubscriptionTab() {
               }}
             >
               view:
-            </code>{" "}
-            URL when it&apos;s done. 10&ndash;25 minutes. Click the URL
-            to open the finished review on coarse.ink.
+            </code>
+            {t("setupSubStep4BodySuffix")}
           </p>
 
           <div
@@ -1127,35 +1088,24 @@ function SubscriptionTab() {
               }}
             >
               <strong style={{ color: "var(--chalk-bright)" }}>
-                If you&apos;re pasting into a coding agent
-              </strong>{" "}
-              (not a plain terminal), bump its bash-tool timeout to at
-              least 45 min before you send the prompt. Default agent
-              timeouts can be as low as 2 min, way under the 10&ndash;25
-              min review runtime.
+                {t("setupSubStep4TimeoutLabel")}
+              </strong>
+              {t("setupSubStep4TimeoutSuffix")}
             </p>
           </div>
         </Step>
 
         {/* Step 5 — Troubleshooting */}
-        <Step number={5} title="If something goes wrong">
+        <Step number={5} title={t("setupSubStep5Title")}>
           <Trouble
-            symptom="The &ldquo;Try opening Claude Code / Codex&rdquo; button does nothing."
-            fix={
-              <>
-                The button only works if you have the desktop app
-                installed. With a CLI-only install, the browser
-                can&apos;t launch a terminal for you. Copy the prompt
-                from the panel and paste it into your CLI manually.
-              </>
-            }
+            symptom={t("setupSubTrouble1Symptom")}
+            fix={t("setupSubTrouble1Fix")}
           />
           <Trouble
-            symptom="&ldquo;No such command &lsquo;install-skills&rsquo;&rdquo; inside the agent run."
+            symptom={t("setupSubTrouble2Symptom")}
             fix={
               <>
-                Safe to ignore. The skill bundle still loads directly
-                through{" "}
+                {t("setupSubTrouble2FixPrefix")}
                 <code
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
@@ -1165,15 +1115,15 @@ function SubscriptionTab() {
                 >
                   uvx --from
                 </code>
-                ; the agent will continue to the review step.
+                {t("setupSubTrouble2FixSuffix")}
               </>
             }
           />
           <Trouble
-            symptom="My Anthropic / OpenAI / Google bill went up after a review."
+            symptom={t("setupSubTrouble3Symptom")}
             fix={
               <>
-                Check for{" "}
+                {t("setupSubTrouble3FixPrefix")}
                 <code
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
@@ -1183,7 +1133,7 @@ function SubscriptionTab() {
                 >
                   ANTHROPIC_API_KEY
                 </code>
-                ,{" "}
+                {t("setupSubTrouble3FixMid1")}
                 <code
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
@@ -1193,7 +1143,7 @@ function SubscriptionTab() {
                 >
                   OPENAI_API_KEY
                 </code>
-                , or{" "}
+                {t("setupSubTrouble3FixMid2")}
                 <code
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
@@ -1202,19 +1152,16 @@ function SubscriptionTab() {
                   }}
                 >
                   GOOGLE_API_KEY
-                </code>{" "}
-                in your shell environment. If set, the host CLI bills the
-                API account instead of your subscription. v1.3.0+ strips
-                these automatically, but older versions didn&apos;t.
+                </code>
+                {t("setupSubTrouble3FixSuffix")}
               </>
             }
           />
           <Trouble
-            symptom="Fewer comments than usual (~10 instead of 15&ndash;25)."
+            symptom={t("setupSubTrouble4Symptom")}
             fix={
               <>
-                A section hit the 30-min timeout and got dropped. Rare on
-                default effort, more common with{" "}
+                {t("setupSubTrouble4FixPrefix")}
                 <code
                   style={{
                     fontFamily: "var(--font-space-mono), monospace",
@@ -1223,9 +1170,8 @@ function SubscriptionTab() {
                   }}
                 >
                   --effort max
-                </code>{" "}
-                on long papers. Re-run; drop effort one notch if it
-                happens twice.
+                </code>
+                {t("setupSubTrouble4FixSuffix")}
               </>
             }
           />
@@ -1244,7 +1190,7 @@ function SubscriptionTab() {
             textDecoration: "none",
           }}
         >
-          Ready? Review your paper →
+          {t("setupReadyCta")}
         </a>
       </section>
     </>
@@ -1267,6 +1213,7 @@ function AgentCard({
   loginCmd: string;
   testCmd: string;
 }) {
+  const { t } = useSiteLanguageContext();
   return (
     <div
       style={{
@@ -1335,11 +1282,11 @@ function AgentCard({
         }}
       >
         <div>
-          <span style={{ color: "var(--dust)" }}>login: </span>
+          <span style={{ color: "var(--dust)" }}>{t("setupSubStep1CardLogin")}</span>
           {loginCmd}
         </div>
         <div>
-          <span style={{ color: "var(--dust)" }}>test: </span>
+          <span style={{ color: "var(--dust)" }}>{t("setupSubStep1CardTest")}</span>
           {testCmd}
         </div>
       </div>
@@ -1390,6 +1337,17 @@ function Trouble({
 
 /* ── Page ──────────────────────────────────────────────────── */
 export default function SetupPage() {
+  // The site-language context must sit ABOVE every consumer, so the provider
+  // wraps the body here and the page content lives in SetupBody, whose
+  // descendants read the context (mirrors status/[id]/page.tsx's pattern).
+  return (
+    <SiteLanguageProvider>
+      <SetupBody />
+    </SiteLanguageProvider>
+  );
+}
+
+function SetupBody() {
   const [tab, setTab] = useState<SetupTab>("openrouter");
   return (
     <div style={{ background: "var(--board)", minHeight: "100vh" }}>

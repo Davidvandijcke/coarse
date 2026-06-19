@@ -7,17 +7,19 @@ Usage:
 Two modes:
 
 1. **Local mode** — ``coarse-review paper.pdf`` runs the full coarse
-   pipeline on a local file. Extraction uses the user's OpenRouter
-   key (from env, ~/.coarse/config.toml, or a .env file), review
-   reasoning uses the chosen headless CLI, output is a local markdown
-   file in ``./coarse-output/``.
+   pipeline on a local file. PDF extraction uses the user's OpenRouter
+   key (from env, ~/.coarse/config.toml, or a .env file); non-PDF
+   sources (.tex, .md, .docx, …) extract locally and need no key
+   (#186). Review reasoning uses the chosen headless CLI, output is a
+   local markdown file in ``./coarse-output/``.
 
 2. **Handoff mode** — ``coarse-review --handoff <url>`` pulls a handoff
    bundle minted by the coarse.vercel.app web form (paper download URL
    + finalize token + callback URL). Extraction still happens locally
-   (faster than waiting on the server); the final review gets POSTed
-   back to ``/api/mcp-finalize`` so the user can see it at
-   ``coarse.vercel.app/review/<paper_id>`` in the normal web UI.
+   (faster than waiting on the server, same PDF-only key rule); the
+   final review gets POSTed back to ``/api/mcp-finalize`` so the user
+   can see it at ``coarse.vercel.app/review/<paper_id>`` in the normal
+   web UI.
 """
 
 from __future__ import annotations
@@ -238,6 +240,7 @@ def _post_finalize(
     markdown: str,
     paper_markdown: str,
     host_label: str,
+    language: dict[str, str] | None = None,
 ) -> dict:
     """POST the rendered review back to coarse.vercel.app/api/mcp-finalize.
 
@@ -268,6 +271,11 @@ def _post_finalize(
         "paper_markdown": paper_markdown,
         "model": f"coarse-review-cli:{host_label}",
     }
+    # Forward the resolved review-output language so the finalize route persists
+    # the language columns (otherwise a `--language Arabic` handoff renders
+    # LTR with no badge). Empty values are skipped server-side.
+    if language:
+        payload.update({k: v for k, v in language.items() if v})
 
     last_exc: Exception | None = None
     last_status: int | None = None
@@ -506,6 +514,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Reasoning effort level (default: high)",
     )
     parser.add_argument(
+        "--language",
+        default=None,
+        help="Language for the review output (e.g. 'Spanish', 'French', "
+        "'Simplified Chinese'); default English. Quotes stay in the paper's "
+        "original language.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("coarse-output"),
@@ -718,6 +733,7 @@ def main(argv: list[str] | None = None) -> int:
                 model=model,
                 effort=effort,
                 pre_extracted=pre_extracted_path,
+                language=args.language,
             )
         except Exception as exc:
             # Scrub the exception string before printing — if any upstream
@@ -762,6 +778,19 @@ def main(argv: list[str] | None = None) -> int:
                     len(paper_markdown),
                 )
 
+                # Carry the resolved review-output language (if any) so the
+                # finalize route can persist the language columns.
+                language_fields: dict[str, str] | None = None
+                if review.language is not None:
+                    lc = review.language
+                    language_fields = {
+                        "site_language": lc.site_language,
+                        "review_language": lc.review_language,
+                        "paper_language": lc.paper_language,
+                        "text_direction": lc.text_direction,
+                        "paper_language_source": lc.paper_language_source,
+                    }
+
                 resp = _post_finalize(
                     callback_url=handoff_bundle["callback_url"],
                     finalize_token=handoff_bundle["finalize_token"],
@@ -772,6 +801,7 @@ def main(argv: list[str] | None = None) -> int:
                     markdown=md_text,
                     paper_markdown=paper_markdown,
                     host_label=host,
+                    language=language_fields,
                 )
                 review_url = resp.get("review_url", "")
                 _print_completion_footer(

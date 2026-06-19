@@ -4,7 +4,7 @@ ALL model IDs live here. Never hardcode model strings elsewhere — import from
 this module. Verify IDs against OpenRouter before changing:
     python3 ~/.claude/skills/latest-models/scripts/fetch_models.py --search=<model>
 
-Last verified: 2026-03-04
+Last verified: 2026-06-17
 """
 
 import re
@@ -14,6 +14,33 @@ DEFAULT_MODEL = "qwen/qwen3.5-plus-02-15"
 
 # Secondary reasoning model; carries its own litellm cost entry.
 KIMI_K2_5_MODEL = "moonshotai/kimi-k2.5"
+
+# OpenRouter Fusion — a multi-model deliberation meta-model (a panel of expert
+# models runs the prompt in parallel with web search, then a synthesizer
+# combines them). Available as a selectable review model. Two things make it a
+# special case:
+#
+#   1. Routing. Its canonical OpenRouter slug lives under the ``openrouter/``
+#      *vendor* namespace (``openrouter/fusion``), which collides with the
+#      ``openrouter/`` prefix litellm uses for provider routing. litellm strips
+#      the leading prefix and would POST a bare ``fusion``, which OpenRouter
+#      rejects with a 502. The slug must therefore be doubled
+#      (``openrouter/openrouter/fusion``) before it reaches litellm — see
+#      ``OPENROUTER_NAMESPACE_MODELS`` and ``_normalize_model`` in ``llm.py``.
+#
+#   2. Pricing. OpenRouter reports dynamic pricing (``-1``) for Fusion because
+#      per-request cost depends on which panel models fire and how much web
+#      search runs. The representative per-token rates below were measured from
+#      real calls on 2026-06-17 (billed input ~$5/M, output ~$25/M). They give
+#      the cost estimators a concrete, conservative number wherever OpenRouter's
+#      ``-1`` sentinel would otherwise produce a $0 or negative estimate.
+FUSION_MODEL = "openrouter/fusion"
+FUSION_INPUT_COST_PER_TOKEN = 5e-6
+FUSION_OUTPUT_COST_PER_TOKEN = 25e-6
+
+# OpenRouter meta-models whose canonical slug starts with ``openrouter/`` and so
+# must be doubled for litellm provider routing (see FUSION_MODEL note above).
+OPENROUTER_NAMESPACE_MODELS: frozenset[str] = frozenset({FUSION_MODEL})
 
 # Vision model for post-extraction QA (multimodal, spot-checks Docling output)
 # litellm uses 'gemini/' prefix for Google AI Studio (not 'google/')

@@ -1,0 +1,250 @@
+{
+  "en": [
+    {
+      "n": 1,
+      "gloss_en": "Winsorizing at the 95th percentile flattens the average quantile function, threatening Assumption L4 exactly where the significant top-decile effects are claimed.",
+      "quote": "Further, I winsorize the distribution at the 95th percentile to account for top-coding in "
+    },
+    {
+      "n": 2,
+      "gloss_en": "The two estimators share an identical limiting law, so the claimed finite-sample superiority of the Fréchet estimator is asserted but never theoretically characterized.",
+      "quote": "$\\sqrt{nh}\\left(\\hat{m}_{\\pm,\\oplus,p}-m_{\\pm}\\right)\\leadsto\\mathbb{G}_{H\\pm}(\\cdot,1),$\n"
+    },
+    {
+      "n": 3,
+      "gloss_en": "The i.i.d. assumption L1(i) is violated by repeated, serially correlated state-years in the application, and the R3D bootstrap bands are not clustered.",
+      "quote": "(i) $\\{(Y_i, T_i, X_i)\\}_{i=1}^n$ are i.i.d. copies of a random element $(Y, T, X)$ define"
+    },
+    {
+      "n": 4,
+      "gloss_en": "Assumption Q1 binds on the smallest within-group sample via the maximum, is never verified, and is plausibly violated by small CPS state-year cells.",
+      "quote": "$\\sup_{q\\in[a,b]}\\big{|}\\widehat{Q}_{Y_{i}}(q)-Q_{Y_{i}}(q)\\big{|}=O_{p}\\big{(}r_{n_{i}}\\b"
+    },
+    {
+      "n": 5,
+      "gloss_en": "Simulations fix n = n_i throughout, so they never test the small-within-group regime that the empirical-quantile theory and the application actually require.",
+      "quote": "Note: this table shows simulated acceptance probabilities for the $95\\%$ uniform confidenc"
+    },
+    {
+      "n": 6,
+      "gloss_en": "The close-election design reports no manipulation/density test, covariate balance, or placebo-cutoff checks, despite known sorting concerns and an explicit density assumption.",
+      "quote": "The identification assumption is that the outcome of interest evolves smoothly with the pa"
+    },
+    {
+      "n": 7,
+      "gloss_en": "The bandwidth rate conditions are stated in the estimation order p but the bias-correction uses a lower pilot order s, leaving the admissible-rate logic unverified.",
+      "quote": "The baseline bandwidth $h = h_n$ satisfies $h \\to 0$, $nh^2 \\to \\infty$, $nh^{2p+3} \\to 0$"
+    },
+    {
+      "n": 8,
+      "gloss_en": "The LAQTE is a difference of barycenter quantiles with no unit-level or counterfactual-distribution causal interpretation, yet is framed as the effect on the 'average unit.'",
+      "quote": "(1) $\\tau^{R3D}(q)$ $\\coloneqq E\\left[Q_{Y^{1}}(q)-Q_{Y^{0}}(q)\\mid X=0\\right]$\n$\\eqqcolon"
+    },
+    {
+      "n": 9,
+      "gloss_en": "Calling the result an 'equality-efficiency trade-off' overreaches: efficiency/output is never measured, and falling top incomes need not imply an efficiency loss.",
+      "quote": "Taken together, these results suggest a classical equality–efficiency trade–off under Demo"
+    },
+    {
+      "n": 10,
+      "gloss_en": "The 2010 end-year is a researcher degree of freedom that also maximizes significance, raising a specification-search concern not directly addressed.",
+      "quote": "The year 2010 marked a structural breakpoint in state politics (see e.g. the sharp increas"
+    },
+    {
+      "n": 11,
+      "gloss_en": "Uniform-band coverage plateaus near 94% even at n=2000 rather than converging to nominal 95%, suggesting a systematic rather than vanishing small-sample problem.",
+      "quote": "The slight undercoverage in small samples is expected insofar as the estimators are only a"
+    },
+    {
+      "n": 12,
+      "gloss_en": "The fuzzy-design 'Indefinites' set is empty as written, and the distribution-valued complier/LATE interpretation under monotonicity is not properly justified.",
+      "quote": "- Indefinites: $I=\\{\\omega:T^{1}(\\omega)=T^{0}(\\omega)\\}\\setminus\\{\\omega:T^{1}(\\omega)=T^"
+    }
+  ],
+  "es": [
+    {
+      "n": 1,
+      "gloss_en": "LAQTE is a Wasserstein barycenter difference, not a conventional QTE; inequality interpretation of the barycenter curve is not justified.",
+      "quote": "These local average quantile treatment effects are a compelling way to summarize random di"
+    },
+    {
+      "n": 2,
+      "gloss_en": "356 state-years repeat states over time, violating the i.i.d. assumption L1(i); panel dependence is ignored in inference.",
+      "quote": "I use data on gubernatorial election outcomes from Congressional Quarterly’s Voting and El"
+    },
+    {
+      "n": 3,
+      "gloss_en": "Headline top-10% income drop sits exactly in the tail distorted by 95th-percentile winsorization; result may be a top-coding artifact.",
+      "quote": "Further, I winsorize the distribution at the 95th percentile to account for top-coding in "
+    },
+    {
+      "n": 4,
+      "gloss_en": "IMSE bandwidth 0.22 on vote share is far too wide for a close-election RD (3x the scalar RD's 0.08), undermining identification.",
+      "quote": "Sample runs from 1984-2010, estimates are obtained using the second-order Fréchet estimato"
+    },
+    {
+      "n": 5,
+      "gloss_en": "The proof that the quantile-treatment cross-covariance sigma_12=0 is a vacuous algebraic cancellation; fuzzy-design covariance may be misspecified.",
+      "quote": "$=P(T=1\\mid X=x)E[Q_{Y}(q)\\mid X=x]-P(T=1\\mid X=x)E[Q_{Y}(q)\\mid X=x]$\n$+E[T\\mid X=x]E[Q_{"
+    },
+    {
+      "n": 6,
+      "gloss_en": "Fuzzy 'monotonicity' I5 forces all near-cutoff units to be compliers, far stronger than standard no-defiers; mislabeled as standard.",
+      "quote": "(1.1.3) (Monotonicity). $\\lim_{x\\to 0}P(T^{1}>T^{0}\\mid X=x)=1$ and $P(\\text{Indefinites})"
+    },
+    {
+      "n": 7,
+      "gloss_en": "Calling Q-RD 'biased and inconsistent' is a category error: it consistently estimates a different (pooled-mixture) estimand, not the barycenter.",
+      "quote": "Indeed, in what follows, the quantile RD estimator is shown to be biased and inconsistent "
+    },
+    {
+      "n": 8,
+      "gloss_en": "Hadamard derivative = identity makes Fréchet inference asymptotically identical to the pointwise estimator; the 'new Fréchet inference' claim is overstated.",
+      "quote": "$\\sqrt{nh}\\big{(}\\hat{m}_{\\oplus,\\pm,p}-m_{\\pm}\\big{)}\\to D\\Pi_{\\mathcal{Q}}[m_{\\pm}](\\mat"
+    },
+    {
+      "n": 9,
+      "gloss_en": "Q1 requires the smallest group's sample to grow faster than nh; with fixed small CPS state cells this condition is likely violated in the application.",
+      "quote": "and the following holds,\n\n$\\sqrt{nh}\\ \\max_{1\\leq i\\leq n}r_{n_{i}}\\ \\longrightarrow\\ 0.$"
+    },
+    {
+      "n": 10,
+      "gloss_en": "Matching outcomes to the governor's final tenure year (~3-year lag, state-specific offset) lets common macro shocks confound the RD; not addressed.",
+      "quote": "I combine these data with family-level income data from the UNICON extract of the March Cu"
+    },
+    {
+      "n": 11,
+      "gloss_en": "L4 (strict monotonicity, slope>=kappa>0) underpins all Fréchet asymptotics but is unverified and dubious near winsorized top quantiles where the result lives.",
+      "quote": "**L4 (Average Strict Monotonicity).** For each $x \\in \\mathcal{N} \\coloneqq (-\\epsilon, \\e"
+    },
+    {
+      "n": 12,
+      "gloss_en": "Table 2 coverage is digit-identical across Delta (possible simulation artifact) and stabilizes at 92-94% vs nominal 95%, i.e. persistent undercoverage.",
+      "quote": "| Unif. CIs | 500 | 92.56 | 92.56 | 92.56 | 500 | 92.12 | 92.12 | 92.12 |\n| | 1000 | 93.28"
+    }
+  ],
+  "zh": [
+    {
+      "n": 1,
+      "gloss_en": "The proof that the quantile-treatment covariance sigma_12 equals zero is a vacuous identity and is false for the fuzzy design, affecting F3D variance.",
+      "quote": "$=P(T=1\\mid X=x)E[Q_{Y}(q)\\mid X=x]-P(T=1\\mid X=x)E[Q_{Y}(q)\\mid X=x]$"
+    },
+    {
+      "n": 2,
+      "gloss_en": "LAQTE is a difference of Wasserstein barycenters with no unit-level causal interpretation; the 'average unit's distribution' framing presumes unjustified rank invariance.",
+      "quote": "In particular, they allow one to study what happens to the outcome distribution of the “av"
+    },
+    {
+      "n": 3,
+      "gloss_en": "Winsorizing income at the 95th percentile distorts exactly the top-decile quantiles that drive (and uniquely make significant) the headline finding.",
+      "quote": "Further, I winsorize the distribution at the 95th percentile to account for top-coding in "
+    },
+    {
+      "n": 4,
+      "gloss_en": "Repeated state-years violate the i.i.d. assumption underpinning the theory, and the multiplier bootstrap does not cluster at the state level, likely understating uncertainty.",
+      "quote": "$\\{(Y_i, T_i, X_i)\\}_{i=1}^n$ are i.i.d. copies of a random element $(Y, T, X)$ defined on"
+    },
+    {
+      "n": 5,
+      "gloss_en": "The identity-derivative argument for Fréchet inference requires strict monotonicity (L4), which plausibly fails at low income quantiles, invalidating the bottom-quantile bands.",
+      "quote": "**L4 (Average Strict Monotonicity).** For each $x \\in \\mathcal{N} \\coloneqq (-\\epsilon, \\e"
+    },
+    {
+      "n": 6,
+      "gloss_en": "Justifying a single Fréchet bandwidth via asymptotic equivalence is circular: pointwise-optimal bandwidths are quantile-specific and can differ by orders of magnitude, especially at the tails.",
+      "quote": "However, in the statistical results below, I show that both estimators converge to the sam"
+    },
+    {
+      "n": 7,
+      "gloss_en": "Calling Q-RD 'biased and inconsistent' overclaims: it is consistent for a different estimand; the issue is target mismatch, not lack of consistency.",
+      "quote": "Simulations demonstrate strong performance and reveal that standard quantile RDD is biased"
+    },
+    {
+      "n": 8,
+      "gloss_en": "The 'equality-efficiency trade-off' causal/mechanism narrative over-interprets a fragile, top-decile-only local effect with marginal p-values and no unit-level rank tracking.",
+      "quote": "Taken together, these results suggest a classical equality–efficiency trade–off under Demo"
+    },
+    {
+      "n": 9,
+      "gloss_en": "The empirical-quantile rate condition Q1 (worst within-group rate must beat sqrt(nh)) is unverified and dubious given small CPS states and slow tail convergence under winsorizing.",
+      "quote": "$\\sqrt{nh}\\ \\max_{1\\leq i\\leq n}r_{n_{i}}\\ \\longrightarrow\\ 0.$"
+    },
+    {
+      "n": 10,
+      "gloss_en": "The close-election application omits standard RD validity checks: no McCrary/density manipulation test, no covariate-balance/continuity, no placebo cutoffs.",
+      "quote": "The identification assumption is that the outcome of interest evolves smoothly with the pa"
+    },
+    {
+      "n": 11,
+      "gloss_en": "Table 2 needs explanation: byte-identical coverage entries across effect sizes and persistent systematic undercoverage at n=2000 warrant clarification and larger-n checks.",
+      "quote": "| Homogen. | 500 | 92.64 | 92.64 | 92.64 | 500 | 92.52 | 92.52 | 92.52 |"
+    },
+    {
+      "n": 12,
+      "gloss_en": "The fuzzy-design 'Indefinites' set is defined as an empty/self-contradictory set, undermining the rigor of the complier-LAQTE definition and the fuzzy identification proof.",
+      "quote": "- Indefinites: $I=\\{\\omega:T^{1}(\\omega)=T^{0}(\\omega)\\}\\setminus\\{\\omega:T^{1}(\\omega)=T^"
+    }
+  ],
+  "ar": [
+    {
+      "n": 1,
+      "gloss_en": "The proof that cross-covariance sigma_12 = 0 is invalid for the fuzzy design; it omits the joint moment E[Q_Y(q)T|x], so the fuzzy-Wald variance is wrong.",
+      "quote": "where the second equality follows from the law of total expectation. The variance term $\\s"
+    },
+    {
+      "n": 2,
+      "gloss_en": "Theorem 4 makes Frechet and unprojected estimators asymptotically identical, contradicting repeated 'superior' claims; projection yields no first-order gain.",
+      "quote": "$\\sqrt{nh}\\left(\\hat{m}_{\\pm,\\oplus,p}-m_{\\pm}\\right)\\leadsto\\mathbb{G}_{H\\pm}(\\cdot,1),$ "
+    },
+    {
+      "n": 3,
+      "gloss_en": "Table 2 coverage/homogeneity acceptance is byte-identical across all Delta values within each n, statistically implausible and suggesting a tabulation/coding bug.",
+      "quote": "| Unif. CIs | 500 | 92.56 | 92.56 | 92.56 | 500 | 92.12 | 92.12 | 92.12 |"
+    },
+    {
+      "n": 4,
+      "gloss_en": "Winsorizing at the 95th percentile directly contaminates the top-decile (85-95) quantiles that carry the paper's headline equality-efficiency result.",
+      "quote": "Further, I winsorize the distribution at the 95th percentile to account for top-coding in "
+    },
+    {
+      "n": 5,
+      "gloss_en": "The cross-unit i.i.d. assumption is violated in the application: 356 state-years from ~50 states implies serial/spatial correlation that biases standard errors downward.",
+      "quote": "(i) $\\{(Y_i, T_i, X_i)\\}_{i=1}^n$ are i.i.d. copies of a random element $(Y, T, X)$ define"
+    },
+    {
+      "n": 6,
+      "gloss_en": "Assumption Q1 requires the worst within-group quantile rate (max over i) to vanish faster than sqrt(nh); small CPS states likely violate this, unverified.",
+      "quote": "This is a light assumption in the sense that, as long as the within-group rate is of a sim"
+    },
+    {
+      "n": 7,
+      "gloss_en": "The fuzzy monotonicity assumption P(T1>T0)=1 is far stronger than standard LATE monotonicity and the 'Indefinites' set definition is malformed (empty).",
+      "quote": "(1.1.3) (Monotonicity). $\\lim_{x\\to 0}P(T^{1}>T^{0}\\mid X=x)=1$ and $P(\\text{Indefinites})"
+    },
+    {
+      "n": 8,
+      "gloss_en": "Using a lower-order bandwidth with a higher-order estimator does not reproduce CCT robust bias correction's variance adjustment, risking CI undercoverage.",
+      "quote": "As shown in *Calonico et al. (2014)*, this approach is equivalent to estimating an $s$-th "
+    },
+    {
+      "n": 9,
+      "gloss_en": "The LAQTE is an average of group-level quantile functions, not an individual or representative-distribution quantile effect; the equality-efficiency interpretation overreaches.",
+      "quote": "These local average quantile treatment effects are a compelling way to summarize random di"
+    },
+    {
+      "n": 10,
+      "gloss_en": "Lemma 2's 'no-regret in all L_p including L_infinity' does not follow generically from an L^2 projection and the per-x indexing is a notational error.",
+      "quote": "$\\left\\|\\hat{Q}^{*}-Q_{0}\\right\\|_{L_{p}}\\leq\\left\\|\\hat{Q}-Q_{0}\\right\\|_{L_{p}}\\quad\\tex"
+    },
+    {
+      "n": 11,
+      "gloss_en": "The Proposition A-3 derivation equates an L2-squared distance to an un-squared W_2 distance and has sign errors, leaving the core Frechet equivalence unproven as written.",
+      "quote": "$=\\frac{1}{n}\\sum_{i=1}^{n}s^{(p)}_{+,in}(h)d_{L^{2}}(Q_{Y_{i}},Q_{\\omega})^{2}$ $=\\frac{1"
+    },
+    {
+      "n": 12,
+      "gloss_en": "Calling the DGP1 treatment effect 'closed-form N(Delta,2)' conflates a constant scalar effect tau(q)=Delta with a distribution; the variance '2' is unexplained.",
+      "quote": "For the first DGP, the true treatment effects have the closed-form solution $N(\\Delta,2)$,"
+    }
+  ]
+}

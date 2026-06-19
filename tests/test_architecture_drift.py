@@ -17,7 +17,9 @@ AGENT_DENY = {"pipeline", "cli", "synthesis", "extraction", "extraction_qa"}
 # importing `coarse.pipeline` directly. Treat it like cli.py for the
 # purposes of this whitelist.
 PIPELINE_ALLOW = {"cli", "cli_review", "headless_review", "__init__", "__main__"}
-TYPES_ALLOW = {"models"}
+# types may also import textscript — a dependency-free leaf util (CJK/token
+# heuristics) used by DetailedComment's script-aware quote-length validator.
+TYPES_ALLOW = {"models", "textscript"}
 PROMPTS_ALLOW = {"models", "types"}
 MAX_SOURCE_LINES = 800
 # `llm` carries the full structured-output + cost-tracking + auth stack

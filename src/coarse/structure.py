@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 
+from coarse.languages import coerce_detected_code
 from coarse.llm import LLMClient
 from coarse.prompts import (
     MATH_DETECTION_SYSTEM,
@@ -28,8 +29,17 @@ from coarse.types import (
 
 logger = logging.getLogger(__name__)
 
-# Map heading title keywords to SectionType
-_TYPE_KEYWORDS: dict[str, SectionType] = {
+# Map heading title keywords to SectionType.
+#
+# English keywords come FIRST and are matched before any non-English term
+# (see _classify_section_type — first substring match wins). This guarantees
+# English byte-stability: an English heading either matches an English keyword
+# here (and returns before any non-English term is consulted) or falls through
+# to OTHER. The only way a non-English keyword could change an English
+# heading's type is if it were a substring of that heading, so every
+# non-English term in _NON_ENGLISH_TYPE_KEYWORDS below is chosen to avoid
+# appearing inside common English academic headings.
+_ENGLISH_TYPE_KEYWORDS: dict[str, SectionType] = {
     "abstract": SectionType.ABSTRACT,
     "introduction": SectionType.INTRODUCTION,
     "related work": SectionType.RELATED_WORK,
@@ -55,6 +65,171 @@ _TYPE_KEYWORDS: dict[str, SectionType] = {
     "supplementary": SectionType.APPENDIX,
     "reference": SectionType.REFERENCES,
     "bibliography": SectionType.REFERENCES,
+}
+
+# Non-English heading terms for the supported languages: Spanish (es),
+# French (fr), German (de), Dutch (nl), Portuguese (pt), Italian (it),
+# Simplified/Traditional Chinese (zh), Japanese (ja), Korean (ko),
+# Arabic (ar). Terms are stored lowercased (the title is lowercased before
+# matching) and include accented forms where they occur.
+#
+# Byte-stability rule: no term here may be a substring of a common English
+# academic heading. Notably, terms like German "modell"/"daten" or French
+# "résultats" do not appear inside English headings; CJK/Arabic terms use
+# distinct Unicode and cannot collide with Latin headings at all.
+_NON_ENGLISH_TYPE_KEYWORDS: dict[str, SectionType] = {
+    # --- Abstract ---
+    "resumen": SectionType.ABSTRACT,  # es
+    "résumé": SectionType.ABSTRACT,  # fr (accented)
+    "resumé": SectionType.ABSTRACT,  # fr (single-accent variant)
+    "zusammenfassung": SectionType.ABSTRACT,  # de
+    "samenvatting": SectionType.ABSTRACT,  # nl
+    "resumo": SectionType.ABSTRACT,  # pt
+    "riassunto": SectionType.ABSTRACT,  # it
+    "sommario": SectionType.ABSTRACT,  # it (alt)
+    "摘要": SectionType.ABSTRACT,  # zh
+    "要旨": SectionType.ABSTRACT,  # ja
+    "概要": SectionType.ABSTRACT,  # ja (alt)
+    "초록": SectionType.ABSTRACT,  # ko
+    "요약": SectionType.ABSTRACT,  # ko (alt)
+    "الملخص": SectionType.ABSTRACT,  # ar
+    "ملخص": SectionType.ABSTRACT,  # ar (no article)
+    # --- Introduction ---
+    "introducción": SectionType.INTRODUCTION,  # es
+    "introduction": SectionType.INTRODUCTION,  # fr (also English, harmless dup)
+    "einleitung": SectionType.INTRODUCTION,  # de
+    "einführung": SectionType.INTRODUCTION,  # de (alt)
+    "inleiding": SectionType.INTRODUCTION,  # nl
+    "introdução": SectionType.INTRODUCTION,  # pt
+    "introduzione": SectionType.INTRODUCTION,  # it
+    "引言": SectionType.INTRODUCTION,  # zh
+    "介绍": SectionType.INTRODUCTION,  # zh (alt)
+    "緒論": SectionType.INTRODUCTION,  # zh (traditional, alt)
+    "序論": SectionType.INTRODUCTION,  # ja
+    "はじめに": SectionType.INTRODUCTION,  # ja (kana)
+    "序説": SectionType.INTRODUCTION,  # ja (alt)
+    "서론": SectionType.INTRODUCTION,  # ko
+    "مقدمة": SectionType.INTRODUCTION,  # ar
+    "المقدمة": SectionType.INTRODUCTION,  # ar (with article)
+    # --- Related work / literature ---
+    "trabajo relacionado": SectionType.RELATED_WORK,  # es
+    "trabajos relacionados": SectionType.RELATED_WORK,  # es (plural)
+    "travaux connexes": SectionType.RELATED_WORK,  # fr
+    "état de l'art": SectionType.RELATED_WORK,  # fr
+    "verwandte arbeiten": SectionType.RELATED_WORK,  # de
+    "stand der forschung": SectionType.RELATED_WORK,  # de
+    "gerelateerd werk": SectionType.RELATED_WORK,  # nl
+    "trabalho relacionado": SectionType.RELATED_WORK,  # pt
+    "trabalhos relacionados": SectionType.RELATED_WORK,  # pt (plural)
+    "lavori correlati": SectionType.RELATED_WORK,  # it
+    "相关工作": SectionType.RELATED_WORK,  # zh
+    "相關工作": SectionType.RELATED_WORK,  # zh (traditional)
+    "関連研究": SectionType.RELATED_WORK,  # ja
+    "관련 연구": SectionType.RELATED_WORK,  # ko
+    "관련연구": SectionType.RELATED_WORK,  # ko (no space)
+    "الأعمال ذات الصلة": SectionType.RELATED_WORK,  # ar
+    # --- Methodology ---
+    "métodos": SectionType.METHODOLOGY,  # es / pt
+    "metodología": SectionType.METHODOLOGY,  # es
+    "metodologia": SectionType.METHODOLOGY,  # pt / it
+    "méthodes": SectionType.METHODOLOGY,  # fr
+    "méthodologie": SectionType.METHODOLOGY,  # fr
+    "methoden": SectionType.METHODOLOGY,  # de / nl
+    "methodik": SectionType.METHODOLOGY,  # de
+    "methodologie": SectionType.METHODOLOGY,  # de / nl
+    "metodi": SectionType.METHODOLOGY,  # it
+    "modell": SectionType.METHODOLOGY,  # de (model)
+    "方法": SectionType.METHODOLOGY,  # zh / ja
+    "方法论": SectionType.METHODOLOGY,  # zh
+    "手法": SectionType.METHODOLOGY,  # ja
+    "방법": SectionType.METHODOLOGY,  # ko
+    "방법론": SectionType.METHODOLOGY,  # ko
+    "الطرق": SectionType.METHODOLOGY,  # ar
+    "المنهجية": SectionType.METHODOLOGY,  # ar
+    "طريقة": SectionType.METHODOLOGY,  # ar (alt)
+    # --- Results ---
+    "resultados": SectionType.RESULTS,  # es / pt
+    "résultats": SectionType.RESULTS,  # fr
+    "ergebnisse": SectionType.RESULTS,  # de
+    "resultaten": SectionType.RESULTS,  # nl
+    "risultati": SectionType.RESULTS,  # it
+    "结果": SectionType.RESULTS,  # zh
+    "結果": SectionType.RESULTS,  # zh (traditional) / ja
+    "결과": SectionType.RESULTS,  # ko
+    "النتائج": SectionType.RESULTS,  # ar
+    "نتائج": SectionType.RESULTS,  # ar (no article)
+    # --- Discussion ---
+    "discusión": SectionType.DISCUSSION,  # es
+    "diskussion": SectionType.DISCUSSION,  # de
+    "discussie": SectionType.DISCUSSION,  # nl
+    "discussão": SectionType.DISCUSSION,  # pt
+    "discussione": SectionType.DISCUSSION,  # it
+    "讨论": SectionType.DISCUSSION,  # zh
+    "討論": SectionType.DISCUSSION,  # zh (traditional)
+    "考察": SectionType.DISCUSSION,  # ja
+    "논의": SectionType.DISCUSSION,  # ko
+    "고찰": SectionType.DISCUSSION,  # ko (alt)
+    "المناقشة": SectionType.DISCUSSION,  # ar
+    "نقاش": SectionType.DISCUSSION,  # ar (alt)
+    # --- Conclusion ---
+    "conclusión": SectionType.CONCLUSION,  # es
+    "conclusiones": SectionType.CONCLUSION,  # es (plural)
+    "schlussfolgerung": SectionType.CONCLUSION,  # de
+    "fazit": SectionType.CONCLUSION,  # de (alt)
+    "conclusie": SectionType.CONCLUSION,  # nl
+    "conclusão": SectionType.CONCLUSION,  # pt
+    "conclusões": SectionType.CONCLUSION,  # pt (plural)
+    "conclusione": SectionType.CONCLUSION,  # it
+    "conclusioni": SectionType.CONCLUSION,  # it (plural)
+    "结论": SectionType.CONCLUSION,  # zh
+    "結論": SectionType.CONCLUSION,  # zh (traditional) / ja
+    "おわりに": SectionType.CONCLUSION,  # ja (kana)
+    "まとめ": SectionType.CONCLUSION,  # ja (kana, common "summary / wrap-up")
+    "결론": SectionType.CONCLUSION,  # ko
+    "الخاتمة": SectionType.CONCLUSION,  # ar
+    "خاتمة": SectionType.CONCLUSION,  # ar (no article)
+    # --- References / bibliography ---
+    "referencias": SectionType.REFERENCES,  # es
+    "références": SectionType.REFERENCES,  # fr
+    "bibliographie": SectionType.REFERENCES,  # fr / de
+    "literaturverzeichnis": SectionType.REFERENCES,  # de
+    "literatur": SectionType.REFERENCES,  # de
+    "referenzen": SectionType.REFERENCES,  # de
+    "referenties": SectionType.REFERENCES,  # nl
+    "referências": SectionType.REFERENCES,  # pt
+    "riferimenti": SectionType.REFERENCES,  # it
+    "bibliografia": SectionType.REFERENCES,  # it / pt
+    "bibliografía": SectionType.REFERENCES,  # es (accented)
+    "quellen": SectionType.REFERENCES,  # de
+    "quellenverzeichnis": SectionType.REFERENCES,  # de
+    "参考文献": SectionType.REFERENCES,  # zh / ja
+    "參考文獻": SectionType.REFERENCES,  # zh (traditional)
+    "引用文献": SectionType.REFERENCES,  # ja (alt)
+    "참고문헌": SectionType.REFERENCES,  # ko
+    "참고 문헌": SectionType.REFERENCES,  # ko (spaced)
+    "المراجع": SectionType.REFERENCES,  # ar
+    "مراجع": SectionType.REFERENCES,  # ar (no article)
+    # --- Appendix ---
+    "apéndice": SectionType.APPENDIX,  # es
+    "anexo": SectionType.APPENDIX,  # es / pt
+    "annexe": SectionType.APPENDIX,  # fr
+    "anhang": SectionType.APPENDIX,  # de
+    "bijlage": SectionType.APPENDIX,  # nl
+    "apêndice": SectionType.APPENDIX,  # pt
+    "appendice": SectionType.APPENDIX,  # it / fr
+    "附录": SectionType.APPENDIX,  # zh
+    "附錄": SectionType.APPENDIX,  # zh (traditional)
+    "付録": SectionType.APPENDIX,  # ja
+    "부록": SectionType.APPENDIX,  # ko
+    "الملحق": SectionType.APPENDIX,  # ar
+    "ملحق": SectionType.APPENDIX,  # ar (no article)
+}
+
+# Combined lookup: English terms first so they win on any collision, keeping
+# English heading classification byte-for-byte stable.
+_TYPE_KEYWORDS: dict[str, SectionType] = {
+    **_ENGLISH_TYPE_KEYWORDS,
+    **_NON_ENGLISH_TYPE_KEYWORDS,
 }
 
 # Regex for markdown headings: # through ####
@@ -144,6 +319,12 @@ def analyze_structure(paper_text: PaperText, client: LLMClient) -> PaperStructur
     # LLM-based math section detection
     sections = _detect_math_sections(sections, client)
 
+    # Detected paper language: best-effort map the LLM's BCP-47 code to a
+    # supported review language (drops region/variant subtags — pt-BR -> pt,
+    # zh-Hant-HK -> zh-Hant), falling back to "" (the English/unknown default
+    # path that keeps output byte-identical).
+    paper_language = coerce_detected_code(metadata.language)
+
     return PaperStructure(
         title=title,
         domain=metadata.domain,
@@ -151,6 +332,7 @@ def analyze_structure(paper_text: PaperText, client: LLMClient) -> PaperStructur
         abstract=abstract,
         sections=sections,
         document_form=metadata.document_form,
+        paper_language=paper_language,
     )
 
 
@@ -323,12 +505,14 @@ def _get_metadata(
         {"role": "user", "content": metadata_user(first_page, abstract[:1000], headings_str)},
     ]
     try:
-        # 512 leaves headroom for a long title + subtitle plus the other
-        # four fields under instructor's JSON envelope. 384 was tight when
+        # 640 leaves headroom for a long title + subtitle plus the other
+        # fields under instructor's JSON envelope. 384 was tight when
         # ML/bio titles run 200+ chars before domain/taxonomy/document_form
         # land; hitting finish_reason=length here drops us into the fallback
-        # and silently loses the classification.
-        return client.complete(messages, PaperMetadata, max_tokens=512, temperature=0.1)
+        # and silently loses the classification. Bumped 512 -> 640 (+128) when
+        # the language field was added so one more short field can't truncate
+        # classification on a long-title real paper.
+        return client.complete(messages, PaperMetadata, max_tokens=640, temperature=0.1)
     except Exception:
         # Fall back to "draft", NOT "manuscript". The whole point of this
         # feature is that strict peer-review on non-manuscripts produces

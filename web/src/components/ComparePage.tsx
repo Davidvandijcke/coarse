@@ -8,14 +8,15 @@ import rehypeKatex from "rehype-katex";
 import type { PaperId, ModelId, ComparisonId, PaperData } from "@/data/compare-types";
 import { MODEL_LABELS, COMPARISON_LABELS, COMPARISON_URLS } from "@/data/compare-types";
 import type { Components } from "react-markdown";
+import { SiteLanguageProvider, useSiteLanguageContext, type MessageKey } from "@/lib/i18n";
 
 const katexOptions = { strict: false, throwOnError: false };
 
 class PanelErrorBoundary extends React.Component<
-  { children: React.ReactNode },
+  { children: React.ReactNode; message: string },
   { hasError: boolean }
 > {
-  constructor(props: { children: React.ReactNode }) {
+  constructor(props: { children: React.ReactNode; message: string }) {
     super(props);
     this.state = { hasError: false };
   }
@@ -26,7 +27,7 @@ class PanelErrorBoundary extends React.Component<
     if (this.state.hasError) {
       return (
         <div style={{ padding: "2rem", color: "var(--dust)", fontFamily: "var(--font-chalk)", fontSize: "1.1rem" }}>
-          Couldn&apos;t render this one. Try another model or comparison.
+          {this.props.message}
         </div>
       );
     }
@@ -34,11 +35,11 @@ class PanelErrorBoundary extends React.Component<
   }
 }
 
-const PAPER_LABELS: Record<PaperId, string> = {
-  cortical_circuits: "Cortical Circuits",
-  coset_codes: "Coset Codes",
-  population_genetics: "Population Genetics",
-  targeting_interventions: "Targeting Interventions",
+const PAPER_LABEL_KEYS: Record<PaperId, MessageKey> = {
+  cortical_circuits: "comparePaperCorticalCircuits",
+  coset_codes: "comparePaperCosetCodes",
+  population_genetics: "comparePaperPopulationGenetics",
+  targeting_interventions: "comparePaperTargetingInterventions",
 };
 
 const OVERVIEW_MODEL_ORDER = ["gpt5mini", "gpt54", "claude", "kimi"] as const;
@@ -159,6 +160,7 @@ function parseOverallScore(score: string): number | null {
 }
 
 function ScoresOverviewTable({ papers }: { papers: Record<PaperId, PaperData> }) {
+  const { t } = useSiteLanguageContext();
   const [open, setOpen] = useState(false);
   const rows = OVERVIEW_PAPER_ORDER.flatMap((paperId) => {
     const paper = papers[paperId];
@@ -231,19 +233,19 @@ function ScoresOverviewTable({ papers }: { papers: Record<PaperId, PaperData> })
           textUnderlineOffset: "2px",
         }}
       >
-        {open ? "Hide" : "Show"} all scores across papers {open ? "▴" : "▾"}
+        {open ? t("compareScoresHide") : t("compareScoresShow")}{t("compareScoresToggleSuffix")}{open ? "▴" : "▾"}
       </button>
       {open && (
         <div style={{ marginTop: "0.5rem", marginBottom: "0.25rem", overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "520px" }}>
             <thead>
               <tr>
-                <th style={{ ...headerStyle, textAlign: "left" }}>Paper</th>
-                <th style={{ ...headerStyle, textAlign: "left" }}>Reference</th>
-                <th style={headerStyle}>GPT-5 Mini</th>
-                <th style={headerStyle}>GPT-5.4</th>
-                <th style={headerStyle}>Sonnet 4.6</th>
-                <th style={headerStyle}>Kimi K2.5</th>
+                <th style={{ ...headerStyle, textAlign: "left" }}>{t("compareScoresColPaper")}</th>
+                <th style={{ ...headerStyle, textAlign: "left" }}>{t("compareScoresColReference")}</th>
+                <th style={headerStyle}>{t("compareScoresColGpt5Mini")}</th>
+                <th style={headerStyle}>{t("compareScoresColGpt54")}</th>
+                <th style={headerStyle}>{t("compareScoresColSonnet")}</th>
+                <th style={headerStyle}>{t("compareScoresColKimi")}</th>
               </tr>
             </thead>
             <tbody>
@@ -297,7 +299,7 @@ function ScoresOverviewTable({ papers }: { papers: Record<PaperId, PaperData> })
               fontStyle: "italic",
             }}
           >
-            Evaluated by Gemini 3.1 Pro with PDF multimodal input. 5.0/5 = matches reference quality. 5.5+/5 = exceeds it.
+            {t("compareScoresFootnote")}
           </p>
         </div>
       )}
@@ -306,6 +308,7 @@ function ScoresOverviewTable({ papers }: { papers: Record<PaperId, PaperData> })
 }
 
 function JudgePromptCollapsible() {
+  const { t } = useSiteLanguageContext();
   const [open, setOpen] = useState(false);
   const preStyle: CSSProperties = {
     fontFamily: "var(--font-space-mono), monospace",
@@ -339,19 +342,19 @@ function JudgePromptCollapsible() {
           textUnderlineOffset: "2px",
         }}
       >
-        {open ? "Hide" : "Show"} judge prompt sent to Gemini 3.1 Pro {open ? "▴" : "▾"}
+        {open ? t("compareJudgeHide") : t("compareJudgeShow")}{t("compareJudgeToggleSuffix")}{open ? "▴" : "▾"}
       </button>
       {open && (
         <div style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
           <p style={{ fontFamily: "var(--font-chalk)", fontSize: "1rem", color: "var(--chalk)", lineHeight: 1.6, margin: "0 0 0.75rem", maxWidth: "640px" }}>
-            To mitigate known LLM-as-judge biases, the judge is run twice per evaluation with the two reviews swapped in presentation order, and scores are averaged across both orderings. This counteracts positional bias, where judges systematically favor whichever review appears first. The prompt also includes specific instructions to counteract verbosity bias (not rewarding length over substance), confidence bias (not rewarding assertive language over correct hedging), authority bias (not rewarding jargon or citation count over accuracy), and leniency bias (using the full 1-6 scoring range rather than clustering in the middle). Reviews are labeled neutrally as {'"'}Review A{'"'} and {'"'}Review B{'"'} rather than {'"'}reference{'"'} and {'"'}generated{'"'} to prevent provenance-based scoring.
+            {t("compareJudgeExplain")}
           </p>
           <p style={{ fontFamily: "var(--font-chalk)", fontSize: "1rem", color: "var(--dust)", margin: "0 0 0.25rem" }}>
-            System prompt
+            {t("compareJudgeSystemPromptLabel")}
           </p>
           <pre style={preStyle}>{JUDGE_SYSTEM_PROMPT}</pre>
           <p style={{ fontFamily: "var(--font-chalk)", fontSize: "1rem", color: "var(--dust)", margin: "0.75rem 0 0.25rem" }}>
-            User prompt (paper + reviews injected at runtime)
+            {t("compareJudgeUserPromptLabel")}
           </p>
           <pre style={preStyle}>{JUDGE_USER_TEMPLATE}</pre>
         </div>
@@ -362,6 +365,18 @@ function JudgePromptCollapsible() {
 
 /* ── Main component ─────────────────────────────────────────── */
 export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) {
+  // The site-language context must sit ABOVE every consumer, so the provider
+  // wraps the body here and the page content lives in ComparePageBody, whose
+  // descendants read the context (mirrors status/[id]/page.tsx's pattern).
+  return (
+    <SiteLanguageProvider>
+      <ComparePageBody papers={papers} />
+    </SiteLanguageProvider>
+  );
+}
+
+function ComparePageBody({ papers }: { papers: Record<PaperId, PaperData> }) {
+  const { t } = useSiteLanguageContext();
   const [paperId, setPaperId] = useState<PaperId>("targeting_interventions");
   const [modelId, setModelId] = useState<ModelId>("claude");
   const [comparisonId, setComparisonId] = useState<ComparisonId>("refine");
@@ -433,7 +448,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
               transition: "color 0.2s",
             }}
           >
-            setup
+            {t("navSetup")}
           </a>
           <span
             style={{
@@ -442,7 +457,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
               color: "var(--chalk)",
             }}
           >
-            side-by-side
+            {t("navSideBySide")}
           </span>
           <a
             href="https://github.com/Davidvandijcke/coarse"
@@ -456,7 +471,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
               transition: "color 0.2s",
             }}
           >
-            github ↗
+            {t("navGithub")}
           </a>
         </div>
       </header>
@@ -478,7 +493,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
                 if (!papers[pid].models[modelId]) setModelId("claude");
               }}
             >
-              {PAPER_LABELS[pid]}
+              {t(PAPER_LABEL_KEYS[pid])}
             </button>
           ))}
         </div>
@@ -503,7 +518,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
                 margin: "0 0 0.125rem",
               }}
             >
-              {MODEL_LABELS[effectiveModelId]} vs <a href={COMPARISON_URLS[comparisonId]} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "underline", textUnderlineOffset: "2px" }}>{COMPARISON_LABELS[comparisonId]}</a>
+              {MODEL_LABELS[effectiveModelId]}{t("compareVsMid")}<a href={COMPARISON_URLS[comparisonId]} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "underline", textUnderlineOffset: "2px" }}>{COMPARISON_LABELS[comparisonId]}</a>
             </p>
             <span
               style={{
@@ -515,7 +530,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
               }}
             >
               {activeScores.overall.replace(/\/[\d.]+$/, "")}
-              <span style={{ fontSize: "1.25rem", fontWeight: 400, color: "var(--dust)" }}>/5</span>
+              <span style={{ fontSize: "1.25rem", fontWeight: 400, color: "var(--dust)" }}>{t("compareScoreOutOf")}</span>
             </span>
           </div>
 
@@ -534,13 +549,13 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
             </p>
             <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
               {([
-                ["Coverage", activeScores.coverage],
-                ["Specificity", activeScores.specificity],
-                ["Depth", activeScores.depth],
-              ] as const).map(([label, val]) => (
-                <span key={label} style={{ fontSize: "0.92rem" }}>
+                ["compareMetricCoverage", activeScores.coverage],
+                ["compareMetricSpecificity", activeScores.specificity],
+                ["compareMetricDepth", activeScores.depth],
+              ] as const).map(([labelKey, val]) => (
+                <span key={labelKey} style={{ fontSize: "0.92rem" }}>
                   <span style={{ fontFamily: "var(--font-chalk)", color: "var(--dust)" }}>
-                    {label}
+                    {t(labelKey)}
                   </span>{" "}
                   <span style={{ fontFamily: "var(--font-chalk)", color: "var(--chalk-bright)", fontWeight: 600 }}>
                     {val}
@@ -565,15 +580,18 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
           alignItems: "baseline",
         }}
       >
-        <span style={{ fontFamily: "var(--font-chalk)", fontSize: "1.05rem", color: "var(--dust)" }}>Jump to</span>
-        {["Overall Feedback", "Detailed Comments"].map((section) => (
+        <span style={{ fontFamily: "var(--font-chalk)", fontSize: "1.05rem", color: "var(--dust)" }}>{t("compareJumpTo")}</span>
+        {([
+          ["Overall Feedback", "compareSectionOverallFeedback"],
+          ["Detailed Comments", "compareSectionDetailedComments"],
+        ] as const).map(([section, labelKey]) => (
           <button
             key={section}
             className="chalk-tab"
             style={{ fontSize: "0.9rem" }}
             onClick={() => scrollBothTo(section)}
           >
-            {section}
+            {t(labelKey)}
           </button>
         ))}
       </div>
@@ -625,7 +643,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
               minHeight: 0,
             }}
           >
-            <PanelErrorBoundary>
+            <PanelErrorBoundary message={t("comparePanelErrorBody")}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkMath]}
                 rehypePlugins={[[rehypeKatex, katexOptions]]}
@@ -665,7 +683,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
                   href={COMPARISON_URLS[cid]}
                   target="_blank"
                   rel="noopener noreferrer"
-                  title={`Visit ${COMPARISON_LABELS[cid]}`}
+                  title={`${t("compareVisitPrefix")}${COMPARISON_LABELS[cid]}`}
                   style={{ color: "var(--dust)", fontSize: "1.05rem", textDecoration: "none", lineHeight: 1 }}
                 >
                   ↗
@@ -686,7 +704,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
                 minHeight: 0,
               }}
             >
-              <PanelErrorBoundary>
+              <PanelErrorBoundary message={t("comparePanelErrorBody")}>
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm, remarkMath]}
                   rehypePlugins={[[rehypeKatex, katexOptions]]}
@@ -700,7 +718,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
             <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, padding: "0.75rem 1.5rem" }}>
               <iframe
                 src={comparison.pdfPath}
-                title={`${COMPARISON_LABELS[comparisonId]} review`}
+                title={`${COMPARISON_LABELS[comparisonId]}${t("comparePdfReviewSuffix")}`}
                 style={{
                   flex: 1,
                   width: "100%",
@@ -721,7 +739,7 @@ export function ComparePage({ papers }: { papers: Record<PaperId, PaperData> }) 
                   textUnderlineOffset: "2px",
                 }}
               >
-                Download PDF if iframe doesn&apos;t render ↓
+                {t("comparePdfFallback")}
               </a>
             </div>
           ) : null}

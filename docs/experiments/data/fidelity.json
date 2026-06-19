@@ -1,0 +1,46 @@
+{
+  "en": {
+    "name": "English (baseline)",
+    "n_comments": 12,
+    "exact": 12,
+    "fuzzy": 0,
+    "dropped": 0,
+    "too_short": 0,
+    "survived": 12,
+    "fidelity_pct": 100.0,
+    "exact_pct": 100.0
+  },
+  "es": {
+    "name": "Spanish",
+    "n_comments": 12,
+    "exact": 12,
+    "fuzzy": 0,
+    "dropped": 0,
+    "too_short": 0,
+    "survived": 12,
+    "fidelity_pct": 100.0,
+    "exact_pct": 100.0
+  },
+  "zh": {
+    "name": "Chinese (Simplified)",
+    "n_comments": 12,
+    "exact": 12,
+    "fuzzy": 0,
+    "dropped": 0,
+    "too_short": 0,
+    "survived": 12,
+    "fidelity_pct": 100.0,
+    "exact_pct": 100.0
+  },
+  "ar": {
+    "name": "Arabic",
+    "n_comments": 12,
+    "exact": 10,
+    "fuzzy": 2,
+    "dropped": 0,
+    "too_short": 0,
+    "survived": 12,
+    "fidelity_pct": 100.0,
+    "exact_pct": 83.3
+  }
+}

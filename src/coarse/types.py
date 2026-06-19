@@ -4,6 +4,43 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+class LanguageContext(BaseModel):
+    """Language metadata carried across the web, pipeline, and rendering layers.
+
+    Additive contract for the multilingual rollout (see
+    ``docs/MULTILINGUAL_PLAN.md``). Every field defaults to the English path, so
+    an unset context is a no-op. An empty ``review_language`` means "follow the
+    detected ``paper_language``" — the effective output language is resolved in
+    the worker after detection, not here. Verbatim quotes always stay in the
+    paper's source language regardless of these fields.
+
+    Note: there is intentionally no ``analysis_language`` field. Under the
+    generation-time localization design (the MVP), agents write directly in
+    ``review_language``, so a separate internal-reasoning language has no
+    consumer; it is deferred to the contingent English-pivot design (PR-G).
+    """
+
+    site_language: str = Field(default="en", description="Primary site/UI locale (BCP-47)")
+    review_language: str = Field(
+        default="",
+        description=(
+            "Locale for the human-facing review output. Empty = follow the detected paper_language."
+        ),
+    )
+    paper_language: str = Field(
+        default="",
+        description="Detected or user-specified source language of the paper (BCP-47)",
+    )
+    text_direction: Literal["ltr", "rtl"] = Field(
+        default="ltr",
+        description="Text direction for the review/site UI",
+    )
+    paper_language_source: Literal["detected", "user", "default"] = Field(
+        default="default",
+        description="How paper_language was chosen",
+    )
+
+
 class PaperText(BaseModel):
     """Extracted PDF content as markdown with metadata."""
 
@@ -120,6 +157,13 @@ class PaperStructure(BaseModel):
             "peer-review; other values relax the review to match the draft stage."
         ),
     )
+    paper_language: str = Field(
+        default="",
+        description=(
+            "Detected primary language of the paper body as a BCP-47 code from the "
+            "supported set, or '' when English/unknown (the byte-identical default)."
+        ),
+    )
 
 
 class PaperMetadata(BaseModel):
@@ -136,6 +180,14 @@ class PaperMetadata(BaseModel):
             "for partial prose; 'proposal' for planned-but-unexecuted research; "
             "'report' for non-academic technical reports; 'notes' for working "
             "notes/lecture notes; 'other' when none fit."
+        ),
+    )
+    language: str = Field(
+        default="",
+        description=(
+            "Primary language of the paper body as a BCP-47 code from the supported "
+            "set (en, es, fr, de, nl, pt, it, zh-Hans, zh-Hant, ja, ko, ar). Use 'en' "
+            "if English or if unsure."
         ),
     )
 
@@ -214,8 +266,7 @@ class DetailedComment(BaseModel):
         description="Short title summarizing the comment",
     )
     quote: str = Field(
-        min_length=20,
-        description="Verbatim quote from the paper (min 20 chars)",
+        description="Verbatim quote from the paper (min 20 chars, or 8 for CJK text)",
     )
     feedback: str = Field(
         description="Constructive feedback with remediation guidance",
@@ -233,6 +284,26 @@ class DetailedComment(BaseModel):
         description="Reviewer confidence",
     )
 
+    @field_validator("quote")
+    @classmethod
+    def _check_quote_length(cls, v: str) -> str:
+        """Require ≥20 chars for normal text, but ≥8 for spaceless CJK quotes.
+
+        CJK is dense: 8 characters of Han/Kana already carries ~10-20 words of
+        meaning, so the flat 20-char floor rejected valid short CJK quotes (and
+        instructor would then retry/fail). Latin text keeps the original 20-char
+        minimum exactly.
+        """
+        from coarse.textscript import is_cjk_heavy
+
+        minimum = 8 if is_cjk_heavy(v) else 20
+        if len(v) < minimum:
+            raise ValueError(
+                f"quote must be at least {minimum} characters "
+                f"({'CJK' if minimum == 8 else 'default'} minimum), got {len(v)}"
+            )
+        return v
+
 
 class Review(BaseModel):
     """Complete paper review with overall feedback and detailed comments."""
@@ -246,6 +317,17 @@ class Review(BaseModel):
     )
     detailed_comments: list[DetailedComment] = Field(
         description="Detailed review comments (8-18)",
+    )
+    language: LanguageContext | None = Field(
+        default=None,
+        description=(
+            "Resolved language context for this review (detected paper language, "
+            "effective output language, text direction). review_paper() sets this "
+            "for every review (for English/unknown the review_language is empty); it "
+            "defaults to None only for Review objects constructed outside the "
+            "pipeline. Rendering/labels ignore this for now — it is metadata for the "
+            "web layer and a later localization PR."
+        ),
     )
 
 

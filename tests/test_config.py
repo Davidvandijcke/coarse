@@ -70,6 +70,18 @@ def test_save_and_reload(tmp_config_path):
     assert reloaded.api_keys == original.api_keys
 
 
+def test_review_language_defaults_to_empty():
+    """Unset review_language = English default path (empty, not None, for TOML)."""
+    assert CoarseConfig().review_language == ""
+
+
+def test_review_language_round_trips(tmp_config_path):
+    original = CoarseConfig(review_language="Simplified Chinese")
+    save_config(original)
+    reloaded = load_config()
+    assert reloaded.review_language == "Simplified Chinese"
+
+
 def test_save_config_sets_restrictive_permissions(tmp_config_path):
     """Config file gets chmod 600 after save."""
     import stat

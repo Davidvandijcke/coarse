@@ -9,6 +9,7 @@ import type { DetailedComment } from "@/lib/parseReview";
 import { preprocessLatex } from "@/lib/preprocessLatex";
 import ModelPicker from "@/components/ModelPicker";
 import OpenRouterLoginButton from "@/components/OpenRouterLoginButton";
+import { useSiteLanguageContext, type MessageKey } from "@/lib/i18n";
 import {
   buildChatSystemPrompt,
   OpenRouterAuthError,
@@ -31,10 +32,10 @@ function normalizeModel(model?: string | null): string {
   return m;
 }
 
-const EXAMPLE_PROMPTS = [
-  "Is this critique actually correct?",
-  "How should I revise to address it?",
-  "Where in the paper does this apply?",
+const EXAMPLE_PROMPT_KEYS: MessageKey[] = [
+  "chatExamplePrompt1",
+  "chatExamplePrompt2",
+  "chatExamplePrompt3",
 ];
 
 export interface CommentChatProps {
@@ -46,6 +47,7 @@ export interface CommentChatProps {
   overallFeedbackText: string;
   commentSeverity?: string | null;
   commentConfidence?: string | null;
+  reviewLanguageName?: string | null;
   defaultModel: string;
   initialMessages?: ChatMessage[];
 
@@ -67,6 +69,7 @@ export default function CommentChat({
   overallFeedbackText,
   commentSeverity,
   commentConfidence,
+  reviewLanguageName,
   defaultModel,
   initialMessages,
   apiKey,
@@ -77,6 +80,7 @@ export default function CommentChat({
   onLogout,
   onClose,
 }: CommentChatProps) {
+  const { t } = useSiteLanguageContext();
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages ?? []);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -157,6 +161,7 @@ export default function CommentChat({
           comment,
           severity: commentSeverity,
           confidence: commentConfidence,
+          reviewLanguageName,
         }),
       };
 
@@ -183,16 +188,16 @@ export default function CommentChat({
           // A user-initiated Stop (abort) returns cleanly with no content — that
           // isn't a model failure, so don't show an error in that case.
           if (!controller.signal.aborted) {
-            setError("No response from the model. Try again or switch models.");
+            setError(t("chatNoResponse"));
           }
         }
       } catch (err) {
         setMessages((prev) => prev.slice(0, -1)); // drop the streaming bubble
         if (err instanceof OpenRouterAuthError) {
           onLogout();
-          setError("Your OpenRouter session expired. Log in again to continue.");
+          setError(t("chatSessionExpired"));
         } else {
-          setError(err instanceof Error ? err.message : "Something went wrong.");
+          setError(err instanceof Error ? err.message : t("chatSomethingWrong"));
         }
       } finally {
         setStreaming(false);
@@ -213,6 +218,7 @@ export default function CommentChat({
       commentSeverity,
       commentConfidence,
       onLogout,
+      t,
     ],
   );
 
@@ -232,18 +238,18 @@ export default function CommentChat({
         style={sheetStyle}
         role="dialog"
         aria-modal="true"
-        aria-label={`Discuss: ${comment.title}`}
+        aria-label={`${t("chatDiscussAriaPrefix")}${comment.title}`}
       >
         {/* Header */}
         <div style={headerStyle}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={kickerStyle}>
-              Discuss ·{" "}
-              {comment.number >= 0 ? `comment #${comment.number}` : "overall feedback"}
+              {t("chatDiscussKicker")}
+              {comment.number >= 0 ? `${t("chatKickerComment")}${comment.number}` : t("chatKickerOverallFeedback")}
             </div>
             <div style={titleStyle}>{comment.title}</div>
           </div>
-          <button onClick={handleClose} aria-label="Close chat" style={closeBtnStyle}>
+          <button onClick={handleClose} aria-label={t("chatCloseAriaLabel")} style={closeBtnStyle}>
             {"×"}
           </button>
         </div>
@@ -263,7 +269,7 @@ export default function CommentChat({
             <ModelDisclosure model={model} onChange={setModel} />
             <button
               onClick={onLogout}
-              title="Disconnect your OpenRouter key (it isn't stored beyond this tab)"
+              title={t("chatDisconnectKeyTitle")}
               style={{
                 background: "none",
                 border: "none",
@@ -276,7 +282,7 @@ export default function CommentChat({
                 whiteSpace: "nowrap",
               }}
             >
-              Disconnect key
+              {t("chatDisconnectKey")}
             </button>
           </div>
         )}
@@ -329,18 +335,18 @@ export default function CommentChat({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onInputKeyDown}
-              placeholder="Ask about this comment…"
+              placeholder={t("chatInputPlaceholder")}
               rows={2}
-              aria-label="Message"
+              aria-label={t("chatMessageAriaLabel")}
               style={textareaStyle}
             />
             {streaming ? (
               <button type="button" onClick={() => abortRef.current?.abort()} style={sendBtnStyle}>
-                Stop
+                {t("chatStop")}
               </button>
             ) : (
               <button type="submit" disabled={!input.trim()} style={sendBtnStyle}>
-                Send
+                {t("chatSend")}
               </button>
             )}
           </form>
@@ -358,6 +364,7 @@ function ModelDisclosure({
   model: string;
   onChange: (m: string) => void;
 }) {
+  const { t } = useSiteLanguageContext();
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -375,7 +382,7 @@ function ModelDisclosure({
           letterSpacing: "0.04em",
         }}
       >
-        Model: <span style={{ color: "var(--chalk-bright)" }}>{model}</span>{" "}
+        {t("chatModelDisclosurePrefix")}<span style={{ color: "var(--chalk-bright)" }}>{model}</span>{" "}
         {open ? "▴" : "▾"}
       </button>
       {open && (
@@ -407,16 +414,16 @@ function KeyGate({
   onLogin: () => void;
   onLogout: () => void;
 }) {
+  const { t } = useSiteLanguageContext();
   const [draft, setDraft] = useState("");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
       <p style={{ fontFamily: "Georgia, serif", fontSize: "1rem", lineHeight: 1.6, color: "var(--dust)", margin: 0 }}>
-        Connect OpenRouter to chat about this comment. Your key is sent straight to
-        OpenRouter — never to our servers — and clears when you close this tab.
+        {t("chatKeyGateIntro")}
       </p>
       <OpenRouterLoginButton apiKey={apiKey} onLogin={onLogin} onLogout={onLogout} />
       <p style={{ fontFamily: "var(--font-chalk)", fontSize: "1rem", color: "var(--dust)", margin: 0 }}>
-        — or paste a key —
+        {t("chatKeyGateOrPaste")}
       </p>
       <form
         onSubmit={(e) => {
@@ -429,17 +436,17 @@ function KeyGate({
           type="password"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="sk-or-v1-…"
-          aria-label="OpenRouter API key"
+          placeholder={t("chatKeyGatePlaceholder")}
+          aria-label={t("chatKeyGateAriaLabel")}
           className="field-line-mono"
           style={{ flex: 1, fontSize: "1rem" }}
         />
         <button type="submit" disabled={!draft.trim()} style={sendBtnStyle}>
-          Use key
+          {t("chatKeyGateUseKey")}
         </button>
       </form>
       <p style={{ fontFamily: "var(--font-chalk)", fontSize: "0.95rem", color: "var(--dust)", margin: 0 }}>
-        OAuth keys stay in this tab only and clear when you close it. Never saved on our servers.
+        {t("chatKeyGateHelper")}
       </p>
       {keyNotice && (
         <p style={{ fontFamily: "var(--font-chalk)", fontSize: "0.95rem", color: "var(--blue-chalk)", margin: 0 }}>
@@ -460,41 +467,43 @@ function EmptyHint({
   disabled: boolean;
   hasPaper: boolean;
 }) {
+  const { t } = useSiteLanguageContext();
   return (
     <div style={{ color: "var(--dust)" }}>
       <p style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: "1rem", lineHeight: 1.6, margin: "0 0 0.75rem" }}>
-        Ask anything about this comment. Each message sends{" "}
-        {hasPaper ? "the full paper" : "the quoted passage and feedback"} as context
-        and runs on your OpenRouter credits.
+        {t("chatEmptyHintPrefix")}
+        {hasPaper ? t("chatEmptyHintFullPaper") : t("chatEmptyHintQuotedPassage")}{t("chatEmptyHintSuffix")}
       </p>
       {!hasPaper && (
         <p style={{ fontFamily: "var(--font-chalk)", fontSize: "0.95rem", lineHeight: 1.55, margin: "0 0 0.75rem", color: "var(--dust)" }}>
-          The full paper text isn&apos;t stored for this review, so answers rely on
-          the quoted passage and feedback only.
+          {t("chatEmptyHintNoPaper")}
         </p>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", alignItems: "flex-start" }}>
-        {EXAMPLE_PROMPTS.map((p) => (
-          <button
-            key={p}
-            type="button"
-            disabled={disabled}
-            onClick={() => onPick(p)}
-            style={{
-              background: "transparent",
-              border: "1px solid var(--tray)",
-              borderRadius: "2px",
-              padding: "0.35rem 0.6rem",
-              cursor: disabled ? "default" : "pointer",
-              fontFamily: "var(--font-chalk)",
-              fontSize: "0.95rem",
-              color: "var(--chalk)",
-              textAlign: "left",
-            }}
-          >
-            {p}
-          </button>
-        ))}
+        {EXAMPLE_PROMPT_KEYS.map((key) => {
+          const p = t(key);
+          return (
+            <button
+              key={key}
+              type="button"
+              disabled={disabled}
+              onClick={() => onPick(p)}
+              style={{
+                background: "transparent",
+                border: "1px solid var(--tray)",
+                borderRadius: "2px",
+                padding: "0.35rem 0.6rem",
+                cursor: disabled ? "default" : "pointer",
+                fontFamily: "var(--font-chalk)",
+                fontSize: "0.95rem",
+                color: "var(--chalk)",
+                textAlign: "left",
+              }}
+            >
+              {p}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
