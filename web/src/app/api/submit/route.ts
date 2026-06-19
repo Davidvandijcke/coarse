@@ -9,6 +9,7 @@ import { buildReviewKey, buildReviewUrl } from "@/lib/reviewAccess";
 import { isEmailCapacityReached } from "@/lib/emailCapacity";
 import { consumeReviewHandoffSecret } from "@/lib/routeHandoffAuth";
 import { sendReviewEmail } from "@/lib/email";
+import { confirmationEmailCopy } from "@/lib/confirmationEmail";
 import {
   buildModalWebhookHostSuffix,
   getModalWebhookConfig,
@@ -413,15 +414,24 @@ export async function POST(request: NextRequest) {
   // fixed in the wrapper, not papered over at the call site.
   const paperFilename = reviewRow.paper_filename ?? "your paper";
   if (email) {
+    // Localize to the chosen site language (the only language known at submit
+    // time; review_language may still be "follow the paper"). English fallback.
+    const copy = confirmationEmailCopy(lang.site_language);
+    const safeTitle = escapeHtml(paperFilename);
+    const bodyLine = model
+      ? copy.body
+          .replace("{title}", () => safeTitle)
+          .replace("{model}", () => escapeHtml(model))
+      : copy.bodyNoModel.replace("{title}", () => safeTitle);
     await sendReviewEmail({
       to: email,
-      subject: `Your paper "${paperFilename}" is being reviewed`,
+      subject: copy.subject.replace("{title}", () => paperFilename),
       reviewId: id,
       html: [
-        `<p>Hi,</p>`,
-        `<p>Your paper <strong>${escapeHtml(paperFilename)}</strong> is being reviewed${model ? ` using <strong>${escapeHtml(model)}</strong>` : ""}. We'll email you when it's done (usually 30–60 minutes).</p>`,
-        `<p>Track progress: <a href="${statusUrl}">${statusUrl}</a></p>`,
-        `<p><strong>Save your review key:</strong> <code>${reviewKey}</code></p>`,
+        `<p>${escapeHtml(copy.greeting)}</p>`,
+        `<p>${bodyLine}</p>`,
+        `<p>${escapeHtml(copy.track)} <a href="${statusUrl}">${statusUrl}</a></p>`,
+        `<p><strong>${escapeHtml(copy.saveKey)}</strong> <code>${reviewKey}</code></p>`,
         `<p>— coarse</p>`,
       ].join(""),
     });

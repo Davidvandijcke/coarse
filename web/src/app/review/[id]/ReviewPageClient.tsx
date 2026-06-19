@@ -7,7 +7,7 @@ import { PageMarks } from "@/components/charcoal";
 import { parseReview } from "@/lib/parseReview";
 import ReviewDisplay from "@/components/ReviewDisplay";
 import { REVIEW_RETURN_TOKEN_KEY } from "@/lib/useOpenRouterKey";
-import { SiteLanguageProvider, useSiteLanguageContext } from "@/lib/i18n";
+import { SiteLanguageProvider, useSiteLanguageContext, coerceSiteLocale } from "@/lib/i18n";
 
 export default function ReviewPageClient({ id }: { id: string }) {
   // The site-language context must sit ABOVE every consumer (this body + the
@@ -22,7 +22,7 @@ export default function ReviewPageClient({ id }: { id: string }) {
 }
 
 function ReviewPageBody({ id }: { id: string }) {
-  const { t } = useSiteLanguageContext();
+  const { t, applyInitialLocale } = useSiteLanguageContext();
   const [review, setReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -110,6 +110,22 @@ function ReviewPageBody({ id }: { id: string }) {
     // would tear down + re-fetch the poll on every site-language toggle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, token]);
+
+  // Render a review opened from its email link in the language it was created
+  // in, even on a device with no stored preference. The review *content* is
+  // already in its language (baked into result_json); this aligns the UI chrome
+  // to match. A visitor's explicit choice still wins (see applyInitialLocale).
+  useEffect(() => {
+    if (!review) return;
+    const code =
+      review.site_language ||
+      review.review_language ||
+      review.result_json?.language?.site_language ||
+      review.result_json?.language?.review_language ||
+      null;
+    const locale = coerceSiteLocale(code);
+    if (locale) applyInitialLocale(locale);
+  }, [review, applyInitialLocale]);
 
   const parsed = useMemo(
     () =>
