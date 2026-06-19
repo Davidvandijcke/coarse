@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- **The submit-time "your paper is being reviewed" confirmation email is now localized.** It was hardcoded English even when the submitter chose another site language (e.g. Dutch). The copy is now localized to the chosen `site_language` (the only language reliably known at submit time) via a new `web/src/lib/confirmationEmail.ts`, covering all 12 locales with English fallback; terminology matches the already-localized completion email. `{title}`/`{model}` placeholders are substituted with a function replacer (so a filename containing `$&` can't corrupt the output). Web-only. Coverage in `tests/test_web_confirmation_email.py` (locale completeness + placeholder preservation).
+
+- **A review opened from its email link now renders in the language it was created in.** The review page took its UI-chrome language only from `localStorage`, so opening the link on another device (e.g. a phone, with no stored preference) showed English chrome around a non-English review. The page now applies the review's stored language (`site_language`, falling back to `review_language`) once it loads, via a new non-persisting `applyInitialLocale` on the site-language hook — a visitor's explicit switch still wins and their global preference is never overwritten. New `coerceSiteLocale` helper maps stored/BCP-47 codes to a supported locale. Web-only.
+
+- **RLS enabled on the `schema_migrations` bookkeeping table.** Supabase's Security Advisor flagged `public.schema_migrations` as exposed to PostgREST without row-level security. It is internal migration bookkeeping, written only by the service-role path (`scripts/apply_migrations.sh` / the SQL editor), which bypasses RLS — so `alter table schema_migrations enable row level security` (with no policies) locks it from the anon/authenticated API while migrations keep working, matching the project's other internal tables (`review_secrets`, `rate_limit_log`). Added at both creation sites (`deploy/bootstrap_schema_migrations.sql` and the inline `create table` in `scripts/apply_migrations.sh`), so it is idempotent and re-running either secures an existing project. Apply to existing live projects by running `alter table schema_migrations enable row level security;`. Deploy-only — no package change.
+
 ## v1.8.0 — 2026-06-18
 
 ### Added

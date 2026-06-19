@@ -18,6 +18,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -89,6 +90,22 @@ export function messagesFor(locale: SiteLocale): Messages {
 }
 
 /**
+ * Map a stored/BCP-47 language code to a supported site locale, or null.
+ * Accepts exact catalog codes ("nl", "zh-Hant") and falls back to the base
+ * language for region/script variants ("pt-BR" → "pt", bare "zh" → "zh-Hans").
+ * Used to render a review in the language it was created in.
+ */
+export function coerceSiteLocale(value: string | null | undefined): SiteLocale | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (trimmed in CATALOGS) return trimmed as SiteLocale;
+  const base = trimmed.split("-")[0].toLowerCase();
+  if (base === "zh") return "zh-Hans";
+  if (base in CATALOGS) return base as SiteLocale;
+  return null;
+}
+
+/**
  * Site-language state: persisted in localStorage, default English (no browser
  * auto-detect), and applies `lang`/`dir` to <html> so the whole page chrome
  * flips to RTL when the UI language is Arabic. Returns the current locale, a
@@ -97,15 +114,23 @@ export function messagesFor(locale: SiteLocale): Messages {
 export function useSiteLanguage(): {
   locale: SiteLocale;
   setLocale: (l: SiteLocale) => void;
+  applyInitialLocale: (l: SiteLocale) => void;
   t: (key: MessageKey) => string;
 } {
   const [locale, setLocaleState] = useState<SiteLocale>(DEFAULT_LOCALE);
+  // Whether the visitor has an explicit language choice this session (a stored
+  // preference or a switcher click). Once true, a page-scoped initial locale
+  // (e.g. a review's stored language) must not override it.
+  const userChoseRef = useRef(false);
 
   // Restore persisted choice on mount (client-only; SSR renders English).
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (isSiteLocale(stored)) setLocaleState(stored);
+      if (isSiteLocale(stored)) {
+        userChoseRef.current = true;
+        setLocaleState(stored);
+      }
     } catch {
       // localStorage unavailable (private mode etc.) — stay on default.
     }
@@ -121,6 +146,7 @@ export function useSiteLanguage(): {
   }, [locale]);
 
   const setLocale = useCallback((l: SiteLocale) => {
+    userChoseRef.current = true;
     setLocaleState(l);
     try {
       window.localStorage.setItem(STORAGE_KEY, l);
@@ -129,9 +155,18 @@ export function useSiteLanguage(): {
     }
   }, []);
 
+  // Apply a page-scoped initial locale (e.g. the language a review was created
+  // in) WITHOUT persisting it as the visitor's global preference, and only if
+  // the visitor hasn't already chosen one. Lets a review opened from an email
+  // link on a fresh device render in the review's language, not English.
+  const applyInitialLocale = useCallback((l: SiteLocale) => {
+    if (userChoseRef.current) return;
+    setLocaleState(l);
+  }, []);
+
   const t = useCallback((key: MessageKey) => messagesFor(locale)[key] ?? en[key], [locale]);
 
-  return { locale, setLocale, t };
+  return { locale, setLocale, applyInitialLocale, t };
 }
 
 // --- Context so the switcher and the page share one locale state ---
@@ -156,6 +191,7 @@ export function useSiteLanguageContext(): SiteLanguageValue {
   return {
     locale: DEFAULT_LOCALE,
     setLocale: () => {},
+    applyInitialLocale: () => {},
     t: (key: MessageKey) => en[key],
   };
 }
