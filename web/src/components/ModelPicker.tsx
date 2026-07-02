@@ -17,7 +17,7 @@ type DefaultModel = {
 };
 
 const DEFAULT_MODELS: DefaultModel[] = [
-  { id: "anthropic/claude-fable-5", label: "Fable 5", provider: "Anthropic", unavailable: true },
+  { id: "anthropic/claude-fable-5", label: "Fable 5", provider: "Anthropic" },
   { id: "anthropic/claude-opus-4.8", label: "Opus 4.8", provider: "Anthropic" },
   { id: "anthropic/claude-sonnet-4.6", label: "Sonnet 4.6", provider: "Anthropic" },
   { id: "openai/gpt-5.5", label: "GPT-5.5", provider: "OpenAI" },
