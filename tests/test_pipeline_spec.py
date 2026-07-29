@@ -61,6 +61,7 @@ def _run_ts_estimator(
     is_pdf: bool,
     section_count: int | None,
     has_openrouter_key: bool,
+    deep_literature_search: bool,
 ) -> float:
     prompt_cost, completion_cost = model_cost_per_token(model_id)
     section_arg = "undefined" if section_count is None else str(section_count)
@@ -77,6 +78,7 @@ const total = estimateReviewCost(
   {str(is_pdf).lower()},
   {section_arg},
   {str(has_openrouter_key).lower()},
+  {str(deep_literature_search).lower()},
 );
 console.log(JSON.stringify(total));
 """
@@ -100,12 +102,14 @@ def test_ts_estimator_matches_python_cost_gate_for_openrouter_and_fallback_paths
             "section_count": 18,
             "is_pdf": False,
             "has_openrouter_key": True,
+            "deep_literature_search": False,
         },
         {
             "model_id": "openai/gpt-5-pro",
             "section_count": 18,
             "is_pdf": False,
             "has_openrouter_key": False,
+            "deep_literature_search": False,
         },
         # #185: exercise the reasoning carve-out boundary in BOTH estimators.
         # gpt-5.4 is now reasoning (broad gpt-5 prefix) → +overhead; gpt-5-chat
@@ -117,12 +121,14 @@ def test_ts_estimator_matches_python_cost_gate_for_openrouter_and_fallback_paths
             "section_count": 18,
             "is_pdf": False,
             "has_openrouter_key": True,
+            "deep_literature_search": False,
         },
         {
             "model_id": "openai/gpt-5-chat",
             "section_count": 18,
             "is_pdf": False,
             "has_openrouter_key": True,
+            "deep_literature_search": False,
         },
         # OpenRouter Fusion: dynamic (-1) OpenRouter pricing, substituted with
         # representative rates. Verifies both estimators price it identically
@@ -132,6 +138,14 @@ def test_ts_estimator_matches_python_cost_gate_for_openrouter_and_fallback_paths
             "section_count": 18,
             "is_pdf": False,
             "has_openrouter_key": True,
+            "deep_literature_search": False,
+        },
+        {
+            "model_id": DEFAULT_MODEL,
+            "section_count": 18,
+            "is_pdf": False,
+            "has_openrouter_key": True,
+            "deep_literature_search": True,
         },
     ]
 
@@ -147,6 +161,7 @@ def test_ts_estimator_matches_python_cost_gate_for_openrouter_and_fallback_paths
             section_count=scenario["section_count"],
             is_pdf=scenario["is_pdf"],
             model=scenario["model_id"],
+            deep_literature_search=scenario["deep_literature_search"],
         ).total_cost_usd
         ts_total = _run_ts_estimator(
             repo_root,
@@ -155,6 +170,7 @@ def test_ts_estimator_matches_python_cost_gate_for_openrouter_and_fallback_paths
             is_pdf=scenario["is_pdf"],
             section_count=scenario["section_count"],
             has_openrouter_key=scenario["has_openrouter_key"],
+            deep_literature_search=scenario["deep_literature_search"],
         )
         assert abs(ts_total - py_total) < 1e-9
 

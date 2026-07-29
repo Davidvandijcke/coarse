@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Derive the handoff URL the CLI will fetch from. In production this
-  // is coarse.vercel.app (always reachable). In local dev it falls back
+  // is coarse.ink (always reachable). In local dev it falls back
   // to the request origin (localhost:3000) — which works when the CLI
   // runs on the same machine but breaks if it runs in a remote sandbox
   // (e.g. Codex cloud). For local dev with remote CLIs, set

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from coarse.agents.literature import (
     ArxivPaper,
     _compile_context,
@@ -14,6 +16,7 @@ from coarse.agents.literature import (
     _SearchQueries,
     search_literature,
 )
+from coarse.models import DEEP_LITERATURE_SEARCH_MODEL, LITERATURE_SEARCH_MODEL
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -223,6 +226,47 @@ def test_search_perplexity_happy_path():
     caller_client.add_cost.assert_called_once_with(0.025)
 
 
+def test_search_perplexity_deep_mode_uses_deep_model_and_longer_timeout():
+    """Deep mode changes retrieval depth without inflating downstream context."""
+    caller_client = MagicMock()
+    perplexity_client = MagicMock()
+    perplexity_client.complete_text.return_value = "Deep literature results"
+    perplexity_client.cost_usd = 0.2
+
+    with patch(
+        "coarse.agents.literature.LLMClient",
+        return_value=perplexity_client,
+    ) as client_cls:
+        result = _search_perplexity(
+            "Test Title",
+            "Test abstract",
+            caller_client,
+            deep_search=True,
+        )
+
+    assert result == "Deep literature results"
+    client_cls.assert_called_once_with(model=DEEP_LITERATURE_SEARCH_MODEL)
+    call = perplexity_client.complete_text.call_args
+    assert call.kwargs["max_tokens"] == 4096
+    assert call.kwargs["timeout"] == 300
+    caller_client.add_cost.assert_called_once_with(0.2)
+
+
+def test_search_perplexity_standard_mode_keeps_standard_model_and_timeout():
+    caller_client = MagicMock()
+    perplexity_client = MagicMock()
+    perplexity_client.complete_text.return_value = "Standard results"
+
+    with patch(
+        "coarse.agents.literature.LLMClient",
+        return_value=perplexity_client,
+    ) as client_cls:
+        _search_perplexity("Test Title", "Test abstract", caller_client)
+
+    client_cls.assert_called_once_with(model=LITERATURE_SEARCH_MODEL)
+    assert perplexity_client.complete_text.call_args.kwargs["timeout"] == 60
+
+
 def test_search_perplexity_sends_system_and_user_messages():
     """_search_perplexity splits the prompt into a system + user conversation,
     and the user message wraps the abstract in a <paper_abstract> fence."""
@@ -288,6 +332,27 @@ def test_dispatcher_uses_perplexity_when_key_set():
     mock_arxiv.assert_not_called()
 
 
+def test_dispatcher_forwards_deep_search_choice():
+    mock_client = MagicMock()
+
+    with (
+        patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-test-key"}, clear=False),
+        patch(
+            "coarse.agents.literature._search_perplexity",
+            return_value="Deep results",
+        ) as mock_perp,
+    ):
+        result = search_literature("Title", "Abstract", mock_client, deep_search=True)
+
+    assert result == "Deep results"
+    mock_perp.assert_called_once_with(
+        "Title",
+        "Abstract",
+        mock_client,
+        deep_search=True,
+    )
+
+
 def test_dispatcher_falls_back_on_perplexity_failure():
     """search_literature falls back to arXiv when Perplexity raises."""
     mock_client = MagicMock()
@@ -304,6 +369,36 @@ def test_dispatcher_falls_back_on_perplexity_failure():
 
     assert result == "arXiv results"
     mock_arxiv.assert_called_once()
+
+
+def test_deep_dispatcher_does_not_silently_fall_back_on_failure():
+    mock_client = MagicMock()
+
+    with (
+        patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-test-key"}, clear=False),
+        patch(
+            "coarse.agents.literature._search_perplexity",
+            side_effect=RuntimeError("deep provider failed"),
+        ),
+        patch("coarse.agents.literature._search_arxiv_pipeline") as mock_arxiv,
+    ):
+        with pytest.raises(RuntimeError, match="deep provider failed"):
+            search_literature("Title", "Abstract", mock_client, deep_search=True)
+
+    mock_arxiv.assert_not_called()
+
+
+def test_deep_dispatcher_requires_openrouter_instead_of_using_arxiv():
+    mock_client = MagicMock()
+
+    with (
+        patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}, clear=False),
+        patch("coarse.agents.literature._search_arxiv_pipeline") as mock_arxiv,
+    ):
+        with pytest.raises(RuntimeError, match="requires a valid OpenRouter API key"):
+            search_literature("Title", "Abstract", mock_client, deep_search=True)
+
+    mock_arxiv.assert_not_called()
 
 
 def test_dispatcher_uses_arxiv_when_no_key():

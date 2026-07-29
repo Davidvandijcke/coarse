@@ -7,7 +7,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import type { DetailedComment } from "@/lib/parseReview";
 import { preprocessLatex } from "@/lib/preprocessLatex";
-import ModelPicker from "@/components/ModelPicker";
+import ModelPicker, { DEFAULT_REVIEW_MODEL } from "@/components/ModelPicker";
 import OpenRouterLoginButton from "@/components/OpenRouterLoginButton";
 import { useSiteLanguageContext, type MessageKey } from "@/lib/i18n";
 import {
@@ -19,16 +19,13 @@ import {
 } from "@/lib/openrouterChat";
 
 const katexOptions = { strict: false, throwOnError: false };
-// Fallback when a review has no recorded model (matches the home page default).
-const FALLBACK_MODEL = "anthropic/claude-opus-4.8";
-
 function normalizeModel(model?: string | null): string {
   const m = (model ?? "").replace(/^openrouter\//, "").trim();
   // The chat always routes through OpenRouter, which needs a "provider/model"
   // ID. A review's model can instead be a CLI-handoff marker
   // ("coarse-review-cli:codex") or a bare host-CLI model ("claude-opus-4-6"),
   // neither of which OpenRouter accepts — fall back to a known-good default.
-  if (!m || !m.includes("/")) return FALLBACK_MODEL;
+  if (!m || !m.includes("/")) return DEFAULT_REVIEW_MODEL;
   return m;
 }
 

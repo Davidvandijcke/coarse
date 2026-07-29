@@ -58,6 +58,10 @@ FIXED_STAGE_INPUT_TOKENS: dict[str, int] = {
 
 # Flat-fee stages
 LITERATURE_FLAT_COST = 0.03
+# Sonar Deep Research commonly runs around 30 searches ($0.15) plus citation,
+# reasoning, input, and output tokens. $0.25 is a representative request cost;
+# the normal 30% estimate buffer is applied to the final review total.
+DEEP_LITERATURE_FLAT_COST = 0.25
 
 # Representative per-token pricing for models OpenRouter reports as dynamic
 # (``-1`` prompt/completion cost) — currently only OpenRouter Fusion. The web
@@ -141,6 +145,7 @@ def export_web_spec() -> dict[str, object]:
         "reasoningOverheadMultiplier": REASONING_OVERHEAD_MULTIPLIER,
         "fixedStageInputTokens": FIXED_STAGE_INPUT_TOKENS,
         "literatureFlatCost": LITERATURE_FLAT_COST,
+        "deepLiteratureFlatCost": DEEP_LITERATURE_FLAT_COST,
         "costBuffer": COST_BUFFER,
         "stageOutputTokens": STAGE_OUTPUT_TOKENS,
         "reasoningModelPrefixes": list(REASONING_MODEL_PREFIXES),

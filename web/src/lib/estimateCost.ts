@@ -221,6 +221,7 @@ const REASONING_OVERHEAD_MULTIPLIER = pipelineSpec.reasoningOverheadMultiplier;
 const FIXED_STAGE_INPUT_TOKENS = pipelineSpec.fixedStageInputTokens;
 
 const LITERATURE_FLAT_COST = pipelineSpec.literatureFlatCost;
+const DEEP_LITERATURE_FLAT_COST = pipelineSpec.deepLiteratureFlatCost;
 const EXTRACTION_QA_FLAT_COST = pipelineSpec.extractionQaFlatCost;
 const COST_BUFFER = pipelineSpec.costBuffer;
 const STAGE_OUTPUT_TOKENS = pipelineSpec.stageOutputTokens;
@@ -272,6 +273,7 @@ export function estimateReviewCost(
   isPdf: boolean = true,
   sectionCount?: number,
   hasOpenRouterKey: boolean = true,
+  deepLiteratureSearch: boolean = false,
 ): number {
   const { promptCostPerToken: inp, completionCostPerToken: out } = pricing;
   const totalTokens = Math.max(0, tokenEstimate);
@@ -314,7 +316,7 @@ export function estimateReviewCost(
   ];
 
   if (hasOpenRouterKey) {
-    total += LITERATURE_FLAT_COST;
+    total += deepLiteratureSearch ? DEEP_LITERATURE_FLAT_COST : LITERATURE_FLAT_COST;
   } else {
     stages.push(
       [

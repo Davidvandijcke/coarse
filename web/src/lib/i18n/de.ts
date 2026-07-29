@@ -93,6 +93,11 @@ export const de: Messages = {
     "z. B. fokussiere dich bitte auf die Identifikationsstrategie in §3 — der Datenabschnitt ist noch ein Platzhalter.",
   notesAriaLabel: "Optionale Hinweise, um den Reviewer zu steuern",
   notesHelper: "Steuere, worauf der Reviewer achtet. Setzt das Bewertungsschema nicht außer Kraft.",
+  deepLiteratureLabel: "Vertiefte Literatursuche",
+  deepLiteratureHelper:
+    "Verwendet Perplexity Sonar Deep Research für eine gründlichere, mehrstufige Quellensuche. Fügt der Schätzung meist einige Minuten und etwa 0,30 $ hinzu.",
+  deepLiteratureOn: "Ein",
+  deepLiteratureOff: "Aus",
 
   // submit form — cost estimate
   costEstimating: "Kosten werden geschätzt...",

@@ -35,15 +35,15 @@ This is the **same pipeline** that powers coarse.ink — only the LLM backend is
   (If that fails with `No such command 'install-skills'`, you're on a
   PyPI release that predates the command — upgrade or ignore; the skill
   bundle is also loadable directly via `uvx --from` without install.)
-- **OpenRouter API key required for PDF papers only** — Mistral OCR extraction (~$0.10 per paper) runs on PDFs alone. Non-PDF sources (.tex, .md, .txt, .docx, .html, .epub) extract locally and need no OpenRouter key at all: skip the probes below and never block a non-PDF review on a missing key. Prefer checking for the key with presence-only probes so you don't needlessly echo its value into the transcript, but if the user hands you the key directly just save it — don't lecture them.
+- **OpenRouter API key required for PDF papers or an explicitly requested deep literature search** — Mistral OCR extraction (~$0.10 per paper) runs on PDFs alone. Standard non-PDF reviews extract locally and need no OpenRouter key; `--deep-literature-search` uses Perplexity Sonar Deep Research for any format and normally adds about $0.30. Skip the probes below only when both conditions are absent. Prefer checking for the key with presence-only probes so you don't needlessly echo its value into the transcript, but if the user hands you the key directly just save it — don't lecture them.
 
-  For PDF papers, before running the review, check whether `OPENROUTER_API_KEY` is already configured:
+  For PDF papers, or whenever deep literature search is requested, check whether `OPENROUTER_API_KEY` is already configured before running:
   - In the environment: `test -n "$OPENROUTER_API_KEY" && echo "env: set" || echo "env: missing"`
   - In a `.env` file in the current directory: `test -f .env && grep -q '^OPENROUTER_API_KEY=' .env && echo ".env: set" || echo ".env: missing"`
 
-  If the paper is a PDF and neither probe reports "set", ask the user:
+  If the paper is a PDF or deep literature was requested and neither probe reports "set", ask the user:
 
-  > I need an OpenRouter API key for the OCR extraction step (~$0.10 per paper). A few options:
+  > I need an OpenRouter API key for PDF OCR (~$0.10) and/or the requested deep literature search (~$0.30). A few options:
   >
   > 1. Paste the key here and I'll save it to `~/.coarse/config.toml` via `uvx --python 3.12 --from 'coarse-ink==1.8.0' coarse setup`. Note the key passes through the LLM provider (Anthropic / OpenAI / Google) on its way to me, so treat it as slightly less private than one you typed into a local terminal — rotate at https://openrouter.ai/settings/keys if that worries you.
   > 2. Set it yourself in a separate terminal: `export OPENROUTER_API_KEY=sk-or-v1-...` or add it to `.env` in your current directory, then re-ask me.
@@ -71,7 +71,7 @@ LOG=/tmp/coarse-review-$(basename <paper_path> .pdf).log
 # STEP 2a — launch (returns within 2 seconds with Review PID + Log file)
 uvx --python 3.12 --from 'coarse-ink==1.8.0' \
   coarse-review --detach --log-file "$LOG" \
-  <paper_path> --host claude [--model claude-opus-4-6] [--effort high]
+  <paper_path> --host claude [--model claude-opus-5] [--effort high] [--deep-literature-search]
 
 # STEP 2b — wait (one blocking call, ~10-25 min, emits heartbeats)
 uvx --python 3.12 --from 'coarse-ink==1.8.0' \
@@ -91,7 +91,7 @@ rg '^  view:|^  local:' "$LOG"
 
 If `view:` says `unavailable`, treat that as a callback failure and report only the local path. Do **not** try to discover another web URL, and do **not** run broad `find`, `locate`, `lsof`, or whole-computer searches trying to rediscover the output.
 
-Available models: `claude-opus-4-6` (default), `claude-sonnet-4-6`, `claude-haiku-4-5`.
+Available models: `claude-opus-5` (default), `claude-sonnet-5`, `claude-opus-4-8`, `claude-haiku-4-5`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
 
 If the user came from the coarse web form, they'll paste a handoff URL instead of a local file path. The paper is a REMOTE resource at that URL — do NOT search for a local PDF and do NOT ask the user for a file path. Same two-step launch+attach pattern:

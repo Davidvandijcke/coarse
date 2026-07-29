@@ -52,9 +52,9 @@ def test_all_locale_catalogs_exist():
 
 
 def test_english_catalog_has_expected_key_count():
-    # 432 keys after the setup + compare pages were localized (292 for submit +
-    # status + review chrome, + 140 for setup/compare). Guards a key drop in en.
-    assert len(_keys(_read("en"))) == 432
+    # 436 keys after the deep-literature switch added four localized labels to
+    # the 432-key submit + status + review + setup/compare catalog.
+    assert len(_keys(_read("en"))) == 436
 
 
 def test_every_locale_defines_exactly_the_english_keys():

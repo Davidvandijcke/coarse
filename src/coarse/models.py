@@ -4,16 +4,28 @@ ALL model IDs live here. Never hardcode model strings elsewhere — import from
 this module. Verify IDs against OpenRouter before changing:
     python3 ~/.claude/skills/latest-models/scripts/fetch_models.py --search=<model>
 
-Last verified: 2026-06-17
+Last verified: 2026-07-29
 """
 
 import re
 
-# Primary review model (routed via OpenRouter for non-direct providers)
-DEFAULT_MODEL = "qwen/qwen3.5-plus-02-15"
+# Current featured review models. Keeping their canonical OpenRouter IDs here
+# lets the runtime cost registry and the public defaults move together when a
+# provider ships a new generation.
+CLAUDE_OPUS_5_MODEL = "anthropic/claude-opus-5"
+CLAUDE_SONNET_5_MODEL = "anthropic/claude-sonnet-5"
+GPT_5_6_SOL_MODEL = "openai/gpt-5.6-sol"
+GPT_5_6_TERRA_MODEL = "openai/gpt-5.6-terra"
+GPT_5_6_LUNA_MODEL = "openai/gpt-5.6-luna"
+GEMINI_3_6_FLASH_MODEL = "google/gemini-3.6-flash"
+QWEN_3_7_PLUS_MODEL = "qwen/qwen3.7-plus"
+KIMI_K3_MODEL = "moonshotai/kimi-k3"
+GROK_4_5_MODEL = "x-ai/grok-4.5"
 
-# Secondary reasoning model; carries its own litellm cost entry.
-KIMI_K2_5_MODEL = "moonshotai/kimi-k2.5"
+# Primary package/CLI review model (routed via OpenRouter for non-direct
+# providers). The website intentionally starts on Opus 5 instead; this cheaper
+# package default keeps local runs accessible.
+DEFAULT_MODEL = QWEN_3_7_PLUS_MODEL
 
 # OpenRouter Fusion — a multi-model deliberation meta-model (a panel of expert
 # models runs the prompt in parallel with web search, then a synthesizer
@@ -65,8 +77,11 @@ OPENROUTER_EXTRACTION_MODEL = "google/gemini-3-flash-preview"
 # litellm uses gemini/ prefix for Google AI Studio (not google/ which is Vertex AI)
 QUALITY_MODEL = "gemini/gemini-3-flash-preview"
 
-# Literature search via Perplexity Sonar Pro (web-grounded, returns citations)
+# Literature search via Perplexity (web-grounded, returns citations). Standard
+# reviews use Pro Search; the opt-in deep mode uses the multi-step Deep Research
+# model.
 LITERATURE_SEARCH_MODEL = "perplexity/sonar-pro-search"
+DEEP_LITERATURE_SEARCH_MODEL = "perplexity/sonar-deep-research"
 
 # Default host-specific model IDs for the headless CLI backends
 # (``coarse-review --host claude|codex|gemini``). These are NOT litellm
@@ -75,9 +90,9 @@ LITERATURE_SEARCH_MODEL = "perplexity/sonar-pro-search"
 # its own command line. Kept here so ``cli_review``, ``headless_review``,
 # and ``headless_clients`` all agree on the canonical default.
 HEADLESS_DEFAULT_MODELS: dict[str, str] = {
-    "claude": "claude-opus-4-6",
-    "codex": "gpt-5.4",
-    "gemini": "gemini-3.1-pro-preview",
+    "claude": CLAUDE_OPUS_5_MODEL.removeprefix("anthropic/"),
+    "codex": GPT_5_6_SOL_MODEL.removeprefix("openai/"),
+    "gemini": GEMINI_3_6_FLASH_MODEL.removeprefix("google/"),
 }
 
 # Recall evaluation judge (cheap model for YES/NO semantic matching)
@@ -124,6 +139,15 @@ REASONING_MODEL_PREFIXES: tuple[str, ...] = (
     # bare `gpt-5` covers direct-OpenAI-SDK IDs (gpt-5.4, gpt-5-mini, …).
     "openai/gpt-5",
     "gpt-5",
+    # Current adaptive/default-reasoning frontier models. OpenRouter reports
+    # reasoning enabled by default for Claude 5, Qwen 3.7 Plus, and Kimi K3,
+    # and mandatory for Gemini 3.6 Flash (verified 2026-07-29). Reserve hidden
+    # token headroom and include that billable output in estimates.
+    CLAUDE_OPUS_5_MODEL,
+    CLAUDE_SONNET_5_MODEL,
+    GEMINI_3_6_FLASH_MODEL,
+    QWEN_3_7_PLUS_MODEL,
+    KIMI_K3_MODEL,
     # DeepSeek R-series (R1 and distills)
     "deepseek/deepseek-r",
     # xAI Grok 4 family — reasoning on by default. Grok 3 mini is also a
@@ -275,6 +299,12 @@ TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = (
     "anthropic/claude-fable-5",  # OpenRouter / litellm Anthropic form
     "vertex_ai/claude-fable-5",  # Vertex AI form
     "claude-fable-5",  # bare Anthropic SDK / Bedrock-style ID
+    # Claude Sonnet 5 also omits temperature on OpenRouter (verified
+    # 2026-07-29). Opus 5 does support it, so do not gate the whole Claude 5
+    # family.
+    "anthropic/claude-sonnet-5",  # OpenRouter / litellm Anthropic form
+    "vertex_ai/claude-sonnet-5",  # Vertex AI form
+    "claude-sonnet-5",  # bare Anthropic SDK / Bedrock-style ID
 )
 
 

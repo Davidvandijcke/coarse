@@ -13,10 +13,16 @@ from rich.table import Table
 
 from coarse.config import CoarseConfig, has_provider_key
 from coarse.llm import estimate_call_cost, estimate_reasoning_overhead_tokens
-from coarse.models import LITERATURE_SEARCH_MODEL, OCR_MODEL, is_reasoning_model
+from coarse.models import (
+    DEEP_LITERATURE_SEARCH_MODEL,
+    LITERATURE_SEARCH_MODEL,
+    OCR_MODEL,
+    is_reasoning_model,
+)
 from coarse.pipeline_spec import (
     AVG_COMMENTS_PER_SECTION,
     COST_BUFFER,
+    DEEP_LITERATURE_FLAT_COST,
     EDITORIAL_OVERHEAD,
     EXTRACTION_QA_IMAGE_OVERHEAD,
     FIXED_STAGE_INPUT_TOKENS,
@@ -72,6 +78,7 @@ def build_cost_estimate(
     section_count: int | None = None,
     is_pdf: bool = True,
     model: str | None = None,
+    deep_literature_search: bool = False,
 ) -> CostEstimate:
     """Return a CostEstimate with per-stage breakdowns using heuristic token budgets.
 
@@ -89,6 +96,8 @@ def build_cost_estimate(
             ``config.default_model``. Callers that received a ``--model``
             CLI flag should pass it here so the quoted cost reflects the
             model the user actually asked for, not the config default.
+        deep_literature_search: Price the opt-in Perplexity Sonar Deep Research
+            path instead of the standard Sonar Pro Search request.
     """
     model = model or config.default_model
     total_tokens = max(0, paper_text.token_estimate)
@@ -174,13 +183,19 @@ def build_cost_estimate(
     )
 
     if has_provider_key("openrouter", config):
+        literature_model = (
+            DEEP_LITERATURE_SEARCH_MODEL if deep_literature_search else LITERATURE_SEARCH_MODEL
+        )
+        literature_cost = (
+            DEEP_LITERATURE_FLAT_COST if deep_literature_search else LITERATURE_FLAT_COST
+        )
         stages.append(
             CostStage(
                 name="literature_search",
-                model=LITERATURE_SEARCH_MODEL,
+                model=literature_model,
                 estimated_tokens_in=0,
                 estimated_tokens_out=0,
-                estimated_cost_usd=LITERATURE_FLAT_COST,
+                estimated_cost_usd=literature_cost,
             )
         )
     else:
@@ -331,6 +346,7 @@ def run_cost_gate(
     section_count: int | None = None,
     is_pdf: bool = True,
     model: str | None = None,
+    deep_literature_search: bool = False,
 ) -> CostEstimate:
     """Build estimate, display it, prompt for confirmation. Returns CostEstimate."""
     estimate = build_cost_estimate(
@@ -339,6 +355,7 @@ def run_cost_gate(
         section_count=section_count,
         is_pdf=is_pdf,
         model=model,
+        deep_literature_search=deep_literature_search,
     )
     display_cost_estimate(estimate)
     confirm_or_abort(estimate, config.max_cost_usd)

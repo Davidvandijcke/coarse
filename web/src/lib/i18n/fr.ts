@@ -82,6 +82,11 @@ export const fr: Messages = {
     "p. ex. veuillez vous concentrer sur la stratégie d'identification au §3 — la section données est encore provisoire.",
   notesAriaLabel: "Notes facultatives pour orienter le relecteur",
   notesHelper: "Indiquez au relecteur sur quoi se concentrer. Ne remplace pas la grille d'évaluation.",
+  deepLiteratureLabel: "Recherche bibliographique approfondie",
+  deepLiteratureHelper:
+    "Utilise Perplexity Sonar Deep Research pour une recherche de sources plus exhaustive et en plusieurs étapes. Ajoute généralement quelques minutes et environ 0,30 $ à l'estimation.",
+  deepLiteratureOn: "Activée",
+  deepLiteratureOff: "Désactivée",
 
   costEstimating: "Estimation du coût...",
   costEstimatePrefix: "Coût d'API estimé : $",

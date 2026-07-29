@@ -96,6 +96,14 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     )
     assert "attachCmd: string;" in handoff_lib
     assert "rg '^  view:|^  local:' ${logFile}" in handoff_lib
+    # The opt-in deep-literature choice must survive subscription handoff just
+    # as it does the hosted submit path. Pin both the command builder contract
+    # and the conditional CLI suffix so a UI refactor cannot silently drop it.
+    assert "deepLiteratureSearch?: boolean;" in handoff_lib
+    assert "const deepSuffix = deepLiteratureSearch ?" in handoff_lib
+    assert '" --deep-literature-search" : "";' in handoff_lib
+    assert "${effort}${deepSuffix}`;" in handoff_lib
+    assert handoff_page.count("deepLiteratureSearch,") >= 3
 
     # page.tsx must pass logFile + attachCmd through to buildAgentPrompt
     # on every call site (handleLaunch + the collapsible manual-commands UI).
@@ -180,16 +188,20 @@ def test_handoff_key_guidance_is_pdf_conditional() -> None:
     assert "No OpenRouter key needed:" in handoff_route
     assert "OpenRouter key:</strong> PDF sources use Mistral OCR" in handoff_route
 
-    # The three bundled skills gate their key section on PDF too.
+    # The three bundled skills gate the standard key requirement on PDFs and
+    # also explain that explicit deep search needs a key for every format.
     for skill in (
         "src/coarse/_skills/claude_code/SKILL.md",
         "src/coarse/_skills/codex/SKILL.md",
         "src/coarse/_skills/gemini_cli/SKILL.md",
     ):
         text = _read(skill)
-        assert "OpenRouter API key required for PDF papers only" in text, skill
-        assert "If the paper is a PDF and neither probe reports" in text, skill
-        assert "never block a non-PDF review on a missing key" in text, skill
+        assert (
+            "OpenRouter API key required for PDF papers or an explicitly "
+            "requested deep literature search"
+        ) in text, skill
+        assert "`--deep-literature-search` uses Perplexity Sonar Deep Research" in text, skill
+        assert "If the paper is a PDF or deep literature was requested" in text, skill
 
 
 def test_submit_route_handoff_retry_checks_review_status() -> None:

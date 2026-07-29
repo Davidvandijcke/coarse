@@ -17,7 +17,7 @@ from coarse.agents.overview import OverviewAgent, merge_overview
 from coarse.agents.quote_repair import QuoteRepairAgent
 from coarse.agents.section import SectionAgent
 from coarse.agents.verify import ProofVerifyAgent
-from coarse.config import CoarseConfig, load_config
+from coarse.config import CoarseConfig, has_provider_key, load_config
 from coarse.cost import run_cost_gate
 from coarse.extraction import extract_file
 from coarse.languages import resolve_language_context
@@ -358,6 +358,7 @@ def review_paper(
     author_notes: str | None = None,
     language: str | None = None,
     site_language: str | None = None,
+    deep_literature_search: bool = False,
     progress_callback: PipelineProgressCallback | None = None,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
@@ -397,6 +398,8 @@ def review_paper(
         site_language: Optional BCP-47 code for the site/UI locale, used only as
             the lowest-priority fallback when there is no explicit language and
             the paper is detected as English/unknown. ``None`` is the default.
+        deep_literature_search: Use Perplexity Sonar Deep Research instead of
+            Sonar Pro Search. Defaults to False for compatible cost and latency.
         progress_callback: Optional callback receiving best-effort pipeline
             progress updates, including cumulative actual token spend.
 
@@ -414,11 +417,11 @@ def review_paper(
     """
     if config is None:
         config = load_config()
+    if deep_literature_search and not has_provider_key("openrouter", config):
+        raise ValueError("Deep literature search requires a valid OpenRouter API key.")
 
     resolved_model = model or config.default_model
-    # Explicit user/config choice for the review-output language. The EFFECTIVE
-    # language is resolved after detection (see resolve_language_context below),
-    # so this is only the highest-priority candidate, not the final answer.
+    # Effective output language resolves later; this is only the highest-priority candidate.
     explicit_language = language or config.review_language
     progress = _PipelineProgressReporter(progress_callback)
     client = LLMClient(model=resolved_model, config=config, cost_callback=progress.update_cost)
@@ -479,9 +482,14 @@ def review_paper(
     )
 
     if not skip_cost_gate:
-        # Pass resolved_model so a `--model` CLI override is reflected in
-        # the quote, not just in the downstream LLMClient.
-        run_cost_gate(paper_text, gate_config, is_pdf=is_pdf, model=resolved_model)
+        # Quote the resolved CLI/config model, not only the downstream LLM call.
+        run_cost_gate(
+            paper_text,
+            gate_config,
+            is_pdf=is_pdf,
+            model=resolved_model,
+            deep_literature_search=deep_literature_search,
+        )
         progress.complete("extraction", "Extracted paper text", client.cost_usd)
         if run_qa:
             progress.complete("extraction_qa", "Completed extraction QA", client.cost_usd)
@@ -533,7 +541,11 @@ def review_paper(
         future_map = {
             executor.submit(calibrate_domain, structure, client): "calibration",
             executor.submit(
-                search_literature, structure.title, structure.abstract, client
+                search_literature,
+                structure.title,
+                structure.abstract,
+                client,
+                deep_literature_search,
             ): "literature_search",
             executor.submit(extract_contribution, structure, client): "contribution_extraction",
         }
@@ -561,6 +573,8 @@ def review_paper(
                     try:
                         literature_context = future.result()
                     except Exception:
+                        if deep_literature_search:
+                            raise
                         logger.warning("Literature search failed, skipping", exc_info=True)
                         literature_context = ""
                     progress.complete(

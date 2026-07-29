@@ -25,12 +25,19 @@ from coarse.config import (
     resolve_api_key,
 )
 from coarse.models import (
+    CLAUDE_OPUS_5_MODEL,
+    CLAUDE_SONNET_5_MODEL,
     DEFAULT_MODEL,
     FUSION_INPUT_COST_PER_TOKEN,
     FUSION_MODEL,
     FUSION_OUTPUT_COST_PER_TOKEN,
+    GEMINI_3_6_FLASH_MODEL,
+    GPT_5_6_LUNA_MODEL,
+    GPT_5_6_SOL_MODEL,
+    GPT_5_6_TERRA_MODEL,
+    GROK_4_5_MODEL,
     JSON_MODE_PREFIXES,
-    KIMI_K2_5_MODEL,
+    KIMI_K3_MODEL,
     MARKDOWN_JSON_PREFIXES,
     OPENROUTER_NAMESPACE_MODELS,
     REASONING_EFFORT_DEFAULT,
@@ -54,19 +61,66 @@ litellm.drop_params = True
 
 # Register models missing from litellm's registry.
 # litellm.model_cost is the lookup used by _clamp_max_tokens.
-# Values from OpenRouter /api/v1/models (verified 2026-03-04).
+# Values from OpenRouter /api/v1/models (verified 2026-07-29). New releases can
+# take a litellm release cycle to appear; pinning the featured models here keeps
+# cost estimates and max-output clamping correct on launch day.
 _CUSTOM_MODEL_INFO: dict[str, dict] = {
     DEFAULT_MODEL: {
         "max_tokens": 1_000_000,
         "max_output_tokens": 65_536,
-        "input_cost_per_token": 0.26e-6,
-        "output_cost_per_token": 1.56e-6,
+        "input_cost_per_token": 0.32e-6,
+        "output_cost_per_token": 1.28e-6,
     },
-    KIMI_K2_5_MODEL: {
-        "max_tokens": 131_072,
-        "max_output_tokens": 32_768,
-        "input_cost_per_token": 0.35e-6,
-        "output_cost_per_token": 0.7e-6,
+    CLAUDE_OPUS_5_MODEL: {
+        "max_tokens": 1_000_000,
+        "max_output_tokens": 128_000,
+        "input_cost_per_token": 5e-6,
+        "output_cost_per_token": 25e-6,
+    },
+    CLAUDE_SONNET_5_MODEL: {
+        "max_tokens": 1_000_000,
+        "max_output_tokens": 128_000,
+        "input_cost_per_token": 2e-6,
+        "output_cost_per_token": 10e-6,
+    },
+    GPT_5_6_SOL_MODEL: {
+        "max_tokens": 1_050_000,
+        "max_output_tokens": 128_000,
+        "input_cost_per_token": 5e-6,
+        "output_cost_per_token": 30e-6,
+    },
+    GPT_5_6_LUNA_MODEL: {
+        "max_tokens": 1_050_000,
+        "max_output_tokens": 128_000,
+        "input_cost_per_token": 0.5e-6,
+        "output_cost_per_token": 3e-6,
+    },
+    GPT_5_6_TERRA_MODEL: {
+        "max_tokens": 1_050_000,
+        "max_output_tokens": 128_000,
+        "input_cost_per_token": 1.25e-6,
+        "output_cost_per_token": 7.5e-6,
+    },
+    GEMINI_3_6_FLASH_MODEL: {
+        "max_tokens": 1_048_576,
+        "max_output_tokens": 65_536,
+        "input_cost_per_token": 1.5e-6,
+        "output_cost_per_token": 7.5e-6,
+    },
+    KIMI_K3_MODEL: {
+        "max_tokens": 1_048_576,
+        # OpenRouter currently reports no explicit completion ceiling. This
+        # conservative cap is comfortably above every coarse stage budget.
+        "max_output_tokens": 131_072,
+        "input_cost_per_token": 3e-6,
+        "output_cost_per_token": 15e-6,
+    },
+    GROK_4_5_MODEL: {
+        "max_tokens": 500_000,
+        # OpenRouter currently reports no explicit completion ceiling.
+        "max_output_tokens": 131_072,
+        "input_cost_per_token": 2e-6,
+        "output_cost_per_token": 6e-6,
     },
     # OpenRouter Fusion reports dynamic pricing (-1) on /api/v1/models, so it is
     # absent from litellm's registry and cost lookups would zero out. Register

@@ -26,7 +26,7 @@ paper (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)
     → [extraction_qa.py] Vision LLM spot-check (auto-triggers on garbled text)
     → [structure.py]     Parse headings + LLM → PaperStructure (sections, math detection, domain)
     → [calibrate_domain] Domain-specific review criteria (parallel with literature)
-    → [literature.py]    Perplexity Sonar Pro search, arXiv fallback (parallel with calibration)
+    → [literature.py]    Perplexity Pro / opt-in Deep Research, arXiv fallback (parallel)
     → [overview.py]      Single overview agent → OverviewFeedback (macro issues)
     → [completeness.py]  Structural-gap pass merged into overview
     → [section agents]   LLM → 15-25 detailed comments (1 per section, parallel)
@@ -87,7 +87,7 @@ src/coarse/
     ├── critique.py          # Self-critique quality gate (legacy, superseded by editorial)
     ├── quote_repair.py      # Batched near-miss quote re-anchoring before deterministic re-check
     ├── verify.py            # Adversarial proof verification (math sections)
-    └── literature.py        # Literature search (Perplexity Sonar Pro, arXiv fallback)
+    └── literature.py        # Literature search (Perplexity Pro/Deep, arXiv fallback)
 ```
 
 ### Key Types (types.py)
@@ -294,12 +294,12 @@ session operates in its own worktree.
 
 **`src/coarse/models.py` is the single source of truth for ALL model IDs.** Never hardcode model strings in any other file — always `from coarse.models import DEFAULT_MODEL, VISION_MODEL, CHEAP_MODELS`.
 
-Current models (verified 2026-04-10):
-- **Default**: `qwen/qwen3.5-plus-02-15` (via OpenRouter, 1M ctx, $0.26/1.56 per 1M tok)
+Current models (verified 2026-07-29):
+- **Default**: `qwen/qwen3.7-plus` (via OpenRouter, 1M ctx, $0.32/1.28 per 1M tok)
 - **Vision**: `gemini/gemini-3-flash-preview` (1M ctx, $0.50/3.00 per 1M tok) — post-extraction QA (litellm uses `gemini/` prefix)
 - **OCR**: Mistral OCR, always routed through OpenRouter's `file-parser` plugin (never direct). Required: only `OPENROUTER_API_KEY`.
 - **OpenRouter Extraction**: `google/gemini-3-flash-preview` — the host model that carries the file-parser plugin request
-- **Literature Search**: `perplexity/sonar-pro-search` — web-grounded literature search via OpenRouter (~$0.03)
+- **Literature Search**: `perplexity/sonar-pro-search` standard (~$0.03), with opt-in `perplexity/sonar-deep-research` (~$0.25 representative pre-buffer cost)
 - **Quality Eval**: `gemini/gemini-3-flash-preview` — dev-only quality evaluation (single-judge or panel)
 - **Cheap (OpenAI)**: `openai/gpt-5.1-codex-mini` ($0.25/2.00)
 - **Cheap (Anthropic)**: `anthropic/claude-haiku-4.5` ($1.00/5.00)

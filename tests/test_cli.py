@@ -190,6 +190,52 @@ def test_review_yes_flag_skips_cost_gate(tmp_path, monkeypatch):
     assert captured.get("skip_cost_gate") is True
 
 
+def test_review_deep_literature_flag_reaches_pipeline(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    captured: dict[str, object] = {}
+
+    def fake_review(**kwargs):
+        captured.update(kwargs)
+        from coarse.types import PaperText
+
+        return _make_review(), "# Test\n", PaperText(full_markdown="", token_estimate=0)
+
+    with (
+        patch("coarse.cli.has_provider_key", return_value=True),
+        patch("coarse.cli.resolve_api_key", return_value="sk-test"),
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.review_paper", side_effect=fake_review),
+    ):
+        result = runner.invoke(
+            app,
+            ["review", str(pdf), "--yes", "--deep-literature-search"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert captured["deep_literature_search"] is True
+
+
+def test_review_deep_literature_requires_openrouter_key(tmp_path, monkeypatch):
+    pdf = tmp_path / "paper.md"
+    pdf.write_text("# Paper\n", encoding="utf-8")
+
+    with (
+        patch("coarse.cli.has_provider_key", return_value=False),
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.review_paper") as mock_review,
+    ):
+        result = runner.invoke(
+            app,
+            ["review", str(pdf), "--yes", "--deep-literature-search"],
+        )
+
+    assert result.exit_code != 0
+    assert "requires an OpenRouter API key" in result.output
+    mock_review.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # test_review_missing_api_key_triggers_setup
 # ---------------------------------------------------------------------------

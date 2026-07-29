@@ -92,6 +92,11 @@ export const zhHant: Messages = {
     "例如：請聚焦於 §3 的辨識策略——資料章節目前仍是佔位內容。",
   notesAriaLabel: "用以引導審查者的選填備註",
   notesHelper: "引導審查者關注的重點。不會覆寫評分準則。",
+  deepLiteratureLabel: "深度文獻檢索",
+  deepLiteratureHelper:
+    "使用 Perplexity Sonar Deep Research 進行更完整的多步驟來源檢索。通常會多花幾分鐘，並使預估費用增加約 0.30 美元。",
+  deepLiteratureOn: "開啟",
+  deepLiteratureOff: "關閉",
 
   // submit form — cost estimate
   costEstimating: "估算費用中...",

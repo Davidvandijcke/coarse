@@ -20,7 +20,13 @@ from coarse.llm import (
     model_cost_per_token,
 )
 from coarse.models import (
+    CLAUDE_OPUS_5_MODEL,
     FUSION_MODEL,
+    GPT_5_6_LUNA_MODEL,
+    GPT_5_6_TERRA_MODEL,
+    GROK_4_5_MODEL,
+    KIMI_K3_MODEL,
+    QWEN_3_7_PLUS_MODEL,
     REASONING_EFFORT_DEFAULT,
     REASONING_MAX_TOKENS_MULTIPLIER,
 )
@@ -97,6 +103,23 @@ def test_cost_accumulates_across_calls(mock_instructor_client):
 
 def test_model_cost_per_token_known_model():
     in_cost, out_cost = model_cost_per_token("openai/gpt-4o")
+    assert in_cost > 0
+    assert out_cost > 0
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        CLAUDE_OPUS_5_MODEL,
+        GPT_5_6_LUNA_MODEL,
+        GPT_5_6_TERRA_MODEL,
+        GROK_4_5_MODEL,
+        KIMI_K3_MODEL,
+        QWEN_3_7_PLUS_MODEL,
+    ],
+)
+def test_current_featured_models_have_registered_pricing(model_id):
+    in_cost, out_cost = model_cost_per_token(model_id)
     assert in_cost > 0
     assert out_cost > 0
 

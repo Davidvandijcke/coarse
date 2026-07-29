@@ -65,10 +65,10 @@ export const HOST_CLI_NAME: Record<ChatHost, "claude" | "codex" | "gemini"> = {
 // pre-selected default (see page.tsx setSelectedModel). Latest generation
 // leads; the prior generation stays available as a fallback option.
 export const HOST_DEFAULT_MODELS: Record<ChatHost, string[]> = {
-  "claude-code": ["claude-opus-4-8", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
-  "codex": ["gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.4-mini", "gpt-5.4-pro"],
+  "claude-code": ["claude-opus-5", "claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5"],
+  "codex": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4"],
   "gemini-cli": [
-    "gemini-3.5-flash",
+    "gemini-3.6-flash",
     "gemini-3.1-pro-preview",
     "gemini-3-flash-preview",
     "gemini-3.1-flash-lite-preview",
@@ -480,10 +480,20 @@ export function buildCliCommands(args: {
   effort: EffortLevel;
   paperId: string;
   reviewLanguage?: string;
+  deepLiteratureSearch?: boolean;
 }): HandoffCliCommands {
-  const { handoffUrl, host, model, effort, paperId, reviewLanguage } = args;
+  const {
+    handoffUrl,
+    host,
+    model,
+    effort,
+    paperId,
+    reviewLanguage,
+    deepLiteratureSearch = false,
+  } = args;
   const cliName = HOST_CLI_NAME[host];
   const base = buildHandoffLandingCommands({ handoffUrl, paperId, reviewLanguage });
-  const runCmd = `${base.runCmd} --host ${cliName} --model ${model} --effort ${effort}`;
+  const deepSuffix = deepLiteratureSearch ? " --deep-literature-search" : "";
+  const runCmd = `${base.runCmd} --host ${cliName} --model ${model} --effort ${effort}${deepSuffix}`;
   return { ...base, runCmd };
 }

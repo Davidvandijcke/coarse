@@ -95,6 +95,11 @@ export const ar: Messages = {
     "مثال: يُرجى التركيز على استراتيجية التحديد في §3 — قسم البيانات ما زال عنصرًا نائبًا.",
   notesAriaLabel: "ملاحظات اختيارية لتوجيه المراجِع",
   notesHelper: "وجِّه ما يركّز عليه المراجِع. لا يتجاوز ذلك معايير التقييم.",
+  deepLiteratureLabel: "بحث أدبيات متعمّق",
+  deepLiteratureHelper:
+    "يستخدم Perplexity Sonar Deep Research لإجراء بحث أشمل ومتعدد الخطوات في المصادر. يضيف عادةً بضع دقائق ونحو 0.30 دولار إلى التقدير.",
+  deepLiteratureOn: "مفعّل",
+  deepLiteratureOff: "متوقف",
 
   // submit form — cost estimate
   costEstimating: "جارٍ تقدير التكلفة...",
