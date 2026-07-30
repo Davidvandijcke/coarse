@@ -1570,7 +1570,7 @@ export default function ReviewDisplay({
 
 /** Strip provider prefixes (openrouter/, google/, etc.) and show the model name */
 function formatModelName(raw: string): string {
-  // e.g. "openrouter/qwen/qwen3.5-plus-02-15" → "qwen/qwen3.5-plus-02-15"
+  // e.g. "openrouter/qwen/qwen3.7-plus" → "qwen/qwen3.7-plus"
   //      "google/gemini-3-flash-preview"        → "gemini-3-flash-preview"
   const providers = ["openrouter/", "openai/", "anthropic/", "google/", "mistral/", "perplexity/"];
   let name = raw;

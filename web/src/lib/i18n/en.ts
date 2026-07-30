@@ -96,6 +96,11 @@ export const en = {
     "e.g. please focus on the identification strategy in §3 — the data section is still a placeholder.",
   notesAriaLabel: "Optional notes to steer the reviewer",
   notesHelper: "Steer what the reviewer focuses on. Does not override the rubric.",
+  deepLiteratureLabel: "Deep literature search",
+  deepLiteratureHelper:
+    "Uses Perplexity Sonar Deep Research for a more exhaustive, multi-step source search. Usually adds a few minutes and about $0.30 to the estimate.",
+  deepLiteratureOn: "On",
+  deepLiteratureOff: "Off",
 
   // submit form — cost estimate
   costEstimating: "Estimating cost...",

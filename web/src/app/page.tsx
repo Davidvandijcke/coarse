@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import { useRouter } from "next/navigation";
 import { CharcoalRule, HeroMarks } from "@/components/charcoal";
-import ModelPicker from "@/components/ModelPicker";
+import ModelPicker, { DEFAULT_REVIEW_MODEL } from "@/components/ModelPicker";
 import LanguagePicker from "@/components/LanguagePicker";
 import SiteLanguageSwitcher from "@/components/SiteLanguageSwitcher";
 import OpenRouterLoginButton from "@/components/OpenRouterLoginButton";
@@ -297,7 +297,8 @@ function PageBody() {
   const [file, setFile] = useState<File | null>(null);
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("anthropic/claude-opus-4.8");
+  const [model, setModel] = useState(DEFAULT_REVIEW_MODEL);
+  const [deepLiteratureSearch, setDeepLiteratureSearch] = useState(false);
   // "" = auto (match the paper's own language). Sent as review_language on
   // the /api/submit body and threaded into the handoff CLI command.
   const [reviewLanguage, setReviewLanguage] = useState("");
@@ -648,7 +649,17 @@ function PageBody() {
           // Pass modelId for reasoning-model overhead detection and
           // isPdf to gate the extraction_qa stage — matches the Python
           // cost gate's behavior in build_cost_estimate().
-          setCostEstimate(estimateReviewCost(tokens, pricing, model, ext === "pdf"));
+          setCostEstimate(
+            estimateReviewCost(
+              tokens,
+              pricing,
+              model,
+              ext === "pdf",
+              undefined,
+              true,
+              deepLiteratureSearch,
+            ),
+          );
         } else {
           setCostEstimate(null);
         }
@@ -661,7 +672,7 @@ function PageBody() {
     })();
 
     return () => { cancelled = true; };
-  }, [file, model]);
+  }, [file, model, deepLiteratureSearch]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -772,6 +783,7 @@ function PageBody() {
           model,
           storage_path: storagePath,
           author_notes: authorNotes || undefined,
+          deep_literature_search: deepLiteratureSearch,
           review_language: reviewLanguage,
           handoff_secret: handoffSecret,
         }),
@@ -904,6 +916,7 @@ function PageBody() {
       effort: selectedEffort,
       paperId: handoffState.paperId,
       reviewLanguage,
+      deepLiteratureSearch,
     });
 
     // Kick off clipboard copy first, but don't await it before launching
@@ -912,6 +925,7 @@ function PageBody() {
     // cause codex:// / claude:// launches to be blocked.
     const fullPrompt = buildAgentPrompt({
       setupCmd, runCmd, attachCmd, logFile, isPdf: handoffState.isPdf, reviewLanguage,
+      deepLiteratureSearch,
     });
     navigator.clipboard.writeText(fullPrompt).catch((err) => {
       console.error("clipboard write failed", err);
@@ -925,6 +939,7 @@ function PageBody() {
     // instead" hint so the user isn't stuck.
     const launchUrl = buildLaunchUrl({
       host, runCmd, setupCmd, attachCmd, logFile, isPdf: handoffState.isPdf, reviewLanguage,
+      deepLiteratureSearch,
     });
     if (!launchUrl) {
       setLaunchStatus(t("launchCommandCopied"));
@@ -1419,6 +1434,64 @@ function PageBody() {
               disabled={submitting || handoffBusy}
             />
 
+            {/* Optional Perplexity Sonar Deep Research pass. This choice is
+                forwarded through both the hosted worker and subscription
+                handoff command so the two submit paths stay behaviorally
+                aligned. */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "1.25rem",
+                padding: "0.8rem 0.95rem",
+                border: "1px solid var(--tray)",
+                borderRadius: "2px",
+                background: "var(--board-surface)",
+              }}
+            >
+              <div>
+                <FieldLabel>{t("deepLiteratureLabel")}</FieldLabel>
+                <p
+                  id="deep-literature-helper"
+                  style={{
+                    fontFamily: "var(--font-chalk)",
+                    fontSize: "1rem",
+                    color: "var(--dust)",
+                    lineHeight: 1.45,
+                    margin: 0,
+                    maxWidth: "590px",
+                  }}
+                >
+                  {t("deepLiteratureHelper")}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={deepLiteratureSearch}
+                aria-describedby="deep-literature-helper"
+                aria-label={t("deepLiteratureLabel")}
+                disabled={submitting || handoffBusy}
+                onClick={() => setDeepLiteratureSearch((enabled) => !enabled)}
+                style={{
+                  flexShrink: 0,
+                  minWidth: "5.5rem",
+                  padding: "0.45rem 0.75rem",
+                  border: `1px solid ${deepLiteratureSearch ? "var(--yellow-chalk)" : "var(--tray)"}`,
+                  borderRadius: "999px",
+                  background: deepLiteratureSearch ? "var(--yellow-chalk)" : "var(--board)",
+                  color: deepLiteratureSearch ? "var(--board)" : "var(--chalk)",
+                  fontFamily: "var(--font-space-mono), monospace",
+                  fontSize: "0.95rem",
+                  cursor: submitting || handoffBusy ? "not-allowed" : "pointer",
+                  opacity: submitting || handoffBusy ? 0.55 : 1,
+                }}
+              >
+                {deepLiteratureSearch ? `● ${t("deepLiteratureOn")}` : `○ ${t("deepLiteratureOff")}`}
+              </button>
+            </div>
+
             {/* Optional author notes — steer the review */}
             <div>
               <FieldLabel>
@@ -1727,6 +1800,7 @@ function PageBody() {
                   effort: selectedEffort,
                   paperId: handoffState.paperId,
                   reviewLanguage,
+                  deepLiteratureSearch,
                 });
                 return (
                   <div
@@ -1796,6 +1870,7 @@ function PageBody() {
                         text={buildAgentPrompt({
                           setupCmd, runCmd, attachCmd, logFile,
                           isPdf: handoffState.isPdf, reviewLanguage,
+                          deepLiteratureSearch,
                         })}
                         maxHeight="160px"
                       />
@@ -1810,7 +1885,7 @@ function PageBody() {
                       >
                         {t("handoffRunHint")}
                       </p>
-                      {handoffState.isPdf ? (
+                      {handoffState.isPdf || deepLiteratureSearch ? (
                         <p
                           style={{
                             fontFamily: "var(--font-chalk)",

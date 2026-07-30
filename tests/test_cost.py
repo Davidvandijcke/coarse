@@ -8,7 +8,12 @@ import pytest
 
 from coarse.config import CoarseConfig
 from coarse.cost import build_cost_estimate, confirm_or_abort, run_cost_gate
-from coarse.models import FUSION_MODEL
+from coarse.models import (
+    DEEP_LITERATURE_SEARCH_MODEL,
+    FUSION_MODEL,
+    LITERATURE_SEARCH_MODEL,
+)
+from coarse.pipeline_spec import DEEP_LITERATURE_FLAT_COST, LITERATURE_FLAT_COST
 from coarse.types import CostEstimate, CostStage, PaperText
 
 TEST_MODEL = "test/mock-model"
@@ -221,6 +226,21 @@ def test_literature_search_arxiv_fallback_uses_two_stages():
     assert "literature_search" not in names  # flat-fee branch absent
     assert "literature_query_gen" in names
     assert "literature_ranking" in names
+
+
+def test_deep_literature_search_uses_deep_model_and_higher_quote():
+    config = _config()
+    with patch("coarse.cost.has_provider_key", return_value=True):
+        standard = build_cost_estimate(_paper(), config, deep_literature_search=False)
+        deep = build_cost_estimate(_paper(), config, deep_literature_search=True)
+
+    standard_stage = next(s for s in standard.stages if s.name == "literature_search")
+    deep_stage = next(s for s in deep.stages if s.name == "literature_search")
+    assert standard_stage.model == LITERATURE_SEARCH_MODEL
+    assert standard_stage.estimated_cost_usd == LITERATURE_FLAT_COST
+    assert deep_stage.model == DEEP_LITERATURE_SEARCH_MODEL
+    assert deep_stage.estimated_cost_usd == DEEP_LITERATURE_FLAT_COST
+    assert deep.total_cost_usd > standard.total_cost_usd
 
 
 def test_extraction_qa_skipped_for_non_pdf_inputs():

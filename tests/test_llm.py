@@ -8,6 +8,7 @@ from pydantic import BaseModel, ValidationError
 from coarse.config import CoarseConfig
 from coarse.llm import (
     LLMClient,
+    _completion_cost_with_long_context_pricing,
     _inject_openrouter_privacy,
     _is_openrouter_kimi_model,
     _normalize_model,
@@ -20,7 +21,15 @@ from coarse.llm import (
     model_cost_per_token,
 )
 from coarse.models import (
+    CLAUDE_FABLE_5_MODEL,
+    CLAUDE_OPUS_5_MODEL,
     FUSION_MODEL,
+    GPT_5_6_LUNA_MODEL,
+    GPT_5_6_TERRA_MODEL,
+    GROK_4_5_MODEL,
+    KIMI_K3_MODEL,
+    LONG_CONTEXT_PRICING_TIERS,
+    QWEN_3_7_PLUS_MODEL,
     REASONING_EFFORT_DEFAULT,
     REASONING_MAX_TOKENS_MULTIPLIER,
 )
@@ -99,6 +108,58 @@ def test_model_cost_per_token_known_model():
     in_cost, out_cost = model_cost_per_token("openai/gpt-4o")
     assert in_cost > 0
     assert out_cost > 0
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        CLAUDE_FABLE_5_MODEL,
+        CLAUDE_OPUS_5_MODEL,
+        GPT_5_6_LUNA_MODEL,
+        GPT_5_6_TERRA_MODEL,
+        GROK_4_5_MODEL,
+        KIMI_K3_MODEL,
+        QWEN_3_7_PLUS_MODEL,
+    ],
+)
+def test_current_featured_models_have_registered_pricing(model_id):
+    in_cost, out_cost = model_cost_per_token(model_id)
+    assert in_cost > 0
+    assert out_cost > 0
+
+
+@pytest.mark.parametrize("model_id,tier", LONG_CONTEXT_PRICING_TIERS.items())
+def test_featured_long_context_pricing_uses_threshold_tier(model_id, tier):
+    threshold = int(tier["min_prompt_tokens"])
+    base = model_cost_per_token(model_id, prompt_tokens=threshold - 1)
+    long_context = model_cost_per_token(model_id, prompt_tokens=threshold)
+
+    assert long_context == (
+        tier["input_cost_per_token"],
+        tier["output_cost_per_token"],
+    )
+    assert long_context != base
+
+
+def test_litellm_actual_cost_registry_has_qwen_long_context_tier():
+    """Actual usage tracking must use the same threshold as the cost gate."""
+    from litellm import ModelResponse, Usage
+
+    tier = LONG_CONTEXT_PRICING_TIERS[QWEN_3_7_PLUS_MODEL]
+    threshold = int(tier["min_prompt_tokens"])
+    response = ModelResponse(
+        model=QWEN_3_7_PLUS_MODEL,
+        usage=Usage(prompt_tokens=threshold, completion_tokens=100),
+    )
+
+    actual = _completion_cost_with_long_context_pricing(
+        response,
+        f"openrouter/{QWEN_3_7_PLUS_MODEL}",
+    )
+    expected = threshold * float(tier["input_cost_per_token"]) + 100 * float(
+        tier["output_cost_per_token"]
+    )
+    assert actual == pytest.approx(expected)
 
 
 def test_model_cost_per_token_unknown_model():

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import datetime
+import inspect
 import threading
 import time
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from coarse.config import CoarseConfig
 from coarse.pipeline import (
@@ -94,7 +97,11 @@ def _make_config() -> CoarseConfig:
 
 def test_review_paper_calls_stages_in_order():
     """Verify each stage is called once in the correct order."""
-    config = CoarseConfig(default_model=TEST_MODEL)
+    config = CoarseConfig(
+        default_model=TEST_MODEL,
+        extraction_qa=False,
+        api_keys={"openrouter": "key"},
+    )
     paper_text = _make_paper_text()
     structure = _make_structure()
     overview = _make_overview()
@@ -166,7 +173,7 @@ def test_review_paper_calls_stages_in_order():
         patch("coarse.pipeline.extract_file", side_effect=fake_extract),
         patch("coarse.pipeline.analyze_structure", side_effect=fake_analyze),
         patch("coarse.pipeline.calibrate_domain", return_value=None),
-        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.search_literature", return_value="") as mock_literature,
         patch("coarse.pipeline.extract_contribution", return_value=None),
         patch("coarse.pipeline.OverviewAgent") as MockOverview,
         patch("coarse.pipeline.CompletenessAgent") as MockCompleteness,
@@ -182,7 +189,12 @@ def test_review_paper_calls_stages_in_order():
         MockVerify.return_value.run.return_value = [_make_comment(1)]
         MockEditorial.return_value.run.side_effect = fake_editorial_run
 
-        review_paper("paper.pdf", skip_cost_gate=True, config=config)
+        review_paper(
+            "paper.pdf",
+            skip_cost_gate=True,
+            config=config,
+            deep_literature_search=True,
+        )
 
     assert call_order[0] == "extract"
     assert call_order[1] == "structure"
@@ -191,6 +203,61 @@ def test_review_paper_calls_stages_in_order():
     editorial_idx = call_order.index("editorial")
     render_idx = call_order.index("render")
     assert overview_idx < completeness_idx < editorial_idx < render_idx
+    mock_literature.assert_called_once_with(
+        structure.title,
+        structure.abstract,
+        mock_literature.call_args.args[2],
+        True,
+        config=config,
+    )
+
+
+def test_review_paper_preserves_progress_callback_positional_slot():
+    """Appending deep search must not reinterpret existing positional callers."""
+    parameters = list(inspect.signature(review_paper).parameters)
+    assert parameters[-2:] == ["progress_callback", "deep_literature_search"]
+
+
+def test_review_paper_deep_literature_failure_is_not_silently_skipped():
+    config = CoarseConfig(
+        default_model=TEST_MODEL,
+        extraction_qa=False,
+        api_keys={"openrouter": "key"},
+    )
+
+    with (
+        patch("coarse.pipeline.extract_file", return_value=_make_paper_text()),
+        patch("coarse.pipeline.analyze_structure", return_value=_make_structure()),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch(
+            "coarse.pipeline.search_literature",
+            side_effect=RuntimeError("deep search unavailable"),
+        ),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+    ):
+        with pytest.raises(RuntimeError, match="deep search unavailable"):
+            review_paper(
+                "paper.pdf",
+                skip_cost_gate=True,
+                config=config,
+                deep_literature_search=True,
+            )
+
+
+def test_review_paper_deep_literature_requires_key_before_extraction():
+    with (
+        patch("coarse.pipeline.has_provider_key", return_value=False),
+        patch("coarse.pipeline.extract_file") as mock_extract,
+    ):
+        with pytest.raises(ValueError, match="requires a valid OpenRouter API key"):
+            review_paper(
+                "paper.md",
+                skip_cost_gate=True,
+                config=CoarseConfig(default_model=TEST_MODEL),
+                deep_literature_search=True,
+            )
+
+    mock_extract.assert_not_called()
 
 
 def test_review_paper_reports_progress_for_completed_stages():
@@ -1584,9 +1651,7 @@ def test_review_paper_site_language_used_only_as_fallback():
     """site_language steers the output only when there's no explicit language and
     the paper is English/unknown — the lowest-priority fallback."""
     structure = _structure_with_language("")
-    review, captured = _run_review_capturing_language(
-        structure=structure, site_language="fr"
-    )
+    review, captured = _run_review_capturing_language(structure=structure, site_language="fr")
 
     assert captured["overview_language"] == "French"
     assert review.language is not None

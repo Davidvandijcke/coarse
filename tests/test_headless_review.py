@@ -8,6 +8,7 @@ from coarse.headless_review import (
     _looks_like_openrouter_key,
     _make_client_factory,
     main,
+    openrouter_key_preflight_error,
 )
 from coarse.models import model_filename_slug
 
@@ -57,6 +58,25 @@ def test_client_factory_accepts_pipeline_style_kwargs() -> None:
             factory("overview", "ignored-positional", extra=1)
 
             assert fake_client.call_count == 3
+
+
+def test_deep_literature_requires_key_even_for_preextracted_non_pdf(tmp_path, monkeypatch) -> None:
+    paper = tmp_path / "paper.md"
+    extracted = tmp_path / "paper.extracted.md"
+    paper.write_text("# Paper\n", encoding="utf-8")
+    extracted.write_text("# Extracted\n", encoding="utf-8")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    with patch("coarse.headless_review._find_openrouter_key", return_value=None):
+        assert openrouter_key_preflight_error(paper, extracted) is None
+        error = openrouter_key_preflight_error(
+            paper,
+            extracted,
+            deep_literature_search=True,
+        )
+
+    assert error is not None
+    assert "Deep literature search requires" in error
 
 
 def test_main_writes_plain_review_filename_without_explicit_model(tmp_path, capsys) -> None:

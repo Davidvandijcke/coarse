@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
   let storagePath = "";
   let authorNotes = "";
   let handoffSecret = "";
+  let deepLiteratureSearch = false;
   let lang: LanguageFields = parseLanguageFields({});
 
   try {
@@ -96,6 +97,16 @@ export async function POST(request: NextRequest) {
     storagePath = (body.storage_path ?? "").trim();
     authorNotes = (body.author_notes ?? "").trim();
     handoffSecret = (body.handoff_secret ?? "").trim();
+    if (
+      body.deep_literature_search !== undefined &&
+      typeof body.deep_literature_search !== "boolean"
+    ) {
+      return NextResponse.json(
+        { error: "deep_literature_search must be a boolean" },
+        { status: 400 },
+      );
+    }
+    deepLiteratureSearch = body.deep_literature_search === true;
     lang = parseLanguageFields(body);
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
@@ -341,6 +352,7 @@ export async function POST(request: NextRequest) {
         email,
         model: model || undefined,
         author_notes: authorNotes || undefined,
+        deep_literature_search: deepLiteratureSearch,
         // Forwarded so the worker can resolve the effective review language
         // after it detects paper_language (consumed in PR-B). Empty until the
         // submit form ships a language picker.
