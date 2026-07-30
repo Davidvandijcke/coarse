@@ -71,6 +71,7 @@ function getTurnstileApi(): TurnstileApi | undefined {
 /* ── Split-flap AI name display ────────────────────────────── */
 const AI_NAMES = ["Claude,", "Gemini,", "Qwen,", "ChatGPT,", "DeepSeek,", "Kimi,", "Grok,", "MiniMax,", "Mistral,", "Llama,"];
 const CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const BUY_ME_A_COFFEE_URL = "https://buymeacoffee.com/coarse";
 
 function SplitFlap() {
   const [index, setIndex] = useState(0);
@@ -191,6 +192,8 @@ function Header() {
         display: "flex",
         alignItems: "baseline",
         justifyContent: "space-between",
+        flexWrap: "wrap",
+        gap: "0.75rem 1.5rem",
         background: "var(--board)",
       }}
     >
@@ -216,7 +219,10 @@ function Header() {
           {t("headerTagline")}
         </span>
       </div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: "1.5rem" }}>
+      <nav
+        aria-label="Primary navigation"
+        style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.75rem 1.5rem" }}
+      >
         <a
           href="/setup"
           style={{
@@ -255,8 +261,19 @@ function Header() {
         >
           {t("navGithub")}
         </a>
+        <a
+          className="buy-me-a-coffee-button"
+          href={BUY_ME_A_COFFEE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Support coarse on Buy Me a Coffee (opens in a new tab)"
+        >
+          <span aria-hidden="true">☕</span>
+          <span>buy me a coffee</span>
+          <span className="buy-me-a-coffee-arrow" aria-hidden="true">↗</span>
+        </a>
         <SiteLanguageSwitcher />
-      </div>
+      </nav>
     </header>
   );
 }
