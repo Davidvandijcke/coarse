@@ -5,6 +5,7 @@
 [![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fcoarse.ink%2Fapi%2Fdownloads)](https://pypistats.org/packages/coarse-ink)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/github/license/Davidvandijcke/coarse)](LICENSE)
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-FFDD00?logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/coarse)
 
 Free, open-source AI academic paper reviewer that outperforms popular paid AI reviewers.
 
