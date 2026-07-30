@@ -51,6 +51,14 @@ _OPENROUTER_KEY_HELP = (
     "review extraction costs ~$0.05-0.15 per paper."
 )
 
+_DEEP_LITERATURE_KEY_HELP = (
+    "ERROR: Deep literature search requires a valid OpenRouter API key "
+    "(keys look like `sk-or-...`).\n\n"
+    "Set OPENROUTER_API_KEY, add it to ./.env, or save it in "
+    "~/.coarse/config.toml, then retry.\n"
+    "Get a key at https://openrouter.ai/settings/keys."
+)
+
 
 def _looks_like_openrouter_key(value: str | None) -> bool:
     """True only for a plausibly real OpenRouter key (``sk-or-…``).
@@ -127,19 +135,24 @@ def _require_openrouter_key() -> str:
     sys.exit(3)
 
 
-def openrouter_key_preflight_error(paper_path: Path, pre_extracted: Path | None) -> str | None:
-    """Return guidance text if a PDF review would run without a usable OpenRouter
-    key, else None (#197).
+def openrouter_key_preflight_error(
+    paper_path: Path,
+    pre_extracted: Path | None,
+    *,
+    deep_literature_search: bool = False,
+) -> str | None:
+    """Return guidance if a requested stage needs a missing OpenRouter key.
 
-    Only PDF sources hit Mistral OCR on OpenRouter; non-PDF formats and
-    pre-extracted markdown skip OCR and need no key. Reads ``os.environ`` —
-    callers must run ``_ensure_openrouter_key_loaded`` first so any valid
-    env/config/.env key has been promoted, making this check authoritative for
-    what extraction will resolve.
+    PDFs need the key for OCR. Opt-in deep literature search needs it for every
+    source format; unlike the standard search, silently dropping to arXiv would
+    violate the user's explicit depth choice. Reads ``os.environ`` — callers
+    must load config/.env first so this check is authoritative.
     """
-    if pre_extracted is not None or paper_path.suffix.lower() != ".pdf":
-        return None
     if _looks_like_openrouter_key(os.environ.get("OPENROUTER_API_KEY")):
+        return None
+    if deep_literature_search:
+        return _DEEP_LITERATURE_KEY_HELP
+    if pre_extracted is not None or paper_path.suffix.lower() != ".pdf":
         return None
     return _OPENROUTER_KEY_HELP
 
@@ -239,6 +252,7 @@ def run_headless_review(
     effort: str,
     pre_extracted: Path | None = None,
     language: str | None = None,
+    deep_literature_search: bool = False,
 ):
     """Run the full coarse pipeline with a headless CLI backend.
 
@@ -265,12 +279,14 @@ def run_headless_review(
 
     _lit_mod.LLMClient = _patch_llmclient._original  # type: ignore[attr-defined]
 
-    return review_paper(
-        str(paper_path),
-        model=f"headless-{host}",
-        skip_cost_gate=True,
-        language=language,
-    )
+    review_kwargs = {
+        "model": f"headless-{host}",
+        "skip_cost_gate": True,
+        "language": language,
+    }
+    if deep_literature_search:
+        review_kwargs["deep_literature_search"] = True
+    return review_paper(str(paper_path), **review_kwargs)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -302,6 +318,11 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("COARSE_REVIEW_LANGUAGE"),
         help="Language for the review output (e.g. 'Spanish', 'French'); default English.",
     )
+    parser.add_argument(
+        "--deep-literature-search",
+        action="store_true",
+        help="Use Perplexity Sonar Deep Research for the literature pass.",
+    )
     parser.add_argument("paper_path", type=Path)
     parser.add_argument("pre_extracted_md", type=Path, nargs="?", default=None)
     parser.add_argument("output_dir", type=Path, nargs="?", default=Path("coarse-output"))
@@ -326,7 +347,10 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = args.output_dir.expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if pre_extracted is None:
+    needs_openrouter_key = (
+        pre_extracted is None and paper_path.suffix.lower() == ".pdf"
+    ) or args.deep_literature_search
+    if needs_openrouter_key:
         _require_openrouter_key()
 
     logging.basicConfig(
@@ -344,14 +368,16 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        review, markdown, _paper = run_headless_review(
-            paper_path,
-            host=args.host,
-            model=args.model,
-            effort=args.effort,
-            pre_extracted=pre_extracted,
-            language=args.language,
-        )
+        headless_kwargs = {
+            "host": args.host,
+            "model": args.model,
+            "effort": args.effort,
+            "pre_extracted": pre_extracted,
+            "language": args.language,
+        }
+        if args.deep_literature_search:
+            headless_kwargs["deep_literature_search"] = True
+        review, markdown, _paper = run_headless_review(paper_path, **headless_kwargs)
     except ImportError as exc:
         print(
             f"ERROR: coarse-ink not installed ({exc}).\nInstall with: pip install coarse-ink",

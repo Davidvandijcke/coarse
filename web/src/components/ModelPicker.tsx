@@ -16,24 +16,28 @@ type DefaultModel = {
   showProvider?: boolean;
 };
 
+/** Canonical web-review default, shared by the landing form and review chat. */
+export const DEFAULT_REVIEW_MODEL = "anthropic/claude-opus-5";
+
 const DEFAULT_MODELS: DefaultModel[] = [
   { id: "anthropic/claude-fable-5", label: "Fable 5", provider: "Anthropic" },
-  { id: "anthropic/claude-opus-4.8", label: "Opus 4.8", provider: "Anthropic" },
-  { id: "anthropic/claude-sonnet-4.6", label: "Sonnet 4.6", provider: "Anthropic" },
-  { id: "openai/gpt-5.5", label: "GPT-5.5", provider: "OpenAI" },
-  { id: "openai/gpt-5-mini", label: "GPT-5 Mini", provider: "OpenAI" },
+  { id: DEFAULT_REVIEW_MODEL, label: "Opus 5", provider: "Anthropic" },
+  { id: "anthropic/claude-sonnet-5", label: "Sonnet 5", provider: "Anthropic" },
+  { id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", provider: "OpenAI" },
+  { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", provider: "OpenAI" },
+  { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", provider: "OpenAI" },
   { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", provider: "Google" },
-  { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash", provider: "Google" },
+  { id: "google/gemini-3.6-flash", label: "Gemini 3.6 Flash", provider: "Google" },
   { id: "qwen/qwen3.7-plus", label: "Qwen 3.7 Plus", provider: "Qwen" },
-  { id: "moonshotai/kimi-k2.6", label: "Kimi K2.6", provider: "Moonshot" },
+  { id: "moonshotai/kimi-k3", label: "Kimi K3", provider: "Moonshot" },
   { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4", provider: "DeepSeek" },
-  { id: "x-ai/grok-4.3", label: "Grok 4.3", provider: "xAI" },
+  { id: "x-ai/grok-4.5", label: "Grok 4.5", provider: "xAI" },
   { id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", provider: "Meta" },
   { id: "z-ai/glm-5.2", label: "GLM 5.2", provider: "Z.ai" },
   // OpenRouter Fusion: a multi-model deliberation panel with web search.
   // Higher latency and variable (usage-based) cost than a single model — see
   // the FUSION_MODEL note in src/coarse/models.py. showProvider tags the chip
-  // "(OpenRouter)" since "Fusion" alone is less self-explanatory than e.g. "Opus 4.8".
+  // "(OpenRouter)" since "Fusion" alone is less self-explanatory than e.g. "Opus 5".
   { id: "openrouter/fusion", label: "Fusion", provider: "OpenRouter", showProvider: true },
 ];
 

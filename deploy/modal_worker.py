@@ -516,6 +516,9 @@ class ReviewRequest(BaseModel):
     # the overview/section/editorial agents. Default None = no-op, so older
     # in-flight spawn() payloads without this field still deserialize cleanly.
     author_notes: str | None = None
+    # Opt-in Perplexity Sonar Deep Research literature pass. False preserves
+    # behavior for older queued payloads and standard web submissions.
+    deep_literature_search: bool = False
     # Review-output language contract (multilingual rollout, see
     # docs/MULTILINGUAL_PLAN.md). Forwarded from the web submit body. The worker
     # resolves the *effective* review language after it detects the paper's
@@ -721,7 +724,10 @@ def do_review(req_dict: dict):
     # scrub at the Supabase seam.
     author_notes = _strip_nul_bytes(req.author_notes)
 
-    print(f"[{job_id}] Starting review — pdf={pdf_storage_path} model={model}")
+    print(
+        f"[{job_id}] Starting review — pdf={pdf_storage_path} model={model} "
+        f"deep_literature_search={req.deep_literature_search}"
+    )
 
     supabase_url = os.environ["SUPABASE_URL"]
     supabase_key = os.environ["SUPABASE_SERVICE_KEY"]
@@ -833,15 +839,17 @@ def do_review(req_dict: dict):
         config = CoarseConfig(extraction_qa=True)
         signed_url_token = signed_url_ctx.set(openrouter_signed_url)
         try:
-            review, markdown, paper_text = review_paper(
-                pdf_path,
-                model=model,
-                skip_cost_gate=True,
-                config=config,
-                author_notes=author_notes,
-                language=req.review_language,
-                site_language=req.site_language,
-            )
+            review_kwargs = {
+                "model": model,
+                "skip_cost_gate": True,
+                "config": config,
+                "author_notes": author_notes,
+                "language": req.review_language,
+                "site_language": req.site_language,
+            }
+            if req.deep_literature_search:
+                review_kwargs["deep_literature_search"] = True
+            review, markdown, paper_text = review_paper(pdf_path, **review_kwargs)
         finally:
             signed_url_ctx.reset(signed_url_token)
         print(f"[{job_id}] Pipeline complete — {len(markdown)} chars")

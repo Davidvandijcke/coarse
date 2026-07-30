@@ -461,6 +461,17 @@ def test_review_request_author_notes_defaults_to_none(modal_worker) -> None:
     assert req.author_notes is None
 
 
+def test_review_request_deep_literature_search_is_backward_compatible(modal_worker) -> None:
+    legacy = modal_worker.ReviewRequest(job_id="j1", pdf_storage_path="abcd.pdf")
+    deep = modal_worker.ReviewRequest(
+        job_id="j2",
+        pdf_storage_path="efgh.pdf",
+        deep_literature_search=True,
+    )
+    assert legacy.deep_literature_search is False
+    assert deep.deep_literature_search is True
+
+
 def test_strip_nul_bytes_applies_to_author_notes(modal_worker) -> None:
     """author_notes with NUL bytes must be scrubbed before reaching the LLM.
     Defense against the same failure mode that Supabase 22P05 triggers — some
@@ -1351,7 +1362,7 @@ def test_do_review_deletes_on_success(modal_worker, monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_do_review_forwards_language_fields_to_review_paper(modal_worker, monkeypatch) -> None:
+def test_do_review_forwards_review_options_to_review_paper(modal_worker, monkeypatch) -> None:
     """do_review must pass req.review_language / req.site_language into
     review_paper() as language= / site_language=. Regression guard against a
     refactor that drops the multilingual plumbing on the worker side."""
@@ -1390,11 +1401,13 @@ def test_do_review_forwards_language_fields_to_review_paper(modal_worker, monkey
             "pdf_storage_path": "papers/test.pdf",
             "review_language": "es",
             "site_language": "fr",
+            "deep_literature_search": True,
         }
     )
 
     assert captured_kwargs.get("language") == "es"
     assert captured_kwargs.get("site_language") == "fr"
+    assert captured_kwargs.get("deep_literature_search") is True
 
 
 def test_do_review_persists_language_columns_when_context_present(

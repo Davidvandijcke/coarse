@@ -1,6 +1,7 @@
 """Literature search agent — finds related papers to ground the review.
 
-Primary path: Perplexity Sonar Pro Search via OpenRouter (web-grounded, ~12s, ~$0.03).
+Primary path: Perplexity Sonar Pro Search via OpenRouter (web-grounded, ~12s, ~$0.03),
+with opt-in Sonar Deep Research for a more exhaustive multi-step search.
 Fallback path: arXiv API + 2 LLM calls (free API, slower, arXiv-only coverage).
 """
 
@@ -14,9 +15,9 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
-from coarse.config import has_provider_key
+from coarse.config import CoarseConfig, has_provider_key
 from coarse.llm import LLMClient
-from coarse.models import LITERATURE_SEARCH_MODEL
+from coarse.models import DEEP_LITERATURE_SEARCH_MODEL, LITERATURE_SEARCH_MODEL
 from coarse.prompts import (
     ARXIV_QUERY_GEN_SYSTEM,
     ARXIV_RANKING_SYSTEM,
@@ -31,6 +32,8 @@ _MAX_RESULTS_PER_QUERY = 10
 _MAX_ITERATIONS = 2
 _TOP_K = 8
 _PERPLEXITY_TEMPERATURE = 0.3
+_PERPLEXITY_STANDARD_TIMEOUT_SECONDS = 60
+_PERPLEXITY_DEEP_TIMEOUT_SECONDS = 300
 _QUERY_GEN_TEMPERATURE = 0.5
 _RANKING_TEMPERATURE = 0.2
 
@@ -76,18 +79,29 @@ class _RankedResults(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Perplexity Sonar Pro Search (primary path)
+# Perplexity Sonar Pro / Deep Research (primary path)
 # ---------------------------------------------------------------------------
 
 
-def _search_perplexity(title: str, abstract: str, client: LLMClient) -> str:
-    """Single Perplexity Sonar Pro Search call via LLMClient.complete_text.
+def _search_perplexity(
+    title: str,
+    abstract: str,
+    client: LLMClient,
+    *,
+    deep_search: bool = False,
+    config: CoarseConfig | None = None,
+) -> str:
+    """Single Perplexity literature-search call via LLMClient.complete_text.
 
     Returns formatted literature context string, or raises on failure. Routes
     through LLMClient so OpenRouter privacy / api_key / control-char stripping
-    all apply uniformly with the rest of the pipeline.
+    all apply uniformly with the rest of the pipeline. Deep mode changes the
+    retrieval model and timeout, but deliberately keeps the same output budget:
+    users get broader source discovery without multiplying the literature block
+    injected into every downstream review prompt.
     """
-    perplexity_client = LLMClient(model=LITERATURE_SEARCH_MODEL)
+    literature_model = DEEP_LITERATURE_SEARCH_MODEL if deep_search else LITERATURE_SEARCH_MODEL
+    perplexity_client = LLMClient(model=literature_model, config=config)
     messages = [
         {"role": "system", "content": PERPLEXITY_SYSTEM},
         {"role": "user", "content": perplexity_user(title, abstract[:1500])},
@@ -96,7 +110,11 @@ def _search_perplexity(title: str, abstract: str, client: LLMClient) -> str:
         messages,
         max_tokens=4096,
         temperature=_PERPLEXITY_TEMPERATURE,
-        timeout=60,
+        timeout=(
+            _PERPLEXITY_DEEP_TIMEOUT_SECONDS
+            if deep_search
+            else _PERPLEXITY_STANDARD_TIMEOUT_SECONDS
+        ),
     )
     client.add_cost(perplexity_client.cost_usd)
     return content
@@ -226,19 +244,42 @@ def search_literature(
     title: str,
     abstract: str,
     client: LLMClient,
+    deep_search: bool = False,
+    *,
+    config: CoarseConfig | None = None,
 ) -> str:
-    """Run the literature search. Signature unchanged for pipeline.py.
+    """Run the literature search.
 
-    Uses Perplexity Sonar Pro Search if OPENROUTER_API_KEY is set,
-    falling back to the arXiv pipeline on failure or missing key.
+    Uses Perplexity Sonar Pro Search if OPENROUTER_API_KEY is set, or Sonar
+    Deep Research when ``deep_search`` is true. Standard mode falls back to
+    the arXiv pipeline on failure or a missing key. Explicit deep mode fails
+    clearly instead of silently returning the shallower fallback.
     """
-    if has_provider_key("openrouter"):
+    if has_provider_key("openrouter", config):
         try:
-            result = _search_perplexity(title, abstract, client)
-            logger.info("Literature search completed via Perplexity")
+            result = _search_perplexity(
+                title,
+                abstract,
+                client,
+                deep_search=deep_search,
+                config=config,
+            )
+            logger.info(
+                "Literature search completed via Perplexity (%s)",
+                "deep" if deep_search else "standard",
+            )
             return result
         except Exception:
+            if deep_search:
+                logger.exception("Perplexity deep literature search failed")
+                raise
             logger.warning("Perplexity search failed, falling back to arXiv", exc_info=True)
+
+    elif deep_search:
+        raise RuntimeError(
+            "Deep literature search requires a valid OpenRouter API key; "
+            "the standard arXiv fallback cannot provide the requested depth."
+        )
 
     return _search_arxiv_pipeline(title, abstract, client)
 

@@ -641,6 +641,35 @@ def test_main_fails_fast_on_missing_openrouter_key_for_pdf(tmp_path, monkeypatch
     assert "No valid OpenRouter API key" in capsys.readouterr().err
 
 
+def test_main_fails_fast_on_missing_key_for_deep_literature_non_pdf(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    paper = tmp_path / "paper.md"
+    paper.write_text("# Paper\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("coarse.headless_review._find_openrouter_key", return_value=None),
+        patch(
+            "coarse.headless_review.run_headless_review",
+            side_effect=AssertionError("pipeline must not run without a key"),
+        ),
+    ):
+        rc = main(
+            [
+                str(paper),
+                "--host",
+                "claude",
+                "--output-dir",
+                str(out_dir),
+                "--deep-literature-search",
+            ]
+        )
+    assert rc == 3
+    assert "Deep literature search requires" in capsys.readouterr().err
+
+
 def test_main_proceeds_with_valid_key_for_pdf(tmp_path, monkeypatch) -> None:
     """#197: a PDF review with a valid sk-or- key passes the preflight and runs."""
     paper = tmp_path / "paper.pdf"

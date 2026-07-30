@@ -14,11 +14,11 @@ Two modes:
    local markdown file in ``./coarse-output/``.
 
 2. **Handoff mode** — ``coarse-review --handoff <url>`` pulls a handoff
-   bundle minted by the coarse.vercel.app web form (paper download URL
+   bundle minted by the coarse.ink web form (paper download URL
    + finalize token + callback URL). Extraction still happens locally
    (faster than waiting on the server, same PDF-only key rule); the
    final review gets POSTed back to ``/api/mcp-finalize`` so the user
-   can see it at ``coarse.vercel.app/review/<paper_id>`` in the normal
+   can see it at ``coarse.ink/review/<paper_id>`` in the normal
    web UI.
 """
 
@@ -136,8 +136,8 @@ def _infer_handoff_extension(
 def _fetch_handoff(url: str) -> dict:
     """Fetch the handoff bundle JSON from ``url``.
 
-    Accepts either the short form ``coarse.vercel.app/h/<token>`` or
-    ``https://coarse.vercel.app/h/<token>``. The endpoint returns the
+    Accepts either the short form ``coarse.ink/h/<token>`` or
+    ``https://coarse.ink/h/<token>``. The endpoint returns the
     bundle as JSON.
     """
     import requests
@@ -242,7 +242,7 @@ def _post_finalize(
     host_label: str,
     language: dict[str, str] | None = None,
 ) -> dict:
-    """POST the rendered review back to coarse.vercel.app/api/mcp-finalize.
+    """POST the rendered review back to coarse.ink/api/mcp-finalize.
 
     Retries up to ``_POST_FINALIZE_MAX_ATTEMPTS`` times on transient
     failure classes (connection error, timeout, 429, 5xx) with
@@ -493,7 +493,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--handoff",
         metavar="URL",
-        help="Handoff URL from the coarse web form (coarse.vercel.app/h/<token>).",
+        help="Handoff URL from the coarse web form (coarse.ink/h/<token>).",
     )
     parser.add_argument(
         "--host",
@@ -504,8 +504,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--model",
         default=None,
-        help="Host-specific model ID (e.g. claude-sonnet-4-6, gpt-5, gemini-3-flash). "
-        "Defaults to the host's canonical model.",
+        help="Host-specific model ID (e.g. claude-opus-5, gpt-5.6-sol, "
+        "gemini-3.6-flash). Defaults to the host's canonical model.",
     )
     parser.add_argument(
         "--effort",
@@ -519,6 +519,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Language for the review output (e.g. 'Spanish', 'French', "
         "'Simplified Chinese'); default English. Quotes stay in the paper's "
         "original language.",
+    )
+    parser.add_argument(
+        "--deep-literature-search",
+        action="store_true",
+        help="Use Perplexity Sonar Deep Research for a more exhaustive literature pass.",
     )
     parser.add_argument(
         "--output-dir",
@@ -690,7 +695,11 @@ def main(argv: list[str] | None = None) -> int:
         # in --detach mode left a near-empty log and a bare exit code.
         from coarse.headless_review import openrouter_key_preflight_error
 
-        key_error = openrouter_key_preflight_error(paper_path, pre_extracted_path)
+        key_error = openrouter_key_preflight_error(
+            paper_path,
+            pre_extracted_path,
+            deep_literature_search=args.deep_literature_search,
+        )
         if key_error:
             print(key_error, file=sys.stderr)
             return 3
@@ -727,14 +736,16 @@ def main(argv: list[str] | None = None) -> int:
                 handoff_signed_url = raw_signed_url
         signed_url_token = signed_url_ctx.set(handoff_signed_url)
         try:
-            review, md_text, paper_text = run_headless_review(
-                paper_path,
-                host=host,
-                model=model,
-                effort=effort,
-                pre_extracted=pre_extracted_path,
-                language=args.language,
-            )
+            headless_kwargs = {
+                "host": host,
+                "model": model,
+                "effort": effort,
+                "pre_extracted": pre_extracted_path,
+                "language": args.language,
+            }
+            if args.deep_literature_search:
+                headless_kwargs["deep_literature_search"] = True
+            review, md_text, paper_text = run_headless_review(paper_path, **headless_kwargs)
         except Exception as exc:
             # Scrub the exception string before printing — if any upstream
             # helper ever interpolates a URL or token into its error, this

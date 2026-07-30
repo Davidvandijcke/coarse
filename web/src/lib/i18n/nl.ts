@@ -82,6 +82,11 @@ export const nl: Messages = {
     "bijv. focus op de identificatiestrategie in §3 — de datasectie is nog een placeholder.",
   notesAriaLabel: "Optionele opmerkingen om de reviewer te sturen",
   notesHelper: "Stuur waar de reviewer op let. Overschrijft de rubric niet.",
+  deepLiteratureLabel: "Diepgaand literatuuronderzoek",
+  deepLiteratureHelper:
+    "Gebruikt Perplexity Sonar Deep Research voor een grondigere, meerstaps bronzoektocht. Voegt meestal enkele minuten en ongeveer $ 0,30 toe aan de schatting.",
+  deepLiteratureOn: "Aan",
+  deepLiteratureOff: "Uit",
 
   costEstimating: "Kosten schatten...",
   costEstimatePrefix: "Geschatte API-kosten: $",

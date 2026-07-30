@@ -4,10 +4,11 @@ Usage:
     uv run python scripts/batch_review.py <model_id> <model_label> [paper_names...]
 
 Examples:
-    uv run python scripts/batch_review.py "anthropic/claude-sonnet-4-6" "sonnet46"
-    uv run python scripts/batch_review.py "qwen/qwen3.5-plus-02-15" "qwen35plus" coset_codes
-    uv run python scripts/batch_review.py "moonshotai/kimi-k2.5" "kimik25"
+    uv run python scripts/batch_review.py "anthropic/claude-sonnet-5" "sonnet5"
+    uv run python scripts/batch_review.py "qwen/qwen3.7-plus" "qwen37plus" coset_codes
+    uv run python scripts/batch_review.py "moonshotai/kimi-k3" "kimik3"
 """
+
 from __future__ import annotations
 
 import datetime
@@ -17,7 +18,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from coarse.config import load_config
-from coarse.extraction import extract_text
 from coarse.llm import LLMClient
 from coarse.pipeline import review_paper
 from coarse.quality import evaluate_review, save_quality_report
@@ -64,12 +64,15 @@ def run_review(paper_name: str, model: str, model_label: str) -> tuple[str, str,
     pdf_path = PAPERS[paper_name]
     config = load_config()
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"REVIEW: {paper_name} with {model_label} ({model})")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     review, markdown, paper_text = review_paper(
-        pdf_path, model=model, skip_cost_gate=True, config=config,
+        pdf_path,
+        model=model,
+        skip_cost_gate=True,
+        config=config,
     )
 
     out_dir = BASE / paper_name
@@ -102,8 +105,11 @@ def run_quality_evals(
         print(f"  Quality vs {ref_id} ({JUDGE_MODEL})...")
         client = LLMClient(model=JUDGE_MODEL)
         report = evaluate_review(
-            review_markdown, ref_text, client=client,
-            paper_text=paper_text_md, model=JUDGE_MODEL,
+            review_markdown,
+            ref_text,
+            client=client,
+            paper_text=paper_text_md,
+            model=JUDGE_MODEL,
         )
 
         save_quality_report(report, quality_path, str(ref_path), model=JUDGE_MODEL)
@@ -112,20 +118,28 @@ def run_quality_evals(
         for d in report.dimensions:
             print(f"      {d.dimension}: {d.score}")
 
-        results.append({
-            "ref": ref_id,
-            "overall": report.overall_score,
-            "dimensions": {d.dimension: d.score for d in report.dimensions},
-            "cost": client.cost_usd,
-        })
+        results.append(
+            {
+                "ref": ref_id,
+                "overall": report.overall_score,
+                "dimensions": {d.dimension: d.score for d in report.dimensions},
+                "cost": client.cost_usd,
+            }
+        )
 
     return results
 
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: uv run python scripts/batch_review.py <model_id> <model_label> [paper_names...]")
-        print('Example: uv run python scripts/batch_review.py "anthropic/claude-sonnet-4-6" "sonnet46"')
+        print(
+            "Usage: uv run python scripts/batch_review.py",
+            "<model_id> <model_label> [paper_names...]",
+        )
+        print(
+            "Example: uv run python scripts/batch_review.py",
+            '"anthropic/claude-sonnet-5" "sonnet5"',
+        )
         sys.exit(1)
 
     model = sys.argv[1]
@@ -136,7 +150,7 @@ def main():
     print(f"Judge: {JUDGE_MODEL}")
     print(f"Papers: {', '.join(paper_names)}")
     print(f"Timestamp: {TODAY}")
-    print(f"References: refine, stanford, reviewer3")
+    print("References: refine, stanford, reviewer3")
 
     all_results = []
 
@@ -148,18 +162,23 @@ def main():
         review_path, review_md, paper_text = run_review(paper_name, model, model_label)
         quality_results = run_quality_evals(paper_name, review_md, model_label, paper_text)
 
-        all_results.append({
-            "paper": paper_name,
-            "review": review_path,
-            "quality": quality_results,
-        })
+        all_results.append(
+            {
+                "paper": paper_name,
+                "review": review_path,
+                "quality": quality_results,
+            }
+        )
 
     # Summary
-    print(f"\n{'='*90}")
+    print(f"\n{'=' * 90}")
     print(f"SUMMARY: {model_label} ({model}) — judged by {JUDGE_MODEL}")
     print(f"Timestamp: {TODAY}")
-    print(f"{'='*90}")
-    print(f"{'Paper':<25} {'Ref':<12} {'Overall':>8} {'Cov':>6} {'Spec':>6} {'Depth':>6} {'Fmt':>6}")
+    print(f"{'=' * 90}")
+    print(
+        f"{'Paper':<25} {'Ref':<12} {'Overall':>8} {'Cov':>6}",
+        f"{'Spec':>6} {'Depth':>6} {'Fmt':>6}",
+    )
     print("-" * 90)
     for r in all_results:
         for q in r["quality"]:

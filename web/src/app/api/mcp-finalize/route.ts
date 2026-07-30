@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Derive the review URL the same way /api/mcp-handoff does so the dev
-  // loop (localhost:3003) and prod (coarse.vercel.app) both return URLs
+  // loop (localhost:3003) and production (coarse.ink) both return URLs
   // the caller can actually click. The URL must carry a signed access
   // token because /api/presign sets `access_token_required=true` on
   // every review it creates — that flag is enforced in GET /api/review/

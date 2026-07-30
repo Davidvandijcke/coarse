@@ -93,6 +93,11 @@ export const ko: Messages = {
     "예: §3의 식별 전략에 집중해 주세요 — 데이터 섹션은 아직 임시 자리표시자입니다.",
   notesAriaLabel: "리뷰어의 초점을 안내하는 선택적 메모",
   notesHelper: "리뷰어가 무엇에 집중할지 안내합니다. 평가 기준을 덮어쓰지는 않습니다.",
+  deepLiteratureLabel: "심층 문헌 검색",
+  deepLiteratureHelper:
+    "Perplexity Sonar Deep Research를 사용해 더 폭넓은 다단계 출처 검색을 수행합니다. 일반적으로 몇 분이 더 걸리고 예상 비용에 약 0.30달러가 추가됩니다.",
+  deepLiteratureOn: "켬",
+  deepLiteratureOff: "끔",
 
   // submit form — cost estimate
   costEstimating: "비용 추정 중...",

@@ -94,6 +94,11 @@ export const zhHans: Messages = {
     "例如：请重点关注 §3 中的识别策略——数据部分目前仍是占位内容。",
   notesAriaLabel: "用于引导评审者的可选备注",
   notesHelper: "引导评审者的关注重点。不会覆盖评审标准。",
+  deepLiteratureLabel: "深度文献检索",
+  deepLiteratureHelper:
+    "使用 Perplexity Sonar Deep Research 进行更全面的多步骤来源检索。通常会多花几分钟，并使预估费用增加约 0.30 美元。",
+  deepLiteratureOn: "开启",
+  deepLiteratureOff: "关闭",
 
   // submit form — cost estimate
   costEstimating: "正在估算费用...",

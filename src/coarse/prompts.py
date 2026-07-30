@@ -2386,7 +2386,7 @@ minor issues, "poor" if significant content is wrong or missing.
 
 
 # ---------------------------------------------------------------------------
-# Literature search (Perplexity Sonar Pro)
+# Literature search (Perplexity Sonar Pro / Deep Research)
 # ---------------------------------------------------------------------------
 
 PERPLEXITY_SYSTEM = (

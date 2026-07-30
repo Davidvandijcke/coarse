@@ -8,6 +8,7 @@ Cost: ~$0.01 total (one 1-token call per model per constraint).
 
 Usage: uv run python scripts/probe_data_collection.py
 """
+
 from __future__ import annotations
 
 import os
@@ -16,24 +17,48 @@ import sys
 import httpx
 from dotenv import load_dotenv
 
+from coarse.models import (
+    CLAUDE_FABLE_5_MODEL,
+    CLAUDE_OPUS_5_MODEL,
+    CLAUDE_SONNET_5_MODEL,
+    DEEP_LITERATURE_SEARCH_MODEL,
+    GEMINI_3_6_FLASH_MODEL,
+    GPT_5_6_LUNA_MODEL,
+    GPT_5_6_SOL_MODEL,
+    GPT_5_6_TERRA_MODEL,
+    GROK_4_5_MODEL,
+    KIMI_K3_MODEL,
+    LITERATURE_SEARCH_MODEL,
+    QWEN_3_7_PLUS_MODEL,
+)
+
 load_dotenv()
 
 API_KEY = os.environ.get("OPENROUTER_API_KEY")
 if not API_KEY:
     sys.exit("OPENROUTER_API_KEY not set")
 
-# 8 user-visible defaults from web/src/components/ModelPicker.tsx
-# + server-side models coarse uses internally
+# Current user-visible defaults from web/src/components/ModelPicker.tsx plus
+# the server-side literature models. Keep this probe aligned with each model
+# refresh so privacy-routing checks exercise what users can actually select.
 MODELS = [
-    "anthropic/claude-sonnet-4.6",
-    "openai/gpt-5-mini",
-    "google/gemini-3-flash-preview",
-    "qwen/qwen3.5-plus-02-15",
-    "moonshotai/kimi-k2.5",
-    "deepseek/deepseek-v3.2",
-    "x-ai/grok-4.1-fast",
+    CLAUDE_FABLE_5_MODEL,
+    CLAUDE_OPUS_5_MODEL,
+    CLAUDE_SONNET_5_MODEL,
+    GPT_5_6_SOL_MODEL,
+    GPT_5_6_TERRA_MODEL,
+    GPT_5_6_LUNA_MODEL,
+    "google/gemini-3.1-pro-preview",
+    GEMINI_3_6_FLASH_MODEL,
+    QWEN_3_7_PLUS_MODEL,
+    KIMI_K3_MODEL,
+    "deepseek/deepseek-v4-pro",
+    GROK_4_5_MODEL,
     "meta-llama/llama-4-maverick",
-    "perplexity/sonar-pro-search",
+    "z-ai/glm-5.2",
+    "openrouter/fusion",
+    LITERATURE_SEARCH_MODEL,
+    DEEP_LITERATURE_SEARCH_MODEL,
 ]
 
 CONSTRAINTS = [

@@ -1,25 +1,41 @@
 """Tests for coarse.models — model manifest invariants."""
 
+import re
+from pathlib import Path
+
 import pytest
 
 from coarse.models import (
     _NON_REASONING_SUBSTRINGS,
     CHEAP_MODELS,
+    CLAUDE_FABLE_5_MODEL,
+    CLAUDE_OPUS_5_MODEL,
+    CLAUDE_SONNET_5_MODEL,
     DEFAULT_MODEL,
     FUSION_INPUT_COST_PER_TOKEN,
     FUSION_MODEL,
     FUSION_OUTPUT_COST_PER_TOKEN,
+    GEMINI_3_6_FLASH_MODEL,
+    GPT_5_6_LUNA_MODEL,
+    GPT_5_6_SOL_MODEL,
+    GPT_5_6_TERRA_MODEL,
+    GROK_4_5_MODEL,
+    HEADLESS_DEFAULT_MODELS,
     JSON_MODE_PREFIXES,
+    KIMI_K3_MODEL,
     MARKDOWN_JSON_PREFIXES,
     OCR_MODEL,
     OPENROUTER_NAMESPACE_MODELS,
     QUALITY_MODEL,
+    QWEN_3_7_PLUS_MODEL,
     REASONING_EFFORT_DEFAULT,
     REASONING_MAX_TOKENS_MULTIPLIER,
     REASONING_MODEL_PREFIXES,
     REASONING_MODEL_SUBSTRINGS,
     TEMPERATURE_UNSUPPORTED_PREFIXES,
     VISION_MODEL,
+    WEB_DEFAULT_MODEL,
+    WEB_FEATURED_MODEL_IDS,
     is_reasoning_model,
     model_filename_slug,
     supports_temperature,
@@ -28,6 +44,74 @@ from coarse.models import (
 
 def test_default_model_has_provider_prefix():
     assert "/" in DEFAULT_MODEL
+
+
+def test_current_frontier_model_manifest_is_canonical():
+    """The runtime registry exposes provider-qualified current model IDs."""
+    assert DEFAULT_MODEL == QWEN_3_7_PLUS_MODEL
+    for model_id in (
+        CLAUDE_FABLE_5_MODEL,
+        CLAUDE_OPUS_5_MODEL,
+        CLAUDE_SONNET_5_MODEL,
+        GPT_5_6_SOL_MODEL,
+        GPT_5_6_TERRA_MODEL,
+        GPT_5_6_LUNA_MODEL,
+        GEMINI_3_6_FLASH_MODEL,
+        QWEN_3_7_PLUS_MODEL,
+        KIMI_K3_MODEL,
+        GROK_4_5_MODEL,
+    ):
+        assert "/" in model_id
+
+
+def test_web_picker_tracks_canonical_featured_models_and_default():
+    """Fail if the cross-language web picker drifts from the Python manifest."""
+    picker_path = Path(__file__).resolve().parents[1] / "web/src/components/ModelPicker.tsx"
+    picker = picker_path.read_text(encoding="utf-8")
+
+    default_match = re.search(r'export const DEFAULT_REVIEW_MODEL\s*=\s*"([^"]+)";', picker)
+    assert default_match, "DEFAULT_REVIEW_MODEL is missing from ModelPicker.tsx"
+    web_default = default_match.group(1)
+
+    models_match = re.search(
+        r"const DEFAULT_MODELS:\s*DefaultModel\[\]\s*=\s*\[(.*?)\n\];",
+        picker,
+        flags=re.DOTALL,
+    )
+    assert models_match, "DEFAULT_MODELS is missing from ModelPicker.tsx"
+    id_expressions = re.findall(r"\{\s*id:\s*([^,]+),", models_match.group(1))
+    web_ids: list[str] = []
+    for expression in id_expressions:
+        expression = expression.strip()
+        if expression == "DEFAULT_REVIEW_MODEL":
+            web_ids.append(web_default)
+            continue
+        literal = re.fullmatch(r'"([^"]+)"', expression)
+        assert literal, f"unsupported model ID expression in picker: {expression}"
+        web_ids.append(literal.group(1))
+
+    assert web_default == WEB_DEFAULT_MODEL
+    assert tuple(web_ids) == WEB_FEATURED_MODEL_IDS
+
+
+def test_headless_defaults_track_current_host_models():
+    assert HEADLESS_DEFAULT_MODELS == {
+        "claude": CLAUDE_OPUS_5_MODEL.removeprefix("anthropic/"),
+        "codex": GPT_5_6_SOL_MODEL.removeprefix("openai/"),
+        "gemini": GEMINI_3_6_FLASH_MODEL.removeprefix("google/"),
+    }
+
+
+def test_current_default_reasoning_models_get_hidden_token_headroom():
+    for model_id in (
+        CLAUDE_FABLE_5_MODEL,
+        CLAUDE_OPUS_5_MODEL,
+        CLAUDE_SONNET_5_MODEL,
+        GEMINI_3_6_FLASH_MODEL,
+        QWEN_3_7_PLUS_MODEL,
+        KIMI_K3_MODEL,
+    ):
+        assert is_reasoning_model(model_id), model_id
 
 
 def test_all_models_have_provider_prefix():
@@ -289,10 +373,17 @@ def test_supports_temperature_false_for_claude_fable_5():
     """Claude Fable 5 drops temperature like the recent Opus models (issue
     #214; verified on OpenRouter — supported_parameters has no temperature).
     The name has no version dot, so all ID forms are identical."""
-    assert supports_temperature("anthropic/claude-fable-5") is False
+    assert supports_temperature(CLAUDE_FABLE_5_MODEL) is False
     assert supports_temperature("openrouter/anthropic/claude-fable-5") is False
     assert supports_temperature("vertex_ai/claude-fable-5") is False
     assert supports_temperature("claude-fable-5") is False
+
+
+def test_supports_temperature_for_claude_5_models():
+    """OpenRouter exposes temperature for Opus 5 but not Sonnet 5."""
+    assert supports_temperature(CLAUDE_OPUS_5_MODEL) is True
+    assert supports_temperature(CLAUDE_SONNET_5_MODEL) is False
+    assert supports_temperature(f"openrouter/{CLAUDE_SONNET_5_MODEL}") is False
 
 
 def test_supports_temperature_true_for_opus_4_6():

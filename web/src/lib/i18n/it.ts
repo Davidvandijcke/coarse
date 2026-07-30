@@ -94,6 +94,11 @@ export const it: Messages = {
   notesAriaLabel: "Note facoltative per orientare il revisore",
   notesHelper:
     "Orienta gli aspetti su cui si concentra il revisore. Non sovrascrive la rubrica di valutazione.",
+  deepLiteratureLabel: "Ricerca bibliografica approfondita",
+  deepLiteratureHelper:
+    "Usa Perplexity Sonar Deep Research per una ricerca delle fonti più esaustiva e in più fasi. In genere aggiunge alcuni minuti e circa 0,30 $ alla stima.",
+  deepLiteratureOn: "Attiva",
+  deepLiteratureOff: "Disattiva",
 
   // submit form — cost estimate
   costEstimating: "Stima dei costi in corso...",

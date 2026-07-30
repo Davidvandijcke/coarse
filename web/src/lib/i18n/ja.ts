@@ -93,6 +93,11 @@ export const ja: Messages = {
     "例: §3 の識別戦略に注目してください — データのセクションはまだ仮置きの状態です。",
   notesAriaLabel: "レビュアーの注目点を誘導する任意のメモ",
   notesHelper: "レビュアーが注目する点を誘導します。ルーブリックを上書きするものではありません。",
+  deepLiteratureLabel: "詳細な文献検索",
+  deepLiteratureHelper:
+    "Perplexity Sonar Deep Research を使って、より網羅的な複数段階の情報源検索を行います。通常は数分長くかかり、見積もりに約 0.30 ドル追加されます。",
+  deepLiteratureOn: "オン",
+  deepLiteratureOff: "オフ",
 
   // submit form — cost estimate
   costEstimating: "費用を見積もっています...",

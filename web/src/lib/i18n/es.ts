@@ -93,6 +93,11 @@ export const es: Messages = {
     "p. ej. céntrate en la estrategia de identificación del §3 — la sección de datos todavía es un marcador de posición.",
   notesAriaLabel: "Notas opcionales para orientar al revisor",
   notesHelper: "Orienta en qué se centra el revisor. No anula la rúbrica.",
+  deepLiteratureLabel: "Búsqueda bibliográfica profunda",
+  deepLiteratureHelper:
+    "Usa Perplexity Sonar Deep Research para una búsqueda de fuentes más exhaustiva y en varios pasos. Suele añadir unos minutos y alrededor de 0,30 USD a la estimación.",
+  deepLiteratureOn: "Activada",
+  deepLiteratureOff: "Desactivada",
 
   // submit form — cost estimate
   costEstimating: "Estimando el coste...",
