@@ -68,10 +68,9 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
 3. Deploy via CI, not manually. Production Modal deploys are handled by
    `.github/workflows/modal-deploy.yml` on every push to `main` that
    touches `src/coarse/**`, `deploy/modal_worker.py`,
-   `deploy/mcp_server.py`, `pyproject.toml`, or the workflow file
-   itself. Preview Modal deploys are handled by
+   `pyproject.toml`, or the workflow file itself. Preview Modal deploys are handled by
    `.github/workflows/modal-preview-deploy.yml` on deploy-relevant
-   pushes to `dev` (`src/coarse/**`, the two Modal entrypoints,
+   pushes to `dev` (`src/coarse/**`, `deploy/modal_worker.py`,
    `pyproject.toml`, or the preview workflow itself). You should almost
    never run `modal deploy` by hand.
 
@@ -106,9 +105,8 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
    COARSE_MODAL_DEPLOY_FORCE=1 modal deploy deploy/modal_worker.py
    ```
    Without the `COARSE_MODAL_DEPLOY_FORCE=1` env var, the import-time
-   guard in `deploy/modal_worker.py::_enforce_deploy_branch()` and
-   `deploy/mcp_server.py::_enforce_deploy_branch()` refuses to deploy
-   from any branch other than `main`. This guard exists because on
+   guard in `deploy/modal_worker.py::_enforce_deploy_branch()` refuses
+   to deploy from any branch other than `main`. This guard exists because on
    2026-04-13 a `modal deploy` from a `dev` checkout shipped
    resurrected cheap-tier stage routing plus an api-key race to
    production, breaking every review for hours.
@@ -127,13 +125,6 @@ The `reviews` table stores review metadata and results. PDFs are uploaded to the
 
 **How the worker runs**: When triggered by the frontend, it downloads the PDF from Supabase Storage, calls `coarse.review_paper()` with the user's OpenRouter key, writes the review markdown back to Supabase, sends a completion email, and deletes the PDF. Timeout is 10 minutes, memory is 512 MB.
 
-If you also use the subscription/MCP flow, deploy `deploy/mcp_server.py`
-and save the extract endpoint URL too:
-
-```text
-https://<your-org>--coarse-mcp-run-extract.modal.run
-```
-
 ---
 
 ## 3. Vercel
@@ -150,11 +141,9 @@ https://<your-org>--coarse-mcp-run-extract.modal.run
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJ...` | From step 1 |
    | `SUPABASE_SERVICE_KEY` | `eyJ...` | From step 1 (server-side only) |
    | `MODAL_FUNCTION_URL` | `https://...modal.run` | From step 2 |
-   | `MODAL_EXTRACT_URL` | `https://...modal.run` | `coarse-mcp` `run_extract` endpoint |
    | `MODAL_WEBHOOK_SECRET` | (same value as Modal secret) | Shared secret |
    | `RESEND_API_KEY` | `re_...` | Resend sending-access key (see step 5) |
    | `NEXT_PUBLIC_SITE_URL` | `https://coarse.ink` | Your public URL |
-   | `NEXT_PUBLIC_MCP_SERVER_URL` | `https://.../mcp/` | Optional; used by legacy `/mcp` landing page |
 
 3. Deploy. The site will be live at `https://coarse.ink` (or your Vercel preview URL during development).
 
@@ -179,8 +168,7 @@ Default rollout for substantial changes:
    fix preview infra before merging:
    - preview Vercel must have `NEXT_PUBLIC_SUPABASE_URL`,
      `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`,
-     `MODAL_FUNCTION_URL`, `MODAL_EXTRACT_URL`, and
-     `MODAL_WEBHOOK_SECRET`
+     `MODAL_FUNCTION_URL`, and `MODAL_WEBHOOK_SECRET`
    - preview Supabase must have every SQL file listed in
      [deploy/PREVIEW_ENVIRONMENTS.md](PREVIEW_ENVIRONMENTS.md)
    - if Turnstile is enabled on preview, its hostname allowlist must
@@ -194,17 +182,17 @@ Preview website signoff checklist:
 
 1. Wait for Vercel preview creation for the latest `dev` commit
 2. If the change touched `src/coarse/**`, `deploy/modal_worker.py`,
-   `deploy/mcp_server.py`, `pyproject.toml`, or the preview workflow,
+   `pyproject.toml`, or the preview workflow,
    also wait for `.github/workflows/modal-preview-deploy.yml` to finish
    or manually re-run it with `gh workflow run modal-preview-deploy.yml --ref dev`
 3. Open the preview URL from the `dev` commit / PR checks
 4. Log in through Vercel Authentication if prompted
 5. If preview browser auth is enabled, enter
    `PREVIEW_BASIC_AUTH_USERNAME` / `PREVIEW_BASIC_AUTH_PASSWORD`
-6. Verify the upload succeeds, the status page loads, and the MCP
-   handoff UI still works
-7. Verify `coarse-review` and `coarse-mcp` invocations appear only in
-   the Modal `preview` environment
+6. Verify the upload succeeds, the status page loads, and the
+   subscription handoff UI still works
+7. Verify `coarse-review` invocations appear only in the Modal
+   `preview` environment
 8. Verify new rows land only in preview Supabase
 
 GitHub checks to watch:
@@ -244,12 +232,18 @@ Email notifications go through Resend. coarse sends both the "review received" c
 1. Create a free Resend account at [resend.com](https://resend.com).
 2. Add and verify the sending domain (e.g. `coarse.ink`) in **Domains → Add Domain**. Resend gives you SPF + DKIM records to publish with your DNS host.
 3. Mint a **sending-access** API key at [resend.com/api-keys](https://resend.com/api-keys), scoped to that domain.
-4. Set `RESEND_API_KEY` in all three places:
-   - **Vercel**: Settings → Environment Variables → add to Production, Preview, and Development.
-   - **Modal**: `modal secret create coarse-resend RESEND_API_KEY=...` (matches `@app.function(secrets=[...])` in `deploy/modal_worker.py`).
+4. Set the production `RESEND_API_KEY` in these three production consumers:
+   - **Vercel**: Settings → Environment Variables → scope it to **Production only**. Leave Preview and Development unset unless they use a separate non-production key and sending domain.
+   - **Modal**: create `coarse-resend` in the default/production environment with `modal secret create coarse-resend RESEND_API_KEY=...` (matches `@app.function(secrets=[...])` in `deploy/modal_worker.py`). The preview environment needs a separately named `coarse-resend` secret object, but its API key should be omitted or independently scoped as described in `deploy/PREVIEW_ENVIRONMENTS.md`.
    - **GitHub Actions**: `gh secret set RESEND_API_KEY` (used by `.github/workflows/monitor.yml` for capacity alerts).
 
-**Key rotation**: all three must rotate together — revoke the old key in the Resend dashboard only after the new one has replaced every environment. Fastest escape hatch if Resend ever breaks: flip `EMAIL_DELIVERY_DISABLED` to `true` in `web/src/lib/emailCapacity.ts` and redeploy — the web UI accepts empty-email submissions and the banner points users at their review key.
+If the Vercel variable is marked **Sensitive**, its value is deliberately
+non-readable and `vercel env pull` may emit an empty value. That does not
+mean the runtime secret is unset. Check the configured variable and recent
+send logs, or rotate it through the dashboard; do not delete and recreate a
+working key solely because the CLI cannot read it back.
+
+**Key rotation**: all three production consumers must rotate together — revoke the old key in the Resend dashboard only after the new one has replaced Vercel Production, Modal's default environment, and the GitHub Actions repository secret. Never copy that production key into Preview or Development. Fastest escape hatch if Resend ever breaks: flip `EMAIL_DELIVERY_DISABLED` to `true` in `web/src/lib/emailCapacity.ts` and redeploy — the web UI accepts empty-email submissions and the banner points users at their review key.
 
 Resend Free is 3k emails/month (≈1500 reviews); Pro is 50k/month for $20. See `deploy/CAPACITY.md` for the math.
 

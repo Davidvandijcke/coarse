@@ -7,29 +7,19 @@ on:
 
 permissions: read-all
 
-# Opt every JavaScript-based action in this workflow into Node.js 24.
-# GitHub is deprecating Node 20 for JavaScript actions (default flip on
-# 2026-06-02, hard removal on 2026-09-16); setting this env var at
-# workflow level forces `actions/checkout`, `actions/setup-*`,
-# `astral-sh/setup-uv`, etc. onto the Node 24 runner immediately. When
-# the flip becomes the default, this env var becomes a no-op and can be
-# removed. Keeping it here as the single bulk opt-in is cheaper than
-# chasing every action to its next major tag.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Set up Python
         run: uv python install 3.12
@@ -37,15 +27,13 @@ jobs:
       # tests/test_pipeline_spec.py shells out to
       # `node --experimental-strip-types` to run `web/src/lib/estimateCost.ts`
       # directly for the Python↔TS cost-gate parity check. The
-      # `--experimental-strip-types` flag landed in Node 22.6, and the GitHub
-      # `ubuntu-latest` runner currently defaults to Node 20 LTS, which exits
-      # with code 9 ("bad option") on that flag. Pinning Node 22 here keeps
-      # the parity test green without forcing every contributor to upgrade
-      # their local Node too.
+      # `--experimental-strip-types` requires Node 22.6+. Pin Node 24 to
+      # match the Vercel production runtime and keep the Python↔TS parity
+      # test independent of runner-image defaults.
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
@@ -78,6 +66,7 @@ jobs:
         working-directory: web
         run: |
           npm ci
+          npm test
           npm run build
 
   version-check:
@@ -85,7 +74,7 @@ jobs:
     timeout-minutes: 2
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check version consistency
         run: |
