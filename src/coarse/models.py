@@ -14,13 +14,52 @@ import re
 # provider ships a new generation.
 CLAUDE_OPUS_5_MODEL = "anthropic/claude-opus-5"
 CLAUDE_SONNET_5_MODEL = "anthropic/claude-sonnet-5"
+CLAUDE_FABLE_5_MODEL = "anthropic/claude-fable-5"
 GPT_5_6_SOL_MODEL = "openai/gpt-5.6-sol"
 GPT_5_6_TERRA_MODEL = "openai/gpt-5.6-terra"
 GPT_5_6_LUNA_MODEL = "openai/gpt-5.6-luna"
 GEMINI_3_6_FLASH_MODEL = "google/gemini-3.6-flash"
+GEMINI_3_1_PRO_MODEL = "google/gemini-3.1-pro-preview"
 QWEN_3_7_PLUS_MODEL = "qwen/qwen3.7-plus"
 KIMI_K3_MODEL = "moonshotai/kimi-k3"
+DEEPSEEK_V4_PRO_MODEL = "deepseek/deepseek-v4-pro"
 GROK_4_5_MODEL = "x-ai/grok-4.5"
+LLAMA_4_MAVERICK_MODEL = "meta-llama/llama-4-maverick"
+GLM_5_2_MODEL = "z-ai/glm-5.2"
+
+# Featured-model long-context pricing. OpenRouter raises both input and output
+# rates once a *single request* crosses the prompt-token threshold below. Keep
+# these alongside the canonical IDs so the Python cost gate, LiteLLM actual-cost
+# tracking, and web estimator can all price long papers per stage instead of
+# flattening them to the cheaper base rate. Verified from each model's
+# OpenRouter ``pricing.overrides`` metadata on 2026-07-30.
+LONG_CONTEXT_PRICING_TIERS: dict[str, dict[str, int | float]] = {
+    GPT_5_6_SOL_MODEL: {
+        "min_prompt_tokens": 272_000,
+        "input_cost_per_token": 10e-6,
+        "output_cost_per_token": 45e-6,
+    },
+    GPT_5_6_TERRA_MODEL: {
+        "min_prompt_tokens": 272_000,
+        "input_cost_per_token": 2.5e-6,
+        "output_cost_per_token": 11.25e-6,
+    },
+    GPT_5_6_LUNA_MODEL: {
+        "min_prompt_tokens": 272_000,
+        "input_cost_per_token": 1e-6,
+        "output_cost_per_token": 4.5e-6,
+    },
+    QWEN_3_7_PLUS_MODEL: {
+        "min_prompt_tokens": 256_000,
+        "input_cost_per_token": 0.96e-6,
+        "output_cost_per_token": 3.84e-6,
+    },
+    GROK_4_5_MODEL: {
+        "min_prompt_tokens": 200_000,
+        "input_cost_per_token": 4e-6,
+        "output_cost_per_token": 12e-6,
+    },
+}
 
 # Primary package/CLI review model (routed via OpenRouter for non-direct
 # providers). The website intentionally starts on Opus 5 instead; this cheaper
@@ -49,6 +88,30 @@ DEFAULT_MODEL = QWEN_3_7_PLUS_MODEL
 FUSION_MODEL = "openrouter/fusion"
 FUSION_INPUT_COST_PER_TOKEN = 5e-6
 FUSION_OUTPUT_COST_PER_TOKEN = 25e-6
+
+# Ordered public model-picker contract. The web app mirrors this tuple because
+# the Python package and Next.js app cannot import one another at runtime;
+# tests/test_models.py parses ModelPicker.tsx and fails on any drift, including
+# the selected default. Keep labels/providers in the web component, but keep
+# every canonical ID here.
+WEB_DEFAULT_MODEL = CLAUDE_OPUS_5_MODEL
+WEB_FEATURED_MODEL_IDS: tuple[str, ...] = (
+    CLAUDE_FABLE_5_MODEL,
+    CLAUDE_OPUS_5_MODEL,
+    CLAUDE_SONNET_5_MODEL,
+    GPT_5_6_SOL_MODEL,
+    GPT_5_6_TERRA_MODEL,
+    GPT_5_6_LUNA_MODEL,
+    GEMINI_3_1_PRO_MODEL,
+    GEMINI_3_6_FLASH_MODEL,
+    QWEN_3_7_PLUS_MODEL,
+    KIMI_K3_MODEL,
+    DEEPSEEK_V4_PRO_MODEL,
+    GROK_4_5_MODEL,
+    LLAMA_4_MAVERICK_MODEL,
+    GLM_5_2_MODEL,
+    FUSION_MODEL,
+)
 
 # OpenRouter meta-models whose canonical slug starts with ``openrouter/`` and so
 # must be doubled for litellm provider routing (see FUSION_MODEL note above).
@@ -140,9 +203,11 @@ REASONING_MODEL_PREFIXES: tuple[str, ...] = (
     "openai/gpt-5",
     "gpt-5",
     # Current adaptive/default-reasoning frontier models. OpenRouter reports
-    # reasoning enabled by default for Claude 5, Qwen 3.7 Plus, and Kimi K3,
-    # and mandatory for Gemini 3.6 Flash (verified 2026-07-29). Reserve hidden
-    # token headroom and include that billable output in estimates.
+    # reasoning support for Claude 5 (including Fable), Qwen 3.7 Plus, and
+    # Kimi K3, and mandatory reasoning for Gemini 3.6 Flash (verified
+    # 2026-07-29). Reserve hidden-token headroom and include that billable
+    # output in estimates rather than under-quoting these models.
+    CLAUDE_FABLE_5_MODEL,
     CLAUDE_OPUS_5_MODEL,
     CLAUDE_SONNET_5_MODEL,
     GEMINI_3_6_FLASH_MODEL,
@@ -296,7 +361,7 @@ TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = (
     # (verified OpenRouter /api/v1/models 2026-06-09: supported_parameters has
     # no `temperature`). The name has no version dot, so the OpenRouter and
     # litellm Anthropic forms are identical.
-    "anthropic/claude-fable-5",  # OpenRouter / litellm Anthropic form
+    CLAUDE_FABLE_5_MODEL,  # OpenRouter / litellm Anthropic form
     "vertex_ai/claude-fable-5",  # Vertex AI form
     "claude-fable-5",  # bare Anthropic SDK / Bedrock-style ID
     # Claude Sonnet 5 also omits temperature on OpenRouter (verified

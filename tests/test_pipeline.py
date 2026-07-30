@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import inspect
 import threading
 import time
 from unittest.mock import MagicMock, patch
@@ -207,7 +208,14 @@ def test_review_paper_calls_stages_in_order():
         structure.abstract,
         mock_literature.call_args.args[2],
         True,
+        config=config,
     )
+
+
+def test_review_paper_preserves_progress_callback_positional_slot():
+    """Appending deep search must not reinterpret existing positional callers."""
+    parameters = list(inspect.signature(review_paper).parameters)
+    assert parameters[-2:] == ["progress_callback", "deep_literature_search"]
 
 
 def test_review_paper_deep_literature_failure_is_not_silently_skipped():

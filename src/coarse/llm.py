@@ -24,20 +24,9 @@ from coarse.config import (
     load_config,
     resolve_api_key,
 )
+from coarse.model_registry import register_model_costs
 from coarse.models import (
-    CLAUDE_OPUS_5_MODEL,
-    CLAUDE_SONNET_5_MODEL,
-    DEFAULT_MODEL,
-    FUSION_INPUT_COST_PER_TOKEN,
-    FUSION_MODEL,
-    FUSION_OUTPUT_COST_PER_TOKEN,
-    GEMINI_3_6_FLASH_MODEL,
-    GPT_5_6_LUNA_MODEL,
-    GPT_5_6_SOL_MODEL,
-    GPT_5_6_TERRA_MODEL,
-    GROK_4_5_MODEL,
     JSON_MODE_PREFIXES,
-    KIMI_K3_MODEL,
     MARKDOWN_JSON_PREFIXES,
     OPENROUTER_NAMESPACE_MODELS,
     REASONING_EFFORT_DEFAULT,
@@ -59,84 +48,8 @@ litellm.suppress_debug_info = True
 # it where it matters (OpenAI o-series, GPT-5 Pro).
 litellm.drop_params = True
 
-# Register models missing from litellm's registry.
-# litellm.model_cost is the lookup used by _clamp_max_tokens.
-# Values from OpenRouter /api/v1/models (verified 2026-07-29). New releases can
-# take a litellm release cycle to appear; pinning the featured models here keeps
-# cost estimates and max-output clamping correct on launch day.
-_CUSTOM_MODEL_INFO: dict[str, dict] = {
-    DEFAULT_MODEL: {
-        "max_tokens": 1_000_000,
-        "max_output_tokens": 65_536,
-        "input_cost_per_token": 0.32e-6,
-        "output_cost_per_token": 1.28e-6,
-    },
-    CLAUDE_OPUS_5_MODEL: {
-        "max_tokens": 1_000_000,
-        "max_output_tokens": 128_000,
-        "input_cost_per_token": 5e-6,
-        "output_cost_per_token": 25e-6,
-    },
-    CLAUDE_SONNET_5_MODEL: {
-        "max_tokens": 1_000_000,
-        "max_output_tokens": 128_000,
-        "input_cost_per_token": 2e-6,
-        "output_cost_per_token": 10e-6,
-    },
-    GPT_5_6_SOL_MODEL: {
-        "max_tokens": 1_050_000,
-        "max_output_tokens": 128_000,
-        "input_cost_per_token": 5e-6,
-        "output_cost_per_token": 30e-6,
-    },
-    GPT_5_6_LUNA_MODEL: {
-        "max_tokens": 1_050_000,
-        "max_output_tokens": 128_000,
-        "input_cost_per_token": 0.5e-6,
-        "output_cost_per_token": 3e-6,
-    },
-    GPT_5_6_TERRA_MODEL: {
-        "max_tokens": 1_050_000,
-        "max_output_tokens": 128_000,
-        "input_cost_per_token": 1.25e-6,
-        "output_cost_per_token": 7.5e-6,
-    },
-    GEMINI_3_6_FLASH_MODEL: {
-        "max_tokens": 1_048_576,
-        "max_output_tokens": 65_536,
-        "input_cost_per_token": 1.5e-6,
-        "output_cost_per_token": 7.5e-6,
-    },
-    KIMI_K3_MODEL: {
-        "max_tokens": 1_048_576,
-        # OpenRouter currently reports no explicit completion ceiling. This
-        # conservative cap is comfortably above every coarse stage budget.
-        "max_output_tokens": 131_072,
-        "input_cost_per_token": 3e-6,
-        "output_cost_per_token": 15e-6,
-    },
-    GROK_4_5_MODEL: {
-        "max_tokens": 500_000,
-        # OpenRouter currently reports no explicit completion ceiling.
-        "max_output_tokens": 131_072,
-        "input_cost_per_token": 2e-6,
-        "output_cost_per_token": 6e-6,
-    },
-    # OpenRouter Fusion reports dynamic pricing (-1) on /api/v1/models, so it is
-    # absent from litellm's registry and cost lookups would zero out. Register
-    # the measured representative rates (see FUSION_MODEL note in models.py).
-    # The loop below also registers the doubled `openrouter/openrouter/fusion`
-    # routing form, which is what `self._model` becomes after _normalize_model.
-    FUSION_MODEL: {
-        "max_tokens": 1_000_000,
-        "max_output_tokens": 32_768,
-        "input_cost_per_token": FUSION_INPUT_COST_PER_TOKEN,
-        "output_cost_per_token": FUSION_OUTPUT_COST_PER_TOKEN,
-    },
-}
-for _model_id, _info in _CUSTOM_MODEL_INFO.items():
-    litellm.model_cost[_model_id] = _info
-    litellm.model_cost[f"openrouter/{_model_id}"] = _info
+# Register model metadata before any client clamps tokens or estimates cost.
+register_model_costs()
 
 
 _CTRL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -616,13 +529,13 @@ class LLMClient:
                 )
         try:
             # Pass model=self._model explicitly so completion_cost uses the
-            # ID we registered in _CUSTOM_MODEL_INFO instead of whatever
+            # ID registered in model_registry instead of whatever
             # concrete version the provider stamped onto the response.
             # OpenRouter maps aliases like ``qwen/qwen3.5-plus-02-15`` to
             # date-stamped versions (e.g. ``qwen/qwen3.5-plus-20260216``)
             # which aren't in litellm's registry, so the default cost
             # lookup raises ``This model isn't mapped yet``.
-            cost = litellm.completion_cost(completion_response=completion, model=self._model)
+            cost = _completion_cost_with_long_context_pricing(completion, self._model)
             if cost is not None:
                 self.add_cost(cost)
         except Exception:
@@ -663,7 +576,7 @@ class LLMClient:
             **call_kwargs,
         )
         try:
-            cost = litellm.completion_cost(completion_response=response, model=self._model)
+            cost = _completion_cost_with_long_context_pricing(response, self._model)
             if cost is not None:
                 self.add_cost(cost)
         except Exception:
@@ -886,19 +799,53 @@ def _clamp_max_tokens(model: str, requested: int) -> int:
     return min(requested, ceiling)
 
 
-def model_cost_per_token(model: str) -> tuple[float, float]:
+def model_cost_per_token(model: str, prompt_tokens: int = 0) -> tuple[float, float]:
     """Return (input_cost_per_token, output_cost_per_token) for a given model.
 
-    Accepts litellm model strings (e.g. 'openai/gpt-4o' or 'gpt-4o').
-    Returns (0.0, 0.0) if model not found.
+    Accepts litellm model strings (e.g. 'openai/gpt-4o' or 'gpt-4o'). When
+    ``prompt_tokens`` crosses a registered long-context threshold, returns that
+    tier's rates. Returns (0.0, 0.0) if model not found.
     """
     costs = _lookup_model_cost(model)
     if costs is None:
         return (0.0, 0.0)
-    return (
-        costs.get("input_cost_per_token", 0.0),
-        costs.get("output_cost_per_token", 0.0),
-    )
+    input_cost = costs.get("input_cost_per_token", 0.0)
+    output_cost = costs.get("output_cost_per_token", 0.0)
+    selected_threshold = -1
+    for key, tier_input_cost in costs.items():
+        match = re.fullmatch(r"input_cost_per_token_above_(\d+)k_tokens", key)
+        if match is None:
+            continue
+        threshold = int(match.group(1)) * 1_000
+        if prompt_tokens < threshold or threshold <= selected_threshold:
+            continue
+        tier_output_cost = costs.get(f"output_cost_per_token_above_{match.group(1)}k_tokens")
+        if tier_output_cost is None:
+            continue
+        selected_threshold = threshold
+        input_cost = tier_input_cost
+        output_cost = tier_output_cost
+    return (input_cost, output_cost)
+
+
+def _completion_cost_with_long_context_pricing(response, model: str) -> float | None:
+    """Return LiteLLM's actual cost, corrected for prompt-length price tiers.
+
+    LiteLLM applies several provider-specific long-context fields, but not all
+    OpenRouter thresholds (notably Qwen's 256k tier). Use the response usage to
+    compute a conservative tier-aware floor, while retaining any higher cost
+    LiteLLM reports for cache, routing, or provider-specific charges.
+    """
+    standard_cost = litellm.completion_cost(completion_response=response, model=model)
+    usage = getattr(response, "usage", None)
+    prompt_tokens = max(0, int(getattr(usage, "prompt_tokens", 0) or 0))
+    completion_tokens = max(0, int(getattr(usage, "completion_tokens", 0) or 0))
+    base_rates = model_cost_per_token(model)
+    tier_rates = model_cost_per_token(model, prompt_tokens=prompt_tokens)
+    if tier_rates == base_rates:
+        return standard_cost
+    tier_cost_floor = prompt_tokens * tier_rates[0] + completion_tokens * tier_rates[1]
+    return max(float(standard_cost or 0.0), tier_cost_floor)
 
 
 # Reasoning-token overhead multiplier for cost estimation.
@@ -943,6 +890,6 @@ def estimate_call_cost(model: str, tokens_in: int, tokens_out: int) -> float:
     pre-flight estimate reflects the real cost. See
     estimate_reasoning_overhead_tokens for the multiplier's calibration.
     """
-    input_cost, output_cost = model_cost_per_token(model)
+    input_cost, output_cost = model_cost_per_token(model, prompt_tokens=tokens_in)
     reasoning_overhead = estimate_reasoning_overhead_tokens(model, tokens_out)
     return input_cost * tokens_in + output_cost * (tokens_out + reasoning_overhead)

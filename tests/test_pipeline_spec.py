@@ -14,6 +14,7 @@ from coarse.models import (
     FUSION_INPUT_COST_PER_TOKEN,
     FUSION_MODEL,
     FUSION_OUTPUT_COST_PER_TOKEN,
+    LONG_CONTEXT_PRICING_TIERS,
 )
 from coarse.pipeline_spec import (
     MAX_REVIEWABLE_SECTIONS,
@@ -64,6 +65,18 @@ def _run_ts_estimator(
     deep_literature_search: bool,
 ) -> float:
     prompt_cost, completion_cost = model_cost_per_token(model_id)
+    tier = LONG_CONTEXT_PRICING_TIERS.get(model_id)
+    pricing_tiers = (
+        [
+            {
+                "minPromptTokens": tier["min_prompt_tokens"],
+                "promptCostPerToken": tier["input_cost_per_token"],
+                "completionCostPerToken": tier["output_cost_per_token"],
+            }
+        ]
+        if tier is not None
+        else []
+    )
     section_arg = "undefined" if section_count is None else str(section_count)
     script = f"""
 import {{ estimateReviewCost }} from "./web/src/lib/estimateCost.ts";
@@ -73,6 +86,7 @@ const total = estimateReviewCost(
   {{
     promptCostPerToken: {prompt_cost},
     completionCostPerToken: {completion_cost},
+    pricingTiers: {json.dumps(pricing_tiers)},
   }},
   "{model_id}",
   {str(is_pdf).lower()},
@@ -94,9 +108,16 @@ console.log(JSON.stringify(total));
 
 def test_ts_estimator_matches_python_cost_gate_for_openrouter_and_fallback_paths(monkeypatch):
     repo_root = Path(__file__).resolve().parents[1]
-    paper_text = PaperText(full_markdown="x" * 4000, token_estimate=40_000)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     scenarios = [
+        {
+            "model_id": DEFAULT_MODEL,
+            "total_tokens": 300_000,
+            "section_count": 18,
+            "is_pdf": False,
+            "has_openrouter_key": True,
+            "deep_literature_search": False,
+        },
         {
             "model_id": DEFAULT_MODEL,
             "section_count": 18,
@@ -150,6 +171,8 @@ def test_ts_estimator_matches_python_cost_gate_for_openrouter_and_fallback_paths
     ]
 
     for scenario in scenarios:
+        total_tokens = scenario.get("total_tokens", 40_000)
+        paper_text = PaperText(full_markdown="x" * 4000, token_estimate=total_tokens)
         config = CoarseConfig(
             default_model=scenario["model_id"],
             extraction_qa=True,
@@ -165,7 +188,7 @@ def test_ts_estimator_matches_python_cost_gate_for_openrouter_and_fallback_paths
         ).total_cost_usd
         ts_total = _run_ts_estimator(
             repo_root,
-            total_tokens=paper_text.token_estimate,
+            total_tokens=total_tokens,
             model_id=scenario["model_id"],
             is_pdf=scenario["is_pdf"],
             section_count=scenario["section_count"],
@@ -198,6 +221,11 @@ def test_ts_pricing_map_handles_dynamic_negative_pricing():
 globalThis.fetch = async () => ({
   json: async () => ({ data: [
     { id: "anthropic/claude-test", pricing: { prompt: "0.000003", completion: "0.000015" } },
+    { id: "qwen/qwen-tiered", pricing: {
+      prompt: "0.00000032",
+      completion: "0.00000128",
+      overrides: [{ min_prompt_tokens: 256000, prompt: "0.00000096", completion: "0.00000384" }],
+    } },
     { id: "openrouter/fusion", pricing: { prompt: "-1", completion: "-1" } },
     { id: "openrouter/auto", pricing: { prompt: "-1", completion: "-1" } },
   ]})
@@ -205,12 +233,24 @@ globalThis.fetch = async () => ({
 const { getModelPricing } = await import("./web/src/lib/estimateCost.ts");
 console.log(JSON.stringify({
   normal: await getModelPricing("anthropic/claude-test"),
+  tiered: await getModelPricing("qwen/qwen-tiered"),
   fusion: await getModelPricing("openrouter/fusion"),
   unknownDynamic: await getModelPricing("openrouter/auto"),
 }));
 """
     out = _run_node(repo_root, script)
     assert out["normal"] == {"promptCostPerToken": 3e-6, "completionCostPerToken": 1.5e-5}
+    assert out["tiered"] == {
+        "promptCostPerToken": 0.32e-6,
+        "completionCostPerToken": 1.28e-6,
+        "pricingTiers": [
+            {
+                "minPromptTokens": 256_000,
+                "promptCostPerToken": 0.96e-6,
+                "completionCostPerToken": 3.84e-6,
+            }
+        ],
+    }
     assert out["fusion"] == {
         "promptCostPerToken": FUSION_INPUT_COST_PER_TOKEN,
         "completionCostPerToken": FUSION_OUTPUT_COST_PER_TOKEN,

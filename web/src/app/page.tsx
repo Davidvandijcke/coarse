@@ -925,6 +925,7 @@ function PageBody() {
     // cause codex:// / claude:// launches to be blocked.
     const fullPrompt = buildAgentPrompt({
       setupCmd, runCmd, attachCmd, logFile, isPdf: handoffState.isPdf, reviewLanguage,
+      deepLiteratureSearch,
     });
     navigator.clipboard.writeText(fullPrompt).catch((err) => {
       console.error("clipboard write failed", err);
@@ -938,6 +939,7 @@ function PageBody() {
     // instead" hint so the user isn't stuck.
     const launchUrl = buildLaunchUrl({
       host, runCmd, setupCmd, attachCmd, logFile, isPdf: handoffState.isPdf, reviewLanguage,
+      deepLiteratureSearch,
     });
     if (!launchUrl) {
       setLaunchStatus(t("launchCommandCopied"));
@@ -1868,6 +1870,7 @@ function PageBody() {
                         text={buildAgentPrompt({
                           setupCmd, runCmd, attachCmd, logFile,
                           isPdf: handoffState.isPdf, reviewLanguage,
+                          deepLiteratureSearch,
                         })}
                         maxHeight="160px"
                       />
@@ -1882,7 +1885,7 @@ function PageBody() {
                       >
                         {t("handoffRunHint")}
                       </p>
-                      {handoffState.isPdf ? (
+                      {handoffState.isPdf || deepLiteratureSearch ? (
                         <p
                           style={{
                             fontFamily: "var(--font-chalk)",

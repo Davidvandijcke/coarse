@@ -160,12 +160,11 @@ export const HOST_LAUNCH_HINT: Record<ChatHost, string> = {
  * Bash call covers the full 10-25min wait instead of 10-25 separate
  * per-poll approval prompts.
  *
- * ``isPdf`` gates STEP 2 (the OpenRouter key check). Only PDF sources
- * run Mistral OCR; non-PDF uploads (.tex, .md, .docx, …) extract
- * locally with no OpenRouter key, so for them STEP 2 explicitly tells
- * the agent NOT to ask for or configure a key (#186). Without this
- * gate, agents stopped a key-free .tex review to demand a key it
- * would never use.
+ * ``isPdf`` and ``deepLiteratureSearch`` gate STEP 2 (the OpenRouter key
+ * check). PDF sources need it for Mistral OCR, while any source with deep
+ * literature search enabled needs it for Perplexity Deep Research. A
+ * standard non-PDF review remains key-free and explicitly tells the agent
+ * not to pause for credentials (#186).
  */
 export function buildAgentPrompt(args: {
   setupCmd: string;
@@ -174,8 +173,17 @@ export function buildAgentPrompt(args: {
   logFile: string;
   isPdf: boolean;
   reviewLanguage?: string;
+  deepLiteratureSearch?: boolean;
 }): string {
-  const { setupCmd, runCmd, attachCmd, logFile, isPdf, reviewLanguage } = args;
+  const {
+    setupCmd,
+    runCmd,
+    attachCmd,
+    logFile,
+    isPdf,
+    reviewLanguage,
+    deepLiteratureSearch = false,
+  } = args;
   const configCmd = setupCmd.replace("coarse install-skills --all --force", "coarse setup");
   // One-line language directive, only when the user picked a non-auto
   // language. Empty/undefined → "" so the prompt is byte-identical to
@@ -184,15 +192,20 @@ export function buildAgentPrompt(args: {
   const languageNote = langName
     ? `\n\nWrite the review in ${langName} (keep quotes in the paper's original language).`
     : "";
-  const step2 = isPdf
+  const needsOpenRouterKey = isPdf || deepLiteratureSearch;
+  const openRouterPurpose = isPdf
+    ? deepLiteratureSearch
+      ? "I need an OpenRouter API key for the Mistral OCR extraction step and the requested Perplexity deep literature search (~$0.40 per paper)."
+      : "I need an OpenRouter API key for the Mistral OCR extraction step (~$0.10 per paper)."
+    : "I need an OpenRouter API key for the requested Perplexity deep literature search (~$0.30 per paper).";
+  const step2 = needsOpenRouterKey
     ? `STEP 2 — Check for an OpenRouter API key without printing its ` +
       `value. Prefer presence-only probes so the key doesn't needlessly ` +
       `show up in the chat transcript:\n\n` +
       `  test -n "$OPENROUTER_API_KEY" && echo "env: set" || echo "env: missing"\n` +
       `  test -f .env && grep -q '^OPENROUTER_API_KEY=' .env && echo ".env: set" || echo ".env: missing"\n\n` +
       `If neither probe reports "set", tell me:\n\n` +
-      `  "I need an OpenRouter API key for the Mistral OCR extraction step ` +
-      `(~$0.10 per paper). A few options:\n` +
+      `  "${openRouterPurpose} A few options:\n` +
       `   1. Paste the key here and I'll save it to ~/.coarse/config.toml ` +
       `via \`${configCmd}\`. Heads up that whatever you paste here passes ` +
       `through the LLM provider (Anthropic / OpenAI / Google), so treat ` +
@@ -342,9 +355,27 @@ export function buildLaunchUrl(args: {
   logFile: string;
   isPdf: boolean;
   reviewLanguage?: string;
+  deepLiteratureSearch?: boolean;
 }): string {
-  const { host, runCmd, setupCmd, attachCmd, logFile, isPdf, reviewLanguage } = args;
-  const prompt = buildAgentPrompt({ setupCmd, runCmd, attachCmd, logFile, isPdf, reviewLanguage });
+  const {
+    host,
+    runCmd,
+    setupCmd,
+    attachCmd,
+    logFile,
+    isPdf,
+    reviewLanguage,
+    deepLiteratureSearch = false,
+  } = args;
+  const prompt = buildAgentPrompt({
+    setupCmd,
+    runCmd,
+    attachCmd,
+    logFile,
+    isPdf,
+    reviewLanguage,
+    deepLiteratureSearch,
+  });
 
   if (host === "codex") {
     // Codex supports codex://new?prompt=<text> deep links that pre-fill

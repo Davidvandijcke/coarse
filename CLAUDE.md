@@ -64,16 +64,21 @@ src/coarse/
 ├── structure.py             # PaperText → PaperStructure (heading parse + math detection + LLM metadata)
 ├── quote_verify.py          # Post-processing quote verification (stricter for math)
 ├── models.py                # Model manifest — single source of truth for all model IDs
+├── model_registry.py        # LiteLLM metadata for new models + long-context price tiers
 ├── garble.py                # OCR garble detection and normalization
+├── textscript.py            # Script-aware token estimation and CJK text heuristics
 ├── llm.py                   # litellm wrapper, model registry, cost tracking
 ├── prompts.py               # All prompt templates
+├── languages.py             # Supported review languages and language resolution
 ├── types.py                 # Pydantic models
 ├── pipeline.py              # review_paper() orchestrator
 ├── progress.py              # Pipeline progress event types for live CLI reporting
 ├── review_stages.py         # Stage-local review helpers used by pipeline.py
 ├── synthesis.py             # Review → markdown string
+├── review_labels.py         # Localized labels used by rendered review markdown
 ├── quality.py               # Quality eval against reference (dev only)
 ├── recall.py                # Recall eval vs. ground-truth expert reviews (dev only)
+├── lang_eval.py             # Cross-language review-consistency evaluation (dev only)
 └── agents/
     ├── __init__.py
     ├── base.py              # ReviewAgent ABC + _build_messages helper + prompt caching
@@ -104,7 +109,8 @@ src/coarse/
 ### LLM Layer (llm.py)
 
 Uses `litellm` for unified provider interface + `instructor` for structured Pydantic output.
-`LLMClient` wraps both, tracks cost per call.
+`LLMClient` wraps both and tracks cost per call; `model_registry.py` fills LiteLLM catalog
+gaps for newly released models and their long-context pricing tiers.
 Auto-detects API keys from env vars or `~/.coarse/config.toml`.
 
 ### Dependencies

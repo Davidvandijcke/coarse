@@ -18,6 +18,7 @@ import httpx
 from dotenv import load_dotenv
 
 from coarse.models import (
+    CLAUDE_FABLE_5_MODEL,
     CLAUDE_OPUS_5_MODEL,
     CLAUDE_SONNET_5_MODEL,
     DEEP_LITERATURE_SEARCH_MODEL,
@@ -41,7 +42,7 @@ if not API_KEY:
 # the server-side literature models. Keep this probe aligned with each model
 # refresh so privacy-routing checks exercise what users can actually select.
 MODELS = [
-    "anthropic/claude-fable-5",
+    CLAUDE_FABLE_5_MODEL,
     CLAUDE_OPUS_5_MODEL,
     CLAUDE_SONNET_5_MODEL,
     GPT_5_6_SOL_MODEL,

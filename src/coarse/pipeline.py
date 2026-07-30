@@ -358,8 +358,8 @@ def review_paper(
     author_notes: str | None = None,
     language: str | None = None,
     site_language: str | None = None,
-    deep_literature_search: bool = False,
     progress_callback: PipelineProgressCallback | None = None,
+    deep_literature_search: bool = False,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
@@ -398,10 +398,10 @@ def review_paper(
         site_language: Optional BCP-47 code for the site/UI locale, used only as
             the lowest-priority fallback when there is no explicit language and
             the paper is detected as English/unknown. ``None`` is the default.
-        deep_literature_search: Use Perplexity Sonar Deep Research instead of
-            Sonar Pro Search. Defaults to False for compatible cost and latency.
         progress_callback: Optional callback receiving best-effort pipeline
             progress updates, including cumulative actual token spend.
+        deep_literature_search: Use Perplexity Sonar Deep Research instead of
+            Sonar Pro Search. Defaults to False for compatible cost and latency.
 
     Pipeline order:
     1. Extract file → PaperText (format-specific extraction)
@@ -546,6 +546,7 @@ def review_paper(
                 structure.abstract,
                 client,
                 deep_literature_search,
+                config=config,
             ): "literature_search",
             executor.submit(extract_contribution, structure, client): "contribution_extraction",
         }

@@ -19,6 +19,13 @@ const PDFJS_WORKER_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/
 export interface ModelPricing {
   promptCostPerToken: number;
   completionCostPerToken: number;
+  pricingTiers?: ModelPricingTier[];
+}
+
+export interface ModelPricingTier {
+  minPromptTokens: number;
+  promptCostPerToken: number;
+  completionCostPerToken: number;
 }
 
 /**
@@ -75,7 +82,32 @@ async function fetchPricingMap(): Promise<Map<string, ModelPricing>> {
       }
       continue;
     }
-    map.set(m.id, { promptCostPerToken, completionCostPerToken });
+    const pricingTiers: ModelPricingTier[] = Array.isArray(m.pricing.overrides)
+      ? m.pricing.overrides
+          .map((tier: Record<string, unknown>) => ({
+            minPromptTokens: Number(tier.min_prompt_tokens),
+            promptCostPerToken: Number(tier.prompt),
+            completionCostPerToken: Number(tier.completion),
+          }))
+          .filter(
+            (tier: ModelPricingTier) =>
+              Number.isFinite(tier.minPromptTokens) &&
+              tier.minPromptTokens > 0 &&
+              Number.isFinite(tier.promptCostPerToken) &&
+              tier.promptCostPerToken >= 0 &&
+              Number.isFinite(tier.completionCostPerToken) &&
+              tier.completionCostPerToken >= 0,
+          )
+          .sort(
+            (left: ModelPricingTier, right: ModelPricingTier) =>
+              left.minPromptTokens - right.minPromptTokens,
+          )
+      : [];
+    map.set(m.id, {
+      promptCostPerToken,
+      completionCostPerToken,
+      ...(pricingTiers.length > 0 ? { pricingTiers } : {}),
+    });
   }
   pricingCache = map;
   return map;
@@ -275,7 +307,6 @@ export function estimateReviewCost(
   hasOpenRouterKey: boolean = true,
   deepLiteratureSearch: boolean = false,
 ): number {
-  const { promptCostPerToken: inp, completionCostPerToken: out } = pricing;
   const totalTokens = Math.max(0, tokenEstimate);
 
   let sections = sectionCount ?? estimateSectionCount(totalTokens);
@@ -377,6 +408,16 @@ export function estimateReviewCost(
 
   const reasoning = isReasoningModel(modelId);
   for (const [, tokIn, tokOut] of stages) {
+    let inp = pricing.promptCostPerToken;
+    let out = pricing.completionCostPerToken;
+    let selectedThreshold = -1;
+    for (const tier of pricing.pricingTiers ?? []) {
+      if (tokIn >= tier.minPromptTokens && tier.minPromptTokens > selectedThreshold) {
+        selectedThreshold = tier.minPromptTokens;
+        inp = tier.promptCostPerToken;
+        out = tier.completionCostPerToken;
+      }
+    }
     const outWithOverhead = reasoning ? tokOut * (1 + REASONING_OVERHEAD_MULTIPLIER) : tokOut;
     total += inp * tokIn + out * outWithOverhead;
   }

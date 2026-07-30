@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
-from coarse.config import has_provider_key
+from coarse.config import CoarseConfig, has_provider_key
 from coarse.llm import LLMClient
 from coarse.models import DEEP_LITERATURE_SEARCH_MODEL, LITERATURE_SEARCH_MODEL
 from coarse.prompts import (
@@ -89,6 +89,7 @@ def _search_perplexity(
     client: LLMClient,
     *,
     deep_search: bool = False,
+    config: CoarseConfig | None = None,
 ) -> str:
     """Single Perplexity literature-search call via LLMClient.complete_text.
 
@@ -100,7 +101,7 @@ def _search_perplexity(
     injected into every downstream review prompt.
     """
     literature_model = DEEP_LITERATURE_SEARCH_MODEL if deep_search else LITERATURE_SEARCH_MODEL
-    perplexity_client = LLMClient(model=literature_model)
+    perplexity_client = LLMClient(model=literature_model, config=config)
     messages = [
         {"role": "system", "content": PERPLEXITY_SYSTEM},
         {"role": "user", "content": perplexity_user(title, abstract[:1500])},
@@ -244,6 +245,8 @@ def search_literature(
     abstract: str,
     client: LLMClient,
     deep_search: bool = False,
+    *,
+    config: CoarseConfig | None = None,
 ) -> str:
     """Run the literature search.
 
@@ -252,13 +255,14 @@ def search_literature(
     the arXiv pipeline on failure or a missing key. Explicit deep mode fails
     clearly instead of silently returning the shallower fallback.
     """
-    if has_provider_key("openrouter"):
+    if has_provider_key("openrouter", config):
         try:
             result = _search_perplexity(
                 title,
                 abstract,
                 client,
                 deep_search=deep_search,
+                config=config,
             )
             logger.info(
                 "Literature search completed via Perplexity (%s)",

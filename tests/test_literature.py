@@ -16,6 +16,7 @@ from coarse.agents.literature import (
     _SearchQueries,
     search_literature,
 )
+from coarse.config import CoarseConfig
 from coarse.models import DEEP_LITERATURE_SEARCH_MODEL, LITERATURE_SEARCH_MODEL
 
 # ---------------------------------------------------------------------------
@@ -229,6 +230,7 @@ def test_search_perplexity_happy_path():
 def test_search_perplexity_deep_mode_uses_deep_model_and_longer_timeout():
     """Deep mode changes retrieval depth without inflating downstream context."""
     caller_client = MagicMock()
+    config = CoarseConfig(api_keys={"openrouter": "sk-config-only"})
     perplexity_client = MagicMock()
     perplexity_client.complete_text.return_value = "Deep literature results"
     perplexity_client.cost_usd = 0.2
@@ -242,10 +244,11 @@ def test_search_perplexity_deep_mode_uses_deep_model_and_longer_timeout():
             "Test abstract",
             caller_client,
             deep_search=True,
+            config=config,
         )
 
     assert result == "Deep literature results"
-    client_cls.assert_called_once_with(model=DEEP_LITERATURE_SEARCH_MODEL)
+    client_cls.assert_called_once_with(model=DEEP_LITERATURE_SEARCH_MODEL, config=config)
     call = perplexity_client.complete_text.call_args
     assert call.kwargs["max_tokens"] == 4096
     assert call.kwargs["timeout"] == 300
@@ -263,7 +266,7 @@ def test_search_perplexity_standard_mode_keeps_standard_model_and_timeout():
     ) as client_cls:
         _search_perplexity("Test Title", "Test abstract", caller_client)
 
-    client_cls.assert_called_once_with(model=LITERATURE_SEARCH_MODEL)
+    client_cls.assert_called_once_with(model=LITERATURE_SEARCH_MODEL, config=None)
     assert perplexity_client.complete_text.call_args.kwargs["timeout"] == 60
 
 
@@ -350,6 +353,37 @@ def test_dispatcher_forwards_deep_search_choice():
         "Abstract",
         mock_client,
         deep_search=True,
+        config=None,
+    )
+
+
+def test_dispatcher_uses_config_only_openrouter_key_and_forwards_config():
+    """A key supplied through CoarseConfig must reach the Perplexity client."""
+    mock_client = MagicMock()
+    config = CoarseConfig(api_keys={"openrouter": "sk-config-only"})
+
+    with (
+        patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}, clear=False),
+        patch(
+            "coarse.agents.literature._search_perplexity",
+            return_value="Deep results",
+        ) as mock_perp,
+    ):
+        result = search_literature(
+            "Title",
+            "Abstract",
+            mock_client,
+            deep_search=True,
+            config=config,
+        )
+
+    assert result == "Deep results"
+    mock_perp.assert_called_once_with(
+        "Title",
+        "Abstract",
+        mock_client,
+        deep_search=True,
+        config=config,
     )
 
 

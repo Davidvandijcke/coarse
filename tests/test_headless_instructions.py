@@ -103,7 +103,7 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     assert "const deepSuffix = deepLiteratureSearch ?" in handoff_lib
     assert '" --deep-literature-search" : "";' in handoff_lib
     assert "${effort}${deepSuffix}`;" in handoff_lib
-    assert handoff_page.count("deepLiteratureSearch,") >= 3
+    assert handoff_page.count("deepLiteratureSearch,") >= 6
 
     # page.tsx must pass logFile + attachCmd through to buildAgentPrompt
     # on every call site (handleLaunch + the collapsible manual-commands UI).
@@ -145,13 +145,12 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     assert "@feat/mcp-server" not in handoff_route
 
 
-def test_handoff_key_guidance_is_pdf_conditional() -> None:
-    """Issue #186: only PDF sources run Mistral OCR, so only PDF handoffs
-    may tell the agent (or the user) to configure an OpenRouter key.
+def test_handoff_key_guidance_tracks_pdf_or_deep_search() -> None:
+    """Issue #186: PDF OCR and opt-in deep search require OpenRouter.
 
-    Non-PDF sources (.tex, .md, .docx, …) extract locally with no key
-    anywhere in the pipeline — the literature search falls back to the
-    free arXiv path when no key is set. Before this gate,
+    Standard non-PDF sources (.tex, .md, .docx, …) extract locally and can
+    use the free arXiv fallback. Deep search cannot, so it must override the
+    otherwise key-free non-PDF branch. Before this gate,
     ``buildAgentPrompt``'s STEP 2 unconditionally instructed the coding
     agent to stop and ask the user for an OpenRouter key, blocking
     key-free .tex reviews on a key that would never be used. Pin every
@@ -162,11 +161,13 @@ def test_handoff_key_guidance_is_pdf_conditional() -> None:
     handoff_page = _read("web/src/app/page.tsx")
     handoff_route = _read("web/src/app/h/[token]/route.ts")
 
-    # buildAgentPrompt takes the flag and branches STEP 2 on it.
+    # buildAgentPrompt takes both flags and branches STEP 2 on either need.
     assert "isPdf: boolean;" in handoff_lib
-    assert "const step2 = isPdf" in handoff_lib
+    assert "const needsOpenRouterKey = isPdf || deepLiteratureSearch;" in handoff_lib
+    assert "const step2 = needsOpenRouterKey" in handoff_lib
     # PDF branch: the key request must still exist verbatim.
     assert "I need an OpenRouter API key for the Mistral OCR extraction step" in handoff_lib
+    assert "requested Perplexity deep literature search" in handoff_lib
     # Non-PDF branch: explicit no-key + do-not-ask instruction.
     assert "No OpenRouter API key is needed for this review" in handoff_lib
     assert "ask me for an OpenRouter key" in handoff_lib
@@ -176,7 +177,7 @@ def test_handoff_key_guidance_is_pdf_conditional() -> None:
     # after minting can't flip the guidance for an existing handoff.
     assert 'isPdf: file.name.toLowerCase().endsWith(".pdf")' in handoff_page
     # And the modal + explainer copy branch on it.
-    assert "handoffState.isPdf ?" in handoff_page
+    assert "handoffState.isPdf || deepLiteratureSearch ?" in handoff_page
     assert "selectedFileIsPdf" in handoff_page
     # The non-PDF no-key note copy was externalized to the i18n catalog in PR-H;
     # page.tsx branches on selectedFileIsPdf and renders t("handoffKeyNotNeeded").
