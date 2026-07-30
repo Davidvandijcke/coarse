@@ -6,21 +6,15 @@ on:
   pull_request:
     branches: [main, dev]
 
-# Opt JavaScript-based actions into Node.js 24 ahead of GitHub's
-# 2026-06-02 default flip / 2026-09-16 Node 20 removal. See the note
-# on `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` in ci.yml.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
@@ -34,9 +28,9 @@ jobs:
           pip-audit --strict --desc 2>&1 | tail -80
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: web/package-lock.json
 

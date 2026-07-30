@@ -65,12 +65,14 @@ export function getSiteOriginForRequest(requestUrl: string): string {
  * Ref: Vercel → Deployment Protection → Protection Bypass for Automation.
  */
 export function appendPreviewBypassQuery(url: string): string {
-  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? "";
-  if (process.env.VERCEL_ENV !== "preview" || !bypassSecret) {
-    return url;
+  if (process.env.VERCEL_ENV === "preview") {
+    const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? "";
+    if (bypassSecret) {
+      const separator = url.includes("?") ? "&" : "?";
+      return `${url}${separator}x-vercel-protection-bypass=${encodeURIComponent(bypassSecret)}&x-vercel-set-bypass-cookie=true`;
+    }
   }
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}x-vercel-protection-bypass=${encodeURIComponent(bypassSecret)}&x-vercel-set-bypass-cookie=true`;
+  return url;
 }
 
 export function getVisibleSiteHost(): string {

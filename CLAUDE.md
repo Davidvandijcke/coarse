@@ -210,15 +210,17 @@ For any substantial deploy-affecting change, the default path is:
 Concretely:
 
 - Vercel creates preview deployments for non-`main` pushes.
-- `.github/workflows/modal-preview-deploy.yml` deploys both Modal apps
-  from `dev` into the Modal `preview` environment when the change
+- `.github/workflows/modal-preview-deploy.yml` deploys the
+  `coarse-review` Modal app from `dev` into the Modal `preview`
+  environment when the change
   touches deploy-relevant paths; otherwise rerun it manually on `dev`
   if you need a fresh preview Modal deploy.
-- Preview Vercel env vars point at preview Supabase plus preview Modal
-  URLs (`MODAL_FUNCTION_URL` and `MODAL_EXTRACT_URL`), as documented in
+- Preview Vercel env vars point at preview Supabase plus the preview
+  Modal URL (`MODAL_FUNCTION_URL`), as documented in
   `deploy/PREVIEW_ENVIRONMENTS.md`.
-- `.github/workflows/modal-deploy.yml` deploys both Modal apps from
-  `main` to production.
+- `.github/workflows/modal-deploy.yml` deploys `coarse-review` from
+  `main` to production. The legacy `coarse-mcp` app was retired in
+  v1.3.0.
 
 Hard deploy rules:
 
