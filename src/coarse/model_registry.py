@@ -21,6 +21,7 @@ from coarse.models import (
     GPT_5_6_TERRA_MODEL,
     GROK_4_5_MODEL,
     KIMI_K3_MODEL,
+    LITELLM_OPENROUTER_PREFIX,
     LONG_CONTEXT_PRICING_TIERS,
 )
 
@@ -113,4 +114,4 @@ def register_model_costs() -> None:
 
     for model_id, info in custom_model_info.items():
         litellm.model_cost[model_id] = info
-        litellm.model_cost[f"openrouter/{model_id}"] = info
+        litellm.model_cost[f"{LITELLM_OPENROUTER_PREFIX}{model_id}"] = info
