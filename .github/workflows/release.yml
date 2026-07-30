@@ -24,23 +24,18 @@ on:
 permissions:
   contents: read
 
-# Opt JavaScript-based actions into Node.js 24 ahead of GitHub's
-# 2026-06-02 default flip / 2026-09-16 Node 20 removal. See the note
-# on `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` in ci.yml.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Set up Python
         run: uv python install 3.12
@@ -48,16 +43,14 @@ jobs:
       # tests/test_pipeline_spec.py shells out to
       # `node --experimental-strip-types` to run `web/src/lib/estimateCost.ts`
       # directly for the Python↔TS cost-gate parity check. The
-      # `--experimental-strip-types` flag landed in Node 22.6, and the GitHub
-      # `ubuntu-latest` runner currently defaults to Node 20 LTS, which exits
-      # with code 9 ("bad option") on that flag. Pinning Node 22 here keeps
-      # the parity test green on the release workflow in lockstep with the
-      # matching step in ci.yml. The v1.3.0 release hit this exact gap on
-      # its first tag push and had to be re-tagged after patching this.
+      # `--experimental-strip-types` requires Node 22.6+. Pin Node 24 to
+      # match Vercel production and keep this release workflow in lockstep
+      # with ci.yml. The v1.3.0 release hit the missing-runtime gap on its
+      # first tag push and had to be re-tagged after patching it.
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
@@ -77,12 +70,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Set up Python
         run: uv python install 3.12
@@ -104,7 +98,7 @@ jobs:
         run: uv build
 
       - name: Upload dist artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: dist/
@@ -125,10 +119,10 @@ jobs:
       id-token: write
     steps:
       - name: Download dist artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

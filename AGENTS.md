@@ -15,8 +15,8 @@ For any substantial deploy-affecting change, the default workflow is:
 4. Validate the change against preview Vercel + preview Supabase +
    preview Modal before touching `main`.
 5. Merge `dev` to `main` only after preview passes.
-6. Let `.github/workflows/modal-deploy.yml` deploy both Modal apps to
-   production from `main`.
+6. Let `.github/workflows/modal-deploy.yml` deploy the `coarse-review`
+   Modal app to production from `main`.
 
 Hard rules:
 
