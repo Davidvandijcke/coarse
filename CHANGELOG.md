@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.9.0 — 2026-07-30
+
 ### Added
 
 - **Optional deep literature review, end to end.** The coarse.ink submit form now has an accessible, localized Deep literature search switch. When enabled, the request flows through the web API and Modal worker into `review_paper()`, which uses Perplexity Sonar Deep Research (`perplexity/sonar-deep-research`) instead of the standard Sonar Pro Search path. The CLI and subscription-backed `coarse-review` path expose the same capability through `--deep-literature-search`; explicit deep searches fail fast with actionable OpenRouter-key guidance and propagate provider failures instead of silently degrading to arXiv or omitting literature after the user selected the paid option. Deep requests use a five-minute provider timeout while retaining the existing 4,096-token literature-context ceiling so broader retrieval does not multiply downstream prompt cost. Python and web estimators share a representative $0.25 pre-buffer deep-search cost (about $0.30 added after the normal 30% buffer). The off state preserves the old request/call shape and resilient fallbacks for backward compatibility. This touches `src/coarse/`, web, and Modal and must soak in preview before production; the package portion ships in the next PyPI release.

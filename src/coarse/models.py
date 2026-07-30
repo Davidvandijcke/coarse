@@ -115,6 +115,7 @@ WEB_FEATURED_MODEL_IDS: tuple[str, ...] = (
 
 # OpenRouter meta-models whose canonical slug starts with ``openrouter/`` and so
 # must be doubled for litellm provider routing (see FUSION_MODEL note above).
+LITELLM_OPENROUTER_PREFIX = "openrouter/"
 OPENROUTER_NAMESPACE_MODELS: frozenset[str] = frozenset({FUSION_MODEL})
 
 # Vision model for post-extraction QA (multimodal, spot-checks Docling output)
