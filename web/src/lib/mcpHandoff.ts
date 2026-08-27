@@ -23,8 +23,8 @@
 //           (from ~/.coarse/config.toml or .env) for Mistral OCR;
 //           non-PDF sources (.tex, .md, .docx, …) parse locally with
 //           no key at all (#186)
-//        d. Runs the full coarse pipeline, routing every LLM call
-//           through the chosen headless CLI
+//        d. Runs the full coarse pipeline, routing review-reasoning calls
+//           through the chosen headless CLI while vision QA uses OpenRouter
 //        e. POSTs the rendered review back to /api/mcp-finalize with
 //           the finalize_token
 //        f. Prints `https://coarse.ink/review/<paper_id>?token=<t>` —
@@ -195,8 +195,8 @@ export function buildAgentPrompt(args: {
   const needsOpenRouterKey = isPdf || deepLiteratureSearch;
   const openRouterPurpose = isPdf
     ? deepLiteratureSearch
-      ? "I need an OpenRouter API key for the Mistral OCR extraction step and the requested Perplexity deep literature search (~$0.40 per paper)."
-      : "I need an OpenRouter API key for the Mistral OCR extraction step (~$0.10 per paper)."
+      ? "I need an OpenRouter API key for PDF processing (Mistral OCR plus any triggered vision QA) and the requested Perplexity deep literature search."
+      : "I need an OpenRouter API key for PDF processing: Mistral OCR plus any triggered vision QA."
     : "I need an OpenRouter API key for the requested Perplexity deep literature search (~$0.30 per paper).";
   const step2 = needsOpenRouterKey
     ? `STEP 2 — Check for an OpenRouter API key without printing its ` +

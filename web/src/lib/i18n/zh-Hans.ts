@@ -145,7 +145,7 @@ export const zhHans: Messages = {
   explainSubscriptionGeminiCli: "Gemini CLI",
   explainSubscriptionPart2: "订阅进行 LLM 推理，在本地运行完整的 coarse 流水线。",
   explainSubscriptionPdf:
-    "你只需为本地的 Mistral OCR 步骤支付约 ~$0.10（使用你自己的 OpenRouter 密钥）；非 PDF 上传（.tex, .md, .docx, …）会跳过 OCR，无需 OpenRouter 密钥。",
+    "PDF 处理会使用你的 OpenRouter 密钥进行本地 Mistral OCR；如果触发视觉 QA，还会产生少量费用。非 PDF 上传（.tex, .md, .docx, …）会跳过 OCR，无需 OpenRouter 密钥。",
   explainSubscriptionNonPdf:
     "你的文件不是 PDF，因此会完全跳过 Mistral OCR 步骤——整个运行都由你的订阅承担，无需 OpenRouter 密钥。",
   explainSubscriptionPart3: "完成后评审会显示在本页面上。",
@@ -479,7 +479,7 @@ export const zhHans: Messages = {
   // setup page — subscription tab intro
   setupSubHeading: "使用你的编码智能体订阅",
   setupSubIntro1:
-    "适用于已经在为 Claude Code、Codex 或 Gemini CLI 付费的用户。评审在你的订阅上运行并在那里计费。你只需为 OCR 环节向 OpenRouter 支付约 ~$0.15。",
+    "适用于已经在为 Claude Code、Codex 或 Gemini CLI 付费的用户。评审在你的订阅上运行并在那里计费。你只需向 OpenRouter 支付 PDF OCR 和任何已触发视觉 QA 的费用。",
   setupSubIntro2:
     "在你本地的机器上，使用你自己的 Claude Code、Codex 或 Gemini CLI 账户运行。coarse.ink 不会接收或存储你的提供商登录信息。你的提供商的条款和使用限额仍然适用。coarse.ink 与 Anthropic、OpenAI 或 Google 无任何关联。",
   // setup page — subscription step 1
@@ -497,7 +497,7 @@ export const zhHans: Messages = {
   // setup page — subscription step 2
   setupSubStep2Title: "在你的机器上放一把 OpenRouter 密钥（仅限 PDF）",
   setupSubStep2BodyPrefix:
-    "此步骤仅适用于 PDF 论文——非 PDF 来源（.tex, .md, .docx, …）会在本地提取而无需 OCR，因此它们在任何地方都不需要 OpenRouter 密钥，你可以直接跳到第 3 步。对于 PDF，coarse 的 OCR 步骤仍需要 OpenRouter（每篇论文约 $0.10）。请按照 ",
+    "此步骤仅适用于 PDF 论文——非 PDF 来源（.tex, .md, .docx, …）会在本地提取而无需 OCR，因此它们在任何地方都不需要 OpenRouter 密钥，你可以直接跳到第 3 步。对于 PDF，coarse 需要 OpenRouter 来进行 OCR 和任何已触发的视觉 QA。请按照 ",
   setupSubStep2BodyTab: "OpenRouter 密钥",
   setupSubStep2BodySuffix:
     " 标签页来创建账户、充值 $1 额度，并设置 $2 的单个密钥限额。这里不需要 OpenRouter-only 路径中的 $20 缓冲，因为评审本身是在你的编码智能体订阅上运行的。",

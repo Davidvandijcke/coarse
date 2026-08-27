@@ -1,7 +1,8 @@
 """Drop-in LLMClient replacements backed by headless CLI agents.
 
-Three clients, each routing every coarse pipeline LLM call through a
-different headless AI CLI using the user's local subscription:
+Three clients, each routing coarse review-reasoning calls through a different
+headless AI CLI using the user's local subscription. Stage-specific API calls,
+including multimodal extraction QA, do not use these text-only adapters:
 
 - ``ClaudeCodeClient`` — ``claude -p`` (Claude Max / Pro subscription)
 - ``CodexClient``      — ``codex exec`` (ChatGPT Plus / Pro subscription)
@@ -33,6 +34,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from coarse.headless_prompt import _messages_to_prompt
 from coarse.models import HEADLESS_DEFAULT_MODELS
 
 logger = logging.getLogger(__name__)
@@ -369,19 +371,6 @@ def _clean_subprocess_env() -> dict[str, str]:
         env["LANG"] = env.get("LANG") or _default_utf8
         env["LC_ALL"] = env.get("LC_ALL") or _default_utf8
     return env
-
-
-def _messages_to_prompt(messages: list[dict]) -> str:
-    """Flatten a chat-completions-style messages list into one prompt."""
-    parts: list[str] = []
-    for msg in messages:
-        role = msg.get("role", "user").upper()
-        content = msg.get("content", "")
-        if isinstance(content, list):
-            text_parts = [c.get("text", "") for c in content if c.get("type") == "text"]
-            content = "\n".join(text_parts)
-        parts.append(f"[{role}]\n{content}")
-    return "\n\n".join(parts)
 
 
 def _extract_json(text: str) -> str:

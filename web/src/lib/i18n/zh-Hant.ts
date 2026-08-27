@@ -143,7 +143,7 @@ export const zhHant: Messages = {
   explainSubscriptionGeminiCli: "Gemini CLI",
   explainSubscriptionPart2: "訂閱進行 LLM 推理，在本機執行完整的 coarse 流程。",
   explainSubscriptionPdf:
-    "您只需為本機的 Mistral OCR 步驟支付約 ~$0.10（使用您自己的 OpenRouter 金鑰）；非 PDF 上傳（.tex, .md, .docx, …）會略過 OCR，無需 OpenRouter 金鑰。",
+    "PDF 處理會使用您的 OpenRouter 金鑰進行本機 Mistral OCR；若觸發視覺 QA，還會產生少量費用。非 PDF 上傳（.tex, .md, .docx, …）會略過 OCR，無需 OpenRouter 金鑰。",
   explainSubscriptionNonPdf:
     "您的檔案不是 PDF，因此會完全略過 Mistral OCR 步驟——整個執行過程由您的訂閱涵蓋，無需 OpenRouter 金鑰。",
   explainSubscriptionPart3: "完成後審查會顯示在此頁面。",
@@ -475,7 +475,7 @@ export const zhHant: Messages = {
   // setup page — subscription tab intro
   setupSubHeading: "使用您的編程代理人訂閱",
   setupSubIntro1:
-    "適合已經在付費使用 Claude Code、Codex 或 Gemini CLI 的使用者。審查會在您的訂閱上執行並計費。您只需為 OCR 步驟向 OpenRouter 支付約 ~$0.15。",
+    "適合已經在付費使用 Claude Code、Codex 或 Gemini CLI 的使用者。審查會在您的訂閱上執行並計費。您只需向 OpenRouter 支付 PDF OCR 與任何已觸發視覺 QA 的費用。",
   setupSubIntro2:
     "在您自己的機器上使用您自己的 Claude Code、Codex 或 Gemini CLI 帳號於本機執行。coarse.ink 不會接收或儲存您的供應商登入資訊。您供應商的條款與使用限制仍然適用。coarse.ink 與 Anthropic、OpenAI 或 Google 並無任何隸屬關係。",
   // setup page — subscription step 1
@@ -493,7 +493,7 @@ export const zhHant: Messages = {
   // setup page — subscription step 2
   setupSubStep2Title: "在您的機器上放置 OpenRouter 金鑰（僅限 PDF）",
   setupSubStep2BodyPrefix:
-    "此步驟僅適用於 PDF 論文——非 PDF 來源（.tex, .md, .docx, …）會在本機擷取而不需要 OCR，因此任何地方都不需要 OpenRouter 金鑰，您可以直接跳到步驟 3。對於 PDF，coarse 在 OCR 步驟仍需要 OpenRouter（每篇論文約 ~$0.10）。請依照 ",
+    "此步驟僅適用於 PDF 論文——非 PDF 來源（.tex, .md, .docx, …）會在本機擷取而不需要 OCR，因此任何地方都不需要 OpenRouter 金鑰，您可以直接跳到步驟 3。對於 PDF，coarse 需要 OpenRouter 進行 OCR 以及任何已觸發的視覺 QA。請依照 ",
   setupSubStep2BodyTab: "OpenRouter 金鑰",
   setupSubStep2BodySuffix:
     " 分頁來建立帳號、加入 $1 的額度，並設定每組金鑰 $2 的上限。此處不需要僅用 OpenRouter 路徑時的 $20 緩衝，因為審查本身是在您的編程代理人訂閱上執行的。",

@@ -144,7 +144,7 @@ export const de: Messages = {
   explainSubscriptionGeminiCli: "Gemini CLI",
   explainSubscriptionPart2: "-Abo für das LLM-Reasoning ausführt.",
   explainSubscriptionPdf:
-    "Du zahlst nur ~$0,10 für den lokalen Mistral-OCR-Schritt (mit deinem eigenen OpenRouter-Schlüssel); Nicht-PDF-Uploads (.tex, .md, .docx, …) überspringen OCR und brauchen keinen OpenRouter-Schlüssel.",
+    "Die PDF-Verarbeitung nutzt deinen OpenRouter-Schlüssel für lokale Mistral-OCR und verursacht eine kleine Gebühr für die visuelle Qualitätsprüfung, wenn diese ausgeführt wird; Nicht-PDF-Uploads (.tex, .md, .docx, …) überspringen OCR und brauchen keinen OpenRouter-Schlüssel.",
   explainSubscriptionNonPdf:
     "Deine Datei ist kein PDF, daher wird der Mistral-OCR-Schritt komplett übersprungen — der gesamte Lauf wird von deinem Abo abgedeckt, kein OpenRouter-Schlüssel nötig.",
   explainSubscriptionPart3: "Das Review erscheint auf dieser Seite, sobald es fertig ist.",
@@ -478,7 +478,7 @@ export const de: Messages = {
   // setup page — subscription tab intro
   setupSubHeading: "Nutze dein Coding-Agent-Abo",
   setupSubIntro1:
-    "Für Nutzer, die bereits für Claude Code, Codex oder Gemini CLI zahlen. Das Review läuft auf deinem Abo und wird dort abgerechnet. Du zahlst nur OpenRouter ~$0,15 für den OCR-Durchlauf.",
+    "Für Nutzer, die bereits für Claude Code, Codex oder Gemini CLI zahlen. Das Review läuft auf deinem Abo und wird dort abgerechnet. Du zahlst OpenRouter nur für die PDF-OCR und eine gegebenenfalls ausgelöste visuelle Qualitätsprüfung.",
   setupSubIntro2:
     "Läuft lokal auf deinem eigenen Rechner mit deinem eigenen Claude-Code-, Codex- oder Gemini-CLI-Account. coarse.ink empfängt oder speichert deinen Provider-Login nicht. Die Bedingungen und Nutzungslimits deines Providers gelten weiterhin. coarse.ink ist nicht mit Anthropic, OpenAI oder Google verbunden.",
   // setup page — subscription step 1
@@ -496,7 +496,7 @@ export const de: Messages = {
   // setup page — subscription step 2
   setupSubStep2Title: "Leg einen OpenRouter-Schlüssel auf deinen Rechner (nur PDFs)",
   setupSubStep2BodyPrefix:
-    "Dieser Schritt gilt nur für PDF-Paper — Nicht-PDF-Quellen (.tex, .md, .docx, …) werden lokal ohne OCR extrahiert, brauchen also nirgends einen OpenRouter-Schlüssel, und du kannst direkt zu Schritt 3 springen. Für PDFs braucht coarse OpenRouter weiterhin für den OCR-Schritt (~$0,10 pro Paper). Folge dem Tab ",
+    "Dieser Schritt gilt nur für PDF-Paper — Nicht-PDF-Quellen (.tex, .md, .docx, …) werden lokal ohne OCR extrahiert, brauchen also nirgends einen OpenRouter-Schlüssel, und du kannst direkt zu Schritt 3 springen. Für PDFs braucht coarse OpenRouter für OCR und eine gegebenenfalls ausgelöste visuelle Qualitätsprüfung. Folge dem Tab ",
   setupSubStep2BodyTab: "OpenRouter-Schlüssel",
   setupSubStep2BodySuffix:
     ", um einen Account zu erstellen, $1 Guthaben hinzuzufügen und ein Limit von $2 pro Schlüssel zu setzen. Der $20-Puffer aus dem reinen OpenRouter-Weg ist hier nicht nötig, weil das Review selbst auf deinem Coding-Agent-Abo läuft.",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from coarse.headless_review import (
     _find_openrouter_key,
@@ -10,7 +10,7 @@ from coarse.headless_review import (
     main,
     openrouter_key_preflight_error,
 )
-from coarse.models import model_filename_slug
+from coarse.models import VISION_MODEL, model_filename_slug
 
 
 def test_find_openrouter_key_reads_api_keys_config(tmp_path, monkeypatch) -> None:
@@ -28,13 +28,11 @@ def test_find_openrouter_key_reads_api_keys_config(tmp_path, monkeypatch) -> Non
 
 
 def test_client_factory_accepts_pipeline_style_kwargs() -> None:
-    """Regression: pipeline.py calls `LLMClient(model=..., config=...)` at
-    several sites (extraction QA, main review client, vision QA). The
-    monkey-patch in `_patch_llmclient` replaces LLMClient with the factory
-    returned by `_make_client_factory`, so the factory must accept any
-    shape of call the pipeline would make against the real LLMClient,
-    including positional/keyword `model` and `config`, and silently drop
-    the extras (the headless client uses the closure-captured values).
+    """The base headless factory accepts every pipeline constructor shape.
+
+    `_patch_llmclient` wraps this base factory with the explicit-model API
+    route tested below. The base still needs to tolerate keyword and legacy
+    positional extras when it constructs a headless review client.
 
     Before this regression test existed, the factory's signature was
     `def _factory(stage: str = "")`, so headless reviews blew up with
@@ -58,6 +56,34 @@ def test_client_factory_accepts_pipeline_style_kwargs() -> None:
             factory("overview", "ignored-positional", extra=1)
 
             assert fake_client.call_count == 3
+
+
+def test_client_factory_keeps_explicit_stage_model_on_api_route() -> None:
+    """Extraction QA must use the real multimodal client, not the text-only host."""
+    for host, client_attr in (
+        ("claude", "ClaudeCodeClient"),
+        ("codex", "CodexClient"),
+        ("gemini", "GeminiClient"),
+    ):
+        api_client = MagicMock()
+        config = object()
+        with patch(f"coarse.headless_clients.{client_attr}") as headless_client:
+            factory = _make_client_factory(
+                host,
+                model=None,
+                effort="low",
+                api_client_factory=api_client,
+            )
+
+            factory(model=VISION_MODEL, config=config)
+            api_client.assert_called_once_with(
+                model=VISION_MODEL,
+                config=config,
+            )
+            headless_client.assert_not_called()
+
+            factory(model=f"headless-{host}", config=config)
+            headless_client.assert_called_once()
 
 
 def test_deep_literature_requires_key_even_for_preextracted_non_pdf(tmp_path, monkeypatch) -> None:

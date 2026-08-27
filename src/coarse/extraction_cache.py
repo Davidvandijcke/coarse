@@ -10,6 +10,7 @@ from pathlib import Path
 from coarse.types import PaperText
 
 logger = logging.getLogger(__name__)
+_CACHE_SCHEMA_VERSION = 1
 
 
 def _cache_path(pdf_path: Path) -> Path:
@@ -27,6 +28,11 @@ def _load_cache(pdf_path: Path) -> PaperText | None:
         return None
     try:
         data = json.loads(cache.read_text(encoding="utf-8"))
+        if pdf_path.suffix.lower() == ".pdf" and data.get("_cache_schema_version") != (
+            _CACHE_SCHEMA_VERSION
+        ):
+            logger.info("Legacy PDF extraction cache has no trusted QA provenance, re-extracting")
+            return None
         paper_text = PaperText.model_validate(data)
         if not paper_text.full_markdown.strip():
             logger.warning("Cache empty, re-extracting")
@@ -49,7 +55,9 @@ def _save_cache(pdf_path: Path, paper_text: PaperText) -> None:
     if cache.is_symlink():
         logger.warning("Cache path %s is a symlink, refusing to write", cache)
         return
-    payload = paper_text.model_dump_json(indent=None).encode("utf-8")
+    data = paper_text.model_dump(mode="json")
+    data["_cache_schema_version"] = _CACHE_SCHEMA_VERSION
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     try:
         # Create with 0o600 from the start so the file never exists on disk
         # under umask-default permissions. Windows ignores the mode bits, so

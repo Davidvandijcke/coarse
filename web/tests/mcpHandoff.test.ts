@@ -52,7 +52,8 @@ describe("deep-literature subscription handoff", () => {
       isPdf: true,
       deepLiteratureSearch: false,
     });
-    expect(prompt).toContain("Mistral OCR extraction step");
+    expect(prompt).toContain("PDF processing");
+    expect(prompt).toContain("triggered vision QA");
     expect(prompt).not.toContain("No OpenRouter API key is needed for this review");
   });
 });

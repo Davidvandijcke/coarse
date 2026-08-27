@@ -4,17 +4,17 @@ description: >
   Produce a rigorous academic peer review of a research paper, manuscript,
   or preprint (PDF, markdown, TeX, DOCX, HTML, or EPUB) using the full
   coarse pipeline with the user's local Claude Code subscription doing
-  all the LLM reasoning. Every pipeline stage — structure analysis,
+  all the review reasoning. Every review-reasoning stage — structure analysis,
   overview synthesis, per-section review, proof verification, editorial
   pass — is served by a headless `claude -p` subprocess instead of a
-  paid API. Use when the user asks to review, critique, referee, or
+  paid API; PDF vision QA keeps its configured OpenRouter route. Use when the user asks to review, critique, referee, or
   provide feedback on an academic paper. Takes 10-25 minutes. Do NOT
   use for code review, blog posts, or non-academic documents.
 ---
 
 # coarse-review (Claude Code)
 
-Runs the **full coarse review pipeline** on a paper using the local `claude -p` CLI as the LLM backend. Every LLM call the pipeline makes — structure metadata, overview, per-section review, proof verification, editorial dedup — is served by a headless Claude Code subprocess using the user's Claude Max subscription. The only per-paper cost is the ~$0.05-0.15 Mistral OCR extraction for PDF sources, which uses the user's OpenRouter key locally — non-PDF sources (.tex, .md, .txt, .docx, .html, .epub) extract locally with no OpenRouter key at all.
+Runs the **full coarse review pipeline** on a paper using the local `claude -p` CLI as the review-reasoning backend. Structure metadata, overview, per-section review, proof verification, and editorial dedup are served by headless Claude Code subprocesses using the user's Claude Max subscription. PDF sources use the user's OpenRouter key locally for ~$0.05-0.15 Mistral OCR and for a small post-extraction vision-QA charge when that check runs; non-PDF sources (.tex, .md, .txt, .docx, .html, .epub) extract locally with no OpenRouter key at all.
 
 This is the **same pipeline** that powers coarse.ink — only the LLM backend is swapped.
 
@@ -35,7 +35,7 @@ This is the **same pipeline** that powers coarse.ink — only the LLM backend is
   (If that fails with `No such command 'install-skills'`, you're on a
   PyPI release that predates the command — upgrade or ignore; the skill
   bundle is also loadable directly via `uvx --from` without install.)
-- **OpenRouter API key required for PDF papers or an explicitly requested deep literature search** — Mistral OCR extraction (~$0.10 per paper) runs on PDFs alone. Standard non-PDF reviews extract locally and need no OpenRouter key; `--deep-literature-search` uses Perplexity Sonar Deep Research for any format and normally adds about $0.30. Skip the probes below only when both conditions are absent. Prefer checking for the key with presence-only probes so you don't needlessly echo its value into the transcript, but if the user hands you the key directly just save it — don't lecture them.
+- **OpenRouter API key required for PDF papers or an explicitly requested deep literature search** — PDFs use Mistral OCR (~$0.10 per paper) plus a small vision-QA charge when that check runs. Standard non-PDF reviews extract locally and need no OpenRouter key; `--deep-literature-search` uses Perplexity Sonar Deep Research for any format and normally adds about $0.30. Skip the probes below only when both conditions are absent. Prefer checking for the key with presence-only probes so you don't needlessly echo its value into the transcript, but if the user hands you the key directly just save it — don't lecture them.
 
   For PDF papers, or whenever deep literature search is requested, check whether `OPENROUTER_API_KEY` is already configured before running:
   - In the environment: `test -n "$OPENROUTER_API_KEY" && echo "env: set" || echo "env: missing"`

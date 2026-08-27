@@ -60,10 +60,11 @@ Or run `coarse setup` to store keys in `~/.coarse/config.toml`.
 ## Use your coding-agent subscription
 
 If you already have a `claude`, `codex`, or `gemini` CLI logged into its subscription,
-`coarse-review` routes every pipeline LLM call through the local CLI (`claude -p`,
-`codex exec`, `gemini -p`) so reviews bill your Claude Max / ChatGPT Pro / Google AI Pro
-subscription instead of a pay-per-token API. Only the ~$0.05–0.15 Mistral OCR step on
-PDF sources still uses `OPENROUTER_API_KEY` (skip it with `--pre-extracted paper.md`).
+`coarse-review` routes review reasoning through the local CLI (`claude -p`,
+`codex exec`, `gemini -p`) so it bills your Claude Max / ChatGPT Pro / Google AI Pro
+subscription instead of a pay-per-token API. PDF sources still use `OPENROUTER_API_KEY`
+for the ~$0.05–0.15 Mistral OCR step and for a small post-extraction vision-QA charge
+when that check runs (skip OCR with `--pre-extracted paper.md`).
 Non-PDF sources (`.tex`, `.md`, `.txt`, `.docx`, `.html`, `.epub`) extract locally, so
 they run entirely on your subscription with no OpenRouter key at all.
 
