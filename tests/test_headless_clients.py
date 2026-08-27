@@ -187,9 +187,32 @@ def test_codex_medium_effort_maps_directly_to_medium() -> None:
     assert "model_reasoning_effort='medium'" in cmd
 
 
-def test_codex_max_effort_caps_at_high() -> None:
+@pytest.mark.parametrize(
+    "model",
+    [None, "gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "openai/gpt-5.6-sol"],
+)
+def test_codex_max_effort_maps_to_native_max_for_gpt_5_6(model: str | None) -> None:
     _mark_codex_config_override_supported(True)
-    client = CodexClient(codex_bin="codex", codex_model="gpt-5.4-mini", effort="max")
+    client = CodexClient(codex_bin="codex", codex_model=model, effort="max")
+
+    cmd = client._build_cmd()
+
+    assert "model_reasoning_effort='max'" in cmd
+
+
+@pytest.mark.parametrize("model", ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"])
+def test_codex_max_effort_maps_to_xhigh_for_older_supported_models(model: str) -> None:
+    _mark_codex_config_override_supported(True)
+    client = CodexClient(codex_bin="codex", codex_model=model, effort="max")
+
+    cmd = client._build_cmd()
+
+    assert "model_reasoning_effort='xhigh'" in cmd
+
+
+def test_codex_max_effort_keeps_safe_cap_for_unknown_models() -> None:
+    _mark_codex_config_override_supported(True)
+    client = CodexClient(codex_bin="codex", codex_model="custom-model", effort="max")
 
     cmd = client._build_cmd()
 

@@ -83,6 +83,44 @@ body::after {
 }
 .blink { animation: blink 1.1s step-end infinite; }
 
+/* ── Support CTA ─────────────────────────────────────────── */
+.buy-me-a-coffee-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.38rem 0.72rem 0.34rem;
+  border: 1px solid var(--yellow-chalk);
+  border-radius: 2px;
+  background: var(--yellow-chalk);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.22);
+  color: var(--board);
+  font-family: var(--font-chalk);
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  transform: rotate(-0.75deg);
+  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.buy-me-a-coffee-button:hover {
+  background: var(--chalk-bright);
+  color: var(--board);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.24);
+  transform: rotate(-0.75deg) translateY(-1px);
+}
+
+.buy-me-a-coffee-button:focus-visible {
+  outline: 2px solid var(--chalk-bright);
+  outline-offset: 3px;
+}
+
+.buy-me-a-coffee-arrow {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
 /* ── Input fields ────────────────────────────────────────── */
 .field-line {
   border: none;
