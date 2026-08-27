@@ -30,7 +30,7 @@ import os
 import sys
 from pathlib import Path
 
-from coarse.models import HEADLESS_DEFAULT_MODELS, model_filename_slug
+from coarse.models import HEADLESS_DEFAULT_MODELS, LITELLM_OPENROUTER_PREFIX, model_filename_slug
 
 # Shared guidance for a missing/invalid OpenRouter key. Used by both
 # headless_review (sys.exit) and cli_review (return-code preflight) so the
@@ -159,12 +159,24 @@ def openrouter_key_preflight_error(
     return _OPENROUTER_KEY_HELP
 
 
+def _force_openrouter_model(model: str) -> str:
+    """Return the OpenRouter route for an explicit stage-specific model."""
+    if model.startswith(LITELLM_OPENROUTER_PREFIX):
+        return model
+    if model.startswith("gemini/"):
+        model = "google/" + model.removeprefix("gemini/")
+    if "/" not in model:
+        return model
+    return LITELLM_OPENROUTER_PREFIX + model
+
+
 def _make_client_factory(
     host: str,
     model: str | None,
     effort: str,
     *,
     api_client_factory=None,
+    api_model_mapper=None,
 ):
     from coarse import headless_clients as hc
 
@@ -214,7 +226,10 @@ def _make_client_factory(
             # LLMClient's real constructor does not accept the headless-only
             # `stage` argument. Pipeline stage-specific clients use keyword
             # `model=` / `config=`, so forward that supported call shape.
-            return api_client_factory(**_kwargs)
+            api_kwargs = dict(_kwargs)
+            if api_model_mapper is not None:
+                api_kwargs["model"] = api_model_mapper(requested_model)
+            return api_client_factory(**api_kwargs)
         return _headless_factory(stage, *_args, **_kwargs)
 
     return _routed_factory
@@ -234,6 +249,7 @@ def _patch_llmclient(host: str, model: str | None, effort: str):
         model,
         effort,
         api_client_factory=_OriginalLLMClient,
+        api_model_mapper=_force_openrouter_model,
     )
 
     # Replace the LLMClient class so review-model construction returns a
