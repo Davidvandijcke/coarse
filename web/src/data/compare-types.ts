@@ -1,9 +1,6 @@
-export type QualityScores = {
-  overall: string;
-  coverage: string;
-  specificity: string;
-  depth: string;
-};
+import type { QualityScores } from "@/lib/compareScores";
+
+export type { QualityScores, RunManifestSummary } from "@/lib/compareScores";
 
 export type ModelId = "claude" | "kimi" | "gpt5mini" | "gpt54";
 export type ComparisonId = "refine" | "stanford" | "reviewer3";
@@ -12,6 +9,8 @@ export type PaperId = "cortical_circuits" | "coset_codes" | "population_genetics
 export type ModelEntry = {
   review: string;
   scores: Record<ComparisonId, QualityScores>;
+  /** Optional reproducible run manifest once evaluation substrate (#273) exists. */
+  runManifest?: import("@/lib/compareScores").RunManifestSummary | null;
 };
 
 export type ComparisonEntry = {

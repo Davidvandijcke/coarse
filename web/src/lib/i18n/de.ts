@@ -38,7 +38,7 @@ export const de: Messages = {
     "Akademische Peer Review läuft auf unbezahlter akademischer Arbeit. Andere haben beschlossen, daraus ein Geschäft zu machen. Das fanden wir nicht gut.",
 
   // hero — score preview
-  scoreVsOthers: "vs. andere KI-Reviewer",
+  scoreVsOthers: "offene Evaluation",
   statCostNum: "< $2*",
   statCostLabel: "pro Review",
   statCostFootnote: "*meistens :)",
@@ -48,13 +48,13 @@ export const de: Messages = {
   statOpenSourceLabel: "Open Source",
 
   // hero — competitive comparison
-  comparePrefix: "Blind getestet gegen",
+  comparePrefix: "Historische Side-by-Side-Artefakte mit",
   compareRefine: "refine.ink",
   compareStanford: "Stanford Agentic Reviewer",
   compareReviewer3: "reviewer3.com",
   compareSuffix:
-    "Schneidet besser ab bei Abdeckung, Spezifität und Tiefe -- zu einem Bruchteil der Kosten.",
-  compareLink: "Sieh dir den Vergleich an →",
+    "Nur illustrativ — keine entscheidungsreife Same-Model-Evidenz und keine aktuelle Rangliste.",
+  compareLink: "Historische Vergleiche ansehen →",
 
   // submit form — section heading + paper field
   formSubmitHeading: "Ein Paper einreichen",
@@ -559,7 +559,7 @@ export const de: Messages = {
   compareScoresColSonnet: "Sonnet 4.6",
   compareScoresColKimi: "Kimi K2.5",
   compareScoresFootnote:
-    "Bewertet von Gemini 3.1 Pro mit multimodaler PDF-Eingabe. 5,0/5 = entspricht der Referenzqualität. 5,5+/5 = übertrifft sie.",
+    "Historische LLM-als-Richter-Scores (Gemini 3.1 Pro, multimodales PDF). Native 1–6-Skala: 5,0 = entspricht der Referenzqualität; 5,5–6,0 = übertrifft sie. Keine Same-Model-Maximum-Reasoning-Ranglistenevidenz.",
   compareJudgeShow: "Einblenden",
   compareJudgeHide: "Ausblenden",
   compareJudgeToggleSuffix: " des an Gemini 3.1 Pro gesendeten Judge-Prompts ",
@@ -568,7 +568,7 @@ export const de: Messages = {
   compareJudgeSystemPromptLabel: "System-Prompt",
   compareJudgeUserPromptLabel: "User-Prompt (Paper + Reviews zur Laufzeit eingefügt)",
   compareVsMid: " vs ",
-  compareScoreOutOf: "/5",
+  compareScoreOutOf: "/6",
   compareMetricCoverage: "Abdeckung",
   compareMetricSpecificity: "Spezifität",
   compareMetricDepth: "Tiefe",
@@ -578,4 +578,6 @@ export const de: Messages = {
   compareVisitPrefix: "Besuche ",
   comparePdfReviewSuffix: "-Review",
   comparePdfFallback: "Lad das PDF herunter, falls der iframe nicht rendert ↓",
+  compareHistoricalBadge: "Historisches illustratives Beispiel — keine aktuelle Ranglistenevidenz",
+  compareEvidenceUnavailable: "Evidenz nicht verfügbar",
 };

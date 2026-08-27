@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Public comparison claims no longer outrun reproducible evidence (issue #271).** Homepage copy no longer shows an unsupported “5+ / 5” winner score against named systems. The compare loader keeps the native LLM-judge scale (typically `/6`) instead of rewriting denominators to `/5` (which could display scores above the scale). Side-by-side artifacts are labelled as historical/illustrative; the UI is structured to consume run manifests (model/effort/sample size/date/benchmark version/CIs) once they exist. Vitest coverage for score parsing, scale display, unavailable evidence, and historical labelling. English + all site locales updated consistently. Web-only — no package change.
+
 ## v1.9.2 — 2026-08-27
 
 ### Added

@@ -38,7 +38,7 @@ export const ko: Messages = {
     "학술 동료 심사는 무보수 학술 노동으로 굴러갑니다. 누군가는 그것으로 사업을 벌이기로 했습니다. 우리는 그게 마음에 들지 않았습니다.",
 
   // hero — score preview
-  scoreVsOthers: "다른 AI 리뷰어 대비",
+  scoreVsOthers: "공개 평가",
   statCostNum: "< $2*",
   statCostLabel: "리뷰당",
   statCostFootnote: "*보통은 그렇습니다 :)",
@@ -48,13 +48,13 @@ export const ko: Messages = {
   statOpenSourceLabel: "오픈 소스",
 
   // hero — competitive comparison
-  comparePrefix: "블라인드 평가 대상:",
+  comparePrefix: "다음과의 과거 나란히 비교 자료:",
   compareRefine: "refine.ink",
   compareStanford: "Stanford Agentic Reviewer",
   compareReviewer3: "reviewer3.com",
   compareSuffix:
-    "훨씬 적은 비용으로 범위, 구체성, 깊이에서 더 높은 점수를 받습니다.",
-  compareLink: "나란히 비교 보기 →",
+    "예시용일 뿐 — 동일 모델 의사결정급 증거가 아니며 현재 리더보드도 아닙니다.",
+  compareLink: "과거 비교 보기 →",
 
   // submit form — section heading + paper field
   formSubmitHeading: "논문 제출",
@@ -559,7 +559,7 @@ export const ko: Messages = {
   compareScoresColSonnet: "Sonnet 4.6",
   compareScoresColKimi: "Kimi K2.5",
   compareScoresFootnote:
-    "PDF 멀티모달 입력으로 Gemini 3.1 Pro가 평가했습니다. 5.0/5 = 참조 품질과 동등. 5.5+/5 = 그 이상.",
+    "과거 LLM 심사 점수(Gemini 3.1 Pro, PDF 멀티모달). 고유 1–6 척도: 5.0 = 참조 품질과 동등, 5.5–6.0 = 그 이상. 동일 모델 최대 추론 리더보드 증거가 아닙니다.",
   compareJudgeShow: "보기",
   compareJudgeHide: "숨기기",
   compareJudgeToggleSuffix: " Gemini 3.1 Pro에 전송된 심사 프롬프트 ",
@@ -568,7 +568,7 @@ export const ko: Messages = {
   compareJudgeSystemPromptLabel: "시스템 프롬프트",
   compareJudgeUserPromptLabel: "사용자 프롬프트(논문 + 리뷰가 런타임에 삽입됨)",
   compareVsMid: " vs ",
-  compareScoreOutOf: "/5",
+  compareScoreOutOf: "/6",
   compareMetricCoverage: "범위",
   compareMetricSpecificity: "구체성",
   compareMetricDepth: "깊이",
@@ -578,4 +578,6 @@ export const ko: Messages = {
   compareVisitPrefix: "방문: ",
   comparePdfReviewSuffix: " 리뷰",
   comparePdfFallback: "iframe이 렌더링되지 않으면 PDF를 다운로드하세요 ↓",
+  compareHistoricalBadge: "과거 예시 — 현재 리더보드 증거 아님",
+  compareEvidenceUnavailable: "증거 없음",
 };

@@ -1,4 +1,4 @@
-"""Completeness guard for the site-UI (chrome) i18n catalogs.
+﻿"""Completeness guard for the site-UI (chrome) i18n catalogs.
 
 There is no JS test runner / local TS build, so this reads the catalog TS
 sources verbatim (like tests/test_web_security_invariants.py) and asserts every
@@ -52,9 +52,9 @@ def test_all_locale_catalogs_exist():
 
 
 def test_english_catalog_has_expected_key_count():
-    # 436 keys after the deep-literature switch added four localized labels to
-    # the 432-key submit + status + review + setup/compare catalog.
-    assert len(_keys(_read("en"))) == 436
+    # 438 keys after #271 added compareHistoricalBadge + compareEvidenceUnavailable
+    # (436 after deep-literature; 432 was submit+status+review+setup/compare).
+    assert len(_keys(_read("en"))) == 438
 
 
 def test_every_locale_defines_exactly_the_english_keys():

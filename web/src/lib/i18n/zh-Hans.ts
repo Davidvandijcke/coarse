@@ -39,7 +39,7 @@ export const zhHans: Messages = {
     "学术同行评审依靠无偿的学术劳动运转。有些人却决定借此牟利。我们对此并不认同。",
 
   // hero — score preview
-  scoreVsOthers: "对比其他 AI 评审工具",
+  scoreVsOthers: "开放评估",
   statCostNum: "< $2*",
   statCostLabel: "每次评审",
   statCostFootnote: "*通常如此 :)",
@@ -49,13 +49,13 @@ export const zhHans: Messages = {
   statOpenSourceLabel: "开源",
 
   // hero — competitive comparison
-  comparePrefix: "盲测对比",
+  comparePrefix: "与以下对象的历史并排对照材料：",
   compareRefine: "refine.ink",
   compareStanford: "Stanford Agentic Reviewer",
   compareReviewer3: "reviewer3.com",
   compareSuffix:
-    "在覆盖度、针对性和深度上得分更高——而成本只是其中的一小部分。",
-  compareLink: "查看并排对比 →",
+    "仅供示意——并非同模型决策级证据，也不是当前排行榜。",
+  compareLink: "浏览历史对照 →",
 
   // submit form — section heading + paper field
   formSubmitHeading: "提交论文",
@@ -560,7 +560,7 @@ export const zhHans: Messages = {
   compareScoresColSonnet: "Sonnet 4.6",
   compareScoresColKimi: "Kimi K2.5",
   compareScoresFootnote:
-    "由 Gemini 3.1 Pro 通过 PDF 多模态输入评估。5.0/5 = 与参考质量相当。5.5+/5 = 超过参考质量。",
+    "历史性 LLM 评判分数（Gemini 3.1 Pro，PDF 多模态）。原生 1–6 分制：5.0 = 与参考质量相当；5.5–6.0 = 超过参考质量。并非同模型最大推理的排行榜证据。",
   compareJudgeShow: "显示",
   compareJudgeHide: "隐藏",
   compareJudgeToggleSuffix: " 发送给 Gemini 3.1 Pro 的评判提示词 ",
@@ -569,7 +569,7 @@ export const zhHans: Messages = {
   compareJudgeSystemPromptLabel: "系统提示词",
   compareJudgeUserPromptLabel: "用户提示词（论文 + 评审在运行时注入）",
   compareVsMid: " vs ",
-  compareScoreOutOf: "/5",
+  compareScoreOutOf: "/6",
   compareMetricCoverage: "覆盖度",
   compareMetricSpecificity: "针对性",
   compareMetricDepth: "深度",
@@ -579,4 +579,6 @@ export const zhHans: Messages = {
   compareVisitPrefix: "访问 ",
   comparePdfReviewSuffix: " 评审",
   comparePdfFallback: "如果 iframe 未渲染，请下载 PDF ↓",
+  compareHistoricalBadge: "历史示意示例——并非当前排行榜证据",
+  compareEvidenceUnavailable: "证据不可用",
 };

@@ -38,7 +38,7 @@ export const es: Messages = {
     "La revisión académica por pares se sostiene sobre trabajo académico no remunerado. Otros decidieron hacer un negocio de eso. No nos pareció bien.",
 
   // hero — score preview
-  scoreVsOthers: "frente a otros revisores de IA",
+  scoreVsOthers: "evaluación abierta",
   statCostNum: "< $2*",
   statCostLabel: "por revisión",
   statCostFootnote: "*normalmente :)",
@@ -48,13 +48,13 @@ export const es: Messages = {
   statOpenSourceLabel: "código abierto",
 
   // hero — competitive comparison
-  comparePrefix: "Evaluado a ciegas frente a",
+  comparePrefix: "Artefactos históricos lado a lado con",
   compareRefine: "refine.ink",
   compareStanford: "Stanford Agentic Reviewer",
   compareReviewer3: "reviewer3.com",
   compareSuffix:
-    "Puntúa más alto en cobertura, especificidad y profundidad -- por una fracción del coste.",
-  compareLink: "Ver la comparativa →",
+    "Solo ilustrativo: no es evidencia de decisión con el mismo modelo ni una clasificación actual.",
+  compareLink: "Ver comparaciones históricas →",
 
   // submit form — section heading + paper field
   formSubmitHeading: "Enviar un artículo",
@@ -559,7 +559,7 @@ export const es: Messages = {
   compareScoresColSonnet: "Sonnet 4.6",
   compareScoresColKimi: "Kimi K2.5",
   compareScoresFootnote:
-    "Evaluado por Gemini 3.1 Pro con entrada multimodal en PDF. 5,0/5 = iguala la calidad de la referencia. 5,5+/5 = la supera.",
+    "Puntuaciones históricas de un juez LLM (Gemini 3.1 Pro, PDF multimodal). Escala nativa 1–6: 5,0 = iguala la calidad de referencia; 5,5–6,0 = la supera. No es evidencia de clasificación con máximo razonamiento y el mismo modelo.",
   compareJudgeShow: "Mostrar",
   compareJudgeHide: "Ocultar",
   compareJudgeToggleSuffix: " la instrucción del juez enviada a Gemini 3.1 Pro ",
@@ -568,7 +568,7 @@ export const es: Messages = {
   compareJudgeSystemPromptLabel: "Instrucción del sistema",
   compareJudgeUserPromptLabel: "Instrucción del usuario (el artículo y las revisiones se inyectan en tiempo de ejecución)",
   compareVsMid: " frente a ",
-  compareScoreOutOf: "/5",
+  compareScoreOutOf: "/6",
   compareMetricCoverage: "Cobertura",
   compareMetricSpecificity: "Especificidad",
   compareMetricDepth: "Profundidad",
@@ -578,4 +578,6 @@ export const es: Messages = {
   compareVisitPrefix: "Visita ",
   comparePdfReviewSuffix: " revisión",
   comparePdfFallback: "Descarga el PDF si el iframe no se renderiza ↓",
+  compareHistoricalBadge: "Ejemplo histórico ilustrativo — no es evidencia de clasificación actual",
+  compareEvidenceUnavailable: "Evidencia no disponible",
 };

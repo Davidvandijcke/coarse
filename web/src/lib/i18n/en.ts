@@ -42,7 +42,7 @@ export const en = {
     "Academic peer review runs on unpaid academic labor. Others decided to make a business out of that. We didn't like that.",
 
   // hero — score preview
-  scoreVsOthers: "vs. other AI reviewers",
+  scoreVsOthers: "open evaluation",
   statCostNum: "< $2*",
   statCostLabel: "per review",
   statCostFootnote: "*typically :)",
@@ -52,13 +52,13 @@ export const en = {
   statOpenSourceLabel: "open source",
 
   // hero — competitive comparison
-  comparePrefix: "Blind-evaluated against",
+  comparePrefix: "Historical side-by-side artifacts with",
   compareRefine: "refine.ink",
   compareStanford: "Stanford Agentic Reviewer",
   compareReviewer3: "reviewer3.com",
   compareSuffix:
-    "Scores higher on coverage, specificity, and depth -- at a fraction of the cost.",
-  compareLink: "See the side-by-side →",
+    "Illustrative only — not decision-grade same-model evidence or a current leaderboard.",
+  compareLink: "Browse historical comparisons →",
 
   // submit form — section heading + paper field
   formSubmitHeading: "Submit a paper",
@@ -560,7 +560,7 @@ export const en = {
   compareScoresColSonnet: "Sonnet 4.6",
   compareScoresColKimi: "Kimi K2.5",
   compareScoresFootnote:
-    "Evaluated by Gemini 3.1 Pro with PDF multimodal input. 5.0/5 = matches reference quality. 5.5+/5 = exceeds it.",
+    "Historical LLM-as-judge scores (Gemini 3.1 Pro, PDF multimodal). Native 1–6 scale: 5.0 = matches reference quality; 5.5–6.0 = exceeds it. Not same-model maximum-reasoning leaderboard evidence.",
   compareJudgeShow: "Show",
   compareJudgeHide: "Hide",
   compareJudgeToggleSuffix: " judge prompt sent to Gemini 3.1 Pro ",
@@ -569,7 +569,7 @@ export const en = {
   compareJudgeSystemPromptLabel: "System prompt",
   compareJudgeUserPromptLabel: "User prompt (paper + reviews injected at runtime)",
   compareVsMid: " vs ",
-  compareScoreOutOf: "/5",
+  compareScoreOutOf: "/6",
   compareMetricCoverage: "Coverage",
   compareMetricSpecificity: "Specificity",
   compareMetricDepth: "Depth",
@@ -579,4 +579,7 @@ export const en = {
   compareVisitPrefix: "Visit ",
   comparePdfReviewSuffix: " review",
   comparePdfFallback: "Download PDF if iframe doesn't render ↓",
+  compareHistoricalBadge:
+    "Historical illustrative example — not current leaderboard evidence",
+  compareEvidenceUnavailable: "Evidence unavailable",
 } as const;

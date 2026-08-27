@@ -32,7 +32,7 @@ export const nl: Messages = {
   heroManifesto:
     "Academische peer review draait op onbetaalde academische arbeid. Anderen besloten daar een verdienmodel van te maken. Daar waren wij niet van gediend.",
 
-  scoreVsOthers: "vs. andere AI-reviewers",
+  scoreVsOthers: "open evaluatie",
   statCostNum: "< $2*",
   statCostLabel: "per review",
   statCostFootnote: "*meestal :)",
@@ -41,13 +41,13 @@ export const nl: Messages = {
   statOpenSourceNum: "MIT",
   statOpenSourceLabel: "open source",
 
-  comparePrefix: "Blind geëvalueerd tegen",
+  comparePrefix: "Historische side-by-side-artefacten met",
   compareRefine: "refine.ink",
   compareStanford: "Stanford Agentic Reviewer",
   compareReviewer3: "reviewer3.com",
   compareSuffix:
-    "Scoort hoger op dekking, specificiteit en diepgang -- tegen een fractie van de kosten.",
-  compareLink: "Bekijk de vergelijking →",
+    "Alleen illustratief — geen beslissingsrijpe same-model-evidence of een actuele ranglijst.",
+  compareLink: "Bekijk historische vergelijkingen →",
 
   formSubmitHeading: "Dien een artikel in",
   fieldPaper: "Artikel",
@@ -538,7 +538,7 @@ export const nl: Messages = {
   compareScoresColSonnet: "Sonnet 4.6",
   compareScoresColKimi: "Kimi K2.5",
   compareScoresFootnote:
-    "Geëvalueerd door Gemini 3.1 Pro met multimodale PDF-invoer. 5.0/5 = evenaart de referentiekwaliteit. 5.5+/5 = overtreft die.",
+    "Historische LLM-als-rechter-scores (Gemini 3.1 Pro, multimodale PDF). Native schaal 1–6: 5,0 = evenaart referentiekwaliteit; 5,5–6,0 = overtreft die. Geen same-model maximum-reasoning-ranglijstevidence.",
   compareJudgeShow: "Toon",
   compareJudgeHide: "Verberg",
   compareJudgeToggleSuffix: " de juryprompt die naar Gemini 3.1 Pro is gestuurd ",
@@ -547,7 +547,7 @@ export const nl: Messages = {
   compareJudgeSystemPromptLabel: "Systeemprompt",
   compareJudgeUserPromptLabel: "Gebruikersprompt (artikel + reviews tijdens runtime ingevoegd)",
   compareVsMid: " vs ",
-  compareScoreOutOf: "/5",
+  compareScoreOutOf: "/6",
   compareMetricCoverage: "Dekking",
   compareMetricSpecificity: "Specificiteit",
   compareMetricDepth: "Diepgang",
@@ -557,4 +557,6 @@ export const nl: Messages = {
   compareVisitPrefix: "Bezoek ",
   comparePdfReviewSuffix: " review",
   comparePdfFallback: "Download de PDF als de iframe niet weergeeft ↓",
+  compareHistoricalBadge: "Historisch illustratief voorbeeld — geen actuele ranglijstevidence",
+  compareEvidenceUnavailable: "Evidence niet beschikbaar",
 };

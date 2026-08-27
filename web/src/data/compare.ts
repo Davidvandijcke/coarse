@@ -2,7 +2,9 @@
  * Side-by-side comparison data loader.
  *
  * Score sources — each model × paper combination references specific quality
- * evaluation files in data/refine_examples/ so results are reproducible.
+ * evaluation files in data/refine_examples/. These are historical illustrative
+ * artifacts, not decision-grade same-model leaderboard evidence. Display keeps
+ * the native judge scale (typically /6); never rewrite denominators.
  *
  * Sonnet 4.6 & Kimi K2.5 reviews: generated 2026-03-15 via the coarse web app.
  * GPT-5 Mini reviews: generated 2026-03-16 via coarse CLI.
@@ -21,24 +23,17 @@
  */
 import fs from "fs";
 import path from "path";
-import type { QualityScores, ComparisonId, PaperId, PaperData } from "./compare-types";
+import type { ComparisonId, PaperId, PaperData } from "./compare-types";
+import {
+  NA_SCORES,
+  parseQualityScores,
+  type QualityScores,
+} from "@/lib/compareScores";
 
 export type { QualityScores, ModelId, ComparisonId, PaperId, ModelEntry, ComparisonEntry, PaperData } from "./compare-types";
+export type { RunManifestSummary } from "@/lib/compareScores";
 export { MODEL_LABELS, COMPARISON_LABELS, COMPARISON_URLS } from "./compare-types";
-
-function parseQualityScores(report: string): QualityScores {
-  // Display denominator as /5 (public-facing) even though judge uses a /6 scale internally
-  const swapDenom = (s: string) => s.replace(/\/\d+(\.\d+)?$/, "/5");
-  const overall = report.match(/Overall Score:\s*([\d.]+\/[\d.]+)/)?.[1] ?? "N/A";
-  const dim = (name: string) =>
-    report.match(new RegExp(`\\|\\s*${name}\\s*\\|\\s*([\\d.]+/\\d+)`))?.[1] ?? "N/A";
-  return {
-    overall: overall !== "N/A" ? swapDenom(overall) : overall,
-    coverage: dim("coverage") !== "N/A" ? swapDenom(dim("coverage")) : "N/A",
-    specificity: dim("specificity") !== "N/A" ? swapDenom(dim("specificity")) : "N/A",
-    depth: dim("depth") !== "N/A" ? swapDenom(dim("depth")) : "N/A",
-  };
-}
+export { parseQualityScores, NA_SCORES } from "@/lib/compareScores";
 
 function normalizeEscapedUnicode(text: string): string {
   return text.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex: string) =>
@@ -57,8 +52,6 @@ function tryReadFile(filePath: string): string | null {
     return null;
   }
 }
-
-const NA_SCORES: QualityScores = { overall: "N/A", coverage: "N/A", specificity: "N/A", depth: "N/A" };
 
 function loadScoresForRef(dir: string, qualityFile: string): QualityScores {
   const content = tryReadFile(path.join(dir, qualityFile));

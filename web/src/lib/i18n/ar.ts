@@ -40,7 +40,7 @@ export const ar: Messages = {
     "تقوم مراجعة الأقران الأكاديمية على عمل أكاديمي غير مدفوع الأجر. وقد قرّر آخرون أن يجعلوا منها تجارة. لم يرُقْ لنا ذلك.",
 
   // hero — score preview
-  scoreVsOthers: "مقارنةً بمراجِعي الذكاء الاصطناعي الآخرين",
+  scoreVsOthers: "تقييم مفتوح",
   statCostNum: "< $2*",
   statCostLabel: "لكل مراجعة",
   statCostFootnote: "*عادةً :)",
@@ -50,13 +50,13 @@ export const ar: Messages = {
   statOpenSourceLabel: "مفتوح المصدر",
 
   // hero — competitive comparison
-  comparePrefix: "خضع لتقييم أعمى مقابل",
+  comparePrefix: "مواد تاريخية جنباً إلى جنب مع",
   compareRefine: "refine.ink",
   compareStanford: "Stanford Agentic Reviewer",
   compareReviewer3: "reviewer3.com",
   compareSuffix:
-    "يحقّق درجات أعلى في الشمول والدقة والعمق -- بجزء يسير من التكلفة.",
-  compareLink: "اطّلع على المقارنة جنبًا إلى جنب →",
+    "للتوضيح فقط — ليست أدلة قرار بنفس النموذج ولا لوحة صدارة حالية.",
+  compareLink: "تصفح المقارنات التاريخية ←",
 
   // submit form — section heading + paper field
   formSubmitHeading: "أرسِل ورقة",
@@ -561,7 +561,7 @@ export const ar: Messages = {
   compareScoresColSonnet: "Sonnet 4.6",
   compareScoresColKimi: "Kimi K2.5",
   compareScoresFootnote:
-    "قيّمها Gemini 3.1 Pro بإدخال متعدد الوسائط من ملف PDF. 5.0/5 = تطابق جودة المرجع. 5.5+/5 = تتجاوزها.",
+    "درجات تاريخية من محكّم LLM (Gemini 3.1 Pro، PDF متعدد الوسائط). المقياس الأصلي 1–6: 5.0 = تطابق جودة المرجع؛ 5.5–6.0 = تتجاوزها. ليست أدلة لوحة صدارة بأقصى استدلال وبنفس النموذج.",
   compareJudgeShow: "إظهار",
   compareJudgeHide: "إخفاء",
   compareJudgeToggleSuffix: " موجِّه الحَكَم المُرسَل إلى Gemini 3.1 Pro ",
@@ -570,7 +570,7 @@ export const ar: Messages = {
   compareJudgeSystemPromptLabel: "موجِّه النظام",
   compareJudgeUserPromptLabel: "موجِّه المستخدم (تُدرَج الورقة + المراجعات وقت التشغيل)",
   compareVsMid: " مقابل ",
-  compareScoreOutOf: "/5",
+  compareScoreOutOf: "/6",
   compareMetricCoverage: "الشمول",
   compareMetricSpecificity: "الدقة",
   compareMetricDepth: "العمق",
@@ -580,4 +580,6 @@ export const ar: Messages = {
   compareVisitPrefix: "زُر ",
   comparePdfReviewSuffix: " مراجعة",
   comparePdfFallback: "نزّل ملف PDF إذا لم يُعرَض الإطار ↓",
+  compareHistoricalBadge: "مثال تاريخي توضيحي — ليس دليل لوحة صدارة حالية",
+  compareEvidenceUnavailable: "الأدلة غير متوفرة",
 };

@@ -3,7 +3,7 @@ import { ComparePage } from "@/components/ComparePage";
 
 export const metadata = {
   title: "\u2018coarse \u2014 Compare reviews",
-  description: "See how coarse stacks up against refine.ink and human reviewers.",
+  description: "Historical side-by-side review artifacts. Illustrative only — not a current leaderboard.",
 };
 
 export default function CompareRoute() {

@@ -38,7 +38,7 @@ export const ja: Messages = {
     "学術的な査読は、無償の学術労働によって成り立っています。他社はそれをビジネスにすることにしました。私たちはそれが気に入りませんでした。",
 
   // hero — score preview
-  scoreVsOthers: "他の AI レビュアーとの比較",
+  scoreVsOthers: "オープン評価",
   statCostNum: "< $2*",
   statCostLabel: "1 回のレビューあたり",
   statCostFootnote: "*通常は :)",
@@ -48,13 +48,13 @@ export const ja: Messages = {
   statOpenSourceLabel: "オープンソース",
 
   // hero — competitive comparison
-  comparePrefix: "ブラインド評価で比較した相手:",
+  comparePrefix: "次との歴史的な並列比較資料：",
   compareRefine: "refine.ink",
   compareStanford: "Stanford Agentic Reviewer",
   compareReviewer3: "reviewer3.com",
   compareSuffix:
-    "カバレッジ、具体性、深さでより高いスコアを獲得 -- しかもごくわずかな費用で。",
-  compareLink: "比較を見る →",
+    "説明用のみ — 同一モデルでの意思決定級の証拠でも、現行リーダーボードでもありません。",
+  compareLink: "歴史的な比較を見る →",
 
   // submit form — section heading + paper field
   formSubmitHeading: "論文を投稿する",
@@ -559,7 +559,7 @@ export const ja: Messages = {
   compareScoresColSonnet: "Sonnet 4.6",
   compareScoresColKimi: "Kimi K2.5",
   compareScoresFootnote:
-    "Gemini 3.1 Pro が PDF のマルチモーダル入力で評価しました。5.0/5 = リファレンスと同等の品質。5.5+/5 = それを上回ります。",
+    "歴史的な LLM 審査スコア（Gemini 3.1 Pro、PDF マルチモーダル）。ネイティブ 1–6 尺度：5.0 = リファレンスと同等、5.5–6.0 = それを上回る。同一モデル最大推論のリーダーボード証拠ではありません。",
   compareJudgeShow: "表示",
   compareJudgeHide: "非表示",
   compareJudgeToggleSuffix: " Gemini 3.1 Pro に送信された判定プロンプト ",
@@ -568,7 +568,7 @@ export const ja: Messages = {
   compareJudgeSystemPromptLabel: "システムプロンプト",
   compareJudgeUserPromptLabel: "ユーザープロンプト（論文 + レビューは実行時に挿入されます）",
   compareVsMid: " 対 ",
-  compareScoreOutOf: "/5",
+  compareScoreOutOf: "/6",
   compareMetricCoverage: "カバレッジ",
   compareMetricSpecificity: "具体性",
   compareMetricDepth: "深さ",
@@ -578,4 +578,6 @@ export const ja: Messages = {
   compareVisitPrefix: "次にアクセス ",
   comparePdfReviewSuffix: " のレビュー",
   comparePdfFallback: "iframe が表示されない場合は PDF をダウンロードしてください ↓",
+  compareHistoricalBadge: "歴史的な説明用の例 — 現行リーダーボードの証拠ではありません",
+  compareEvidenceUnavailable: "証拠なし",
 };

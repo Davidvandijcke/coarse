@@ -9,6 +9,11 @@ import type { PaperId, ModelId, ComparisonId, PaperData } from "@/data/compare-t
 import { MODEL_LABELS, COMPARISON_LABELS, COMPARISON_URLS } from "@/data/compare-types";
 import type { Components } from "react-markdown";
 import { SiteLanguageProvider, useSiteLanguageContext, type MessageKey } from "@/lib/i18n";
+import {
+  resolveCompareEvidence,
+  scoreDenominatorSuffix,
+  scoreNumeratorLabel,
+} from "@/lib/compareScores";
 
 const katexOptions = { strict: false, throwOnError: false };
 
@@ -281,7 +286,7 @@ function ScoresOverviewTable({ papers }: { papers: Record<PaperId, PaperData> })
                             background: active && score >= 5.0 ? "rgba(212, 168, 67, 0.12)" : "transparent",
                           }}
                         >
-                          {active ? score.toFixed(2) : "N/A"}
+                          {active ? score.toFixed(2) : t("compareEvidenceUnavailable")}
                         </td>
                       );
                     })}
@@ -390,6 +395,8 @@ function ComparePageBody({ papers }: { papers: Record<PaperId, PaperData> }) {
   const effectiveModelId = modelEntry ? modelId : "claude";
   const effectiveModel = paper.models[effectiveModelId]!;
   const activeScores = effectiveModel.scores[comparisonId];
+  // File-backed LLM-judge rows are historical until run manifests (#273) exist.
+  const evidence = resolveCompareEvidence({ scores: activeScores });
 
   const leftComponents = useMemo(() => makeHeadingComponents("left"), []);
   const rightComponents = useMemo(() => makeHeadingComponents("right"), []);
@@ -508,7 +515,7 @@ function ComparePageBody({ papers }: { papers: Record<PaperId, PaperData> }) {
             flexWrap: "wrap",
           }}
         >
-          {/* Scrawled grade */}
+          {/* Scrawled grade — native scale, no denominator rewrite */}
           <div style={{ transform: "rotate(-1.5deg)", transformOrigin: "center" }}>
             <p
               style={{
@@ -525,13 +532,35 @@ function ComparePageBody({ papers }: { papers: Record<PaperId, PaperData> }) {
                 fontFamily: "var(--font-chalk)",
                 fontSize: "3rem",
                 fontWeight: 700,
-                color: "var(--yellow-chalk)",
+                color: evidence.overall.available ? "var(--yellow-chalk)" : "var(--dust)",
                 lineHeight: 1,
               }}
             >
-              {activeScores.overall.replace(/\/[\d.]+$/, "")}
-              <span style={{ fontSize: "1.25rem", fontWeight: 400, color: "var(--dust)" }}>{t("compareScoreOutOf")}</span>
+              {evidence.overall.available
+                ? scoreNumeratorLabel(activeScores.overall)
+                : t("compareEvidenceUnavailable")}
+              {evidence.overall.available && (
+                <span style={{ fontSize: "1.25rem", fontWeight: 400, color: "var(--dust)" }}>
+                  {scoreDenominatorSuffix(activeScores.overall)}
+                </span>
+              )}
             </span>
+            {evidence.historical && (
+              <p
+                data-testid="compare-historical-badge"
+                style={{
+                  fontFamily: "var(--font-chalk)",
+                  fontSize: "0.95rem",
+                  color: "var(--dust)",
+                  margin: "0.35rem 0 0",
+                  maxWidth: "16rem",
+                  lineHeight: 1.35,
+                  fontStyle: "italic",
+                }}
+              >
+                {t("compareHistoricalBadge")}
+              </p>
+            )}
           </div>
 
           {/* Paper title + metrics */}
@@ -549,16 +578,16 @@ function ComparePageBody({ papers }: { papers: Record<PaperId, PaperData> }) {
             </p>
             <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
               {([
-                ["compareMetricCoverage", activeScores.coverage],
-                ["compareMetricSpecificity", activeScores.specificity],
-                ["compareMetricDepth", activeScores.depth],
-              ] as const).map(([labelKey, val]) => (
+                ["compareMetricCoverage", evidence.dimensions.coverage],
+                ["compareMetricSpecificity", evidence.dimensions.specificity],
+                ["compareMetricDepth", evidence.dimensions.depth],
+              ] as const).map(([labelKey, dim]) => (
                 <span key={labelKey} style={{ fontSize: "0.92rem" }}>
                   <span style={{ fontFamily: "var(--font-chalk)", color: "var(--dust)" }}>
                     {t(labelKey)}
                   </span>{" "}
                   <span style={{ fontFamily: "var(--font-chalk)", color: "var(--chalk-bright)", fontWeight: 600 }}>
-                    {val}
+                    {dim.available ? dim.text : t("compareEvidenceUnavailable")}
                   </span>
                 </span>
               ))}

@@ -1129,30 +1129,34 @@ function PageBody() {
           {/* Score preview */}
           <div style={{ marginTop: "2.25rem" }}>
             <div style={{ display: "flex", gap: "2.5rem", flexWrap: "wrap", alignItems: "flex-end" }}>
-              {/* Big score */}
+              {/* Evidence posture — no unsupported winner score */}
               <div style={{ transform: "rotate(-1.5deg)" }}>
                 <span
                   style={{
                     fontFamily: "var(--font-chalk)",
-                    fontSize: "2.75rem",
-                    fontWeight: 700,
-                    color: "var(--yellow-chalk)",
-                    lineHeight: 1,
+                    fontSize: "1.75rem",
+                    fontWeight: 600,
+                    color: "var(--chalk-bright)",
+                    lineHeight: 1.15,
+                    display: "block",
+                    maxWidth: "11rem",
                   }}
                 >
-                  5<span style={{ fontSize: "1.5rem", verticalAlign: "super", lineHeight: 0 }}>+</span>
-                  <span style={{ fontSize: "1.1rem", fontWeight: 400, color: "var(--dust)" }}> / 5</span>
+                  {t("scoreVsOthers")}
                 </span>
                 <span
                   style={{
                     fontFamily: "var(--font-chalk)",
-                    fontSize: "1.1rem",
+                    fontSize: "1.05rem",
                     color: "var(--dust)",
                     display: "block",
-                    marginTop: "0.25rem",
+                    marginTop: "0.35rem",
+                    fontStyle: "italic",
+                    maxWidth: "14rem",
+                    lineHeight: 1.35,
                   }}
                 >
-                  {t("scoreVsOthers")}
+                  {t("compareHistoricalBadge")}
                 </span>
               </div>
 
