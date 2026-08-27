@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.9.1 — 2026-08-27
+
 ### Changed
 
 - **GitHub Actions now run on current Node 24-native releases pinned to immutable commit SHAs.** Checkout, setup-node, setup-python, setup-uv, CodeQL, artifact transfer, and PyPI publishing actions were upgraded to their current releases; the obsolete forced-Node-24 migration flag was removed. The uv cache retains its prior pruning behavior explicitly, a regression test rejects mutable third-party action refs across block/flow and `.yml`/`.yaml` syntax, and CI now executes the web Vitest suite before the production build. CI/deploy-only — no package change.
