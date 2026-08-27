@@ -88,7 +88,7 @@ These map to Codex's internal reasoning effort:
 - `low` → `low`
 - `medium` → `medium`
 - `high` → `high`
-- `max` → `high`
+- `max` → the model's highest supported setting (`max` for GPT-5.6 Sol/Terra/Luna; `xhigh` for GPT-5.5 and GPT-5.4)
 
 **Handoff mode** (when the user came from the coarse web form): the paper is a REMOTE resource at the handoff URL. Do NOT search for a local PDF and do NOT ask the user for a file path — the `--handoff` URL IS the paper source. Same two-step launch+attach pattern:
 

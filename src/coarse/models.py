@@ -159,6 +159,15 @@ HEADLESS_DEFAULT_MODELS: dict[str, str] = {
     "gemini": GEMINI_3_6_FLASH_MODEL.removeprefix("google/"),
 }
 
+# Highest Codex reasoning effort exposed through coarse's portable ``max``
+# selector. GPT-5.6 added native ``max``; GPT-5.5/5.4 top out at ``xhigh``.
+# Prefix matching also covers tier variants and dated snapshots.
+CODEX_MAX_EFFORT_BY_MODEL_PREFIX: tuple[tuple[str, str], ...] = (
+    ("gpt-5.6", "max"),
+    ("gpt-5.5", "xhigh"),
+    ("gpt-5.4", "xhigh"),
+)
+
 # Recall evaluation judge (cheap model for YES/NO semantic matching)
 RECALL_JUDGE_MODEL = QUALITY_MODEL
 

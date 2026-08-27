@@ -33,7 +33,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from coarse.models import HEADLESS_DEFAULT_MODELS
+from coarse.models import CODEX_MAX_EFFORT_BY_MODEL_PREFIX, HEADLESS_DEFAULT_MODELS
 
 logger = logging.getLogger(__name__)
 
@@ -852,8 +852,8 @@ class CodexClient(_HeadlessCLIClient):
     """LLMClient replacement backed by the ``codex exec`` CLI (ChatGPT).
 
     ``effort`` maps to Codex's ``model_reasoning_effort`` config
-    override (minimal / low / medium / high). We pass it via ``-c
-    model_reasoning_effort=<level>`` per call so the choice is
+    override (low / medium / high / xhigh / max, depending on the model).
+    We pass it via ``-c model_reasoning_effort=<level>`` per call so the choice is
     ephemeral and doesn't mutate the user's ``~/.codex/config.toml``.
 
     The ``-c KEY=VALUE`` flag itself is version-gated — older Codex
@@ -868,17 +868,6 @@ class CodexClient(_HeadlessCLIClient):
     #: Probe cache — see ``ClaudeCodeClient._effort_flag_probed``.
     _config_override_probed: bool = False
     _config_override_supported: bool = False
-
-    # coarse-level effort name → codex model_reasoning_effort value.
-    # Avoid "minimal" because current Codex builds reject web_search under
-    # that setting, which breaks nested codex exec calls inside coarse.
-    _EFFORT_MAP = {
-        "low": "low",
-        "medium": "medium",
-        "high": "high",
-        "max": "high",
-    }
-
     def __init__(
         self,
         model: str | None = None,
@@ -963,7 +952,18 @@ class CodexClient(_HeadlessCLIClient):
         if self._codex_model:
             cmd += ["-m", self._codex_model]
         if type(self)._config_override_supported:
-            mapped = self._EFFORT_MAP.get(self._effort, self._effort)
+            mapped = self._effort
+            if mapped == "max":
+                model = (self._codex_model or HEADLESS_DEFAULT_MODELS["codex"]).lower()
+                model = model.removeprefix("openai/")
+                mapped = next(
+                    (
+                        level
+                        for prefix, level in CODEX_MAX_EFFORT_BY_MODEL_PREFIX
+                        if model.startswith(prefix)
+                    ),
+                    "high",
+                )
             cmd += ["-c", f"model_reasoning_effort={mapped!r}"]
         # Read prompt from stdin by passing '-' as the positional arg.
         cmd.append("-")

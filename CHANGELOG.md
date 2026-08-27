@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- **Subscription-backed Codex reviews now honor the selected model's maximum reasoning effort.** `--effort max` previously capped every Codex model at `high`, including GPT-5.6 Sol/Terra/Luna. It now maps those GPT-5.6 models to native `max`, while GPT-5.5 and GPT-5.4 use their highest supported setting, `xhigh`; unknown custom model IDs retain the conservative `high` fallback. Regression coverage pins each model-family mapping and the bundled Codex instructions now describe the actual behavior.
+
 - **The production release audit now understands Vercel-managed secrets and proves protected reads structurally.** `VERCEL_AUTOMATION_BYPASS_SECRET` is a system variable that Vercel intentionally injects into every deployment when automation bypass is enabled, so middleware no longer reports its expected production presence as a leak. Protected direct-property reads must now sit inside an exact lexical `VERCEL_ENV` equality block; whole-object, bracket/computed, imported-process, and aliased access fail closed. Adversarial tests cover comments, regex literals, closed/opposite branches, indirect identifiers, and process-env aliases. Genuinely misplaced preview Basic Auth variables still produce a once-per-cold-start runtime warning, now covered behaviorally in Vitest; credential comparison performs fixed work for both username and password instead of using short-circuit string equality. The checklist also records that Sensitive Vercel variables are non-readable and must not be treated as empty based on `vercel env pull`. Active deployment docs were corrected to describe the single `coarse-review` Modal app; legacy `coarse-mcp` was retired in v1.3.0. Web/ops-only — no package change.
 
 ## v1.9.0 — 2026-07-30
