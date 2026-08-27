@@ -5,12 +5,18 @@ from unittest.mock import MagicMock, patch
 
 from coarse.headless_review import (
     _find_openrouter_key,
+    _force_openrouter_model,
     _looks_like_openrouter_key,
     _make_client_factory,
     main,
     openrouter_key_preflight_error,
 )
-from coarse.models import VISION_MODEL, model_filename_slug
+from coarse.models import (
+    LITELLM_OPENROUTER_PREFIX,
+    OPENROUTER_EXTRACTION_MODEL,
+    VISION_MODEL,
+    model_filename_slug,
+)
 
 
 def test_find_openrouter_key_reads_api_keys_config(tmp_path, monkeypatch) -> None:
@@ -60,6 +66,7 @@ def test_client_factory_accepts_pipeline_style_kwargs() -> None:
 
 def test_client_factory_keeps_explicit_stage_model_on_api_route() -> None:
     """Extraction QA must use the real multimodal client, not the text-only host."""
+    openrouter_vision_model = LITELLM_OPENROUTER_PREFIX + OPENROUTER_EXTRACTION_MODEL
     for host, client_attr in (
         ("claude", "ClaudeCodeClient"),
         ("codex", "CodexClient"),
@@ -73,17 +80,26 @@ def test_client_factory_keeps_explicit_stage_model_on_api_route() -> None:
                 model=None,
                 effort="low",
                 api_client_factory=api_client,
+                api_model_mapper=_force_openrouter_model,
             )
 
             factory(model=VISION_MODEL, config=config)
             api_client.assert_called_once_with(
-                model=VISION_MODEL,
+                model=openrouter_vision_model,
                 config=config,
             )
             headless_client.assert_not_called()
 
             factory(model=f"headless-{host}", config=config)
             headless_client.assert_called_once()
+
+
+def test_force_openrouter_model_is_idempotent_and_normalizes_gemini() -> None:
+    openrouter_vision_model = LITELLM_OPENROUTER_PREFIX + OPENROUTER_EXTRACTION_MODEL
+    assert _force_openrouter_model(VISION_MODEL) == openrouter_vision_model
+    assert _force_openrouter_model(OPENROUTER_EXTRACTION_MODEL) == openrouter_vision_model
+    assert _force_openrouter_model(openrouter_vision_model) == openrouter_vision_model
+    assert _force_openrouter_model("custom-model") == "custom-model"
 
 
 def test_deep_literature_requires_key_even_for_preextracted_non_pdf(tmp_path, monkeypatch) -> None:
