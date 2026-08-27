@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **New comprehensive architecture guide and component documentation.** Reorganized planning documentation into `docs/plans/`. Added `docs/architecture.md` featuring Mermaid subsystem component trees, review pipeline workflow diagram, Table of Contents sitemap, and quality/recall benchmark suite documentation. Added `docs/cli_reference.md` for CLI command and configuration details. Docs-only — no package change.
+
 ### Changed
 
 - **GitHub Actions now run on current Node 24-native releases pinned to immutable commit SHAs.** Checkout, setup-node, setup-python, setup-uv, CodeQL, artifact transfer, and PyPI publishing actions were upgraded to their current releases; the obsolete forced-Node-24 migration flag was removed. The uv cache retains its prior pruning behavior explicitly, a regression test rejects mutable third-party action refs across block/flow and `.yml`/`.yaml` syntax, and CI now executes the web Vitest suite before the production build. CI/deploy-only — no package change.
