@@ -4,7 +4,8 @@ Usage:
     python -m coarse.headless_review --host <claude|codex|gemini> \\
         <paper_path> [<pre_extracted_md>] [<output_dir>]
 
-- ``--host``: which CLI to route every LLM call through.
+- ``--host``: which CLI to route review-reasoning calls through. PDF
+  extraction QA keeps its configured vision-model route.
 - ``<paper_path>``: PDF, MD, TeX, DOCX, HTML, or EPUB.
 - ``<pre_extracted_md>``: optional pre-extracted markdown — skips OCR,
   saves ~$0.05-0.15 and ~30 seconds.
@@ -29,7 +30,7 @@ import os
 import sys
 from pathlib import Path
 
-from coarse.models import HEADLESS_DEFAULT_MODELS, model_filename_slug
+from coarse.models import HEADLESS_DEFAULT_MODELS, LITELLM_OPENROUTER_PREFIX, model_filename_slug
 
 # Shared guidance for a missing/invalid OpenRouter key. Used by both
 # headless_review (sys.exit) and cli_review (return-code preflight) so the
@@ -38,7 +39,8 @@ from coarse.models import HEADLESS_DEFAULT_MODELS, model_filename_slug
 # sync if this wording changes.
 _OPENROUTER_KEY_HELP = (
     "ERROR: No valid OpenRouter API key found (keys look like `sk-or-...`).\n\n"
-    "Mistral OCR extraction requires an OpenRouter API key. Any of these work:\n"
+    "PDF OCR and post-extraction vision QA require an OpenRouter API key. "
+    "Any of these work:\n"
     "  1. Run `coarse setup` to save it to ~/.coarse/config.toml\n"
     "  2. export OPENROUTER_API_KEY=sk-or-v1-...\n"
     "  3. Add OPENROUTER_API_KEY=sk-or-v1-... to a .env file in the\n"
@@ -48,7 +50,7 @@ _OPENROUTER_KEY_HELP = (
     "as the second argument to skip OCR:\n"
     "  python -m coarse.headless_review --host claude <paper.pdf> <paper.md>\n\n"
     "Get a free OpenRouter key at https://openrouter.ai/settings/keys — "
-    "review extraction costs ~$0.05-0.15 per paper."
+    "PDF OCR costs ~$0.05-0.15 per paper; vision QA adds a small charge when it runs."
 )
 
 _DEEP_LITERATURE_KEY_HELP = (
@@ -157,7 +159,25 @@ def openrouter_key_preflight_error(
     return _OPENROUTER_KEY_HELP
 
 
-def _make_client_factory(host: str, model: str | None, effort: str):
+def _force_openrouter_model(model: str) -> str:
+    """Return the OpenRouter route for an explicit stage-specific model."""
+    if model.startswith(LITELLM_OPENROUTER_PREFIX):
+        return model
+    if model.startswith("gemini/"):
+        model = "google/" + model.removeprefix("gemini/")
+    if "/" not in model:
+        return model
+    return LITELLM_OPENROUTER_PREFIX + model
+
+
+def _make_client_factory(
+    host: str,
+    model: str | None,
+    effort: str,
+    *,
+    api_client_factory=None,
+    api_model_mapper=None,
+):
     from coarse import headless_clients as hc
 
     host = host.lower()
@@ -167,51 +187,73 @@ def _make_client_factory(host: str, model: str | None, effort: str):
     # gets called with whatever kwargs the pipeline passes to LLMClient:
     # `stage` from ReviewAgent.build_client(), but also `model=...` /
     # `config=...` from pipeline.py's direct `LLMClient(model=..., config=...)`
-    # calls. Accept any call shape and ignore the extras — the headless
-    # client uses the closure's already-resolved `resolved_model`/`effort`,
-    # so pipeline-level model/config arguments are redundant here.
+    # calls. Review calls carry the synthetic `headless-<host>` model marker;
+    # an explicit different model is a stage-specific route (currently the
+    # extraction-QA vision model) and must stay on the real API client so its
+    # multimodal content survives.
     if host == "claude":
 
-        def _factory(stage: str = "", *_args, **_kwargs):
+        def _headless_factory(stage: str = "", *_args, **_kwargs):
             return hc.ClaudeCodeClient(
                 claude_model=resolved_model,
                 effort=effort,
             )
+    elif host == "codex":
 
-        return _factory
-    if host == "codex":
-
-        def _factory(stage: str = "", *_args, **_kwargs):
+        def _headless_factory(stage: str = "", *_args, **_kwargs):
             return hc.CodexClient(
                 codex_model=resolved_model,
                 effort=effort,
             )
+    elif host == "gemini":
 
-        return _factory
-    if host == "gemini":
-
-        def _factory(stage: str = "", *_args, **_kwargs):
+        def _headless_factory(stage: str = "", *_args, **_kwargs):
             return hc.GeminiClient(
                 gemini_model=resolved_model,
                 effort=effort,
             )
+    else:
+        raise ValueError(f"unknown host {host!r} (expected claude, codex, or gemini)")
 
-        return _factory
-    raise ValueError(f"unknown host {host!r} (expected claude, codex, or gemini)")
+    if api_client_factory is None:
+        return _headless_factory
+
+    review_model_marker = f"headless-{host}"
+
+    def _routed_factory(stage: str = "", *_args, **_kwargs):
+        requested_model = _kwargs.get("model")
+        if requested_model is not None and requested_model != review_model_marker:
+            # LLMClient's real constructor does not accept the headless-only
+            # `stage` argument. Pipeline stage-specific clients use keyword
+            # `model=` / `config=`, so forward that supported call shape.
+            api_kwargs = dict(_kwargs)
+            if api_model_mapper is not None:
+                api_kwargs["model"] = api_model_mapper(requested_model)
+            return api_client_factory(**api_kwargs)
+        return _headless_factory(stage, *_args, **_kwargs)
+
+    return _routed_factory
 
 
 def _patch_llmclient(host: str, model: str | None, effort: str):
     """Monkey-patch ``coarse.llm.LLMClient`` so the pipeline uses the headless host."""
     from coarse import llm as _llm_mod
 
-    # Save original LLMClient before patching — needed for Perplexity lit
-    # search which must go through litellm/OpenRouter, not the headless CLI.
-    _OriginalLLMClient = _llm_mod.LLMClient
+    # Save the original LLMClient before patching. Reuse the first captured
+    # class if a process runs more than one headless review; otherwise the
+    # second run would mistake the prior routed factory for the API client.
+    _OriginalLLMClient = getattr(_patch_llmclient, "_original", _llm_mod.LLMClient)
 
-    factory = _make_client_factory(host, model, effort)
+    factory = _make_client_factory(
+        host,
+        model,
+        effort,
+        api_client_factory=_OriginalLLMClient,
+        api_model_mapper=_force_openrouter_model,
+    )
 
-    # Replace the LLMClient class itself so any direct LLMClient(...) call
-    # in the pipeline returns a headless client instead.
+    # Replace the LLMClient class so review-model construction returns a
+    # headless client while explicit stage-specific models keep the API route.
     _llm_mod.LLMClient = factory  # type: ignore[misc]
 
     # Also patch the name imported into pipeline.py (it did `from coarse.llm

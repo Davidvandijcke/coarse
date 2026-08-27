@@ -128,7 +128,7 @@ export const fr: Messages = {
   explainSubscriptionGeminiCli: "Gemini CLI",
   explainSubscriptionPart2: "abonnement pour le raisonnement du LLM.",
   explainSubscriptionPdf:
-    "Vous payez seulement ~$0,10 pour l'étape locale Mistral OCR (avec votre propre clé OpenRouter) ; les fichiers non PDF (.tex, .md, .docx, …) sautent l'OCR et n'ont besoin d'aucune clé OpenRouter.",
+    "Le traitement des PDF utilise votre clé OpenRouter pour l'OCR Mistral local et entraîne un léger coût de contrôle qualité visuel lorsque ce contrôle s'exécute ; les fichiers non PDF (.tex, .md, .docx, …) sautent l'OCR et n'ont besoin d'aucune clé OpenRouter.",
   explainSubscriptionNonPdf:
     "Votre fichier n'est pas un PDF, donc l'étape Mistral OCR est entièrement sautée — toute l'exécution est couverte par votre abonnement, aucune clé OpenRouter nécessaire.",
   explainSubscriptionPart3: "L'évaluation apparaît sur cette page une fois terminée.",
@@ -457,7 +457,7 @@ export const fr: Messages = {
   // page de configuration — introduction de l'onglet abonnement
   setupSubHeading: "Utilisez l'abonnement de votre agent de codage",
   setupSubIntro1:
-    "Pour les utilisateurs qui paient déjà Claude Code, Codex ou Gemini CLI. L'évaluation s'exécute sur votre abonnement et y est facturée. Vous payez seulement ~$0,15 à OpenRouter pour la passe d'OCR.",
+    "Pour les utilisateurs qui paient déjà Claude Code, Codex ou Gemini CLI. L'évaluation s'exécute sur votre abonnement et y est facturée. Vous ne payez OpenRouter que pour l'OCR des PDF et tout contrôle qualité visuel déclenché.",
   setupSubIntro2:
     "S'exécute localement sur votre machine avec votre propre compte Claude Code, Codex ou Gemini CLI. coarse.ink ne reçoit ni ne conserve votre identifiant de connexion au fournisseur. Les conditions et limites d'utilisation de votre fournisseur s'appliquent toujours. coarse.ink n'est pas affilié à Anthropic, OpenAI ou Google.",
   // page de configuration — abonnement étape 1
@@ -475,7 +475,7 @@ export const fr: Messages = {
   // page de configuration — abonnement étape 2
   setupSubStep2Title: "Placez une clé OpenRouter sur votre machine (PDF uniquement)",
   setupSubStep2BodyPrefix:
-    "Cette étape ne s'applique qu'aux articles PDF — les sources non PDF (.tex, .md, .docx, …) sont extraites localement sans OCR, donc elles n'ont besoin d'aucune clé OpenRouter nulle part et vous pouvez passer directement à l'étape 3. Pour les PDF, coarse a toujours besoin d'OpenRouter pour l'étape d'OCR (~$0,10 par article). Suivez l'onglet ",
+    "Cette étape ne s'applique qu'aux articles PDF — les sources non PDF (.tex, .md, .docx, …) sont extraites localement sans OCR, donc elles n'ont besoin d'aucune clé OpenRouter nulle part et vous pouvez passer directement à l'étape 3. Pour les PDF, coarse a besoin d'OpenRouter pour l'OCR et tout contrôle qualité visuel déclenché. Suivez l'onglet ",
   setupSubStep2BodyTab: "Clé OpenRouter",
   setupSubStep2BodySuffix:
     " pour créer un compte, ajouter $1 de crédit et définir une limite de $2 par clé. La marge de $20 de la méthode OpenRouter seule n'est pas nécessaire ici, car l'évaluation elle-même s'exécute sur l'abonnement de votre agent de codage.",

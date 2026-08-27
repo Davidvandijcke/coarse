@@ -147,7 +147,7 @@ export const en = {
   explainSubscriptionGeminiCli: "Gemini CLI",
   explainSubscriptionPart2: "subscription for the LLM reasoning.",
   explainSubscriptionPdf:
-    "You only pay ~$0.10 for the local Mistral OCR step (with your own OpenRouter key); non-PDF uploads (.tex, .md, .docx, …) skip OCR and need no OpenRouter key.",
+    "PDF processing uses your OpenRouter key for local Mistral OCR and a small vision-QA charge when that check runs; non-PDF uploads (.tex, .md, .docx, …) skip OCR and need no OpenRouter key.",
   explainSubscriptionNonPdf:
     "Your file is not a PDF, so it skips the Mistral OCR step entirely — the whole run is covered by your subscription, no OpenRouter key needed.",
   explainSubscriptionPart3: "Review shows up on this page when done.",
@@ -479,7 +479,7 @@ export const en = {
   // setup page — subscription tab intro
   setupSubHeading: "Use your coding-agent subscription",
   setupSubIntro1:
-    "For users already paying for Claude Code, Codex, or Gemini CLI. The review runs on your subscription and bills there. You only pay OpenRouter ~$0.15 for the OCR pass.",
+    "For users already paying for Claude Code, Codex, or Gemini CLI. The review runs on your subscription and bills there. You pay OpenRouter only for PDF OCR and any triggered vision QA.",
   setupSubIntro2:
     "Runs locally on your machine using your own Claude Code, Codex, or Gemini CLI account. coarse.ink does not receive or store your provider login. Your provider's terms and usage limits still apply. coarse.ink is not affiliated with Anthropic, OpenAI, or Google.",
   // setup page — subscription step 1
@@ -497,7 +497,7 @@ export const en = {
   // setup page — subscription step 2
   setupSubStep2Title: "Put an OpenRouter key on your machine (PDFs only)",
   setupSubStep2BodyPrefix:
-    "This step only applies to PDF papers — non-PDF sources (.tex, .md, .docx, …) are extracted locally without OCR, so they need no OpenRouter key anywhere and you can skip straight to step 3. For PDFs, coarse still needs OpenRouter for the OCR step (~$0.10 per paper). Follow the ",
+    "This step only applies to PDF papers — non-PDF sources (.tex, .md, .docx, …) are extracted locally without OCR, so they need no OpenRouter key anywhere and you can skip straight to step 3. For PDFs, coarse needs OpenRouter for OCR and any triggered vision QA. Follow the ",
   setupSubStep2BodyTab: "OpenRouter key",
   setupSubStep2BodySuffix:
     " tab to create an account, add $1 of credit, and set a $2 per-key limit. The $20 buffer from the OpenRouter-only path isn't needed here because the review itself runs on your coding-agent subscription.",

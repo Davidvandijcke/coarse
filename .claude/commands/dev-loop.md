@@ -27,7 +27,7 @@ The script `scripts/dev_runner.py` does the mechanical work (running `claude -p`
 
 Verify the project is ready:
 ```bash
-cd "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse" && git status && head -5 docs/DEV_BACKLOG.md
+cd "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse" && git status && head -5 docs/plans/DEV_BACKLOG.md
 ```
 
 ### Step 1: Preview
@@ -97,7 +97,7 @@ Monitor the output. If implementation fails:
 
 After merge, verify the component landed:
 ```bash
-cd "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse" && git log --oneline -3 && cat docs/DEV_BACKLOG.md | grep -E "^\|"
+cd "/Users/davidvandijcke/University of Michigan Dropbox/David Van Dijcke/coarse" && git log --oneline -3 && cat docs/plans/DEV_BACKLOG.md | grep -E "^\|"
 ```
 
 Then loop back to 2a for the next component.

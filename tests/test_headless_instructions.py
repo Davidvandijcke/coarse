@@ -30,11 +30,11 @@ def test_bundled_skill_assets_use_ephemeral_uvx_flow() -> None:
         # that lands this branch on main. See CHANGELOG.md ## Unreleased
         # "RELEASE BLOCKER" note — DEFAULT_MCP_UVX_FROM and these SKILL.md
         # files must all flip from the temporary git-ref pin to
-        # ``coarse-ink==1.9.1`` as part of the release cut. The `[mcp]`
+        # ``coarse-ink==1.9.2`` as part of the release cut. The `[mcp]`
         # extra was dropped to cut the uvx install from ~114 to ~60
         # packages — the handoff flow does not need fastmcp or
         # pymupdf4llm.
-        assert "uvx --python 3.12 --from 'coarse-ink==1.9.1'" in text
+        assert "uvx --python 3.12 --from 'coarse-ink==1.9.2'" in text
         assert "coarse install-skills --all --force" in text
         # Per-review unique log file: every skill uses a LOG env var
         # derived from a per-paper suffix so parallel runs in the same
@@ -140,7 +140,7 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     # as part of the release cut. The release-blocker coupling test
     # in `test_release_blocker_pin_is_coupled_to_unreleased_version`
     # enforces that this pin matches `__version__`.
-    assert '"coarse-ink==1.9.1"' in handoff_lib
+    assert '"coarse-ink==1.9.2"' in handoff_lib
     assert "@feat/mcp-server" not in handoff_lib
     assert "@feat/mcp-server" not in handoff_route
 
@@ -166,7 +166,8 @@ def test_handoff_key_guidance_tracks_pdf_or_deep_search() -> None:
     assert "const needsOpenRouterKey = isPdf || deepLiteratureSearch;" in handoff_lib
     assert "const step2 = needsOpenRouterKey" in handoff_lib
     # PDF branch: the key request must still exist verbatim.
-    assert "I need an OpenRouter API key for the Mistral OCR extraction step" in handoff_lib
+    assert "I need an OpenRouter API key for PDF processing" in handoff_lib
+    assert "triggered vision QA" in handoff_lib
     assert "requested Perplexity deep literature search" in handoff_lib
     # Non-PDF branch: explicit no-key + do-not-ask instruction.
     assert "No OpenRouter API key is needed for this review" in handoff_lib
@@ -188,6 +189,7 @@ def test_handoff_key_guidance_tracks_pdf_or_deep_search() -> None:
     assert 'isPdf: ext === ".pdf"' in handoff_route
     assert "No OpenRouter key needed:" in handoff_route
     assert "OpenRouter key:</strong> PDF sources use Mistral OCR" in handoff_route
+    assert "vision-QA call" in handoff_route
 
     # The three bundled skills gate the standard key requirement on PDFs and
     # also explain that explicit deep search needs a key for every format.

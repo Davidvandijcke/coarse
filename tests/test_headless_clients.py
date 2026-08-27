@@ -14,6 +14,7 @@ from coarse.headless_clients import (
     GeminiClient,
     _classify_cli_error,
     _clean_subprocess_env,
+    _messages_to_prompt,
 )
 
 
@@ -74,6 +75,39 @@ def _mark_gemini_flags_supported(approval_mode: bool, output_format: bool) -> No
 class _ResponseModel(BaseModel):
     quote: str
     feedback: str
+
+
+def test_messages_to_prompt_rejects_multimodal_blocks() -> None:
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Compare the extraction."},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+            ],
+        }
+    ]
+
+    with pytest.raises(ValueError, match="image_url.*API LLMClient"):
+        _messages_to_prompt(messages)
+
+
+def test_messages_to_prompt_still_flattens_text_blocks() -> None:
+    messages = [
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Review carefully.",
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+        },
+        {"role": "user", "content": "Paper text"},
+    ]
+
+    assert _messages_to_prompt(messages) == "[SYSTEM]\nReview carefully.\n\n[USER]\nPaper text"
 
 
 def _raw_json_with_invalid_latex_escapes() -> str:

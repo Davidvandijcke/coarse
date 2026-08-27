@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-BACKLOG_PATH = REPO_ROOT / "docs" / "DEV_BACKLOG.md"
+BACKLOG_PATH = REPO_ROOT / "docs" / "plans" / "DEV_BACKLOG.md"
 STATE_DIR = REPO_ROOT / ".coarse"
 STATE_FILE = STATE_DIR / "dev_state.json"
 SPECS_DIR = REPO_ROOT / ".coarse" / "specs"

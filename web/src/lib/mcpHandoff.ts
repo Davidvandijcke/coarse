@@ -23,8 +23,8 @@
 //           (from ~/.coarse/config.toml or .env) for Mistral OCR;
 //           non-PDF sources (.tex, .md, .docx, …) parse locally with
 //           no key at all (#186)
-//        d. Runs the full coarse pipeline, routing every LLM call
-//           through the chosen headless CLI
+//        d. Runs the full coarse pipeline, routing review-reasoning calls
+//           through the chosen headless CLI while vision QA uses OpenRouter
 //        e. POSTs the rendered review back to /api/mcp-finalize with
 //           the finalize_token
 //        f. Prints `https://coarse.ink/review/<paper_id>?token=<t>` —
@@ -91,13 +91,13 @@ export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 // The variable is still called `DEFAULT_MCP_UVX_FROM` for backward
 // compatibility with the `test_release_blocker_pin_is_coupled_to_unreleased_version`
 // drift test that enforces the pin matches `__version__`.
-const DEFAULT_MCP_UVX_FROM = "coarse-ink==1.9.1";
+const DEFAULT_MCP_UVX_FROM = "coarse-ink==1.9.2";
 
 export function resolvePinnedUvFrom(): string {
   const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();
   if (!raw) return DEFAULT_MCP_UVX_FROM;
   // Allowlist for `NEXT_PUBLIC_COARSE_UVX_FROM` overrides. Accepts:
-  //   1. Plain semver pin: `coarse-ink==1.9.1` (production default).
+  //   1. Plain semver pin: `coarse-ink==1.9.2` (production default).
   //   2. `[mcp]` extra form for operators who want the MCP path.
   //   3. Commit-sha git ref for pinned dev testing.
   //   4. `@dev` or `@main` branch ref — self-updating Preview default,
@@ -195,8 +195,8 @@ export function buildAgentPrompt(args: {
   const needsOpenRouterKey = isPdf || deepLiteratureSearch;
   const openRouterPurpose = isPdf
     ? deepLiteratureSearch
-      ? "I need an OpenRouter API key for the Mistral OCR extraction step and the requested Perplexity deep literature search (~$0.40 per paper)."
-      : "I need an OpenRouter API key for the Mistral OCR extraction step (~$0.10 per paper)."
+      ? "I need an OpenRouter API key for PDF processing (Mistral OCR plus any triggered vision QA) and the requested Perplexity deep literature search."
+      : "I need an OpenRouter API key for PDF processing: Mistral OCR plus any triggered vision QA."
     : "I need an OpenRouter API key for the requested Perplexity deep literature search (~$0.30 per paper).";
   const step2 = needsOpenRouterKey
     ? `STEP 2 — Check for an OpenRouter API key without printing its ` +

@@ -40,6 +40,7 @@ src/coarse/
 ├── extraction_qa.py         # Post-extraction QA via vision LLM (Gemini Flash)
 ├── garble.py                # OCR garble detection and normalization
 ├── headless_clients.py      # Claude/Codex/Gemini CLI-backed LLMClient replacements
+├── headless_prompt.py       # Fail-closed text-only serializer for headless CLI prompts
 ├── headless_review.py       # Shared entrypoint for headless CLI review runs
 ├── llm.py                   # litellm wrapper, structured output, cost tracking
 ├── models.py                # Single source of truth for every model ID

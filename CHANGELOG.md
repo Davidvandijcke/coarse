@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v1.9.2 — 2026-08-27
+
+### Added
+
+- **New comprehensive architecture guide and component documentation.** Reorganized planning documentation into `docs/plans/`. Added `docs/architecture.md` featuring Mermaid subsystem component trees, review pipeline workflow diagram, Table of Contents sitemap, and quality/recall benchmark suite documentation. Added `docs/cli_reference.md` for CLI command and configuration details. Docs-only — no package change.
+
+### Fixed
+
+- **The web production dependency audit is clean again.** A new high-severity advisory affected the transitive `nanoid@3.3.16` pulled by PostCSS. The web package now pins `nanoid` to patched `3.3.18` through the existing npm override boundary; `npm audit --omit=dev` reports zero vulnerabilities.
+
+- **Headless PDF extraction QA now receives the page images it is asked to inspect (#254).** Subscription-backed reviews still route structure and review reasoning through Claude Code, Codex, or Gemini CLI, but the explicitly configured vision-QA model now keeps a dedicated LiteLLM client and is forced through OpenRouter instead of being replaced by the text-only headless client or diverted to a stale direct-provider key. Headless prompt flattening also rejects non-text blocks rather than silently discarding them, so any future routing regression fails closed without applying guessed corrections. Legacy unversioned PDF extraction caches are rebuilt once because they cannot distinguish raw OCR from text modified by the blind-QA path; non-PDF caches remain reusable. PDF runs incur a small OpenRouter vision-QA charge when the check runs, in addition to Mistral OCR. Regression tests cover all three hosts, a real rendered PNG reaching the QA client, the multimodal fail-closed guard, and selective cache invalidation.
+
 ## v1.9.1 — 2026-08-27
 
 ### Changed
