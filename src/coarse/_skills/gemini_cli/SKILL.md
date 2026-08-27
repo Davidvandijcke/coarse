@@ -28,7 +28,7 @@ Runs the **full coarse review pipeline** on a paper using the local `gemini -p` 
   - If `uv` exists but `uvx` does not, replace `uvx --python 3.12 --from ...` below with
     `uv tool run --python 3.12 --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
-  `uvx --python 3.12 --from 'coarse-ink==1.9.1' coarse install-skills --all --force`
+  `uvx --python 3.12 --from 'coarse-ink==1.9.2' coarse install-skills --all --force`
   (If that fails with `No such command 'install-skills'`, you're on a
   PyPI release that predates the command — upgrade or ignore; the skill
   bundle is also loadable directly via `uvx --from` without install.)
@@ -42,13 +42,13 @@ Runs the **full coarse review pipeline** on a paper using the local `gemini -p` 
 
   > I need an OpenRouter API key for PDF OCR (~$0.10) and/or the requested deep literature search (~$0.30). A few options:
   >
-  > 1. Paste the key here and I'll save it to `~/.coarse/config.toml` via `uvx --python 3.12 --from 'coarse-ink==1.9.1' coarse setup`. Note the key passes through the LLM provider (Google) on its way to me, so treat it as slightly less private than one you typed into a local terminal — rotate at https://openrouter.ai/settings/keys if that worries you.
+  > 1. Paste the key here and I'll save it to `~/.coarse/config.toml` via `uvx --python 3.12 --from 'coarse-ink==1.9.2' coarse setup`. Note the key passes through the LLM provider (Google) on its way to me, so treat it as slightly less private than one you typed into a local terminal — rotate at https://openrouter.ai/settings/keys if that worries you.
   > 2. Set it yourself in a separate terminal: `export OPENROUTER_API_KEY=sk-or-v1-...` or add it to `.env` in your current directory, then re-ask me.
-  > 3. Run `uvx --python 3.12 --from 'coarse-ink==1.9.1' coarse setup` in a separate terminal yourself and paste the key into its interactive prompt — the key never touches this chat.
+  > 3. Run `uvx --python 3.12 --from 'coarse-ink==1.9.2' coarse setup` in a separate terminal yourself and paste the key into its interactive prompt — the key never touches this chat.
   >
   > Which do you want?
 
-  If the user pastes a key here, save it via `uvx --python 3.12 --from 'coarse-ink==1.9.1' coarse setup` with the pasted value and confirm it's stored. Their chat, their choice.
+  If the user pastes a key here, save it via `uvx --python 3.12 --from 'coarse-ink==1.9.2' coarse setup` with the pasted value and confirm it's stored. Their chat, their choice.
 - `gemini` CLI signed in (first run prompts for OAuth).
 
 ## How to run
@@ -63,12 +63,12 @@ Use a **per-review unique log file** so parallel runs don't clobber each other's
 LOG=/tmp/coarse-review-$(date +%s).log
 
 # STEP 2a — launch (returns in ~2s with Review PID + Log file)
-uvx --python 3.12 --from 'coarse-ink==1.9.1' \
+uvx --python 3.12 --from 'coarse-ink==1.9.2' \
   coarse-review --detach --log-file "$LOG" \
   <paper_path_or_handoff_url> --host gemini [--model gemini-3.6-flash] [--effort high] [--deep-literature-search]
 
 # STEP 2b — wait (one blocking call, ~10-25 min, emits heartbeats)
-uvx --python 3.12 --from 'coarse-ink==1.9.1' \
+uvx --python 3.12 --from 'coarse-ink==1.9.2' \
   coarse-review --attach "$LOG"
 ```
 
@@ -92,12 +92,12 @@ Available effort levels: `low`, `medium`, `high` (default), `max`.
 LOG=/tmp/coarse-review-$(date +%s).log
 
 # STEP 2a — launch
-uvx --python 3.12 --from 'coarse-ink==1.9.1' \
+uvx --python 3.12 --from 'coarse-ink==1.9.2' \
   coarse-review --detach --log-file "$LOG" \
   --handoff https://coarse.ink/h/<token> --host gemini
 
 # STEP 2b — wait
-uvx --python 3.12 --from 'coarse-ink==1.9.1' \
+uvx --python 3.12 --from 'coarse-ink==1.9.2' \
   coarse-review --attach "$LOG"
 ```
 

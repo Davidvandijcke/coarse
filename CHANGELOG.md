@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.9.2 — 2026-08-27
+
 ### Added
 
 - **New comprehensive architecture guide and component documentation.** Reorganized planning documentation into `docs/plans/`. Added `docs/architecture.md` featuring Mermaid subsystem component trees, review pipeline workflow diagram, Table of Contents sitemap, and quality/recall benchmark suite documentation. Added `docs/cli_reference.md` for CLI command and configuration details. Docs-only — no package change.
