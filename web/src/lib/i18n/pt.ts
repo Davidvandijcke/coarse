@@ -144,7 +144,7 @@ export const pt: Messages = {
   explainSubscriptionGeminiCli: "Gemini CLI",
   explainSubscriptionPart2: "para o raciocínio do LLM.",
   explainSubscriptionPdf:
-    "Paga apenas ~$0,10 pelo passo local do Mistral OCR (com a sua própria chave OpenRouter); os carregamentos que não são PDF (.tex, .md, .docx, …) saltam o OCR e não precisam de chave OpenRouter.",
+    "O processamento de PDFs usa a sua chave OpenRouter para o OCR Mistral local e cobra um pequeno valor pela QA visual quando essa verificação é executada; os carregamentos que não são PDF (.tex, .md, .docx, …) saltam o OCR e não precisam de chave OpenRouter.",
   explainSubscriptionNonPdf:
     "O seu ficheiro não é um PDF, por isso salta totalmente o passo do Mistral OCR — toda a execução é coberta pela sua subscrição, sem necessidade de chave OpenRouter.",
   explainSubscriptionPart3: "A revisão aparece nesta página quando estiver concluída.",
@@ -479,7 +479,7 @@ export const pt: Messages = {
   // setup page — subscription tab intro
   setupSubHeading: "Usar a subscrição do seu agente de programação",
   setupSubIntro1:
-    "Para utilizadores que já pagam por Claude Code, Codex ou Gemini CLI. A revisão é executada na sua subscrição e é cobrada aí. Paga apenas ~$0,15 ao OpenRouter pelo passo de OCR.",
+    "Para utilizadores que já pagam por Claude Code, Codex ou Gemini CLI. A revisão é executada na sua subscrição e é cobrada aí. Paga ao OpenRouter apenas pelo OCR de PDFs e por qualquer QA visual acionada.",
   setupSubIntro2:
     "É executado localmente na sua máquina usando a sua própria conta de Claude Code, Codex ou Gemini CLI. O coarse.ink não recebe nem armazena o seu início de sessão do fornecedor. Aplicam-se na mesma os termos e limites de utilização do seu fornecedor. O coarse.ink não está associado à Anthropic, OpenAI ou Google.",
   // setup page — subscription step 1
@@ -497,7 +497,7 @@ export const pt: Messages = {
   // setup page — subscription step 2
   setupSubStep2Title: "Coloque uma chave OpenRouter na sua máquina (apenas PDFs)",
   setupSubStep2BodyPrefix:
-    "Este passo só se aplica a artigos em PDF — as fontes que não são PDF (.tex, .md, .docx, …) são extraídas localmente sem OCR, por isso não precisam de chave OpenRouter em lado nenhum e pode saltar diretamente para o passo 3. Para PDFs, o coarse ainda precisa do OpenRouter para o passo de OCR (~$0,10 por artigo). Siga o separador ",
+    "Este passo só se aplica a artigos em PDF — as fontes que não são PDF (.tex, .md, .docx, …) são extraídas localmente sem OCR, por isso não precisam de chave OpenRouter em lado nenhum e pode saltar diretamente para o passo 3. Para PDFs, o coarse precisa do OpenRouter para o OCR e qualquer QA visual acionada. Siga o separador ",
   setupSubStep2BodyTab: "Chave OpenRouter",
   setupSubStep2BodySuffix:
     " para criar uma conta, adicionar $1 de crédito e definir um limite de $2 por chave. A margem de $20 do caminho só com OpenRouter não é necessária aqui porque a própria revisão é executada na subscrição do seu agente de programação.",

@@ -288,11 +288,11 @@ function renderLandingPage(args: {
     paperId,
   });
 
-  // Only PDF sources run Mistral OCR (and therefore need an OpenRouter
-  // key on the user's machine); every other format extracts locally with
-  // no key at all (#186).
+  // Only PDF sources run Mistral OCR and post-extraction vision QA (and
+  // therefore need an OpenRouter key on the user's machine); every other
+  // format extracts locally with no key at all (#186).
   const keyNote = isPdf
-    ? `<p class="note"><strong>OpenRouter key:</strong> PDF sources use Mistral OCR (~$0.10 per paper), so <code>OPENROUTER_API_KEY</code> must be available on this machine — env var, <code>.env</code>, or <code>~/.coarse/config.toml</code>. If it's missing, the run fails fast with setup instructions.</p>`
+    ? `<p class="note"><strong>OpenRouter key:</strong> PDF sources use Mistral OCR plus a small post-extraction vision-QA call when that check runs, so <code>OPENROUTER_API_KEY</code> must be available on this machine — env var, <code>.env</code>, or <code>~/.coarse/config.toml</code>. If it's missing, the run fails fast with setup instructions.</p>`
     : `<p class="note"><strong>No OpenRouter key needed:</strong> this file is not a PDF, so extraction runs locally without the Mistral OCR step.</p>`;
 
   return `<!doctype html>

@@ -128,7 +128,7 @@ export const nl: Messages = {
   explainSubscriptionGeminiCli: "Gemini CLI",
   explainSubscriptionPart2: "abonnement voor het LLM-redeneren.",
   explainSubscriptionPdf:
-    "Je betaalt alleen ~$0,10 voor de lokale Mistral OCR-stap (met je eigen OpenRouter-sleutel); niet-PDF-uploads (.tex, .md, .docx, …) slaan OCR over en hebben geen OpenRouter-sleutel nodig.",
+    "PDF-verwerking gebruikt je OpenRouter-sleutel voor lokale Mistral-OCR en een kleine vergoeding voor visuele QA wanneer die controle wordt uitgevoerd; niet-PDF-uploads (.tex, .md, .docx, …) slaan OCR over en hebben geen OpenRouter-sleutel nodig.",
   explainSubscriptionNonPdf:
     "Je bestand is geen PDF, dus de Mistral OCR-stap wordt volledig overgeslagen — de hele run wordt gedekt door je abonnement, geen OpenRouter-sleutel nodig.",
   explainSubscriptionPart3: "De review verschijnt op deze pagina zodra die klaar is.",
@@ -457,7 +457,7 @@ export const nl: Messages = {
   // setup page — subscription tab intro
   setupSubHeading: "Gebruik je coding-agent-abonnement",
   setupSubIntro1:
-    "Voor gebruikers die al betalen voor Claude Code, Codex of Gemini CLI. De review draait op je abonnement en wordt daar gefactureerd. Je betaalt OpenRouter alleen ~$0,15 voor de OCR-stap.",
+    "Voor gebruikers die al betalen voor Claude Code, Codex of Gemini CLI. De review draait op je abonnement en wordt daar gefactureerd. Je betaalt OpenRouter alleen voor PDF-OCR en eventueel geactiveerde visuele QA.",
   setupSubIntro2:
     "Draait lokaal op je eigen machine met je eigen Claude Code-, Codex- of Gemini CLI-account. coarse.ink ontvangt of bewaart je provider-login niet. De voorwaarden en gebruikslimieten van je provider blijven van toepassing. coarse.ink is niet gelieerd aan Anthropic, OpenAI of Google.",
   // setup page — subscription step 1
@@ -475,7 +475,7 @@ export const nl: Messages = {
   // setup page — subscription step 2
   setupSubStep2Title: "Zet een OpenRouter-sleutel op je machine (alleen PDF's)",
   setupSubStep2BodyPrefix:
-    "Deze stap geldt alleen voor PDF-artikels — niet-PDF-bronnen (.tex, .md, .docx, …) worden lokaal geëxtraheerd zonder OCR, dus die hebben nergens een OpenRouter-sleutel nodig en je kunt meteen door naar stap 3. Voor PDF's heeft coarse OpenRouter nog steeds nodig voor de OCR-stap (~$0,10 per artikel). Volg het tabblad ",
+    "Deze stap geldt alleen voor PDF-artikels — niet-PDF-bronnen (.tex, .md, .docx, …) worden lokaal geëxtraheerd zonder OCR, dus die hebben nergens een OpenRouter-sleutel nodig en je kunt meteen door naar stap 3. Voor PDF's heeft coarse OpenRouter nodig voor OCR en eventueel geactiveerde visuele QA. Volg het tabblad ",
   setupSubStep2BodyTab: "OpenRouter-sleutel",
   setupSubStep2BodySuffix:
     " om een account aan te maken, $1 tegoed toe te voegen en een limiet van $2 per sleutel in te stellen. De buffer van $20 uit het OpenRouter-only pad is hier niet nodig, omdat de review zelf op je coding-agent-abonnement draait.",

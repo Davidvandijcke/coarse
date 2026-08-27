@@ -144,7 +144,7 @@ export const ja: Messages = {
   explainSubscriptionGeminiCli: "Gemini CLI",
   explainSubscriptionPart2: "のサブスクリプションを使用します。",
   explainSubscriptionPdf:
-    "ローカルの Mistral OCR ステップ（ご自身の OpenRouter キーを使用）に対して ~$0.10 をお支払いいただくだけです。PDF 以外のアップロード（.tex, .md, .docx, …）は OCR をスキップするため、OpenRouter キーは不要です。",
+    "PDF 処理では、ローカルの Mistral OCR と、実行された場合の少額のビジョン QA にご自身の OpenRouter キーを使用します。PDF 以外のアップロード（.tex, .md, .docx, …）は OCR をスキップするため、OpenRouter キーは不要です。",
   explainSubscriptionNonPdf:
     "ファイルが PDF ではないため、Mistral OCR ステップは完全にスキップされます — 実行全体がサブスクリプションでカバーされ、OpenRouter キーは不要です。",
   explainSubscriptionPart3: "レビューは完了するとこのページに表示されます。",
@@ -478,7 +478,7 @@ export const ja: Messages = {
   // setup page — subscription tab intro
   setupSubHeading: "コーディングエージェントのサブスクリプションを使う",
   setupSubIntro1:
-    "すでに Claude Code、Codex、または Gemini CLI に料金を支払っているユーザー向けです。レビューはあなたのサブスクリプションで実行され、そこに課金されます。OCR パスのために OpenRouter に ~$0.15 をお支払いいただくだけです。",
+    "すでに Claude Code、Codex、または Gemini CLI に料金を支払っているユーザー向けです。レビューはあなたのサブスクリプションで実行され、そこに課金されます。OpenRouter への支払いは PDF の OCR と、実行されたビジョン QA の分だけです。",
   setupSubIntro2:
     "ご自身の Claude Code、Codex、または Gemini CLI アカウントを使用して、ご自身のマシン上でローカルに実行されます。coarse.ink はあなたのプロバイダーのログイン情報を受信または保存しません。お使いのプロバイダーの利用規約と利用上限は引き続き適用されます。coarse.ink は Anthropic、OpenAI、Google とは提携していません。",
   // setup page — subscription step 1
@@ -496,7 +496,7 @@ export const ja: Messages = {
   // setup page — subscription step 2
   setupSubStep2Title: "OpenRouter キーをマシンに用意する（PDF のみ）",
   setupSubStep2BodyPrefix:
-    "このステップは PDF の論文にのみ当てはまります — PDF 以外のソース（.tex, .md, .docx, …）は OCR なしでローカルに抽出されるため、どこにも OpenRouter キーは不要で、ステップ 3 にそのまま進めます。PDF の場合、coarse は OCR ステップ（1 論文あたり ~$0.10）のために引き続き OpenRouter を必要とします。次に従ってください ",
+    "このステップは PDF の論文にのみ当てはまります — PDF 以外のソース（.tex, .md, .docx, …）は OCR なしでローカルに抽出されるため、どこにも OpenRouter キーは不要で、ステップ 3 にそのまま進めます。PDF の場合、coarse は OCR と、必要に応じて実行されるビジョン QA のために OpenRouter を必要とします。次に従ってください ",
   setupSubStep2BodyTab: "OpenRouter キー",
   setupSubStep2BodySuffix:
     " のタブで、アカウントを作成し、$1 のクレジットを追加して、キーごとに $2 の上限を設定してください。OpenRouter 単独の方法で必要だった $20 のバッファはここでは不要です。レビュー自体はあなたのコーディングエージェントのサブスクリプションで実行されるためです。",

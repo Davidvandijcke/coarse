@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -273,6 +274,41 @@ def test_run_qa_with_corrections_patches_markdown(mock_render, mock_pages, mock_
     result = run_extraction_qa(Path("/fake.pdf"), paper, mock_client)
     assert "x^2" in result.full_markdown
     assert "x^3" not in result.full_markdown
+
+    messages = mock_client.complete.call_args.args[0]
+    image_blocks = [block for block in messages[1]["content"] if block.get("type") == "image_url"]
+    assert len(image_blocks) == 2
+    assert image_blocks[0]["image_url"]["url"].endswith("img1")
+
+
+def test_real_rendered_page_image_reaches_qa_client(tmp_path):
+    """Integration boundary: a rendered PNG survives through the QA client call."""
+    import fitz
+
+    from coarse.extraction_qa import run_extraction_qa
+
+    pdf_path = tmp_path / "paper.pdf"
+    with fitz.open() as doc:
+        page = doc.new_page()
+        page.insert_text((72, 72), "x = 1")
+        doc.save(pdf_path)
+
+    paper = _make_paper_text("A displayed equation: $$x=1$$")
+    client = MagicMock()
+    client.model = VISION_MODEL
+    client.complete.return_value = ExtractionQAResult(overall_quality="good", corrections=[])
+
+    with patch("coarse.config.resolve_api_key", return_value="fake-key"):
+        run_extraction_qa(pdf_path, paper, client)
+
+    messages = client.complete.call_args.args[0]
+    image_url = next(
+        block["image_url"]["url"]
+        for block in messages[1]["content"]
+        if block.get("type") == "image_url"
+    )
+    png = base64.b64decode(image_url.split(",", 1)[1])
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
 
 
 @patch("coarse.config.resolve_api_key", return_value="fake-key")

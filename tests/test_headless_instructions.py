@@ -166,7 +166,8 @@ def test_handoff_key_guidance_tracks_pdf_or_deep_search() -> None:
     assert "const needsOpenRouterKey = isPdf || deepLiteratureSearch;" in handoff_lib
     assert "const step2 = needsOpenRouterKey" in handoff_lib
     # PDF branch: the key request must still exist verbatim.
-    assert "I need an OpenRouter API key for the Mistral OCR extraction step" in handoff_lib
+    assert "I need an OpenRouter API key for PDF processing" in handoff_lib
+    assert "triggered vision QA" in handoff_lib
     assert "requested Perplexity deep literature search" in handoff_lib
     # Non-PDF branch: explicit no-key + do-not-ask instruction.
     assert "No OpenRouter API key is needed for this review" in handoff_lib
@@ -188,6 +189,7 @@ def test_handoff_key_guidance_tracks_pdf_or_deep_search() -> None:
     assert 'isPdf: ext === ".pdf"' in handoff_route
     assert "No OpenRouter key needed:" in handoff_route
     assert "OpenRouter key:</strong> PDF sources use Mistral OCR" in handoff_route
+    assert "vision-QA call" in handoff_route
 
     # The three bundled skills gate the standard key requirement on PDFs and
     # also explain that explicit deep search needs a key for every format.

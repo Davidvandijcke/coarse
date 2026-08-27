@@ -146,7 +146,7 @@ export const ar: Messages = {
   explainSubscriptionGeminiCli: "Gemini CLI",
   explainSubscriptionPart2: "لإجراء استدلال الـ LLM.",
   explainSubscriptionPdf:
-    "تدفع نحو $0.10 فقط لخطوة Mistral OCR المحلية (بمفتاح OpenRouter الخاص بك)؛ أما الملفات غير الـ PDF (.tex, .md, .docx، …) فتتخطى الـ OCR ولا تحتاج إلى مفتاح OpenRouter.",
+    "تستخدم معالجة ملفات PDF مفتاح OpenRouter الخاص بك لإجراء Mistral OCR محليًا، مع تكلفة صغيرة لفحص الجودة البصري عند تشغيله؛ أما الملفات غير الـ PDF (.tex, .md, .docx، …) فتتخطى الـ OCR ولا تحتاج إلى مفتاح OpenRouter.",
   explainSubscriptionNonPdf:
     "ملفك ليس PDF، لذا تُتخطى خطوة Mistral OCR بالكامل — ويغطي اشتراكك التشغيل بأكمله، دون حاجة إلى مفتاح OpenRouter.",
   explainSubscriptionPart3: "تظهر المراجعة على هذه الصفحة عند الانتهاء.",
@@ -480,7 +480,7 @@ export const ar: Messages = {
   // setup page — subscription tab intro
   setupSubHeading: "استخدم اشتراك وكيل البرمجة لديك",
   setupSubIntro1:
-    "للمستخدمين الذين يدفعون بالفعل مقابل Claude Code أو Codex أو Gemini CLI. تعمل المراجعة على اشتراكك وتُحتسَب تكلفتها هناك. تدفع OpenRouter نحو $0.15 فقط مقابل خطوة الـ OCR.",
+    "للمستخدمين الذين يدفعون بالفعل مقابل Claude Code أو Codex أو Gemini CLI. تعمل المراجعة على اشتراكك وتُحتسَب تكلفتها هناك. ولا تدفع لـ OpenRouter إلا مقابل OCR لملفات PDF وأي فحص جودة بصري يتم تشغيله.",
   setupSubIntro2:
     "يعمل محليًا على جهازك باستخدام حسابك الخاص في Claude Code أو Codex أو Gemini CLI. لا يتلقّى coarse.ink بيانات تسجيل دخول مزوّدك ولا يخزّنها. وتظل شروط مزوّدك وحدود استخدامه سارية. وليس coarse.ink تابعًا لـ Anthropic أو OpenAI أو Google.",
   // setup page — subscription step 1
@@ -498,7 +498,7 @@ export const ar: Messages = {
   // setup page — subscription step 2
   setupSubStep2Title: "ضع مفتاح OpenRouter على جهازك (ملفات PDF فقط)",
   setupSubStep2BodyPrefix:
-    "تنطبق هذه الخطوة على أوراق الـ PDF فقط — أما المصادر غير الـ PDF (.tex, .md, .docx، …) فتُستخرَج محليًا دون OCR، لذا لا تحتاج إلى مفتاح OpenRouter في أي مكان ويمكنك الانتقال مباشرةً إلى الخطوة 3. أما لملفات الـ PDF، فما زال coarse يحتاج إلى OpenRouter لخطوة الـ OCR (نحو $0.10 لكل ورقة). اتبع تبويبة ",
+    "تنطبق هذه الخطوة على أوراق الـ PDF فقط — أما المصادر غير الـ PDF (.tex, .md, .docx، …) فتُستخرَج محليًا دون OCR، لذا لا تحتاج إلى مفتاح OpenRouter في أي مكان ويمكنك الانتقال مباشرةً إلى الخطوة 3. أما لملفات الـ PDF، فيحتاج coarse إلى OpenRouter لإجراء OCR وأي فحص جودة بصري يتم تشغيله. اتبع تبويبة ",
   setupSubStep2BodyTab: "مفتاح OpenRouter",
   setupSubStep2BodySuffix:
     " لإنشاء حساب، وإضافة $1 من الرصيد، وضبط حد قدره $2 لكل مفتاح. لا حاجة هنا إلى هامش الـ $20 الخاص بمسار OpenRouter وحده لأن المراجعة نفسها تعمل على اشتراك وكيل البرمجة لديك.",

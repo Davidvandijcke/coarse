@@ -144,7 +144,7 @@ export const ko: Messages = {
   explainSubscriptionGeminiCli: "Gemini CLI",
   explainSubscriptionPart2: "구독을 사용합니다.",
   explainSubscriptionPdf:
-    "로컬 Mistral OCR 단계에 대해서만 ~$0.10를 지불합니다(자신의 OpenRouter 키 사용). PDF가 아닌 업로드(.tex, .md, .docx, …)는 OCR을 건너뛰므로 OpenRouter 키가 필요 없습니다.",
+    "PDF 처리는 로컬 Mistral OCR과 실행되는 경우 소액의 비전 QA 비용을 위해 사용자의 OpenRouter 키를 사용합니다. PDF가 아닌 업로드(.tex, .md, .docx, …)는 OCR을 건너뛰므로 OpenRouter 키가 필요 없습니다.",
   explainSubscriptionNonPdf:
     "파일이 PDF가 아니므로 Mistral OCR 단계를 완전히 건너뜁니다 — 전체 실행이 구독으로 처리되며 OpenRouter 키가 필요 없습니다.",
   explainSubscriptionPart3: "리뷰는 완료되면 이 페이지에 표시됩니다.",
@@ -478,7 +478,7 @@ export const ko: Messages = {
   // setup page — subscription tab intro
   setupSubHeading: "코딩 에이전트 구독 사용하기",
   setupSubIntro1:
-    "이미 Claude Code, Codex 또는 Gemini CLI에 비용을 지불하고 있는 사용자를 위한 방법입니다. 리뷰는 사용자의 구독으로 실행되어 거기에 청구됩니다. OCR 단계에 대해서만 OpenRouter에 ~$0.15를 지불합니다.",
+    "이미 Claude Code, Codex 또는 Gemini CLI에 비용을 지불하고 있는 사용자를 위한 방법입니다. 리뷰는 사용자의 구독으로 실행되어 거기에 청구됩니다. OpenRouter에는 PDF OCR과 실행된 비전 QA 비용만 지불합니다.",
   setupSubIntro2:
     "자신의 Claude Code, Codex 또는 Gemini CLI 계정을 사용하여 사용자의 컴퓨터에서 로컬로 실행됩니다. coarse.ink는 사용자의 제공자 로그인을 수신하거나 저장하지 않습니다. 제공자의 약관과 사용 한도는 여전히 적용됩니다. coarse.ink는 Anthropic, OpenAI 또는 Google과 제휴 관계가 없습니다.",
   // setup page — subscription step 1
@@ -496,7 +496,7 @@ export const ko: Messages = {
   // setup page — subscription step 2
   setupSubStep2Title: "사용자 컴퓨터에 OpenRouter 키 두기 (PDF만 해당)",
   setupSubStep2BodyPrefix:
-    "이 단계는 PDF 논문에만 적용됩니다 — PDF가 아닌 소스(.tex, .md, .docx, …)는 OCR 없이 로컬에서 추출되므로 어디에도 OpenRouter 키가 필요 없으며 바로 3단계로 건너뛸 수 있습니다. PDF의 경우 coarse는 OCR 단계(논문당 ~$0.10)에 여전히 OpenRouter가 필요합니다. 다음 ",
+    "이 단계는 PDF 논문에만 적용됩니다 — PDF가 아닌 소스(.tex, .md, .docx, …)는 OCR 없이 로컬에서 추출되므로 어디에도 OpenRouter 키가 필요 없으며 바로 3단계로 건너뛸 수 있습니다. PDF의 경우 coarse는 OCR과 실행되는 비전 QA를 위해 OpenRouter가 필요합니다. 다음 ",
   setupSubStep2BodyTab: "OpenRouter 키",
   setupSubStep2BodySuffix:
     " 탭을 따라 계정을 만들고, $1의 크레딧을 추가하고, $2의 키별 한도를 설정하세요. OpenRouter 전용 경로의 $20 여유분은 여기서는 필요하지 않습니다. 리뷰 자체가 코딩 에이전트 구독으로 실행되기 때문입니다.",

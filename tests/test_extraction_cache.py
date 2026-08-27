@@ -20,6 +20,16 @@ def test_save_and_load_cache_roundtrip(tmp_path: Path) -> None:
     assert loaded == cached
 
 
+def test_save_and_load_versioned_pdf_cache_roundtrip(tmp_path: Path) -> None:
+    source = tmp_path / "paper.pdf"
+    source.write_bytes(b"%PDF-1.4")
+    cached = PaperText(full_markdown="# Paper", token_estimate=2, garble_ratio=0.0)
+
+    _save_cache(source, cached)
+
+    assert _load_cache(source) == cached
+
+
 def test_load_cache_returns_none_when_source_is_newer(tmp_path: Path) -> None:
     source = tmp_path / "paper.txt"
     source.write_text("hello")
@@ -39,6 +49,34 @@ def test_load_cache_returns_none_for_corrupt_json(tmp_path: Path) -> None:
     source.with_suffix(".extraction_cache.json").write_text("{not json", encoding="utf-8")
 
     assert _load_cache(source) is None
+
+
+def test_load_cache_invalidates_legacy_unversioned_pdf(tmp_path: Path) -> None:
+    """Caches that may contain blind QA corrections must be rebuilt once."""
+    source = tmp_path / "paper.pdf"
+    source.write_bytes(b"%PDF-1.4")
+    source.with_suffix(".extraction_cache.json").write_text(
+        '{"full_markdown":"# Paper","token_estimate":2,"garble_ratio":0.0}',
+        encoding="utf-8",
+    )
+
+    assert _load_cache(source) is None
+
+
+def test_load_cache_keeps_legacy_unversioned_non_pdf(tmp_path: Path) -> None:
+    """The blind-QA path was PDF-only, so local-format caches stay reusable."""
+    source = tmp_path / "paper.md"
+    source.write_text("# Paper", encoding="utf-8")
+    source.with_suffix(".extraction_cache.json").write_text(
+        '{"full_markdown":"# Paper","token_estimate":2,"garble_ratio":0.0}',
+        encoding="utf-8",
+    )
+
+    assert _load_cache(source) == PaperText(
+        full_markdown="# Paper",
+        token_estimate=2,
+        garble_ratio=0.0,
+    )
 
 
 def test_load_cache_returns_none_for_empty_markdown(tmp_path: Path) -> None:
