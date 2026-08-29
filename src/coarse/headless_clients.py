@@ -28,8 +28,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -330,10 +332,22 @@ _SUBSCRIPTION_BILLING_KEYS = (
     "GEMINI_API_KEY",
 )
 
+_SECRET_ENV_MARKERS = (
+    "API_KEY",
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "CREDENTIAL",
+    "PRIVATE_KEY",
+    "ACCESS_KEY",
+    "DATABASE_URL",
+    "CONNECTION_STRING",
+)
+
 
 def _clean_subprocess_env() -> dict[str, str]:
     """Return a copy of os.environ with host-CLI session markers AND
-    provider API keys stripped.
+    provider API keys and unrelated secret-bearing variables stripped.
 
     Two classes of variable get removed:
 
@@ -349,14 +363,17 @@ def _clean_subprocess_env() -> dict[str, str]:
        subprocess env forces OAuth/subscription auth. Parent shell
        is unchanged, and ``OPENROUTER_API_KEY`` (used by the parent
        Python process for extraction + literature search) is
-       deliberately preserved — it's never inherited by the host CLI
-       subprocess anyway.
+       is stripped from the child along with other unrelated secrets.
     """
     env = dict(os.environ)
     for var in _HOST_ENV_VARS:
         env.pop(var, None)
     for var in _SUBSCRIPTION_BILLING_KEYS:
         env.pop(var, None)
+    for var in tuple(env):
+        upper = var.upper()
+        if any(marker in upper for marker in _SECRET_ENV_MARKERS):
+            env.pop(var, None)
     # Force UTF-8 everywhere in the child CLI subprocess. Node.js-based
     # CLIs (claude, codex, gemini) honor `LANG` / `LC_ALL` for stdout
     # encoding; without these set, a user with a cp1252 / ISO-8859-1
@@ -559,6 +576,14 @@ class _HeadlessCLIClient:
         """Allow subclasses to inject host-specific prompt hints."""
         return prompt
 
+    def _workspace_args(self, _workspace: str) -> list[str]:
+        """Return host-specific arguments that bind execution to the empty workspace."""
+        return []
+
+    def _workspace_env(self, _workspace: str) -> dict[str, str]:
+        """Return the review-only child environment for this invocation."""
+        return _clean_subprocess_env()
+
     def _run(self, prompt: str, *, timeout: int | None = None) -> str:
         """Run the host CLI once with retry on transient failures.
 
@@ -591,6 +616,10 @@ class _HeadlessCLIClient:
         # AND without triggering the backoff sleep on the next
         # iteration. A for-loop would auto-increment and the `continue`
         # would land on `attempt > 0` + a mandatory 2s sleep.
+        with tempfile.TemporaryDirectory(prefix="coarse-review-") as workspace:
+            return self._run_attempts(prompt, workspace, timeout=timeout)
+
+    def _run_attempts(self, prompt: str, workspace: str, *, timeout: int | None = None) -> str:
         attempt = 0
         just_fell_back = False
         last_stderr = ""
@@ -612,6 +641,11 @@ class _HeadlessCLIClient:
             just_fell_back = False
 
             cmd = self._build_cmd()
+            workspace_args = self._workspace_args(workspace)
+            if cmd and cmd[-1] == "-":
+                cmd[-1:-1] = workspace_args
+            else:
+                cmd.extend(workspace_args)
             try:
                 proc = subprocess.run(
                     cmd,
@@ -622,7 +656,8 @@ class _HeadlessCLIClient:
                     errors="replace",
                     timeout=timeout or self._timeout,
                     check=False,
-                    env=_clean_subprocess_env(),
+                    env=self._workspace_env(workspace),
+                    cwd=workspace,
                 )
             except FileNotFoundError as exc:
                 raise RuntimeError(
@@ -821,6 +856,16 @@ class ClaudeCodeClient(_HeadlessCLIClient):
         cmd = [
             self._claude_bin,
             "-p",
+            "--safe-mode",
+            "--disable-slash-commands",
+            "--strict-mcp-config",
+            "--mcp-config",
+            '{"mcpServers":{}}',
+            "--tools",
+            "",
+            "--permission-mode",
+            "plan",
+            "--no-session-persistence",
             "--model",
             self._claude_model,
             "--output-format",
@@ -857,6 +902,7 @@ class CodexClient(_HeadlessCLIClient):
     #: Probe cache — see ``ClaudeCodeClient._effort_flag_probed``.
     _config_override_probed: bool = False
     _config_override_supported: bool = False
+
     def __init__(
         self,
         model: str | None = None,
@@ -937,7 +983,20 @@ class CodexClient(_HeadlessCLIClient):
         # pass it on every platform — it's a no-op inside a trusted repo. Unlike
         # the `-c` config override below, this flag is long-standing in codex and
         # is assumed universally supported (not version-probed).
-        cmd = [self._codex_bin, "exec", "--skip-git-repo-check"]
+        cmd = [
+            self._codex_bin,
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--ignore-user-config",
+            "--ignore-rules",
+            "--sandbox",
+            "read-only",
+            "-c",
+            "approval_policy='never'",
+            "-c",
+            "mcp_servers={}",
+        ]
         if self._codex_model:
             cmd += ["-m", self._codex_model]
         if type(self)._config_override_supported:
@@ -958,6 +1017,9 @@ class CodexClient(_HeadlessCLIClient):
         cmd.append("-")
         return cmd
 
+    def _workspace_args(self, workspace: str) -> list[str]:
+        return ["-C", workspace]
+
     def _prepare_prompt(self, prompt: str) -> str:
         self._ensure_config_override_probed()
         if type(self)._config_override_supported:
@@ -974,10 +1036,9 @@ class GeminiClient(_HeadlessCLIClient):
 
     Two flags on Gemini CLI are version-gated:
 
-    1. ``--approval-mode yolo`` (newer) vs. the legacy ``--yolo``
-       toggle (older). Both do the same thing — auto-approve every
-       tool call — but older Gemini CLI versions reject the newer
-       name with "unknown argument".
+    1. ``--approval-mode plan`` is mandatory for the review-only profile.
+       Older versions fail closed instead of falling back to unrestricted
+       ``--yolo`` execution.
     2. ``--output-format text`` was added when Gemini CLI grew JSON
        output support. Older versions don't have it and default to
        text output, so dropping the flag is a safe fallback.
@@ -1009,7 +1070,7 @@ class GeminiClient(_HeadlessCLIClient):
         gemini_bin: str = "gemini",
         gemini_model: str | None = None,
         effort: str = "high",
-        approval_mode: str = "yolo",
+        approval_mode: str = "plan",
         timeout: int = 1800,
         **kwargs,
     ) -> None:
@@ -1018,6 +1079,8 @@ class GeminiClient(_HeadlessCLIClient):
         self._gemini_model = gemini_model
         self._effort = effort
         self._approval_mode = approval_mode
+        if approval_mode != "plan":
+            raise ValueError("Gemini review stages require approval_mode='plan'")
 
     def _install_hint(self) -> str:
         return "npm install -g @google/gemini-cli@latest (or https://github.com/google-gemini/gemini-cli)"
@@ -1052,8 +1115,8 @@ class GeminiClient(_HeadlessCLIClient):
         if not cls._approval_mode_flag_supported:
             logger.warning(
                 "Gemini CLI on this machine does not expose --approval-mode "
-                "(old version). Falling back to the legacy --yolo flag. "
-                "Upgrade Gemini CLI for the full flag set: npm install -g "
+                "(old version). Review execution will fail closed. "
+                "Upgrade Gemini CLI: npm install -g "
                 "@google/gemini-cli@latest"
             )
 
@@ -1064,13 +1127,47 @@ class GeminiClient(_HeadlessCLIClient):
         if cls._approval_mode_flag_supported:
             cmd += ["--approval-mode", self._approval_mode]
         else:
-            # Legacy toggle — same semantics, just the older name.
-            cmd.append("--yolo")
+            raise RuntimeError(
+                "Gemini CLI cannot provide the required review-only isolation. "
+                "Upgrade to a version that supports --approval-mode plan."
+            )
+        cmd += ["--extensions", "", "--allowed-mcp-server-names", ""]
         if cls._output_format_flag_supported:
             cmd += ["--output-format", "text"]
         if self._gemini_model:
             cmd += ["--model", self._gemini_model]
         return cmd
+
+    def _workspace_env(self, workspace: str) -> dict[str, str]:
+        env = _clean_subprocess_env()
+        isolated_home = Path(workspace) / "gemini-home"
+        isolated_config = isolated_home / ".gemini"
+        isolated_config.mkdir(parents=True)
+
+        source = Path.home() / ".gemini"
+        for name in ("oauth_creds.json", "google_accounts.json"):
+            source_file = source / name
+            if source_file.is_file():
+                destination = isolated_config / name
+                shutil.copyfile(source_file, destination)
+                destination.chmod(0o600)
+
+        selected_type = "oauth-personal"
+        settings_file = source / "settings.json"
+        try:
+            settings = json.loads(settings_file.read_text(encoding="utf-8"))
+            selected_type = (
+                settings.get("security", {}).get("auth", {}).get("selectedType", selected_type)
+            )
+        except (OSError, json.JSONDecodeError, AttributeError):
+            pass
+        (isolated_config / "settings.json").write_text(
+            json.dumps({"security": {"auth": {"selectedType": selected_type}}}),
+            encoding="utf-8",
+        )
+        env["GEMINI_CLI_HOME"] = str(isolated_home)
+        env["GEMINI_CLI_TRUST_WORKSPACE"] = "true"
+        return env
 
     def _prepare_prompt(self, prompt: str) -> str:
         budget = self._EFFORT_BUDGET.get(self._effort, self._EFFORT_BUDGET["high"])
