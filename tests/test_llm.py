@@ -25,6 +25,8 @@ from coarse.models import (
     CLAUDE_OPUS_5_MODEL,
     FUSION_MODEL,
     GPT_5_6_LUNA_MODEL,
+    GPT_5_6_SOL_MODEL,
+    GPT_5_6_SOL_PRO_MODEL,
     GPT_5_6_TERRA_MODEL,
     GROK_4_5_MODEL,
     KIMI_K3_MODEL,
@@ -1447,3 +1449,113 @@ def test_sanitized_completion_falls_back_to_positional_model():
 
     # api_key must be injected even though model arrived as args[0].
     assert captured["kwargs"].get("api_key") == "sk-or-v1-fallback-positional"
+
+
+# ---------------------------------------------------------------------------
+# Direct-request model aliases (OpenRouter variant IDs on direct routes)
+# ---------------------------------------------------------------------------
+
+
+def test_sol_pro_direct_route_aliases_model_and_injects_reasoning_body(
+    mock_instructor_client, monkeypatch
+):
+    """openai/gpt-5.6-sol-pro is an OpenRouter-only ID. With a direct OpenAI
+    key, the wire request must use the real OpenAI model (gpt-5.6-sol) plus
+    extra_body reasoning mode "pro" — and must NOT also send the default
+    reasoning_effort, which would conflict with the explicit reasoning body."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    client = _reasoning_client(GPT_5_6_SOL_PRO_MODEL, mock_instructor_client)
+    assert client.model == GPT_5_6_SOL_MODEL
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert call.kwargs["model"] == GPT_5_6_SOL_MODEL
+    assert call.kwargs["extra_body"] == {"reasoning": {"mode": "pro"}}
+    assert "reasoning_effort" not in call.kwargs
+
+
+def test_sol_pro_direct_route_keeps_explicit_caller_reasoning_effort(
+    mock_instructor_client, monkeypatch
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    client = _reasoning_client(GPT_5_6_SOL_PRO_MODEL, mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            reasoning_effort="high",
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert call.kwargs["reasoning_effort"] == "high"
+    assert call.kwargs["extra_body"] == {"reasoning": {"mode": "pro"}}
+
+
+def test_sol_pro_direct_route_caller_extra_body_keys_win(mock_instructor_client, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    client = _reasoning_client(GPT_5_6_SOL_PRO_MODEL, mock_instructor_client)
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            extra_body={"reasoning": {"mode": "standard"}, "other": 1},
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert call.kwargs["extra_body"] == {"reasoning": {"mode": "standard"}, "other": 1}
+
+
+def test_sol_pro_complete_text_forwards_reasoning_body(mock_instructor_client, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    captured: dict = {}
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return _completion_with_content("hello")
+
+    client = LLMClient(model=GPT_5_6_SOL_PRO_MODEL, config=CoarseConfig())
+    with (
+        patch("coarse.llm.litellm.completion", side_effect=fake_completion),
+        patch("coarse.llm.litellm.completion_cost", return_value=0.0),
+    ):
+        out = client.complete_text(messages=[{"role": "user", "content": "x"}])
+
+    assert out == "hello"
+    assert captured["model"] == GPT_5_6_SOL_MODEL
+    assert captured["extra_body"] == {"reasoning": {"mode": "pro"}}
+
+
+def test_sol_pro_openrouter_route_keeps_variant_id_untouched(mock_instructor_client, monkeypatch):
+    """With only an OpenRouter key, the variant ID is valid as-is on the
+    proxied route — no alias rewrite, no reasoning extra_body, and the
+    default reasoning_effort still applies."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    client = _reasoning_client(GPT_5_6_SOL_PRO_MODEL, mock_instructor_client)
+    assert client.model == f"openrouter/{GPT_5_6_SOL_PRO_MODEL}"
+
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+        )
+
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert call.kwargs["model"] == f"openrouter/{GPT_5_6_SOL_PRO_MODEL}"
+    assert "extra_body" not in call.kwargs
+    assert call.kwargs.get("reasoning_effort") == REASONING_EFFORT_DEFAULT
+
+
+def test_sol_pro_variant_has_registered_pricing():
+    # The pre-flight cost gate prices the PRE-alias ID the user typed; an
+    # unregistered ID silently quotes $0 and skips the confirmation prompt.
+    in_cost, out_cost = model_cost_per_token(GPT_5_6_SOL_PRO_MODEL)
+    assert in_cost > 0
+    assert out_cost > 0

@@ -16,6 +16,12 @@ CLAUDE_OPUS_5_MODEL = "anthropic/claude-opus-5"
 CLAUDE_SONNET_5_MODEL = "anthropic/claude-sonnet-5"
 CLAUDE_FABLE_5_MODEL = "anthropic/claude-fable-5"
 GPT_5_6_SOL_MODEL = "openai/gpt-5.6-sol"
+# OpenRouter-only variant ID for Sol's "pro" reasoning mode. The OpenAI API has
+# no model by this name — direct-OpenAI requests must be rewritten to the base
+# Sol ID plus a `reasoning: {"mode": "pro"}` body (see
+# DIRECT_REQUEST_MODEL_ALIASES below). Pricing is identical to base Sol on
+# OpenRouter (verified 2026-08-30); pro mode just spends more reasoning tokens.
+GPT_5_6_SOL_PRO_MODEL = "openai/gpt-5.6-sol-pro"
 GPT_5_6_TERRA_MODEL = "openai/gpt-5.6-terra"
 GPT_5_6_LUNA_MODEL = "openai/gpt-5.6-luna"
 GEMINI_3_6_FLASH_MODEL = "google/gemini-3.6-flash"
@@ -35,6 +41,13 @@ GLM_5_2_MODEL = "z-ai/glm-5.2"
 # OpenRouter ``pricing.overrides`` metadata on 2026-07-30.
 LONG_CONTEXT_PRICING_TIERS: dict[str, dict[str, int | float]] = {
     GPT_5_6_SOL_MODEL: {
+        "min_prompt_tokens": 272_000,
+        "input_cost_per_token": 10e-6,
+        "output_cost_per_token": 45e-6,
+    },
+    # Same tier as base Sol — OpenRouter reports identical pricing for the
+    # -pro variant (verified 2026-08-30).
+    GPT_5_6_SOL_PRO_MODEL: {
         "min_prompt_tokens": 272_000,
         "input_cost_per_token": 10e-6,
         "output_cost_per_token": 45e-6,
@@ -117,6 +130,18 @@ WEB_FEATURED_MODEL_IDS: tuple[str, ...] = (
 # must be doubled for litellm provider routing (see FUSION_MODEL note above).
 LITELLM_OPENROUTER_PREFIX = "openrouter/"
 OPENROUTER_NAMESPACE_MODELS: frozenset[str] = frozenset({FUSION_MODEL})
+
+# OpenRouter defines variant model IDs that the underlying provider's own API
+# does not recognize. When such a model routes DIRECT to its provider (i.e.
+# ``_normalize_model`` in llm.py left it without the ``openrouter/`` prefix),
+# the wire request must use the provider's real model ID plus extra request
+# body fields. Maps variant ID → (direct model ID, extra request body). Keys
+# are bare canonical IDs, so an ``openrouter/``-prefixed (proxied) model can
+# never match — the OpenRouter route keeps sending the variant ID untouched.
+# Treat the body dicts as immutable; copy before mutating.
+DIRECT_REQUEST_MODEL_ALIASES: dict[str, tuple[str, dict[str, object]]] = {
+    GPT_5_6_SOL_PRO_MODEL: (GPT_5_6_SOL_MODEL, {"reasoning": {"mode": "pro"}}),
+}
 
 # Vision model for post-extraction QA (multimodal, spot-checks Docling output)
 # litellm uses 'gemini/' prefix for Google AI Studio (not 'google/')

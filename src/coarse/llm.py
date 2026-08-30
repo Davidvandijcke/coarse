@@ -26,6 +26,7 @@ from coarse.config import (
 )
 from coarse.model_registry import register_model_costs
 from coarse.models import (
+    DIRECT_REQUEST_MODEL_ALIASES,
     JSON_MODE_PREFIXES,
     MARKDOWN_JSON_PREFIXES,
     OPENROUTER_NAMESPACE_MODELS,
@@ -376,6 +377,16 @@ class LLMClient:
             config = load_config()
         self._model = model or config.default_model
         self._model = _normalize_model(self._model, config)
+        # Some OpenRouter variant IDs don't exist on the provider's own API
+        # (e.g. openai/gpt-5.6-sol-pro → OpenAI 404s). On the direct route,
+        # rewrite to the provider's real model ID and carry the variant's
+        # extra request body (merged into extra_body at call time). The
+        # lookup is keyed on bare IDs, so OpenRouter-proxied models — already
+        # `openrouter/`-prefixed by _normalize_model — never match.
+        self._extra_request_body: dict[str, object] | None = None
+        alias = DIRECT_REQUEST_MODEL_ALIASES.get(self._model)
+        if alias is not None:
+            self._model, self._extra_request_body = alias[0], dict(alias[1])
         self._mode = _select_instructor_mode(self._model)
         self._client = instructor.from_litellm(_sanitized_completion, mode=self._mode)
         self._structured_fallback_mode = _select_fallback_instructor_mode(self._model, self._mode)
@@ -398,6 +409,21 @@ class LLMClient:
         # it through call_kwargs removes every call-time read from the
         # dependency chain and closes the race.
         self._api_key: str | None = resolve_api_key(self._model, config)
+
+    def _merge_extra_request_body(self, call_kwargs: dict) -> dict:
+        """Merge the direct-request alias body into ``extra_body``.
+
+        Caller-supplied ``extra_body`` keys win over the alias defaults.
+        No-op (returns ``call_kwargs`` unchanged) when no alias applies.
+        """
+        if not self._extra_request_body:
+            return call_kwargs
+        merged = dict(call_kwargs)
+        merged["extra_body"] = {
+            **self._extra_request_body,
+            **(call_kwargs.get("extra_body") or {}),
+        }
+        return merged
 
     def _complete_with_client(
         self,
@@ -485,8 +511,20 @@ class LLMClient:
         # as "already set"). A caller can still disable by passing a
         # real string like "low" or by passing a non-None sentinel.
         call_kwargs = dict(kwargs)
-        if self._is_reasoning and call_kwargs.get("reasoning_effort") is None:
+        # When a direct-request alias already sets a `reasoning` body (e.g.
+        # {"mode": "pro"}), the default reasoning_effort would conflict with
+        # it — pro mode IS the reasoning setting. An explicit caller-passed
+        # reasoning_effort still goes through untouched, as before.
+        alias_sets_reasoning = bool(self._extra_request_body) and (
+            "reasoning" in self._extra_request_body
+        )
+        if (
+            self._is_reasoning
+            and call_kwargs.get("reasoning_effort") is None
+            and not alias_sets_reasoning
+        ):
             call_kwargs["reasoning_effort"] = REASONING_EFFORT_DEFAULT
+        call_kwargs = self._merge_extra_request_body(call_kwargs)
         if _is_openrouter_kimi_model(self._model):
             call_kwargs = _prepare_openrouter_kimi_structured_kwargs(call_kwargs)
         # Forward the eagerly-resolved API key on every call so the litellm
@@ -558,7 +596,7 @@ class LLMClient:
         stripped via _sanitized_completion.
         """
         clamped = _clamp_max_tokens(self._model, max_tokens)
-        call_kwargs = dict(kwargs)
+        call_kwargs = self._merge_extra_request_body(dict(kwargs))
         # Forward the eagerly-resolved API key on every call (same rationale
         # as complete() — avoids the env-var-at-call-time race that was
         # landing "Missing Authentication header" 401s in prod).

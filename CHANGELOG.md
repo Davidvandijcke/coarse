@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **`--model openai/gpt-5.6-sol-pro` now works with a direct `OPENAI_API_KEY`.** The `-pro` suffix is an OpenRouter-only variant ID that OpenAI's own API rejects with 404. On the direct OpenAI route, the client now translates it to the real model `gpt-5.6-sol` plus a `reasoning: {"mode": "pro"}` request body (and suppresses the conflicting default `reasoning_effort`); the OpenRouter route keeps sending the variant ID untouched. The variant's pricing and 272k long-context tier are registered (identical to base Sol per OpenRouter), so the pre-flight cost gate no longer quotes $0 for it. The new `DIRECT_REQUEST_MODEL_ALIASES` table in `models.py` makes further OpenRouter-only variants one-line additions.
+
 ## v1.9.2 — 2026-08-27
 
 ### Added
