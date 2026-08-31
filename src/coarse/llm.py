@@ -26,7 +26,7 @@ from coarse.config import (
 )
 from coarse.model_registry import register_model_costs
 from coarse.models import (
-    DIRECT_REQUEST_MODEL_ALIASES,
+    DIRECT_RESPONSES_MODEL_ALIASES,
     JSON_MODE_PREFIXES,
     MARKDOWN_JSON_PREFIXES,
     OPENROUTER_NAMESPACE_MODELS,
@@ -160,6 +160,19 @@ def _sanitized_completion(*args, **kwargs):
             msg.content = _CTRL_CHAR_RE.sub("", msg.content)
             msg.content = msg.content.replace("\\u0000", "")
     return response
+
+
+def _responses_completion(*, messages: list[dict], **kwargs):
+    """Adapt Instructor's chat-shaped call to LiteLLM's Responses API."""
+    return litellm.responses(input=messages, **kwargs)
+
+
+def _build_responses_create() -> Callable[..., BaseModel]:
+    """Build an Instructor-patched Responses API callable."""
+    return instructor.patch(
+        create=_responses_completion,
+        mode=instructor.Mode.RESPONSES_TOOLS,
+    )
 
 
 def _extract_completion_text(completion: object) -> str | None:
@@ -379,14 +392,14 @@ class LLMClient:
         self._model = _normalize_model(self._model, config)
         # Some OpenRouter variant IDs don't exist on the provider's own API
         # (e.g. openai/gpt-5.6-sol-pro → OpenAI 404s). On the direct route,
-        # rewrite to the provider's real model ID and carry the variant's
-        # extra request body (merged into extra_body at call time). The
-        # lookup is keyed on bare IDs, so OpenRouter-proxied models — already
-        # `openrouter/`-prefixed by _normalize_model — never match.
-        self._extra_request_body: dict[str, object] | None = None
-        alias = DIRECT_REQUEST_MODEL_ALIASES.get(self._model)
+        # rewrite to the provider's real model ID and use the Responses API
+        # with the variant's request defaults. The lookup is keyed on bare
+        # IDs, so OpenRouter-proxied models — already `openrouter/`-prefixed by
+        # _normalize_model — never match.
+        self._responses_request_body: dict[str, object] | None = None
+        alias = DIRECT_RESPONSES_MODEL_ALIASES.get(self._model)
         if alias is not None:
-            self._model, self._extra_request_body = alias[0], dict(alias[1])
+            self._model, self._responses_request_body = alias[0], dict(alias[1])
         self._mode = _select_instructor_mode(self._model)
         self._client = instructor.from_litellm(_sanitized_completion, mode=self._mode)
         self._structured_fallback_mode = _select_fallback_instructor_mode(self._model, self._mode)
@@ -394,6 +407,9 @@ class LLMClient:
             instructor.from_litellm(_sanitized_completion, mode=self._structured_fallback_mode)
             if self._structured_fallback_mode is not None
             else None
+        )
+        self._responses_create = (
+            _build_responses_create() if self._responses_request_body is not None else None
         )
         self._cost_usd: float = 0.0
         self._lock = threading.Lock()
@@ -410,20 +426,26 @@ class LLMClient:
         # dependency chain and closes the race.
         self._api_key: str | None = resolve_api_key(self._model, config)
 
-    def _merge_extra_request_body(self, call_kwargs: dict) -> dict:
-        """Merge the direct-request alias body into ``extra_body``.
-
-        Caller-supplied ``extra_body`` keys win over the alias defaults.
-        No-op (returns ``call_kwargs`` unchanged) when no alias applies.
-        """
-        if not self._extra_request_body:
+    def _prepare_responses_kwargs(self, call_kwargs: dict) -> dict:
+        """Merge direct-route defaults into Responses API kwargs."""
+        if self._responses_request_body is None:
             return call_kwargs
-        merged = dict(call_kwargs)
-        merged["extra_body"] = {
-            **self._extra_request_body,
-            **(call_kwargs.get("extra_body") or {}),
-        }
-        return merged
+        prepared = dict(call_kwargs)
+        requested_effort = prepared.pop("reasoning_effort", None)
+        caller_reasoning = dict(prepared.pop("reasoning", None) or {})
+        defaults = dict(self._responses_request_body)
+        default_reasoning = dict(defaults.pop("reasoning", {}) or {})
+        for key, value in defaults.items():
+            prepared.setdefault(key, value)
+        # The selected alias owns its mode ("-pro" must remain pro), while
+        # effort stays independently caller-configurable as OpenAI documents.
+        reasoning = {**caller_reasoning, **default_reasoning}
+        if requested_effort is not None:
+            reasoning["effort"] = requested_effort
+        else:
+            reasoning.setdefault("effort", REASONING_EFFORT_DEFAULT)
+        prepared["reasoning"] = reasoning
+        return prepared
 
     def _complete_with_client(
         self,
@@ -447,6 +469,17 @@ class LLMClient:
         just send ``None``.
         """
         try:
+            if self._responses_create is not None:
+                response = self._responses_create(
+                    model=self._model,
+                    messages=messages,
+                    response_model=response_model,
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                    max_retries=3,
+                    **call_kwargs,
+                )
+                return response, getattr(response, "_raw_response", None)
             return client.chat.completions.create_with_completion(
                 model=self._model,
                 messages=messages,
@@ -511,20 +544,10 @@ class LLMClient:
         # as "already set"). A caller can still disable by passing a
         # real string like "low" or by passing a non-None sentinel.
         call_kwargs = dict(kwargs)
-        # When a direct-request alias already sets a `reasoning` body (e.g.
-        # {"mode": "pro"}), the default reasoning_effort would conflict with
-        # it — pro mode IS the reasoning setting. An explicit caller-passed
-        # reasoning_effort still goes through untouched, as before.
-        alias_sets_reasoning = bool(self._extra_request_body) and (
-            "reasoning" in self._extra_request_body
-        )
-        if (
-            self._is_reasoning
-            and call_kwargs.get("reasoning_effort") is None
-            and not alias_sets_reasoning
-        ):
+        if self._responses_create is not None:
+            call_kwargs = self._prepare_responses_kwargs(call_kwargs)
+        elif self._is_reasoning and call_kwargs.get("reasoning_effort") is None:
             call_kwargs["reasoning_effort"] = REASONING_EFFORT_DEFAULT
-        call_kwargs = self._merge_extra_request_body(call_kwargs)
         if _is_openrouter_kimi_model(self._model):
             call_kwargs = _prepare_openrouter_kimi_structured_kwargs(call_kwargs)
         # Forward the eagerly-resolved API key on every call so the litellm
@@ -592,11 +615,13 @@ class LLMClient:
 
         Used for models where instructor's structured output makes no sense
         (e.g. Perplexity Sonar Pro, which returns prose with citations).
-        Cost is tracked like complete(); control characters are still
-        stripped via _sanitized_completion.
+        Cost is tracked like complete(); control characters are stripped on
+        both the Chat Completions and Responses API paths.
         """
         clamped = _clamp_max_tokens(self._model, max_tokens)
-        call_kwargs = self._merge_extra_request_body(dict(kwargs))
+        call_kwargs = dict(kwargs)
+        if self._responses_create is not None:
+            call_kwargs = self._prepare_responses_kwargs(call_kwargs)
         # Forward the eagerly-resolved API key on every call (same rationale
         # as complete() — avoids the env-var-at-call-time race that was
         # landing "Missing Authentication header" 401s in prod).
@@ -606,13 +631,22 @@ class LLMClient:
         # ``supports_temperature`` in ``coarse.models``).
         if supports_temperature(self._model):
             call_kwargs.setdefault("temperature", temperature)
-        response = _sanitized_completion(
-            model=self._model,
-            messages=messages,
-            max_tokens=clamped,
-            timeout=timeout,
-            **call_kwargs,
-        )
+        if self._responses_create is not None:
+            response = _responses_completion(
+                model=self._model,
+                messages=messages,
+                max_output_tokens=clamped,
+                timeout=timeout,
+                **call_kwargs,
+            )
+        else:
+            response = _sanitized_completion(
+                model=self._model,
+                messages=messages,
+                max_tokens=clamped,
+                timeout=timeout,
+                **call_kwargs,
+            )
         try:
             cost = _completion_cost_with_long_context_pricing(response, self._model)
             if cost is not None:
@@ -620,10 +654,14 @@ class LLMClient:
         except Exception:
             logger.debug("Cost tracking failed for model %s", self._model, exc_info=True)
 
-        content = response.choices[0].message.content
+        content = (
+            response.output_text
+            if self._responses_create is not None
+            else response.choices[0].message.content
+        )
         if not content or not content.strip():
             raise ValueError(f"Model {self._model} returned empty response")
-        return content.strip()
+        return _CTRL_CHAR_RE.sub("", content).replace("\\u0000", "").strip()
 
     def add_cost(self, cost_usd: float) -> None:
         """Register an external cost (e.g. from a direct litellm.completion call)."""
@@ -876,8 +914,14 @@ def _completion_cost_with_long_context_pricing(response, model: str) -> float | 
     """
     standard_cost = litellm.completion_cost(completion_response=response, model=model)
     usage = getattr(response, "usage", None)
-    prompt_tokens = max(0, int(getattr(usage, "prompt_tokens", 0) or 0))
-    completion_tokens = max(0, int(getattr(usage, "completion_tokens", 0) or 0))
+    prompt_tokens = max(
+        0,
+        int(getattr(usage, "prompt_tokens", getattr(usage, "input_tokens", 0)) or 0),
+    )
+    completion_tokens = max(
+        0,
+        int(getattr(usage, "completion_tokens", getattr(usage, "output_tokens", 0)) or 0),
+    )
     base_rates = model_cost_per_token(model)
     tier_rates = model_cost_per_token(model, prompt_tokens=prompt_tokens)
     if tier_rates == base_rates:

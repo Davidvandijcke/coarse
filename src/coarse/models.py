@@ -18,8 +18,8 @@ CLAUDE_FABLE_5_MODEL = "anthropic/claude-fable-5"
 GPT_5_6_SOL_MODEL = "openai/gpt-5.6-sol"
 # OpenRouter-only variant ID for Sol's "pro" reasoning mode. The OpenAI API has
 # no model by this name — direct-OpenAI requests must be rewritten to the base
-# Sol ID plus a `reasoning: {"mode": "pro"}` body (see
-# DIRECT_REQUEST_MODEL_ALIASES below). Pricing is identical to base Sol on
+# Sol ID plus a `reasoning: {"mode": "pro"}` body on the Responses API (see
+# DIRECT_RESPONSES_MODEL_ALIASES below). Pricing is identical to base Sol on
 # OpenRouter (verified 2026-08-30); pro mode just spends more reasoning tokens.
 GPT_5_6_SOL_PRO_MODEL = "openai/gpt-5.6-sol-pro"
 GPT_5_6_TERRA_MODEL = "openai/gpt-5.6-terra"
@@ -132,15 +132,16 @@ LITELLM_OPENROUTER_PREFIX = "openrouter/"
 OPENROUTER_NAMESPACE_MODELS: frozenset[str] = frozenset({FUSION_MODEL})
 
 # OpenRouter defines variant model IDs that the underlying provider's own API
-# does not recognize. When such a model routes DIRECT to its provider (i.e.
-# ``_normalize_model`` in llm.py left it without the ``openrouter/`` prefix),
-# the wire request must use the provider's real model ID plus extra request
-# body fields. Maps variant ID → (direct model ID, extra request body). Keys
+# does not recognize. When such a model routes DIRECT to OpenAI, the wire
+# request must use the provider's real model ID plus Responses API fields.
+# Maps variant ID → (direct model ID, Responses API request defaults). Keys
 # are bare canonical IDs, so an ``openrouter/``-prefixed (proxied) model can
 # never match — the OpenRouter route keeps sending the variant ID untouched.
-# Treat the body dicts as immutable; copy before mutating.
-DIRECT_REQUEST_MODEL_ALIASES: dict[str, tuple[str, dict[str, object]]] = {
-    GPT_5_6_SOL_PRO_MODEL: (GPT_5_6_SOL_MODEL, {"reasoning": {"mode": "pro"}}),
+DIRECT_RESPONSES_MODEL_ALIASES: dict[str, tuple[str, dict[str, object]]] = {
+    GPT_5_6_SOL_PRO_MODEL: (
+        GPT_5_6_SOL_MODEL,
+        {"reasoning": {"mode": "pro"}, "store": False},
+    ),
 }
 
 # Vision model for post-extraction QA (multimodal, spot-checks Docling output)

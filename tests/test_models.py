@@ -12,7 +12,7 @@ from coarse.models import (
     CLAUDE_OPUS_5_MODEL,
     CLAUDE_SONNET_5_MODEL,
     DEFAULT_MODEL,
-    DIRECT_REQUEST_MODEL_ALIASES,
+    DIRECT_RESPONSES_MODEL_ALIASES,
     FUSION_INPUT_COST_PER_TOKEN,
     FUSION_MODEL,
     FUSION_OUTPUT_COST_PER_TOKEN,
@@ -413,14 +413,15 @@ def test_temperature_unsupported_prefixes_are_lowercase():
         assert p == p.lower(), f"unsupported-temperature prefix not lowercase: {p}"
 
 
-def test_direct_request_aliases_map_bare_variant_ids_to_canonical_targets():
-    """The direct-request alias trick in llm.py depends on two invariants:
+def test_direct_responses_aliases_map_bare_variant_ids_to_canonical_targets():
+    """The direct Responses alias in llm.py depends on three invariants:
     keys are bare (un-proxied) IDs so an openrouter/-prefixed model can never
     match, and each target is a canonical featured ID whose pricing/limits
-    are registered."""
-    for variant, (target, extra_body) in DIRECT_REQUEST_MODEL_ALIASES.items():
+    are registered, with an explicit reasoning mode."""
+    for variant, (target, request_body) in DIRECT_RESPONSES_MODEL_ALIASES.items():
         assert not variant.startswith("openrouter/"), variant
         assert not target.startswith("openrouter/"), target
         assert variant != target, variant
         assert target in WEB_FEATURED_MODEL_IDS, target
-        assert isinstance(extra_body, dict) and extra_body, variant
+        assert request_body.get("reasoning", {}).get("mode"), variant
+        assert request_body.get("store") is False, variant
