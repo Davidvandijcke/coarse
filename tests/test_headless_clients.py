@@ -18,6 +18,12 @@ from coarse.headless_clients import (
     _clean_subprocess_env,
     _messages_to_prompt,
 )
+from coarse.headless_isolation import (
+    CLAUDE_REQUIRED_ISOLATION_FLAGS,
+    CODEX_REQUIRED_ISOLATION_FLAGS,
+    CODEX_REVIEW_PERMISSION_PROFILE,
+    GEMINI_REVIEW_SETTINGS,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -31,6 +37,7 @@ def _reset_probe_caches():
     """
     ClaudeCodeClient._effort_flag_probed = False
     ClaudeCodeClient._effort_flag_supported = False
+    ClaudeCodeClient._isolation_flags_supported = False
     CodexClient._config_override_probed = False
     CodexClient._config_override_supported = False
     GeminiClient._flag_probed = False
@@ -39,6 +46,7 @@ def _reset_probe_caches():
     yield
     ClaudeCodeClient._effort_flag_probed = False
     ClaudeCodeClient._effort_flag_supported = False
+    ClaudeCodeClient._isolation_flags_supported = False
     CodexClient._config_override_probed = False
     CodexClient._config_override_supported = False
     GeminiClient._flag_probed = False
@@ -61,6 +69,7 @@ def _mark_claude_effort_supported(supported: bool) -> None:
     """Skip the real probe by pre-setting the class cache."""
     ClaudeCodeClient._effort_flag_probed = True
     ClaudeCodeClient._effort_flag_supported = supported
+    ClaudeCodeClient._isolation_flags_supported = True
 
 
 def _mark_codex_config_override_supported(supported: bool) -> None:
@@ -169,7 +178,7 @@ def test_codex_low_effort_avoids_minimal_mode() -> None:
     assert cmd[:3] == ["codex", "exec", "--skip-git-repo-check"]
     assert ["-m", "gpt-5.4-mini"] == cmd[cmd.index("-m") : cmd.index("-m") + 2]
     assert "model_reasoning_effort='low'" in cmd
-    assert "minimal" not in " ".join(cmd)
+    assert "model_reasoning_effort='minimal'" not in cmd
 
 
 def test_codex_high_effort_maps_directly_to_high() -> None:
@@ -222,21 +231,34 @@ def test_codex_max_effort_keeps_safe_cap_for_unknown_models() -> None:
     assert "model_reasoning_effort='high'" in cmd
 
 
-def test_codex_old_version_drops_config_override_and_injects_text() -> None:
-    """Old Codex versions without ``-c KEY=VALUE`` get text-level effort."""
+def test_codex_old_version_fails_closed_without_permission_profiles() -> None:
+    """An old Codex cannot silently fall back to full-disk read access."""
     _mark_codex_config_override_supported(False)
     client = CodexClient(codex_bin="codex", codex_model="gpt-5.4-mini", effort="high")
 
-    cmd = client._build_cmd()
-    prompt = client._prepare_prompt("[USER]\nReview.")
+    with pytest.raises(RuntimeError, match="required review-only isolation"):
+        client._build_cmd()
 
-    # Isolation config remains even when native effort control is unavailable.
-    assert "mcp_servers={}" in cmd
-    assert "approval_policy='never'" in cmd
-    assert not any("model_reasoning_effort" in part for part in cmd)
-    # Text injection instead.
-    assert "Reasoning effort: high." in prompt
-    assert prompt.endswith("[USER]\nReview.")
+
+def test_codex_probe_rejects_version_before_permission_profiles() -> None:
+    client = CodexClient(codex_bin="codex")
+    help_text = "-c <KEY=VALUE> " + " ".join(CODEX_REQUIRED_ISOLATION_FLAGS)
+    with (
+        patch("coarse.headless_clients._probe_cli_help", return_value=help_text),
+        patch("coarse.headless_clients._probe_cli_version", return_value="codex-cli 0.148.0"),
+    ):
+        with pytest.raises(RuntimeError, match="Upgrade to Codex"):
+            client._build_cmd()
+
+
+def test_codex_probe_accepts_current_lowercase_help_spelling() -> None:
+    client = CodexClient(codex_bin="codex")
+    help_text = "-c, --config <key=value> " + " ".join(CODEX_REQUIRED_ISOLATION_FLAGS)
+    with (
+        patch("coarse.headless_clients._probe_cli_help", return_value=help_text),
+        patch("coarse.headless_clients._probe_cli_version", return_value="codex-cli 0.149.0"),
+    ):
+        assert "project_doc_max_bytes=0" in client._build_cmd()
 
 
 def test_codex_build_cmd_includes_skip_git_repo_check() -> None:
@@ -330,6 +352,15 @@ def test_claude_probe_caches_result_across_instances() -> None:
     assert ClaudeCodeClient._effort_flag_probed is True
 
 
+def test_claude_missing_isolation_flag_fails_closed() -> None:
+    help_text = "--effort " + " ".join(
+        flag for flag in CLAUDE_REQUIRED_ISOLATION_FLAGS if flag != "--safe-mode"
+    )
+    with patch("coarse.headless_clients._probe_cli_help", return_value=help_text):
+        with pytest.raises(RuntimeError, match="required review-only isolation"):
+            ClaudeCodeClient(claude_bin="claude")._build_cmd()
+
+
 def test_gemini_effort_injects_advisory_prompt_budget() -> None:
     _mark_gemini_flags_supported(approval_mode=True, output_format=True)
     client = GeminiClient(gemini_bin="gemini", gemini_model="gemini-3.1-pro-preview", effort="max")
@@ -348,8 +379,8 @@ def test_gemini_new_version_uses_approval_mode_and_output_format() -> None:
     cmd = client._build_cmd()
 
     assert cmd[:3] == ["gemini", "--approval-mode", "plan"]
-    assert cmd[cmd.index("--extensions") + 1] == ""
-    assert cmd[cmd.index("--allowed-mcp-server-names") + 1] == ""
+    assert "--extensions" not in cmd
+    assert "--allowed-mcp-server-names" not in cmd
     assert ["--output-format", "text"] == cmd[
         cmd.index("--output-format") : cmd.index("--output-format") + 2
     ]
@@ -380,6 +411,19 @@ def test_gemini_mixed_version_uses_new_approval_but_no_output_format() -> None:
     assert "plan" in cmd
     assert "--output-format" not in cmd
     assert "--yolo" not in cmd
+
+
+def test_gemini_probe_requires_plan_choice_even_when_flag_exists() -> None:
+    client = GeminiClient(gemini_bin="gemini")
+    with (
+        patch(
+            "coarse.headless_clients._probe_cli_help",
+            return_value="--approval-mode [default|auto_edit|yolo] --output-format",
+        ),
+        patch("coarse.headless_clients._probe_cli_version", return_value="0.37.2"),
+    ):
+        with pytest.raises(RuntimeError, match="required review-only isolation"):
+            client._build_cmd()
 
 
 def test_clean_subprocess_env_strips_anthropic_api_key(monkeypatch) -> None:
@@ -487,7 +531,7 @@ def test_run_decodes_utf8_subprocess_output_without_crashing() -> None:
     assert not Path(kwargs["cwd"]).exists(), "ephemeral review workspace should be removed"
 
 
-def test_codex_run_binds_cli_to_ephemeral_read_only_workspace() -> None:
+def test_codex_run_binds_cli_to_ephemeral_permission_profile() -> None:
     _mark_codex_config_override_supported(True)
     client = CodexClient(codex_bin="codex")
     fake_proc = MagicMock(returncode=0, stdout="ok", stderr="")
@@ -497,7 +541,15 @@ def test_codex_run_binds_cli_to_ephemeral_read_only_workspace() -> None:
 
     cmd = mock_run.call_args.args[0]
     cwd = mock_run.call_args.kwargs["cwd"]
-    assert ["--sandbox", "read-only"] == cmd[cmd.index("--sandbox") : cmd.index("--sandbox") + 2]
+    assert "--sandbox" not in cmd
+    assert "--strict-config" in cmd
+    assert CODEX_REVIEW_PERMISSION_PROFILE in cmd
+    assert "':root'='deny'" in CODEX_REVIEW_PERMISSION_PROFILE
+    assert "':workspace_roots'={'.'='read'}" in CODEX_REVIEW_PERMISSION_PROFILE
+    assert "features.shell_tool=false" in cmd
+    assert "agents.enabled=false" in cmd
+    assert "web_search='disabled'" in cmd
+    assert "project_doc_max_bytes=0" in cmd
     assert ["-C", cwd, "-"] == cmd[-3:]
     assert "--ephemeral" in cmd
     assert "--ignore-user-config" in cmd
@@ -511,10 +563,10 @@ def test_gemini_workspace_copies_only_subscription_auth(tmp_path, monkeypatch) -
     (source_config / "oauth_creds.json").write_text('{"refresh_token":"secret"}')
     (source_config / "google_accounts.json").write_text('{"active":"person@example.test"}')
     (source_config / "settings.json").write_text(
-        '{"security":{"auth":{"selectedType":"oauth-personal"}},'
+        '{"security":{"auth":{"selectedType":"gemini-api-key"}},'
         '"mcpServers":{"ambient":{"command":"danger"}}}'
     )
-    monkeypatch.setattr("coarse.headless_clients.Path.home", lambda: source_home)
+    monkeypatch.setattr("coarse.headless_isolation.Path.home", lambda: source_home)
     client = GeminiClient(gemini_bin="gemini")
 
     workspace = tmp_path / "workspace"
@@ -524,8 +576,16 @@ def test_gemini_workspace_copies_only_subscription_auth(tmp_path, monkeypatch) -
 
     assert json.loads((isolated / "oauth_creds.json").read_text())["refresh_token"] == "secret"
     settings = json.loads((isolated / "settings.json").read_text())
-    assert settings == {"security": {"auth": {"selectedType": "oauth-personal"}}}
-    assert "mcpServers" not in settings
+    assert settings == GEMINI_REVIEW_SETTINGS
+    assert settings["security"]["auth"]["selectedType"] == "oauth-personal"
+    assert settings["tools"]["core"] == []
+    assert settings["admin"]["mcp"]["enabled"] is False
+    assert settings["experimental"]["enableAgents"] is False
+
+    # Retry preparation is idempotent and keeps the same narrow profile.
+    retry_env = client._workspace_env(str(workspace))
+    assert retry_env["GEMINI_CLI_HOME"] == env["GEMINI_CLI_HOME"]
+    assert json.loads((isolated / "settings.json").read_text()) == GEMINI_REVIEW_SETTINGS
 
 
 def test_clean_subprocess_env_forces_utf8_locale_on_unix(monkeypatch) -> None:

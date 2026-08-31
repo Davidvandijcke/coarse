@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Subscription review subprocesses now run in a review-only profile.** Claude, Codex, and Gemini execute from a fresh ephemeral directory with ambient secret-bearing environment variables removed. Claude disables tools, skills, MCP configuration, hooks/customizations, and session persistence; Codex ignores user config/rules and uses a custom permission profile that exposes only the ephemeral workspace while disabling shell, web, agents, MCP, memories, and network access; Gemini uses plan mode with an isolated home, an empty built-in-tool allowlist, disabled extensions/MCP/skills/subagents, and temporary copies of subscription OAuth state. Unsupported host versions fail closed with upgrade guidance, and opt-in installed-CLI smoke tests cover the Codex sibling-read boundary and Gemini's real argument/settings parser.
+
 ## v1.9.2 — 2026-08-27
 
 ### Added
@@ -85,8 +89,6 @@
 - **Model picker: Fable 5 greyed out as temporarily unavailable; the Fusion chip now reads "Fusion (OpenRouter)".** Fable 5 (`anthropic/claude-fable-5`) is disabled — greyed, non-selectable, with a "Currently unavailable" tooltip — until it's back; the pre-selected default (Opus 4.8) is unchanged. The Fusion chip gained a smaller "(OpenRouter)" provider tag so it's as self-explanatory as the recognizable model names next to it. `web/src/components/ModelPicker.tsx` only — web-only, no PyPI release.
 
 ### Fixed
-
-- **Subscription review subprocesses now run in a review-only profile.** Claude, Codex, and Gemini execute from a fresh ephemeral directory with ambient secret-bearing environment variables removed. Claude disables tools, skills, MCP configuration, hooks/customizations, and session persistence; Codex ignores user config/rules, clears MCP servers, uses an ephemeral read-only sandbox, and never requests approval; Gemini requires plan-mode support, disables extensions/MCP servers, and receives only temporary copies of subscription OAuth state instead of ambient user settings. Older Gemini versions now fail closed with upgrade guidance instead of falling back to unrestricted `--yolo` execution. Focused fake-CLI tests cover command construction, environment filtering, workspace isolation, and the unsupported-version failure.
 
 - **Cost estimates for dynamic-priced models (OpenRouter `-1`) no longer go negative or to $0.** OpenRouter returns `-1` for models whose per-request cost depends on which models they fan out to (Fusion, but also `openrouter/auto`, `pareto-code`, `bodybuilder`, all selectable from the picker search). The web estimator did `parseFloat("-1")` and produced a **deeply negative** dollar total (e.g. `$-743986` for `openrouter/auto`); the price chip showed `$-1000000/M`. Now `estimateCost.fetchPricingMap` handles any negative rate generally: a model with **known** representative rates (Fusion) is substituted; any **other** `-1` model is omitted from the pricing map so `getModelPricing` returns `null` and the UI shows "cost estimate unavailable for this model" instead of a negative figure. Fusion's representative rates (input ~$5/M, output ~$25/M, measured from real calls on 2026-06-17) are registered in `llm._CUSTOM_MODEL_INFO` (under both the canonical and doubled routing ids) and shared with the web estimator via a `dynamicPricingOverrides` block in `pipeline_spec.export_web_spec()` → `web/src/data/pipelineSpec.json`, so the two estimators can't drift (enforced by the TS↔Python parity test, now covering Fusion). A medium paper estimates ~$7 on Fusion. Price-chip formatting moved to a shared, unit-tested `formatPromptPrice` helper. (Known limitation: the Python CLI gate still estimates $0 for an *unregistered* dynamic model passed via `--model`, the same as any unknown model — pre-existing, not changed here.)
 

@@ -27,19 +27,34 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 
+from coarse.headless_isolation import (
+    CLAUDE_REQUIRED_ISOLATION_FLAGS,
+    CODEX_MIN_ISOLATION_VERSION,
+    CODEX_REQUIRED_ISOLATION_FLAGS,
+    CODEX_REVIEW_CONFIG_OVERRIDES,
+    GEMINI_MIN_ISOLATION_VERSION,
+    SUBSCRIPTION_BILLING_KEYS,
+    clean_subprocess_env,
+    parse_cli_version,
+    prepare_gemini_workspace_env,
+    probe_cli_version,
+)
 from coarse.headless_prompt import _messages_to_prompt
 from coarse.models import CODEX_MAX_EFFORT_BY_MODEL_PREFIX, HEADLESS_DEFAULT_MODELS
 
 logger = logging.getLogger(__name__)
+
+# Backward-compatible private export used by the existing drift guard.
+_SUBSCRIPTION_BILLING_KEYS = SUBSCRIPTION_BILLING_KEYS
+_clean_subprocess_env = clean_subprocess_env
+_probe_cli_version = probe_cli_version
 
 _CTRL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _JSON_ESCAPE_CHARS = frozenset('"\\/bfnrtu')
@@ -286,108 +301,6 @@ def _parse_concurrency_env() -> int:
         )
         return _CONCURRENCY_DEFAULT
     return n
-
-
-# Env vars each host CLI sets when spawning subprocesses. Stripping them
-# before spawning a sibling/child CLI keeps nested sessions from seeing
-# shared state (auth, session IDs, ports) belonging to the outer host.
-_HOST_ENV_VARS = (
-    # Claude Code
-    "CLAUDECODE",
-    "CLAUDE_CODE_ENTRYPOINT",
-    "CLAUDE_CODE_EXECPATH",
-    "CLAUDE_CODE_SSE_PORT",
-    "CLAUDE_CODE_SESSION_ID",
-    # Codex CLI
-    "CODEX_SESSION_ID",
-    "CODEX_INTERNAL",
-    # Gemini CLI
-    "GEMINI_SESSION_ID",
-    "GEMINI_CLI_INTERNAL",
-)
-
-# Provider API keys that redirect a host CLI from subscription billing
-# to pay-per-token API billing. The subscription-handoff flow exists
-# SPECIFICALLY so users can run reviews on their Claude Code / Codex
-# / Gemini CLI subscription — if any of these vars is set in the
-# launching shell, the CLI's documented behavior is to bill the key
-# holder instead, which silently charges the user's API account for
-# every call in the pipeline. We strip them inside the subprocess env
-# ONLY (the parent shell is unchanged) so the host CLI falls back to
-# its subscription OAuth credential. The parent Python process still
-# has `OPENROUTER_API_KEY` available via `os.environ` for its own
-# OpenRouter-backed extraction and literature-search paths, which
-# aren't part of the subprocess env.
-#
-# See "Claude Code → Authentication" docs: "If ANTHROPIC_API_KEY is
-# set, Claude Code uses it instead of your subscription."
-_SUBSCRIPTION_BILLING_KEYS = (
-    # Claude Code → Anthropic subscription
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    # Codex CLI → ChatGPT / OpenAI subscription
-    "OPENAI_API_KEY",
-    # Gemini CLI → Google AI subscription
-    "GOOGLE_API_KEY",
-    "GEMINI_API_KEY",
-)
-
-_SECRET_ENV_MARKERS = (
-    "API_KEY",
-    "TOKEN",
-    "SECRET",
-    "PASSWORD",
-    "CREDENTIAL",
-    "PRIVATE_KEY",
-    "ACCESS_KEY",
-    "DATABASE_URL",
-    "CONNECTION_STRING",
-)
-
-
-def _clean_subprocess_env() -> dict[str, str]:
-    """Return a copy of os.environ with host-CLI session markers AND
-    provider API keys and unrelated secret-bearing variables stripped.
-
-    Two classes of variable get removed:
-
-    1. ``_HOST_ENV_VARS`` — session/entrypoint markers Claude Code,
-       Codex, and Gemini set for their own internal use. Stripping
-       keeps nested sessions from inheriting shared state.
-    2. ``_SUBSCRIPTION_BILLING_KEYS`` — provider API keys that would
-       redirect the host CLI from subscription billing to API-key
-       billing. Critical for the subscription-handoff flow: if the
-       launching shell has ``ANTHROPIC_API_KEY`` set, Claude Code
-       bills the API key for every call in the pipeline instead of
-       the user's Claude Code subscription. Stripping inside the
-       subprocess env forces OAuth/subscription auth. Parent shell
-       is unchanged, and ``OPENROUTER_API_KEY`` (used by the parent
-       Python process for extraction + literature search) is
-       is stripped from the child along with other unrelated secrets.
-    """
-    env = dict(os.environ)
-    for var in _HOST_ENV_VARS:
-        env.pop(var, None)
-    for var in _SUBSCRIPTION_BILLING_KEYS:
-        env.pop(var, None)
-    for var in tuple(env):
-        upper = var.upper()
-        if any(marker in upper for marker in _SECRET_ENV_MARKERS):
-            env.pop(var, None)
-    # Force UTF-8 everywhere in the child CLI subprocess. Node.js-based
-    # CLIs (claude, codex, gemini) honor `LANG` / `LC_ALL` for stdout
-    # encoding; without these set, a user with a cp1252 / ISO-8859-1
-    # system locale can get garbled bytes in the subprocess stdout
-    # that then crash our `text=True` decode. Setting `C.UTF-8` is a
-    # portable standard on modern glibc and musl; on macOS we fall
-    # back to `en_US.UTF-8` because `C.UTF-8` isn't shipped there.
-    # On Windows these variables are no-ops — Node picks up the
-    # console codepage via `chcp` — so this is a Unix-only override.
-    if os.name != "nt":
-        _default_utf8 = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
-        env["LANG"] = env.get("LANG") or _default_utf8
-        env["LC_ALL"] = env.get("LC_ALL") or _default_utf8
-    return env
 
 
 def _extract_json(text: str) -> str:
@@ -792,6 +705,7 @@ class ClaudeCodeClient(_HeadlessCLIClient):
     #: ``reset_headless_probe_cache`` fixture in conftest.
     _effort_flag_probed: bool = False
     _effort_flag_supported: bool = False
+    _isolation_flags_supported: bool = False
 
     def __init__(
         self,
@@ -838,6 +752,9 @@ class ClaudeCodeClient(_HeadlessCLIClient):
             return
         help_text = _probe_cli_help(self._claude_bin, "-p")
         cls._effort_flag_supported = "--effort" in help_text
+        cls._isolation_flags_supported = all(
+            flag in help_text for flag in CLAUDE_REQUIRED_ISOLATION_FLAGS
+        )
         cls._effort_flag_probed = True
         if not cls._effort_flag_supported:
             logger.warning(
@@ -853,6 +770,11 @@ class ClaudeCodeClient(_HeadlessCLIClient):
         # installed version supports --effort; otherwise drop the flag and
         # let _prepare_prompt inject the guidance as text.
         self._ensure_effort_probed()
+        if not type(self)._isolation_flags_supported:
+            raise RuntimeError(
+                "Claude Code cannot provide the required review-only isolation. "
+                "Upgrade with: npm install -g @anthropic-ai/claude-code@latest"
+            )
         cmd = [
             self._claude_bin,
             "-p",
@@ -890,11 +812,9 @@ class CodexClient(_HeadlessCLIClient):
     We pass it via ``-c model_reasoning_effort=<level>`` per call so the choice is
     ephemeral and doesn't mutate the user's ``~/.codex/config.toml``.
 
-    The ``-c KEY=VALUE`` flag itself is version-gated — older Codex
-    builds (pre-``exec`` subcommand overhaul) didn't ship it. We
-    probe ``codex exec --help`` once per class and fall back to
-    text-level effort injection if ``-c`` isn't mentioned. Symmetric
-    with the ``ClaudeCodeClient`` pattern.
+    Review execution requires permission profiles and the current tool-disable
+    controls. Older builds fail closed with an upgrade remedy rather than
+    silently reverting to the legacy full-disk-readable sandbox.
     """
 
     display_name = "codex exec"
@@ -943,39 +863,44 @@ class CodexClient(_HeadlessCLIClient):
         self._model_fallback_attempted = True
 
     def _ensure_config_override_probed(self) -> None:
-        """Probe whether ``codex exec --help`` mentions ``-c`` config
-        override support, caching the result on the class."""
+        """Probe the minimum version and flags needed for review isolation."""
         cls = type(self)
         if cls._config_override_probed:
             return
         help_text = _probe_cli_help(self._codex_bin, "exec")
-        # Look for any of the canonical forms Codex uses to document the
-        # config override flag across versions. The probe is generous
-        # because different Codex releases format --help differently;
-        # we'd rather match too loosely and occasionally send -c to a
-        # version that ignores unknown keys than miss a version that
-        # does support it.
-        cls._config_override_supported = any(
+        config_override_supported = any(
             marker in help_text
             for marker in (
                 "-c <KEY=VALUE>",
                 "-c KEY=VALUE",
                 "-c key=value",
                 "--config <KEY=VALUE>",
+                "--config <key=value>",
                 "--config KEY=VALUE",
             )
+        )
+        installed_version = parse_cli_version(_probe_cli_version(self._codex_bin))
+        cls._config_override_supported = (
+            config_override_supported
+            and installed_version is not None
+            and installed_version >= CODEX_MIN_ISOLATION_VERSION
+            and all(flag in help_text for flag in CODEX_REQUIRED_ISOLATION_FLAGS)
         )
         cls._config_override_probed = True
         if not cls._config_override_supported:
             logger.warning(
-                "Codex on this machine does not expose `-c KEY=VALUE` "
-                "config override (old version). Falling back to text-"
-                "level effort injection. Upgrade Codex for native "
-                "reasoning-effort control: npm install -g @openai/codex@latest"
+                "Codex cannot provide the required review-only permission profile. "
+                "Upgrade Codex: npm install -g @openai/codex@latest"
             )
 
     def _build_cmd(self) -> list[str]:
         self._ensure_config_override_probed()
+        if not type(self)._config_override_supported:
+            minimum = ".".join(str(part) for part in CODEX_MIN_ISOLATION_VERSION)
+            raise RuntimeError(
+                "Codex cannot provide the required review-only isolation. "
+                f"Upgrade to Codex {minimum} or newer."
+            )
         # --skip-git-repo-check: `codex exec` refuses to run when its CWD isn't
         # a trusted git repo ("Not inside a trusted directory"). The subprocess
         # coarse spawns runs from wherever the user invoked coarse-review, which
@@ -990,29 +915,25 @@ class CodexClient(_HeadlessCLIClient):
             "--ephemeral",
             "--ignore-user-config",
             "--ignore-rules",
-            "--sandbox",
-            "read-only",
-            "-c",
-            "approval_policy='never'",
-            "-c",
-            "mcp_servers={}",
+            "--strict-config",
         ]
+        for override in CODEX_REVIEW_CONFIG_OVERRIDES:
+            cmd += ["-c", override]
         if self._codex_model:
             cmd += ["-m", self._codex_model]
-        if type(self)._config_override_supported:
-            mapped = self._effort
-            if mapped == "max":
-                model = (self._codex_model or HEADLESS_DEFAULT_MODELS["codex"]).lower()
-                model = model.removeprefix("openai/")
-                mapped = next(
-                    (
-                        level
-                        for prefix, level in CODEX_MAX_EFFORT_BY_MODEL_PREFIX
-                        if model.startswith(prefix)
-                    ),
-                    "high",
-                )
-            cmd += ["-c", f"model_reasoning_effort={mapped!r}"]
+        mapped = self._effort
+        if mapped == "max":
+            model = (self._codex_model or HEADLESS_DEFAULT_MODELS["codex"]).lower()
+            model = model.removeprefix("openai/")
+            mapped = next(
+                (
+                    level
+                    for prefix, level in CODEX_MAX_EFFORT_BY_MODEL_PREFIX
+                    if model.startswith(prefix)
+                ),
+                "high",
+            )
+        cmd += ["-c", f"model_reasoning_effort={mapped!r}"]
         # Read prompt from stdin by passing '-' as the positional arg.
         cmd.append("-")
         return cmd
@@ -1022,9 +943,7 @@ class CodexClient(_HeadlessCLIClient):
 
     def _prepare_prompt(self, prompt: str) -> str:
         self._ensure_config_override_probed()
-        if type(self)._config_override_supported:
-            return prompt
-        return _effort_text_prefix(self._effort) + prompt
+        return prompt
 
 
 class GeminiClient(_HeadlessCLIClient):
@@ -1034,7 +953,7 @@ class GeminiClient(_HeadlessCLIClient):
     honor coarse's low/medium/high/max selector by prepending an explicit
     effort instruction with increasing advisory thinking budgets.
 
-    Two flags on Gemini CLI are version-gated:
+    Two capabilities on Gemini CLI are version-gated:
 
     1. ``--approval-mode plan`` is mandatory for the review-only profile.
        Older versions fail closed instead of falling back to unrestricted
@@ -1043,9 +962,8 @@ class GeminiClient(_HeadlessCLIClient):
        output support. Older versions don't have it and default to
        text output, so dropping the flag is a safe fallback.
 
-    The class probes ``gemini --help`` once per process and picks the
-    right flag set. Effort-level injection is already text-only and
-    needs no probing.
+    The class probes ``gemini --help`` and ``gemini --version`` once per
+    process. Effort-level injection is already text-only and needs no probing.
     """
 
     display_name = "gemini -p"
@@ -1109,7 +1027,13 @@ class GeminiClient(_HeadlessCLIClient):
         if cls._flag_probed:
             return
         help_text = _probe_cli_help(self._gemini_bin)
-        cls._approval_mode_flag_supported = "--approval-mode" in help_text
+        installed_version = parse_cli_version(_probe_cli_version(self._gemini_bin))
+        cls._approval_mode_flag_supported = (
+            "--approval-mode" in help_text
+            and "plan" in help_text
+            and installed_version is not None
+            and installed_version >= GEMINI_MIN_ISOLATION_VERSION
+        )
         cls._output_format_flag_supported = "--output-format" in help_text
         cls._flag_probed = True
         if not cls._approval_mode_flag_supported:
@@ -1131,7 +1055,6 @@ class GeminiClient(_HeadlessCLIClient):
                 "Gemini CLI cannot provide the required review-only isolation. "
                 "Upgrade to a version that supports --approval-mode plan."
             )
-        cmd += ["--extensions", "", "--allowed-mcp-server-names", ""]
         if cls._output_format_flag_supported:
             cmd += ["--output-format", "text"]
         if self._gemini_model:
@@ -1139,35 +1062,7 @@ class GeminiClient(_HeadlessCLIClient):
         return cmd
 
     def _workspace_env(self, workspace: str) -> dict[str, str]:
-        env = _clean_subprocess_env()
-        isolated_home = Path(workspace) / "gemini-home"
-        isolated_config = isolated_home / ".gemini"
-        isolated_config.mkdir(parents=True)
-
-        source = Path.home() / ".gemini"
-        for name in ("oauth_creds.json", "google_accounts.json"):
-            source_file = source / name
-            if source_file.is_file():
-                destination = isolated_config / name
-                shutil.copyfile(source_file, destination)
-                destination.chmod(0o600)
-
-        selected_type = "oauth-personal"
-        settings_file = source / "settings.json"
-        try:
-            settings = json.loads(settings_file.read_text(encoding="utf-8"))
-            selected_type = (
-                settings.get("security", {}).get("auth", {}).get("selectedType", selected_type)
-            )
-        except (OSError, json.JSONDecodeError, AttributeError):
-            pass
-        (isolated_config / "settings.json").write_text(
-            json.dumps({"security": {"auth": {"selectedType": selected_type}}}),
-            encoding="utf-8",
-        )
-        env["GEMINI_CLI_HOME"] = str(isolated_home)
-        env["GEMINI_CLI_TRUST_WORKSPACE"] = "true"
-        return env
+        return prepare_gemini_workspace_env(workspace)
 
     def _prepare_prompt(self, prompt: str) -> str:
         budget = self._EFFORT_BUDGET.get(self._effort, self._EFFORT_BUDGET["high"])
