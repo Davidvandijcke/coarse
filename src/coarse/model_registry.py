@@ -18,6 +18,7 @@ from coarse.models import (
     GEMINI_3_6_FLASH_MODEL,
     GPT_5_6_LUNA_MODEL,
     GPT_5_6_SOL_MODEL,
+    GPT_5_6_SOL_PRO_MODEL,
     GPT_5_6_TERRA_MODEL,
     GROK_4_5_MODEL,
     KIMI_K3_MODEL,
@@ -54,6 +55,17 @@ def register_model_costs() -> None:
             "output_cost_per_token": 50e-6,
         },
         GPT_5_6_SOL_MODEL: {
+            "max_tokens": 1_050_000,
+            "max_output_tokens": 128_000,
+            "input_cost_per_token": 5e-6,
+            "output_cost_per_token": 30e-6,
+        },
+        # OpenRouter's pro-reasoning variant of Sol — same per-token pricing
+        # and limits as base Sol (verified 2026-08-30); pro mode just spends
+        # more reasoning tokens. Registered under the variant ID so the
+        # pre-flight cost gate prices it before llm.py aliases the wire
+        # request to the base model (see DIRECT_RESPONSES_MODEL_ALIASES).
+        GPT_5_6_SOL_PRO_MODEL: {
             "max_tokens": 1_050_000,
             "max_output_tokens": 128_000,
             "input_cost_per_token": 5e-6,
