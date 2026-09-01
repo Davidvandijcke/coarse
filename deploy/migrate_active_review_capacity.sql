@@ -8,18 +8,24 @@
 create index if not exists idx_reviews_status_created_at
   on reviews (status, created_at);
 
-create or replace function count_active_submitted_reviews(since timestamptz)
+create or replace function public.count_active_submitted_reviews(since timestamptz)
 returns bigint
 language sql
 security definer
+set search_path = ''
 as $$
   select count(*)
-  from reviews r
+  from public.reviews r
   where r.created_at >= since
     and r.status in ('queued', 'running', 'extracting', 'extracted')
     and exists (
       select 1
-      from review_emails e
+      from public.review_emails e
       where e.review_id = r.id
     );
 $$;
+
+revoke execute on function public.count_active_submitted_reviews(timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.count_active_submitted_reviews(timestamptz)
+  to service_role;
