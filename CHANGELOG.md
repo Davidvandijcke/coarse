@@ -6,6 +6,10 @@
 
 - **`--model openai/gpt-5.6-sol-pro` now works with a direct `OPENAI_API_KEY`.** The `-pro` suffix is an OpenRouter-only variant ID that OpenAI's own API rejects with 404. On the direct OpenAI route, the client now translates it to `gpt-5.6-sol` and uses the stateless Responses API (`store: false`) with `reasoning: {"mode": "pro", "effort": "medium"}`; callers can still override effort independently. The OpenRouter route keeps sending the variant ID through Chat Completions unchanged. The variant's pricing and 272k long-context tier are registered (identical to base Sol per OpenRouter), so the pre-flight cost gate no longer quotes $0 for it.
 
+### Fixed
+
+- **Subscription review subprocesses now run in a review-only profile.** Claude, Codex, and Gemini execute from a fresh ephemeral directory with ambient secret-bearing environment variables and executable/provider-routing overrides removed. Claude preserves its supported subscription OAuth variables only in Claude children while disabling tools, skills, MCP configuration, hooks/customizations, and session persistence; Codex ignores user config/rules and uses a custom permission profile that exposes only the ephemeral workspace while disabling shell, web, agents, MCP, memories, and network access; Gemini uses plan mode with an isolated home, controlled-empty system settings layers, an empty built-in-tool allowlist, disabled extensions/MCP/skills/subagents, and temporary copies of subscription OAuth state. Unsupported host versions fail closed with upgrade guidance, and opt-in installed-CLI smoke tests cover the Codex sibling-read boundary and Gemini's real argument/settings parser.
+
 ## v1.9.2 — 2026-08-27
 
 ### Added
