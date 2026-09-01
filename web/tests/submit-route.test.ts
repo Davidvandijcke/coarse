@@ -78,7 +78,11 @@ import { POST } from "@/app/api/submit/route";
 
 const id = "00000000-0000-4000-8000-000000000001";
 
-function requestWith(deepLiteratureSearch: unknown, includeField = true): NextRequest {
+function requestWith(
+  deepLiteratureSearch: unknown,
+  includeField = true,
+  overrides: Record<string, unknown> = {},
+): NextRequest {
   const body: Record<string, unknown> = {
     id,
     email: "reader@example.com",
@@ -86,6 +90,7 @@ function requestWith(deepLiteratureSearch: unknown, includeField = true): NextRe
     model: "anthropic/claude-opus-5",
     storage_path: `${id}.pdf`,
     handoff_secret: "handoff-secret",
+    ...overrides,
   };
   if (includeField) body.deep_literature_search = deepLiteratureSearch;
   return new NextRequest("https://coarse.test/api/submit", {
@@ -125,6 +130,20 @@ describe("POST /api/submit deep_literature_search", () => {
     await expect(response.json()).resolves.toEqual({
       error: "deep_literature_search must be a boolean",
     });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized adversarial email before regex validation", async () => {
+    // This failing shape forces quadratic backtracking in the email regex when
+    // the length guard is evaluated afterward. The distinct error response
+    // pins both the 254-byte bound and its security-critical ordering.
+    const adversarialEmail = "!@!." + "!.".repeat(25_000) + "@";
+    const response = await POST(
+      requestWith(false, true, { email: adversarialEmail }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Email too long" });
     expect(fetch).not.toHaveBeenCalled();
   });
 });

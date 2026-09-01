@@ -96,21 +96,30 @@ alter table handoff_tokens enable row level security;
 -- Step 3: install the renamed cleanup function. Same body as the
 -- original cleanup_mcp_handoff_tokens — expiry-or-consumed sweep with
 -- a 5-minute grace window for retryable finalize callbacks.
-create or replace function cleanup_handoff_tokens()
+create or replace function public.cleanup_handoff_tokens()
 returns int
 language plpgsql
 security definer
+set search_path = ''
 as $$
 declare
   deleted_count int;
 begin
-  delete from handoff_tokens
-  where expires_at < now()
-     or (consumed_at is not null and consumed_at < now() - interval '5 minutes');
+  delete from public.handoff_tokens
+  where expires_at < pg_catalog.now()
+     or (
+       consumed_at is not null
+       and consumed_at < pg_catalog.now() - interval '5 minutes'
+     );
   get diagnostics deleted_count = row_count;
   return deleted_count;
 end;
 $$;
+
+revoke execute on function public.cleanup_handoff_tokens()
+  from public, anon, authenticated;
+grant execute on function public.cleanup_handoff_tokens()
+  to service_role;
 
 drop function if exists cleanup_mcp_handoff_tokens();
 

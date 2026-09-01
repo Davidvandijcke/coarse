@@ -89,6 +89,16 @@ def test_node20_force_flag_is_retired() -> None:
     assert not stale, "remove the obsolete Node 20 force flag from: " + ", ".join(stale)
 
 
+def test_python_dependency_audit_is_lock_aware_and_blocking() -> None:
+    """The security job must audit the project lock, not the runner environment."""
+    source = (WORKFLOW_DIR / "security.yml").read_text()
+
+    assert "continue-on-error: true" not in source
+    assert "uv export --quiet --frozen --all-extras --no-dev --no-emit-project" in source
+    assert "uvx pip-audit --strict --no-deps --disable-pip" in source
+    assert '--requirement "$RUNNER_TEMP/coarse-audit-requirements.txt"' in source
+
+
 def test_action_parser_covers_yaml_flow_mappings() -> None:
     """A flow-style step must not evade immutable-ref enforcement."""
     assert _actions_in("- { name: Unsafe, uses: attacker/action@main }") == ["attacker/action@main"]

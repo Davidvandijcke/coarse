@@ -189,7 +189,9 @@ image = (
     .apt_install("libgl1", "libglib2.0-0")
     .pip_install(
         # Install deps only (coarse source is baked into image below)
-        "litellm>=1.60",
+        "litellm>=1.84.0",
+        "aiohttp>=3.14.3",
+        "click>=8.3.3",
         "instructor>=1.15.1",
         "pydantic>=2.0",
         "typer>=0.12",
@@ -205,8 +207,13 @@ image = (
         "mammoth>=1.6",
         "markdownify>=0.12",
         "ebooklib>=0.18",
-        "docling>=2.86.0",
-        "transformers>=5.4,<6",
+        "docling>=2.94.0",
+        "docling-core>=2.74.1",
+        "lxml>=6.1.0",
+        "pillow>=12.3.0",
+        "soupsieve>=2.8.4",
+        "transformers>=5.10,<6",
+        "urllib3>=2.7.0",
     )
     .add_local_dir(_repo_root / "src" / "coarse", remote_path="/root/coarse")
 )
