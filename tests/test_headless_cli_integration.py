@@ -107,3 +107,40 @@ def test_gemini_parser_accepts_tool_free_isolated_profile(tmp_path, monkeypatch)
 
     assert result.returncode == 0, result.stderr
     assert "Invalid policy rule" not in result.stderr
+
+
+def test_gemini_isolated_profile_ignores_ambient_system_mcp(tmp_path, monkeypatch) -> None:
+    gemini = _require_cli("gemini")
+    source_home = tmp_path / "source-home"
+    workspace = tmp_path / "workspace"
+    source_home.mkdir()
+    workspace.mkdir()
+    monkeypatch.setattr("coarse.headless_isolation.Path.home", lambda: source_home)
+
+    ambient_settings = tmp_path / "ambient-system-settings.json"
+    ambient_settings.write_text(
+        json.dumps(
+            {
+                "admin": {"mcp": {"enabled": True}},
+                "mcpServers": {"ambient-proof": {"command": "/usr/bin/false"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GEMINI_CLI_SYSTEM_SETTINGS_PATH", str(ambient_settings))
+    env = prepare_gemini_workspace_env(str(workspace))
+
+    result = subprocess.run(
+        [gemini, "--debug", "mcp", "list"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        check=False,
+    )
+
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert result.returncode == 0, combined
+    assert "ambient-proof" not in combined

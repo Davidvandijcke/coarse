@@ -43,6 +43,7 @@ from coarse.headless_isolation import (
     SUBSCRIPTION_BILLING_KEYS,
     clean_subprocess_env,
     parse_cli_version,
+    prepare_claude_subprocess_env,
     prepare_gemini_workspace_env,
     probe_cli_version,
 )
@@ -802,6 +803,9 @@ class ClaudeCodeClient(_HeadlessCLIClient):
         if type(self)._effort_flag_supported:
             return prompt
         return _effort_text_prefix(self._effort) + prompt
+
+    def _workspace_env(self, _workspace: str) -> dict[str, str]:
+        return prepare_claude_subprocess_env()
 
 
 class CodexClient(_HeadlessCLIClient):

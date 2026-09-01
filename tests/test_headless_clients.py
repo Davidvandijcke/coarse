@@ -483,6 +483,42 @@ def test_clean_subprocess_env_strips_unrelated_secrets(monkeypatch) -> None:
     assert env["ORDINARY_SETTING"] == "visible"
 
 
+def test_provider_environments_scope_claude_subscription_oauth(monkeypatch) -> None:
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription-access-token")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_REFRESH_TOKEN", "subscription-refresh-token")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_SCOPES", "user:inference")
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "unrelated-secret")
+
+    claude_env = ClaudeCodeClient(claude_bin="claude")._workspace_env("unused")
+    codex_env = CodexClient(codex_bin="codex")._workspace_env("unused")
+
+    assert claude_env["CLAUDE_CODE_OAUTH_TOKEN"] == "subscription-access-token"
+    assert claude_env["CLAUDE_CODE_OAUTH_REFRESH_TOKEN"] == "subscription-refresh-token"
+    assert claude_env["CLAUDE_CODE_OAUTH_SCOPES"] == "user:inference"
+    assert "SLACK_BOT_TOKEN" not in claude_env
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in codex_env
+    assert "CLAUDE_CODE_OAUTH_REFRESH_TOKEN" not in codex_env
+    assert "CLAUDE_CODE_OAUTH_SCOPES" not in codex_env
+
+
+def test_clean_subprocess_env_strips_execution_and_provider_overrides(monkeypatch) -> None:
+    overrides = {
+        "NODE_OPTIONS": "--require=/tmp/ambient-hook.js",
+        "CLAUDE_CODE_PROCESS_WRAPPER": "/tmp/ambient-wrapper",
+        "CLAUDE_CODE_USE_BEDROCK": "1",
+        "ANTHROPIC_BASE_URL": "https://ambient.invalid",
+        "OPENAI_BASE_URL": "https://ambient.invalid/v1",
+        "GOOGLE_GENAI_USE_VERTEXAI": "true",
+        "GEMINI_CLI_SYSTEM_SETTINGS_PATH": "/tmp/ambient-settings.json",
+    }
+    for name, value in overrides.items():
+        monkeypatch.setenv(name, value)
+
+    env = _clean_subprocess_env()
+
+    assert overrides.keys().isdisjoint(env)
+
+
 def test_subscription_billing_keys_list_includes_all_three_hosts() -> None:
     """Drift guard: adding a new host CLI should add the billing key
     to `_SUBSCRIPTION_BILLING_KEYS`. Pin the current set so a
@@ -567,6 +603,8 @@ def test_gemini_workspace_copies_only_subscription_auth(tmp_path, monkeypatch) -
         '"mcpServers":{"ambient":{"command":"danger"}}}'
     )
     monkeypatch.setattr("coarse.headless_isolation.Path.home", lambda: source_home)
+    monkeypatch.setenv("GEMINI_CLI_SYSTEM_SETTINGS_PATH", "/tmp/ambient-system.json")
+    monkeypatch.setenv("GEMINI_CLI_SYSTEM_DEFAULTS_PATH", "/tmp/ambient-defaults.json")
     client = GeminiClient(gemini_bin="gemini")
 
     workspace = tmp_path / "workspace"
@@ -581,6 +619,12 @@ def test_gemini_workspace_copies_only_subscription_auth(tmp_path, monkeypatch) -
     assert settings["tools"]["core"] == []
     assert settings["admin"]["mcp"]["enabled"] is False
     assert settings["experimental"]["enableAgents"] is False
+    system_settings = Path(env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"])
+    system_defaults = Path(env["GEMINI_CLI_SYSTEM_DEFAULTS_PATH"])
+    assert system_settings.parent == Path(env["GEMINI_CLI_HOME"])
+    assert system_defaults.parent == Path(env["GEMINI_CLI_HOME"])
+    assert json.loads(system_settings.read_text()) == {}
+    assert json.loads(system_defaults.read_text()) == {}
 
     # Retry preparation is idempotent and keeps the same narrow profile.
     retry_env = client._workspace_env(str(workspace))

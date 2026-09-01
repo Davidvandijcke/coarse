@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Collection
 from pathlib import Path
 
 # Host markers belong to the outer coding-agent session and must never flow
@@ -38,6 +39,41 @@ SUBSCRIPTION_BILLING_KEYS = (
     "GEMINI_API_KEY",
 )
 
+# Claude supports subscription OAuth through environment variables for CI and
+# other non-interactive environments.  These are related credentials, not
+# metered provider keys, but they must only be visible to the Claude child.
+CLAUDE_SUBSCRIPTION_AUTH_VARS = frozenset(
+    {
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+        "CLAUDE_CODE_OAUTH_SCOPES",
+    }
+)
+
+# Environment variables can alter the executable before the review profile is
+# parsed or reroute subscription traffic to a different provider/endpoint.
+# None is required for the intended local-subscription path.  Keep transport
+# variables such as HTTPS_PROXY and custom CA paths: those are often necessary
+# on managed networks and do not themselves expose agent tools.
+_EXECUTION_AND_PROVIDER_OVERRIDES = (
+    "NODE_OPTIONS",
+    "NODE_PATH",
+    "CLAUDE_CODE_PROCESS_WRAPPER",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_CUSTOM_HEADERS",
+    "OPENAI_BASE_URL",
+    "OPENAI_API_BASE",
+    "GOOGLE_GENAI_USE_VERTEXAI",
+    "GOOGLE_GENAI_USE_GCA",
+    "GEMINI_CLI_USE_COMPUTE_ADC",
+    "CLOUD_SHELL",
+    "GEMINI_CLI_SYSTEM_SETTINGS_PATH",
+    "GEMINI_CLI_SYSTEM_DEFAULTS_PATH",
+)
+
 _SECRET_ENV_MARKERS = (
     "API_KEY",
     "TOKEN",
@@ -51,20 +87,38 @@ _SECRET_ENV_MARKERS = (
 )
 
 
-def clean_subprocess_env() -> dict[str, str]:
-    """Return a UTF-8 child environment without ambient sessions or secrets."""
+def _clean_subprocess_env(*, allow_secret_vars: Collection[str] = ()) -> dict[str, str]:
+    """Build a UTF-8 child environment with an explicit related-secret allowlist."""
     env = dict(os.environ)
-    for var in (*_HOST_ENV_VARS, *SUBSCRIPTION_BILLING_KEYS):
+    allowed = frozenset(allow_secret_vars)
+    for var in (
+        *_HOST_ENV_VARS,
+        *SUBSCRIPTION_BILLING_KEYS,
+        *_EXECUTION_AND_PROVIDER_OVERRIDES,
+    ):
         env.pop(var, None)
+    for var in CLAUDE_SUBSCRIPTION_AUTH_VARS:
+        if var not in allowed:
+            env.pop(var, None)
     for var in tuple(env):
         upper = var.upper()
-        if any(marker in upper for marker in _SECRET_ENV_MARKERS):
+        if var not in allowed and any(marker in upper for marker in _SECRET_ENV_MARKERS):
             env.pop(var, None)
     if os.name != "nt":
         default_utf8 = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
         env["LANG"] = env.get("LANG") or default_utf8
         env["LC_ALL"] = env.get("LC_ALL") or default_utf8
     return env
+
+
+def clean_subprocess_env() -> dict[str, str]:
+    """Return a child environment without provider auth or ambient configuration."""
+    return _clean_subprocess_env()
+
+
+def prepare_claude_subprocess_env() -> dict[str, str]:
+    """Return a Claude-only environment preserving supported subscription OAuth."""
+    return _clean_subprocess_env(allow_secret_vars=CLAUDE_SUBSCRIPTION_AUTH_VARS)
 
 
 _VERSION_RE = re.compile(r"\b(\d+)\.(\d+)\.(\d+)\b")
@@ -196,5 +250,19 @@ def prepare_gemini_workspace_env(workspace: str) -> dict[str, str]:
     settings_file = isolated_config / "settings.json"
     settings_file.write_text(json.dumps(GEMINI_REVIEW_SETTINGS, sort_keys=True), encoding="utf-8")
     settings_file.chmod(0o600)
+
+    # Gemini loads machine-wide defaults and overrides outside GEMINI_CLI_HOME;
+    # system overrides have higher precedence than this isolated user profile
+    # and merge MCP definitions.  Point both layers at controlled empty files
+    # so ambient system configuration cannot re-enable tools or MCP servers.
+    for filename, env_var in (
+        ("system-defaults.json", "GEMINI_CLI_SYSTEM_DEFAULTS_PATH"),
+        ("system-settings.json", "GEMINI_CLI_SYSTEM_SETTINGS_PATH"),
+    ):
+        path = isolated_home / filename
+        path.write_text("{}", encoding="utf-8")
+        path.chmod(0o600)
+        env[env_var] = str(path)
+
     env["GEMINI_CLI_HOME"] = str(isolated_home)
     return env
