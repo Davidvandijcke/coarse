@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+## v1.9.3 — 2026-09-08
+
 ### Changed
 
+- Update compatible Next.js and xmldom patches to clear the release dependency audit.
 - Refresh website suggestions to GPT-6 Astra and Astra Pro, Claude Fable 5.1, Qwen 3.8 Max (0902), and Gemini 3.8 Flash. Register their token limits, pricing, and reasoning behavior; preserve existing package and headless defaults. All five pass bounded live OpenRouter metadata and structured-review canaries.
 
 ### Added
