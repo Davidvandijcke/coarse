@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Minimum fixed releases from the advisory set audited on 2026-09-01.
+# Minimum fixed releases from the advisory set re-audited on 2026-09-08.
 LOCK_FLOORS = {
     "aiohttp": "3.14.3",
     "click": "8.3.3",
@@ -102,3 +103,36 @@ def test_modal_image_carries_known_high_severity_floors() -> None:
     for requirement in MODAL_FLOORS:
         assert f'"{requirement}"' in source
 
+
+def test_web_dependencies_use_current_security_fixes() -> None:
+    package = json.loads((REPO_ROOT / "web" / "package.json").read_text(encoding="utf-8"))
+    assert package["overrides"]["next"]["sharp"] == "0.35.4"
+    assert package["devDependencies"]["vitest"] == "^4.1.11"
+
+
+def test_accelerate_advisory_waiver_is_narrow_and_unreachable() -> None:
+    """Track the sole no-fix waiver and fail if its assumptions drift."""
+    advisory = "CVE-2026-69112"
+    workflow = (REPO_ROOT / ".github" / "workflows" / "security.yml").read_text(
+        encoding="utf-8"
+    )
+    assert workflow.count(f"--ignore-vuln {advisory}") == 1
+
+    with (REPO_ROOT / "uv.lock").open("rb") as handle:
+        lock = tomllib.load(handle)
+    accelerate_versions = {
+        package["version"] for package in lock["package"] if package["name"] == "accelerate"
+    }
+    assert accelerate_versions == {"1.14.0"}, (
+        "Accelerate changed; reassess CVE-2026-69112 and remove the waiver "
+        "when a fixed release is available"
+    )
+
+    vulnerable_apis = ("load_checkpoint_in_model", "load_checkpoint_and_dispatch")
+    for root in (REPO_ROOT / "src" / "coarse", REPO_ROOT / "deploy", REPO_ROOT / "scripts"):
+        for path in root.rglob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            for api in vulnerable_apis:
+                assert api not in source, (
+                    f"{path.relative_to(REPO_ROOT)} reaches {advisory} via {api}"
+                )

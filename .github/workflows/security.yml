@@ -31,8 +31,13 @@ jobs:
         run: |
           uv export --quiet --frozen --all-extras --no-dev --no-emit-project \
             --output-file "$RUNNER_TEMP/coarse-audit-requirements.txt"
+          # CVE-2026-69112 has no fixed Accelerate release as of 2026-09-08.
+          # Coarse and its pinned Docling stack do not call the affected
+          # sharded-checkpoint loaders; tests pin this waiver and its reachability.
+          # Remove the waiver when upstream publishes a fix (tracked in #292).
           uvx pip-audit --strict --no-deps --disable-pip --desc=off \
             --progress-spinner=off \
+            --ignore-vuln CVE-2026-69112 \
             --requirement "$RUNNER_TEMP/coarse-audit-requirements.txt"
 
       - name: Set up Node

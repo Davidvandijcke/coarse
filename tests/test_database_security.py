@@ -93,4 +93,3 @@ def test_hardening_migration_runs_after_function_creators() -> None:
         "migrate_rename_handoff_tokens.sql",
     ):
         assert migrations.index(creator) < hardening
-
