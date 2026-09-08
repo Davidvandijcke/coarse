@@ -60,6 +60,7 @@ src/coarse/
 ├── extraction_openrouter.py # OpenRouter OCR/file-parser transport and response parsing
 ├── extraction_qa.py         # Post-extraction QA via vision LLM (Gemini Flash)
 ├── headless_clients.py      # Claude/Codex/Gemini CLI-backed LLMClient replacements
+├── headless_isolation.py    # Tool-free subprocess env, profiles, and auth isolation
 ├── headless_prompt.py       # Fail-closed text-only serializer for headless CLI prompts
 ├── headless_review.py       # Shared entrypoint for headless CLI review runs
 ├── structure.py             # PaperText → PaperStructure (heading parse + math detection + LLM metadata)
