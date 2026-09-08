@@ -109,6 +109,19 @@ def test_web_dependencies_use_current_security_fixes() -> None:
     assert package["overrides"]["next"]["sharp"] == "0.35.4"
     assert package["devDependencies"]["vitest"] == "^4.1.11"
 
+    lock = json.loads((REPO_ROOT / "web" / "package-lock.json").read_text(encoding="utf-8"))
+    packages = lock["packages"]
+    assert packages["node_modules/sharp"]["version"] == "0.35.4"
+    assert packages["node_modules/vitest"]["version"] == "4.1.11"
+    for linux_optional in (
+        "node_modules/@img/sharp-linux-x64",
+        "node_modules/@next/swc-linux-x64-gnu",
+        "node_modules/@rolldown/binding-linux-x64-gnu",
+        "node_modules/@tailwindcss/oxide-linux-x64-gnu",
+        "node_modules/lightningcss-linux-x64-gnu",
+    ):
+        assert linux_optional in packages, f"web lock omits CI runtime package {linux_optional}"
+
 
 def test_accelerate_advisory_waiver_is_narrow_and_unreachable() -> None:
     """Track the sole no-fix waiver and fail if its assumptions drift."""
