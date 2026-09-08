@@ -416,12 +416,48 @@ def test_temperature_unsupported_prefixes_are_lowercase():
 def test_direct_responses_aliases_map_bare_variant_ids_to_canonical_targets():
     """The direct Responses alias in llm.py depends on three invariants:
     keys are bare (un-proxied) IDs so an openrouter/-prefixed model can never
-    match, and each target is a canonical featured ID whose pricing/limits
+    match, and each target is a canonical registered ID whose pricing/limits
     are registered, with an explicit reasoning mode."""
     for variant, (target, request_body) in DIRECT_RESPONSES_MODEL_ALIASES.items():
         assert not variant.startswith("openrouter/"), variant
         assert not target.startswith("openrouter/"), target
         assert variant != target, variant
-        assert target in WEB_FEATURED_MODEL_IDS, target
+        from coarse.llm import model_cost_per_token
+
+        assert all(rate > 0 for rate in model_cost_per_token(target)), target
         assert request_body.get("reasoning", {}).get("mode"), variant
         assert request_body.get("store") is False, variant
+
+
+def test_latest_featured_models_have_reasoning_and_temperature_metadata():
+    from coarse.models import (
+        CLAUDE_FABLE_5_1_MODEL,
+        GEMINI_3_8_FLASH_MODEL,
+        GPT_6_ASTRA_MODEL,
+        GPT_6_ASTRA_PRO_MODEL,
+        QWEN_3_8_MAX_MODEL,
+    )
+
+    for model in (
+        GPT_6_ASTRA_MODEL,
+        GPT_6_ASTRA_PRO_MODEL,
+        CLAUDE_FABLE_5_1_MODEL,
+        GEMINI_3_8_FLASH_MODEL,
+        QWEN_3_8_MAX_MODEL,
+    ):
+        assert is_reasoning_model("openrouter/" + model)
+    for model in (GPT_6_ASTRA_MODEL, GPT_6_ASTRA_PRO_MODEL, CLAUDE_FABLE_5_1_MODEL):
+        assert not supports_temperature("openrouter/" + model)
+
+
+def test_astra_cost_registry_preserves_long_context_surcharge():
+    from coarse.llm import model_cost_per_token
+    from coarse.models import GPT_6_ASTRA_MODEL, GPT_6_ASTRA_PRO_MODEL, LONG_CONTEXT_PRICING_TIERS
+
+    for model in (GPT_6_ASTRA_MODEL, GPT_6_ASTRA_PRO_MODEL):
+        assert model_cost_per_token("openrouter/" + model) == (10e-6, 50e-6)
+        assert LONG_CONTEXT_PRICING_TIERS[model] == {
+            "min_prompt_tokens": 272_000,
+            "input_cost_per_token": 20e-6,
+            "output_cost_per_token": 75e-6,
+        }

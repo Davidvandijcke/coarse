@@ -33,6 +33,13 @@ GROK_4_5_MODEL = "x-ai/grok-4.5"
 LLAMA_4_MAVERICK_MODEL = "meta-llama/llama-4-maverick"
 GLM_5_2_MODEL = "z-ai/glm-5.2"
 
+# Website replacements verified against OpenRouter on 2026-09-08.
+GPT_6_ASTRA_MODEL = "openai/gpt-6-astra"
+GPT_6_ASTRA_PRO_MODEL = "openai/gpt-6-astra-pro"
+CLAUDE_FABLE_5_1_MODEL = "anthropic/claude-fable-5.1"
+GEMINI_3_8_FLASH_MODEL = "google/gemini-3.8-flash"
+QWEN_3_8_MAX_MODEL = "qwen/qwen3.8-max-0902"
+
 # Featured-model long-context pricing. OpenRouter raises both input and output
 # rates once a *single request* crosses the prompt-token threshold below. Keep
 # these alongside the canonical IDs so the Python cost gate, LiteLLM actual-cost
@@ -40,6 +47,16 @@ GLM_5_2_MODEL = "z-ai/glm-5.2"
 # flattening them to the cheaper base rate. Verified from each model's
 # OpenRouter ``pricing.overrides`` metadata on 2026-07-30.
 LONG_CONTEXT_PRICING_TIERS: dict[str, dict[str, int | float]] = {
+    GPT_6_ASTRA_MODEL: {
+        "min_prompt_tokens": 272_000,
+        "input_cost_per_token": 20e-6,
+        "output_cost_per_token": 75e-6,
+    },
+    GPT_6_ASTRA_PRO_MODEL: {
+        "min_prompt_tokens": 272_000,
+        "input_cost_per_token": 20e-6,
+        "output_cost_per_token": 75e-6,
+    },
     GPT_5_6_SOL_MODEL: {
         "min_prompt_tokens": 272_000,
         "input_cost_per_token": 10e-6,
@@ -109,15 +126,14 @@ FUSION_OUTPUT_COST_PER_TOKEN = 25e-6
 # every canonical ID here.
 WEB_DEFAULT_MODEL = CLAUDE_OPUS_5_MODEL
 WEB_FEATURED_MODEL_IDS: tuple[str, ...] = (
-    CLAUDE_FABLE_5_MODEL,
+    CLAUDE_FABLE_5_1_MODEL,
     CLAUDE_OPUS_5_MODEL,
     CLAUDE_SONNET_5_MODEL,
-    GPT_5_6_SOL_MODEL,
-    GPT_5_6_TERRA_MODEL,
-    GPT_5_6_LUNA_MODEL,
+    GPT_6_ASTRA_MODEL,
+    GPT_6_ASTRA_PRO_MODEL,
     GEMINI_3_1_PRO_MODEL,
-    GEMINI_3_6_FLASH_MODEL,
-    QWEN_3_7_PLUS_MODEL,
+    GEMINI_3_8_FLASH_MODEL,
+    QWEN_3_8_MAX_MODEL,
     KIMI_K3_MODEL,
     DEEPSEEK_V4_PRO_MODEL,
     GROK_4_5_MODEL,
@@ -238,6 +254,10 @@ REASONING_MODEL_PREFIXES: tuple[str, ...] = (
     # bare `gpt-5` covers direct-OpenAI-SDK IDs (gpt-5.4, gpt-5-mini, …).
     "openai/gpt-5",
     "gpt-5",
+    "openai/gpt-6-astra",
+    "gpt-6-astra",
+    GEMINI_3_8_FLASH_MODEL,
+    QWEN_3_8_MAX_MODEL,
     # Current adaptive/default-reasoning frontier models. OpenRouter reports
     # reasoning support for Claude 5 (including Fable), Qwen 3.7 Plus, and
     # Kimi K3, and mandatory reasoning for Gemini 3.6 Flash (verified
@@ -371,6 +391,8 @@ def model_filename_slug(model_id: str) -> str:
 # Keep this tuple tight — only add a model once a passed-temperature
 # request is confirmed to fail.
 TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = (
+    "openai/gpt-6-astra",
+    "gpt-6-astra",
     # Opus 4.7 (reasoning-first, issue #162): dot / hyphen / Vertex / bare.
     "anthropic/claude-opus-4.7",  # OpenRouter form
     "anthropic/claude-opus-4-7",  # litellm direct-Anthropic form
