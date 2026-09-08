@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Refresh website suggestions to GPT-6 Astra and Astra Pro, Claude Fable 5.1, Qwen 3.8 Max (0902), and Gemini 3.8 Flash. Register their token limits, pricing, and reasoning behavior; preserve existing package and headless defaults. All five pass bounded live OpenRouter metadata and structured-review canaries.
+
 ### Added
 
 - **`--model openai/gpt-5.6-sol-pro` now works with a direct `OPENAI_API_KEY`.** The `-pro` suffix is an OpenRouter-only variant ID that OpenAI's own API rejects with 404. On the direct OpenAI route, the client now translates it to `gpt-5.6-sol` and uses the stateless Responses API (`store: false`) with `reasoning: {"mode": "pro", "effort": "medium"}`; callers can still override effort independently. The OpenRouter route keeps sending the variant ID through Chat Completions unchanged. The variant's pricing and 272k long-context tier are registered (identical to base Sol per OpenRouter), so the pre-flight cost gate no longer quotes $0 for it.

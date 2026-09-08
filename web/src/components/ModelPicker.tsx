@@ -20,15 +20,14 @@ type DefaultModel = {
 export const DEFAULT_REVIEW_MODEL = "anthropic/claude-opus-5";
 
 const DEFAULT_MODELS: DefaultModel[] = [
-  { id: "anthropic/claude-fable-5", label: "Fable 5", provider: "Anthropic" },
+  { id: "anthropic/claude-fable-5.1", label: "Fable 5.1", provider: "Anthropic" },
   { id: DEFAULT_REVIEW_MODEL, label: "Opus 5", provider: "Anthropic" },
   { id: "anthropic/claude-sonnet-5", label: "Sonnet 5", provider: "Anthropic" },
-  { id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", provider: "OpenAI" },
-  { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", provider: "OpenAI" },
-  { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", provider: "OpenAI" },
+  { id: "openai/gpt-6-astra", label: "GPT-6 Astra", provider: "OpenAI" },
+  { id: "openai/gpt-6-astra-pro", label: "GPT-6 Astra Pro", provider: "OpenAI" },
   { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", provider: "Google" },
-  { id: "google/gemini-3.6-flash", label: "Gemini 3.6 Flash", provider: "Google" },
-  { id: "qwen/qwen3.7-plus", label: "Qwen 3.7 Plus", provider: "Qwen" },
+  { id: "google/gemini-3.8-flash", label: "Gemini 3.8 Flash", provider: "Google" },
+  { id: "qwen/qwen3.8-max-0902", label: "Qwen 3.8 Max", provider: "Qwen" },
   { id: "moonshotai/kimi-k3", label: "Kimi K3", provider: "Moonshot" },
   { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4", provider: "DeepSeek" },
   { id: "x-ai/grok-4.5", label: "Grok 4.5", provider: "xAI" },
