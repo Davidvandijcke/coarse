@@ -8,6 +8,7 @@ and gives cost estimation one deterministic registry at import time.
 import litellm
 
 from coarse.models import (
+    CLAUDE_FABLE_5_1_MODEL,
     CLAUDE_FABLE_5_MODEL,
     CLAUDE_OPUS_5_MODEL,
     CLAUDE_SONNET_5_MODEL,
@@ -16,19 +17,54 @@ from coarse.models import (
     FUSION_MODEL,
     FUSION_OUTPUT_COST_PER_TOKEN,
     GEMINI_3_6_FLASH_MODEL,
+    GEMINI_3_8_FLASH_MODEL,
     GPT_5_6_LUNA_MODEL,
     GPT_5_6_SOL_MODEL,
+    GPT_5_6_SOL_PRO_MODEL,
     GPT_5_6_TERRA_MODEL,
+    GPT_6_ASTRA_MODEL,
+    GPT_6_ASTRA_PRO_MODEL,
     GROK_4_5_MODEL,
     KIMI_K3_MODEL,
     LITELLM_OPENROUTER_PREFIX,
     LONG_CONTEXT_PRICING_TIERS,
+    QWEN_3_8_MAX_MODEL,
 )
 
 
 def register_model_costs() -> None:
     """Add current featured models and prompt-length price tiers to LiteLLM."""
     custom_model_info: dict[str, dict[str, int | float]] = {
+        GPT_6_ASTRA_MODEL: {
+            "max_tokens": 1050000,
+            "max_output_tokens": 128000,
+            "input_cost_per_token": 1e-05,
+            "output_cost_per_token": 5e-05,
+        },
+        GPT_6_ASTRA_PRO_MODEL: {
+            "max_tokens": 1050000,
+            "max_output_tokens": 128000,
+            "input_cost_per_token": 1e-05,
+            "output_cost_per_token": 5e-05,
+        },
+        CLAUDE_FABLE_5_1_MODEL: {
+            "max_tokens": 1000000,
+            "max_output_tokens": 128000,
+            "input_cost_per_token": 1e-05,
+            "output_cost_per_token": 5e-05,
+        },
+        GEMINI_3_8_FLASH_MODEL: {
+            "max_tokens": 1048576,
+            "max_output_tokens": 65536,
+            "input_cost_per_token": 7.5e-07,
+            "output_cost_per_token": 3.75e-06,
+        },
+        QWEN_3_8_MAX_MODEL: {
+            "max_tokens": 1000000,
+            "max_output_tokens": 131072,
+            "input_cost_per_token": 2e-06,
+            "output_cost_per_token": 6e-06,
+        },
         DEFAULT_MODEL: {
             "max_tokens": 1_000_000,
             "max_output_tokens": 65_536,
@@ -54,6 +90,17 @@ def register_model_costs() -> None:
             "output_cost_per_token": 50e-6,
         },
         GPT_5_6_SOL_MODEL: {
+            "max_tokens": 1_050_000,
+            "max_output_tokens": 128_000,
+            "input_cost_per_token": 5e-6,
+            "output_cost_per_token": 30e-6,
+        },
+        # OpenRouter's pro-reasoning variant of Sol — same per-token pricing
+        # and limits as base Sol (verified 2026-08-30); pro mode just spends
+        # more reasoning tokens. Registered under the variant ID so the
+        # pre-flight cost gate prices it before llm.py aliases the wire
+        # request to the base model (see DIRECT_RESPONSES_MODEL_ALIASES).
+        GPT_5_6_SOL_PRO_MODEL: {
             "max_tokens": 1_050_000,
             "max_output_tokens": 128_000,
             "input_cost_per_token": 5e-6,

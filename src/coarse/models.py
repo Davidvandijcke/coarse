@@ -16,6 +16,12 @@ CLAUDE_OPUS_5_MODEL = "anthropic/claude-opus-5"
 CLAUDE_SONNET_5_MODEL = "anthropic/claude-sonnet-5"
 CLAUDE_FABLE_5_MODEL = "anthropic/claude-fable-5"
 GPT_5_6_SOL_MODEL = "openai/gpt-5.6-sol"
+# OpenRouter-only variant ID for Sol's "pro" reasoning mode. The OpenAI API has
+# no model by this name — direct-OpenAI requests must be rewritten to the base
+# Sol ID plus a `reasoning: {"mode": "pro"}` body on the Responses API (see
+# DIRECT_RESPONSES_MODEL_ALIASES below). Pricing is identical to base Sol on
+# OpenRouter (verified 2026-08-30); pro mode just spends more reasoning tokens.
+GPT_5_6_SOL_PRO_MODEL = "openai/gpt-5.6-sol-pro"
 GPT_5_6_TERRA_MODEL = "openai/gpt-5.6-terra"
 GPT_5_6_LUNA_MODEL = "openai/gpt-5.6-luna"
 GEMINI_3_6_FLASH_MODEL = "google/gemini-3.6-flash"
@@ -27,6 +33,13 @@ GROK_4_5_MODEL = "x-ai/grok-4.5"
 LLAMA_4_MAVERICK_MODEL = "meta-llama/llama-4-maverick"
 GLM_5_2_MODEL = "z-ai/glm-5.2"
 
+# Website replacements verified against OpenRouter on 2026-09-08.
+GPT_6_ASTRA_MODEL = "openai/gpt-6-astra"
+GPT_6_ASTRA_PRO_MODEL = "openai/gpt-6-astra-pro"
+CLAUDE_FABLE_5_1_MODEL = "anthropic/claude-fable-5.1"
+GEMINI_3_8_FLASH_MODEL = "google/gemini-3.8-flash"
+QWEN_3_8_MAX_MODEL = "qwen/qwen3.8-max-0902"
+
 # Featured-model long-context pricing. OpenRouter raises both input and output
 # rates once a *single request* crosses the prompt-token threshold below. Keep
 # these alongside the canonical IDs so the Python cost gate, LiteLLM actual-cost
@@ -34,7 +47,24 @@ GLM_5_2_MODEL = "z-ai/glm-5.2"
 # flattening them to the cheaper base rate. Verified from each model's
 # OpenRouter ``pricing.overrides`` metadata on 2026-07-30.
 LONG_CONTEXT_PRICING_TIERS: dict[str, dict[str, int | float]] = {
+    GPT_6_ASTRA_MODEL: {
+        "min_prompt_tokens": 272_000,
+        "input_cost_per_token": 20e-6,
+        "output_cost_per_token": 75e-6,
+    },
+    GPT_6_ASTRA_PRO_MODEL: {
+        "min_prompt_tokens": 272_000,
+        "input_cost_per_token": 20e-6,
+        "output_cost_per_token": 75e-6,
+    },
     GPT_5_6_SOL_MODEL: {
+        "min_prompt_tokens": 272_000,
+        "input_cost_per_token": 10e-6,
+        "output_cost_per_token": 45e-6,
+    },
+    # Same tier as base Sol — OpenRouter reports identical pricing for the
+    # -pro variant (verified 2026-08-30).
+    GPT_5_6_SOL_PRO_MODEL: {
         "min_prompt_tokens": 272_000,
         "input_cost_per_token": 10e-6,
         "output_cost_per_token": 45e-6,
@@ -96,15 +126,14 @@ FUSION_OUTPUT_COST_PER_TOKEN = 25e-6
 # every canonical ID here.
 WEB_DEFAULT_MODEL = CLAUDE_OPUS_5_MODEL
 WEB_FEATURED_MODEL_IDS: tuple[str, ...] = (
-    CLAUDE_FABLE_5_MODEL,
+    CLAUDE_FABLE_5_1_MODEL,
     CLAUDE_OPUS_5_MODEL,
     CLAUDE_SONNET_5_MODEL,
-    GPT_5_6_SOL_MODEL,
-    GPT_5_6_TERRA_MODEL,
-    GPT_5_6_LUNA_MODEL,
+    GPT_6_ASTRA_MODEL,
+    GPT_6_ASTRA_PRO_MODEL,
     GEMINI_3_1_PRO_MODEL,
-    GEMINI_3_6_FLASH_MODEL,
-    QWEN_3_7_PLUS_MODEL,
+    GEMINI_3_8_FLASH_MODEL,
+    QWEN_3_8_MAX_MODEL,
     KIMI_K3_MODEL,
     DEEPSEEK_V4_PRO_MODEL,
     GROK_4_5_MODEL,
@@ -117,6 +146,19 @@ WEB_FEATURED_MODEL_IDS: tuple[str, ...] = (
 # must be doubled for litellm provider routing (see FUSION_MODEL note above).
 LITELLM_OPENROUTER_PREFIX = "openrouter/"
 OPENROUTER_NAMESPACE_MODELS: frozenset[str] = frozenset({FUSION_MODEL})
+
+# OpenRouter defines variant model IDs that the underlying provider's own API
+# does not recognize. When such a model routes DIRECT to OpenAI, the wire
+# request must use the provider's real model ID plus Responses API fields.
+# Maps variant ID → (direct model ID, Responses API request defaults). Keys
+# are bare canonical IDs, so an ``openrouter/``-prefixed (proxied) model can
+# never match — the OpenRouter route keeps sending the variant ID untouched.
+DIRECT_RESPONSES_MODEL_ALIASES: dict[str, tuple[str, dict[str, object]]] = {
+    GPT_5_6_SOL_PRO_MODEL: (
+        GPT_5_6_SOL_MODEL,
+        {"reasoning": {"mode": "pro"}, "store": False},
+    ),
+}
 
 # Vision model for post-extraction QA (multimodal, spot-checks Docling output)
 # litellm uses 'gemini/' prefix for Google AI Studio (not 'google/')
@@ -212,6 +254,10 @@ REASONING_MODEL_PREFIXES: tuple[str, ...] = (
     # bare `gpt-5` covers direct-OpenAI-SDK IDs (gpt-5.4, gpt-5-mini, …).
     "openai/gpt-5",
     "gpt-5",
+    "openai/gpt-6-astra",
+    "gpt-6-astra",
+    GEMINI_3_8_FLASH_MODEL,
+    QWEN_3_8_MAX_MODEL,
     # Current adaptive/default-reasoning frontier models. OpenRouter reports
     # reasoning support for Claude 5 (including Fable), Qwen 3.7 Plus, and
     # Kimi K3, and mandatory reasoning for Gemini 3.6 Flash (verified
@@ -345,6 +391,8 @@ def model_filename_slug(model_id: str) -> str:
 # Keep this tuple tight — only add a model once a passed-temperature
 # request is confirmed to fail.
 TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = (
+    "openai/gpt-6-astra",
+    "gpt-6-astra",
     # Opus 4.7 (reasoning-first, issue #162): dot / hyphen / Vertex / bare.
     "anthropic/claude-opus-4.7",  # OpenRouter form
     "anthropic/claude-opus-4-7",  # litellm direct-Anthropic form

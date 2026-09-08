@@ -140,7 +140,9 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
     # as part of the release cut. The release-blocker coupling test
     # in `test_release_blocker_pin_is_coupled_to_unreleased_version`
     # enforces that this pin matches `__version__`.
-    assert '"coarse-ink==1.9.2"' in handoff_lib
+    from coarse import __version__
+
+    assert f'"coarse-ink=={__version__}"' in handoff_lib
     assert "@feat/mcp-server" not in handoff_lib
     assert "@feat/mcp-server" not in handoff_route
 
