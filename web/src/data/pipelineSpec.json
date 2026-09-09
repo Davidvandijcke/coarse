@@ -41,6 +41,7 @@
     "gpt-6-astra",
     "google/gemini-3.8-flash",
     "qwen/qwen3.8-max-0902",
+    "z-ai/glm-5.3-flash",
     "anthropic/claude-fable-5",
     "anthropic/claude-opus-5",
     "anthropic/claude-sonnet-5",
