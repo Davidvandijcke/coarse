@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.9.4 — 2026-09-09
+
+### Changed
+
 - Recognize GLM 5.3 Flash reasoning tokens and reserve output headroom, fixing truncated structured responses observed during the preview smoke test.
 
 - Limit source distributions to package code and release metadata, retain bundled subscription skills, and reject archives above 5 MB before publishing (#293).
