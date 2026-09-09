@@ -32,6 +32,7 @@ DEEPSEEK_V4_PRO_MODEL = "deepseek/deepseek-v4-pro"
 GROK_4_5_MODEL = "x-ai/grok-4.5"
 LLAMA_4_MAVERICK_MODEL = "meta-llama/llama-4-maverick"
 GLM_5_2_MODEL = "z-ai/glm-5.2"
+GLM_5_3_FLASH_MODEL = "z-ai/glm-5.3-flash"
 
 # Website replacements verified against OpenRouter on 2026-09-08.
 GPT_6_ASTRA_MODEL = "openai/gpt-6-astra"
@@ -258,6 +259,8 @@ REASONING_MODEL_PREFIXES: tuple[str, ...] = (
     "gpt-6-astra",
     GEMINI_3_8_FLASH_MODEL,
     QWEN_3_8_MAX_MODEL,
+    # GLM Flash spends hidden reasoning from max_tokens before emitting JSON.
+    GLM_5_3_FLASH_MODEL,
     # Current adaptive/default-reasoning frontier models. OpenRouter reports
     # reasoning support for Claude 5 (including Fable), Qwen 3.7 Plus, and
     # Kimi K3, and mandatory reasoning for Gemini 3.6 Flash (verified

@@ -132,7 +132,7 @@ create index idx_rate_limit_lookup on rate_limit_log (ip, endpoint, created_at);
 
 -- Returns true if the request is allowed, false if rate-limited.
 -- Called via supabase.rpc("check_rate_limit", { p_ip, p_endpoint, p_window_seconds, p_max_requests }).
-create or replace function check_rate_limit(
+create or replace function public.check_rate_limit(
   p_ip text,
   p_endpoint text,
   p_window_seconds int,
@@ -140,20 +140,47 @@ create or replace function check_rate_limit(
 ) returns boolean
 language plpgsql
 security definer
+set search_path = ''
 as $$
 declare
   request_count int;
-  window_start timestamptz := now() - (p_window_seconds || ' seconds')::interval;
+  window_start timestamptz;
 begin
+  if p_ip is null or char_length(p_ip) < 1 or char_length(p_ip) > 128 then
+    raise exception 'invalid rate-limit IP'
+      using errcode = '22023';
+  end if;
+  if p_endpoint is null or char_length(p_endpoint) > 64 or p_endpoint not in (
+    'presign',
+    'submit',
+    'cancel',
+    'delete',
+    'cli-handoff',
+    'mcp-finalize'
+  ) then
+    raise exception 'invalid rate-limit endpoint'
+      using errcode = '22023';
+  end if;
+  if p_window_seconds is null or p_window_seconds < 1 or p_window_seconds > 3600
+     or p_max_requests is null or p_max_requests < 1 or p_max_requests > 1000 then
+    raise exception 'invalid rate-limit bounds'
+      using errcode = '22023';
+  end if;
+
+  window_start := pg_catalog.now() - pg_catalog.make_interval(secs => p_window_seconds);
+
   -- Serialize concurrent calls for the same (ip, endpoint) pair
-  perform pg_advisory_xact_lock(hashtext(p_ip), hashtext(p_endpoint));
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtext(p_ip),
+    pg_catalog.hashtext(p_endpoint)
+  );
 
   -- Count recent requests in window
   select count(*) into request_count
-  from rate_limit_log
-  where ip = p_ip
-    and endpoint = p_endpoint
-    and created_at > window_start;
+  from public.rate_limit_log as log
+  where log.ip = p_ip
+    and log.endpoint = p_endpoint
+    and log.created_at > window_start;
 
   -- Over limit → deny
   if request_count >= p_max_requests then
@@ -161,22 +188,28 @@ begin
   end if;
 
   -- Log this request
-  insert into rate_limit_log (ip, endpoint) values (p_ip, p_endpoint);
+  insert into public.rate_limit_log (ip, endpoint) values (p_ip, p_endpoint);
 
   -- Opportunistic cleanup: purge expired entries for this ip/endpoint
-  delete from rate_limit_log
-  where ip = p_ip
-    and endpoint = p_endpoint
-    and created_at < window_start;
+  delete from public.rate_limit_log as log
+  where log.ip = p_ip
+    and log.endpoint = p_endpoint
+    and log.created_at < window_start;
 
   -- Global cleanup: ~1% of calls, purge all entries older than 1 hour
-  if random() < 0.01 then
-    delete from rate_limit_log where created_at < now() - interval '1 hour';
+  if pg_catalog.random() < 0.01 then
+    delete from public.rate_limit_log
+    where created_at < pg_catalog.now() - interval '1 hour';
   end if;
 
   return true;
 end;
 $$;
+
+revoke execute on function public.check_rate_limit(text, text, integer, integer)
+  from public, anon, authenticated;
+grant execute on function public.check_rate_limit(text, text, integer, integer)
+  to service_role;
 
 -- RLS: deny all anonymous access. Only service_role (which bypasses RLS) calls this.
 alter table rate_limit_log enable row level security;
@@ -213,23 +246,41 @@ create policy "Anyone can read system status"
 alter publication supabase_realtime add table system_status;
 
 -- Helper for monitoring cron: count reviews since a given timestamp.
-create or replace function count_reviews_since(since timestamptz)
-returns bigint language sql security definer as $$
-  select count(*) from reviews where created_at >= since;
+create or replace function public.count_reviews_since(since timestamptz)
+returns bigint
+language sql
+security definer
+set search_path = ''
+as $$
+  select count(*) from public.reviews where created_at >= since;
 $$;
+
+revoke execute on function public.count_reviews_since(timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.count_reviews_since(timestamptz)
+  to service_role;
 
 -- Count reviews that were actually submitted (review_emails row exists) and
 -- are still within the active worker window. This excludes abandoned presign
 -- rows from capacity checks.
-create or replace function count_active_submitted_reviews(since timestamptz)
-returns bigint language sql security definer as $$
+create or replace function public.count_active_submitted_reviews(since timestamptz)
+returns bigint
+language sql
+security definer
+set search_path = ''
+as $$
   select count(*)
-  from reviews r
+  from public.reviews r
   where r.created_at >= since
     and r.status in ('queued', 'running', 'extracting', 'extracted')
     and exists (
       select 1
-      from review_emails e
+      from public.review_emails e
       where e.review_id = r.id
     );
 $$;
+
+revoke execute on function public.count_active_submitted_reviews(timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.count_active_submitted_reviews(timestamptz)
+  to service_role;

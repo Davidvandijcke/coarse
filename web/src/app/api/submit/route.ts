@@ -127,11 +127,14 @@ export async function POST(request: NextRequest) {
   const emailSkipped =
     email.length === 0 && (await isEmailCapacityReached(supabaseAdmin));
   if (!emailSkipped) {
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
-    }
     if (email.length > 254) {
       return NextResponse.json({ error: "Email too long" }, { status: 400 });
+    }
+    // Keep the hard length bound before the backtracking email regex. Without
+    // that ordering, a capability-bearing request with many dot candidates
+    // can consume seconds of CPU before reaching the length check.
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
     }
   }
   if (!apiKey) {
