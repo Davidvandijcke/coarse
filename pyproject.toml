@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "coarse-ink"
-version = "1.9.3"
+version = "1.9.4"
 description = "Free, open-source AI academic paper reviewer. BYOK — bring your own key."
 readme = "README.md"
 license = "MIT"
@@ -59,6 +59,9 @@ coarse-review = "coarse.cli_review:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/coarse"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src/coarse", "/pyproject.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
 
 [tool.ruff]
 target-version = "py312"
