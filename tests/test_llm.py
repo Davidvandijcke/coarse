@@ -414,6 +414,20 @@ def test_is_reasoning_property_false_for_gpt5_chat(mock_instructor_client):
     assert client.is_reasoning is False
 
 
+def test_glm_flash_reserves_reasoning_headroom(mock_instructor_client):
+    client = _reasoning_client("z-ai/glm-5.3-flash", mock_instructor_client)
+    assert client.is_reasoning
+    with patch("coarse.llm.litellm.completion_cost", return_value=0.0):
+        client.complete(
+            messages=[{"role": "user", "content": "x"}],
+            response_model=_SimpleModel,
+            max_tokens=4096,
+        )
+    call = mock_instructor_client.chat.completions.create_with_completion.call_args
+    assert call.kwargs["max_tokens"] >= 32768
+    assert call.kwargs["reasoning_effort"] == "medium"
+
+
 def test_complete_bumps_max_tokens_for_reasoning_model(mock_instructor_client):
     """Regression for review 3ee351e6: GPT-5.4 Pro burned 15k reasoning tokens
     on the overview stage (max_tokens=8192) before emitting any output.
