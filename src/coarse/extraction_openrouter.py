@@ -37,6 +37,10 @@ signed_url_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 )
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # Providers may echo the PDF request in validation errors. Scrub before
+    # truncation so neither signed URLs nor inline documents reach logs.
+    (re.compile(r"https?://[^\s\"'<>]*\?[^\s\"'<>]*"), "[signed URL]"),
+    (re.compile(r"data:[^\s,;]+;base64,[a-zA-Z0-9+/=_-]+"), "[inline file]"),
     (re.compile(r"Bearer\s+\S+", re.IGNORECASE), "Bearer [key]"),
     (re.compile(r"sk-or-v1-[a-zA-Z0-9]{20,}"), "[key]"),
     (re.compile(r"sk-ant-[a-zA-Z0-9_-]{20,}"), "[key]"),
@@ -80,7 +84,7 @@ def _get_ocr_max_retries() -> int:
 
 
 def _scrub_secrets(msg: str) -> str:
-    """Strip API keys and bearer tokens from an error string."""
+    """Strip API keys, bearer tokens, signed URLs, and inline files."""
     for pattern, replacement in _SECRET_PATTERNS:
         msg = pattern.sub(replacement, msg)
     return msg
@@ -275,6 +279,25 @@ def _body_retry_code(resp) -> int | None:
     return None
 
 
+def _is_parser_rate_limit(resp) -> bool:
+    """OpenRouter wraps a transient parser rate limit in HTTP 400 (#296).
+
+    Match only the observed parser error, not arbitrary invalid requests or
+    downstream model errors. They must retain the normal fallback policy.
+    """
+    if resp.status_code != 400:
+        return False
+    try:
+        body = resp.json()
+    except ValueError:
+        return False
+    error = body.get("error") if isinstance(body, dict) else None
+    message = error.get("message") if isinstance(error, dict) else None
+    return isinstance(message, str) and message.lower().startswith(
+        "failed to parse the file: the document parsing engine is currently rate limited."
+    )
+
+
 def _post_openrouter_ocr(
     *,
     url: str,
@@ -309,15 +332,24 @@ def _post_openrouter_ocr(
                     attempt + 1,
                     max_retries + 1,
                     wait,
-                    exc,
+                    _scrub_secrets(str(exc)),
                 )
                 time.sleep(wait)
                 continue
             raise ExtractionError(
-                f"OpenRouter OCR network error after {max_retries + 1} attempts: {exc}"
+                f"OpenRouter OCR network error after {max_retries + 1} attempts: "
+                f"{_scrub_secrets(str(exc))}"
             ) from exc
 
-        if resp.status_code in _OCR_RETRY_STATUSES and attempt < max_retries:
+        parser_rate_limit = _is_parser_rate_limit(resp)
+        if parser_rate_limit and _response_was_billed(resp):
+            logger.warning(
+                "OpenRouter OCR parser rate limit has non-zero usage — "
+                "not retrying to avoid double-billing the user"
+            )
+            return resp
+
+        if (resp.status_code in _OCR_RETRY_STATUSES or parser_rate_limit) and attempt < max_retries:
             wait = _wait_for(attempt)
             logger.warning(
                 "OpenRouter OCR returned %d (attempt %d/%d), retrying in %.1fs",
@@ -374,15 +406,19 @@ def _parse_openrouter_ocr_response(resp: "requests.Response") -> str:  # noqa: F
     if "error" in data and not data.get("choices"):
         err = data["error"]
         msg = err.get("message") if isinstance(err, dict) else None
-        logger.warning("OpenRouter OCR returned error body: %s", str(err)[:_OCR_LOG_TRUNCATE])
-        raise ExtractionError(f"OpenRouter OCR error: {msg or err}")
+        logger.warning(
+            "OpenRouter OCR returned error body: %s", _scrub_secrets(str(err))[:_OCR_LOG_TRUNCATE]
+        )
+        raise ExtractionError(
+            f"OpenRouter OCR error: {_scrub_secrets(str(msg or err))[:_OCR_LOG_TRUNCATE]}"
+        )
 
     choices = data.get("choices")
     if not choices:
         logger.warning(
             "OpenRouter OCR unexpected response (no choices): keys=%s body=%s",
             sorted(data.keys()),
-            str(data)[:_OCR_LOG_TRUNCATE],
+            _scrub_secrets(str(data))[:_OCR_LOG_TRUNCATE],
         )
         raise ExtractionError(
             f"OpenRouter OCR returned no choices (response keys: {sorted(data.keys())})"

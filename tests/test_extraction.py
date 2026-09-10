@@ -1269,3 +1269,90 @@ def test_extraction_error_message_is_scrubbed(tmp_path: Path, caplog) -> None:
     assert "sk-or-v1-abcdef" not in log_text
     assert secret_bearer not in log_text
     assert "[key]" in log_text
+
+
+def test_ocr_400_logs_safe_provider_detail_and_preserves_fallback(minimal_pdf, caplog):
+    secret = "sk-or-v1-" + "s" * 40
+    signed_url = "https://example.test/paper.pdf?token=private-download-token"
+    inline_file = "data:application/pdf;base64,cHJpdmF0ZS1wYXBlcg=="
+    failed = _mock_error_response(
+        400,
+        {
+            "error": {
+                "message": "Mistral document validation failed",
+                "metadata": {"raw": f"Bearer {secret} {signed_url} {inline_file}"},
+            }
+        },
+    )
+    success = _mock_ocr_response(["# First page\nText.", "# Last page\nEnd."])
+    with (
+        patch("requests.post", side_effect=[failed, success]) as post,
+        patch.dict(os.environ, {"OPENROUTER_API_KEY": secret}),
+        caplog.at_level(logging.WARNING),
+    ):
+        result = extract_text(minimal_pdf, use_cache=False)
+    assert "First page" in result.full_markdown and "Last page" in result.full_markdown
+    assert post.call_count == 2  # An ordinary 400 falls back without retrying the same engine.
+    engines = [c.kwargs["json"]["plugins"][0]["pdf"]["engine"] for c in post.call_args_list]
+    assert engines == ["mistral-ocr", "pdf-text"]
+    assert "status=400" in caplog.text
+    assert "Mistral document validation failed" in caplog.text
+    for private in (secret, "private-download-token", "cHJpdmF0ZS1wYXBlcg=="):
+        assert private not in caplog.text
+
+
+@pytest.mark.parametrize("billed", [False, True])
+def test_ocr_parser_rate_limit_retries_only_unbilled_response(minimal_pdf, monkeypatch, billed):
+    monkeypatch.setenv("COARSE_OCR_MAX_RETRIES", "1")
+    failed = _mock_error_response(
+        400,
+        {
+            "error": {
+                "message": (
+                    "Failed to parse the file: The document parsing engine is currently "
+                    "rate limited. Please retry shortly."
+                )
+            },
+            "usage": {"cost": 0.01 if billed else 0},
+        },
+    )
+    success = _mock_ocr_response(["# First page\nText.", "# Last page\nEnd."])
+    with (
+        patch("requests.post", side_effect=[failed, success]) as post,
+        patch("time.sleep") as sleep,
+        patch.dict(os.environ, {"OPENROUTER_API_KEY": "fake-key"}),
+    ):
+        result = extract_text(minimal_pdf, use_cache=False)
+    assert "Last page" in result.full_markdown
+    engines = [c.kwargs["json"]["plugins"][0]["pdf"]["engine"] for c in post.call_args_list]
+    assert engines == ["mistral-ocr", "pdf-text" if billed else "mistral-ocr"]
+    if billed:
+        sleep.assert_not_called()
+    else:
+        sleep.assert_called_once_with(1.0)
+
+
+def test_ocr_parser_rate_limit_exhaustion_preserves_fallback(minimal_pdf, monkeypatch):
+    monkeypatch.setenv("COARSE_OCR_MAX_RETRIES", "1")
+    failed = _mock_error_response(
+        400,
+        {
+            "error": {
+                "message": (
+                    "Failed to parse the file: The document parsing engine is currently "
+                    "rate limited. Please retry shortly."
+                )
+            }
+        },
+    )
+    success = _mock_ocr_response(["# Recovered paper\nLast page."])
+    with (
+        patch("requests.post", side_effect=[failed, failed, success]) as post,
+        patch("time.sleep") as sleep,
+        patch.dict(os.environ, {"OPENROUTER_API_KEY": "fake-key"}),
+    ):
+        result = extract_text(minimal_pdf, use_cache=False)
+    assert "Last page" in result.full_markdown
+    engines = [c.kwargs["json"]["plugins"][0]["pdf"]["engine"] for c in post.call_args_list]
+    assert engines == ["mistral-ocr", "mistral-ocr", "pdf-text"]
+    sleep.assert_called_once_with(1.0)
