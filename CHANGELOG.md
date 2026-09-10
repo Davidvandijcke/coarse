@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Retry OpenRouter's specific HTTP 400 document-parser rate-limit response with bounded backoff, without retrying billed responses or ordinary invalid requests (#296). Retain sanitized provider diagnostics for OCR HTTP failures such as #296, and redact signed document URLs, inline PDF data, and API keys from extraction error logs. The existing fallback and retry policy are preserved.
+
 ## v1.9.4 — 2026-09-09
 
 ### Changed

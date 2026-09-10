@@ -297,3 +297,30 @@ def test_extract_openrouter_file_parser_clears_signed_url_after_reset(
 
     file_data = post.call_args.kwargs["payload"]["messages"][0]["content"][1]["file"]["file_data"]
     assert file_data.startswith("data:application/pdf;base64,")
+
+
+@pytest.mark.parametrize("body_kind", ["error", "no_choices", "http_error"])
+def test_provider_diagnostics_scrub_before_truncating(body_kind, caplog):
+    from coarse.extraction_openrouter import _describe_api_error, _parse_openrouter_ocr_response
+
+    secret = "sk-or-v1-" + "x" * 40
+    private = "https://example.test/paper.pdf?token=private-token"
+    # Inline files can dwarf the useful diagnostic; redact before applying the limit.
+    echoed = "data:application/pdf;base64," + "a" * 1000
+    message = f"Invalid document {private} {echoed} {secret} diagnostic-tail"
+    response = MagicMock()
+    response.status_code = 400 if body_kind == "http_error" else 200
+    response.json.return_value = (
+        {"unexpected": message} if body_kind == "no_choices" else {"error": {"message": message}}
+    )
+    if body_kind == "http_error":
+        import requests
+
+        output = _describe_api_error(requests.HTTPError(response=response))
+    else:
+        with pytest.raises(ExtractionError) as exc:
+            _parse_openrouter_ocr_response(response)
+        output = str(exc.value) + caplog.text
+    assert "diagnostic-tail" in output
+    for value in (secret, "private-token", "a" * 100):
+        assert value not in output
