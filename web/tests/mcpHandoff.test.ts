@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAgentPrompt, buildCliCommands } from "@/lib/mcpHandoff";
+import { buildAgentPrompt, buildCliCommands, getHostModels, type ChatHost } from "@/lib/mcpHandoff";
 
 const baseCommands = {
   setupCmd: "uvx --from coarse-ink coarse install-skills --all --force",
@@ -56,4 +56,30 @@ describe("deep-literature subscription handoff", () => {
     expect(prompt).toContain("triggered vision QA");
     expect(prompt).not.toContain("No OpenRouter API key is needed for this review");
   });
+});
+
+
+describe("subscription model selection", () => {
+  it.each([
+    ["claude-code", "anthropic/claude-fable-5.1", "claude-fable-5-1"],
+    ["codex", "openai/gpt-6-astra", "gpt-6-astra"],
+    ["gemini-cli", "google/gemini-3.8-flash", "gemini-3.8-flash"],
+    ["gemini-cli", "google/gemini-99-flash:free", "gemini-99-flash"],
+  ] as const)("carries %s selection into the native command", (host, selected, expected) => {
+    const models = getHostModels(host, selected);
+    expect(models[0]).toBe(expected);
+    expect(new Set(models).size).toBe(models.length);
+    const { runCmd } = buildCliCommands({
+      handoffUrl: "https://example.test/h/token", host, model: models[0],
+      effort: "high", paperId: "00000000-0000-4000-8000-000000000000",
+    });
+    expect(runCmd).toContain(expected);
+    expect(runCmd).not.toContain(selected);
+  });
+
+  it.each(["claude-code", "codex", "gemini-cli"] as ChatHost[])(
+    "does not carry a different provider into %s", (host) => {
+      expect(getHostModels(host, "other/model")).toEqual(getHostModels(host, ""));
+    },
+  );
 });

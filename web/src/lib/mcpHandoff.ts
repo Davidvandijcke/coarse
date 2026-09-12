@@ -65,15 +65,31 @@ export const HOST_CLI_NAME: Record<ChatHost, "claude" | "codex" | "gemini"> = {
 // pre-selected default (see page.tsx setSelectedModel). Latest generation
 // leads; the prior generation stays available as a fallback option.
 export const HOST_DEFAULT_MODELS: Record<ChatHost, string[]> = {
-  "claude-code": ["claude-opus-5", "claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5"],
-  "codex": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4"],
+  "claude-code": ["claude-fable-5-1", "claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5"],
+  "codex": ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4"],
   "gemini-cli": [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
     "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
     "gemini-3.1-pro-preview",
     "gemini-3-flash-preview",
     "gemini-3.1-flash-lite-preview",
   ],
 };
+
+// Carry matching catalog selections into the native CLI, including models
+// released after this suggested list. Never send another provider's model.
+export function getHostModels(host: ChatHost, selectedModel: string): string[] {
+  const prefix = { "claude-code": "anthropic/", codex: "openai/", "gemini-cli": "google/" }[host];
+  if (!selectedModel.startsWith(prefix)) return HOST_DEFAULT_MODELS[host];
+  let nativeModel = selectedModel.slice(prefix.length).replace(/:[^:]+$/, "");
+  // Anthropic CLI version separators differ from the OpenRouter catalog.
+  if (host === "claude-code") nativeModel = nativeModel.replace(/(\d)\.(?=\d)/g, "$1-");
+  if (!nativeModel) return HOST_DEFAULT_MODELS[host];
+  return Array.from(new Set([nativeModel, ...HOST_DEFAULT_MODELS[host]]));
+}
 
 export const EFFORT_LEVELS = ["low", "medium", "high", "max"] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
