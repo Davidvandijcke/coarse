@@ -18,7 +18,7 @@ import {
   HOST_LABELS,
   HOST_GLYPHS,
   HOST_CLI_NAME,
-  HOST_DEFAULT_MODELS,
+  getHostModels,
   HOST_INSTALL_URL,
   HOST_LAUNCH_LABEL,
   HOST_LAUNCH_HINT,
@@ -887,7 +887,7 @@ function PageBody() {
       const bundle = await mintCliHandoff(id, host, handoffSecret);
 
       // Step 3: defaults for the modal dropdowns.
-      setSelectedModel(HOST_DEFAULT_MODELS[host][0]);
+      setSelectedModel(getHostModels(host, model)[0]);
       setSelectedEffort("high");
 
       setHandoffBundle(bundle);
@@ -1852,7 +1852,7 @@ function PageBody() {
                           onChange={(e) => setSelectedModel(e.target.value)}
                           style={{ marginLeft: "0.25rem", padding: "0.25rem 0.5rem", background: "var(--board)", color: "var(--chalk)", border: "1px solid var(--tray)", borderRadius: "2px", fontFamily: "monospace", fontSize: "0.92rem" }}
                         >
-                          {HOST_DEFAULT_MODELS[host].map((m) => (<option key={m} value={m}>{m}</option>))}
+                          {getHostModels(host, model).map((m) => (<option key={m} value={m}>{m}</option>))}
                         </select>
                       </label>
                       <label style={{ fontFamily: "var(--font-chalk)", fontSize: "0.95rem", color: "var(--dust)" }}>
