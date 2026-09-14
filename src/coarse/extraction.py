@@ -196,7 +196,9 @@ def extract_text(pdf_path: str | Path, use_cache: bool = True) -> PaperText:
                 if summary:
                     logger.warning("%s failed with API error: %s", name, summary)
                 raise ExtractionError(api_msg) from exc
-            scrubbed = _scrub_secrets(str(exc))
+            # HTTPError.__str__ omits the provider body (including the cause
+            # of HTTP 400). Keep a bounded, scrubbed summary for diagnosis.
+            scrubbed = _describe_api_error(exc) or _scrub_secrets(str(exc))
             errors.append(f"{name}: {scrubbed}")
             logger.warning("%s failed: %s", name, scrubbed)
 
