@@ -49,6 +49,7 @@ src/coarse/
 ├── __main__.py              # python -m coarse
 ├── cli.py                   # Typer CLI, progress display (rich)
 ├── cli_attach.py            # --attach signal-driven wait mode (pidfile + log tail + heartbeat watcher)
+├── cli_parallel.py          # coarse review-parallel: extract once, review with several models in worker subprocesses
 ├── cli_review.py            # Standalone coarse-review CLI for headless local/handoff runs
 ├── claude_code_client.py    # Back-compat re-export for headless Claude client helpers
 ├── config.py                # ~/.coarse/config.toml, API key management

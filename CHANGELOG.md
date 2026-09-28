@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **`coarse review-parallel` reviews one paper with several models at once.** `coarse-ink review-parallel paper.pdf --model A --model B --yes` extracts the paper once (and, for PDFs, runs extraction QA once, saving the corrected text to the usual extraction cache), then runs one `review_paper` worker subprocess per `--model` in parallel. The parent shows a single live table (stage, estimated stage count, elapsed time, reported cost per model), writes `coarse-output/<paper>-<UTC stamp>-<suffix>/` with the shared `extracted.md`, one numbered review per model, per-job logs, and a continuously updated `summary.json`, and stops every worker process group on Ctrl-C or SIGTERM while keeping finished outputs. Reviews skip the interactive cost gate, so a single confirmation covers the run (`--yes` skips it and is required when stdin is not a terminal). `--no-qa` disables PDF extraction QA including the automatic garble-triggered check. Exit codes: `0` when every review succeeded, `1` when any job failed, `2` for invalid options, `130` when interrupted. POSIX only (worker cleanup uses process groups). Tests drive the real parent and worker processes against a fake paid boundary installed through a test-only `sitecustomize` hook; no production hooks were added.
+
 ## v1.9.4 — 2026-09-09
 
 ### Changed

@@ -28,3 +28,6 @@ quality_gap_analysis.md
 # Build caches
 *.tsbuildinfo
 *.extraction_cache.json
+
+# Review run directories written by coarse-review and coarse review-parallel
+coarse-output/
