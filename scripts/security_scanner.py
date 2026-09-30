@@ -62,6 +62,7 @@ SKIP_DIRS = {
     ".modal",
     ".coarse",
     "reviews",
+    "coarse-output",
     "data",
     ".extraction_cache",
     # Claude Code ephemeral worktrees created by /worktree-start. Each

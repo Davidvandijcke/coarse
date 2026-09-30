@@ -138,6 +138,23 @@ With only `OPENROUTER_API_KEY` set, all models (including vision QA) route throu
 
 Use `--cheap` to automatically select the cheapest model for which you have an API key.
 
+### Parallel reviews
+
+Review the same paper with several models at once. The paper is extracted (and
+QA-checked) once, then one review runs per `--model` in parallel:
+
+```bash
+coarse review-parallel paper.pdf \
+  --model anthropic/claude-sonnet-5 \
+  --model openai/gpt-4o \
+  --yes
+```
+
+Results land in `coarse-output/<paper>-<timestamp>-<suffix>/` as one numbered
+Markdown review per model plus per-model logs and a `summary.json` with
+statuses and reported costs. Reviews skip the per-run cost prompt; a single
+confirmation covers the whole run (`--yes` skips it). macOS and Linux only.
+
 ## API keys
 
 Only `OPENROUTER_API_KEY` is needed. This covers everything: review agents,

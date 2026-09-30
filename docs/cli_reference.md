@@ -9,6 +9,7 @@ Comprehensive command-line interface guide for `coarse-ink`.
   - [Overview](#overview)
   - [CLI Commands](#cli-commands)
     - [`coarse review`](#coarse-review)
+    - [`coarse review-parallel`](#coarse-review-parallel)
     - [`coarse-review`](#coarse-review-1)
     - [`coarse attach`](#coarse-attach)
   - [Configuration](#configuration)
@@ -42,6 +43,47 @@ coarse review paper.pdf [OPTIONS]
 - `--yes`, `-y`: Skip cost approval prompt.
 - `--no-cache`: Bypass extraction cache.
 - `--attach`: Run in background attach mode with PID file monitoring.
+
+### `coarse review-parallel`
+
+Extract a paper once, then review it with several models in parallel. Each
+review runs in its own worker subprocess; the parent shows one live table and
+stops every worker on Ctrl-C.
+
+```bash
+coarse review-parallel paper.pdf --model anthropic/claude-sonnet-5 --model openai/gpt-4o --yes
+```
+
+#### Options
+
+- `--model TEXT`, `-m TEXT` (required, repeatable): model to review with; repeat once per parallel review. Repeating the same model runs it independently again.
+- `--output-dir PATH`: parent for a new, unique run directory (default: `./coarse-output/`, the same default as `coarse-review`).
+- `--env-file PATH`: load credentials from a dotenv file, overriding existing environment values.
+- `--language TEXT`, `-l TEXT`: review language for every model.
+- `--no-qa`: disable PDF extraction QA, including the automatic check triggered by garbled text.
+- `--yes`, `-y`: skip the single run confirmation. Required when stdin is not a terminal.
+
+Reviews always skip the interactive cost gate; the confirmation lists the models and warns that no combined estimate is available.
+
+#### Run directory
+
+Each invocation creates `coarse-output/<paper>-<UTC timestamp>-<suffix>/`:
+
+```text
+extracted.md            shared extraction (QA-corrected when QA ran)
+extraction.log          extraction worker output
+01-<model>.md           review by the first --model
+01-<model>.log          that worker's output
+02-<model>.md ...
+*.job.json              worker specs (paths and options only)
+summary.json            statuses, stages, elapsed time, reported costs
+```
+
+Costs in the table and summary are the amounts coarse reports per worker; OCR charges from a cold extraction cache are not itemised.
+
+#### Exit codes
+
+`0` every review succeeded · `1` a job or the run failed · `2` invalid options · `130` interrupted (Ctrl-C/SIGTERM). An extraction failure prevents reviews from starting; one review failing leaves the others running. macOS and Linux only.
 
 ### `coarse-review`
 

@@ -25,6 +25,7 @@ from rich.progress import (
 )
 from rich.status import Status
 
+import coarse.cli_parallel as cli_parallel
 from coarse import __version__
 from coarse.config import (
     PROVIDER_ENV_VARS,
@@ -385,6 +386,111 @@ def review(
             f"[green]Quality report written to {quality_path}[/green] "
             f"(overall: {report.overall_score:.2f}/5.0)"
         )
+
+
+# ---------------------------------------------------------------------------
+# review-parallel — extract once, then review with several models at the same
+# time in worker subprocesses. Orchestration lives in cli_parallel.py; this
+# command only validates options, loads credentials, and confirms the run.
+# ---------------------------------------------------------------------------
+
+
+@app.command("review-parallel")
+def review_parallel(
+    file: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        help="Path to paper file (PDF, TXT, MD, TeX, DOCX, HTML, EPUB)",
+    ),
+    model: list[str] = typer.Option(
+        ...,
+        "--model",
+        "-m",
+        help="LiteLLM model string to review with; repeat for parallel reviews",
+    ),
+    output_dir: Path = typer.Option(
+        Path("coarse-output"),
+        "--output-dir",
+        help="Parent for a new, unique run directory (default: ./coarse-output/, "
+        "same as coarse-review)",
+    ),
+    env_file: Optional[Path] = typer.Option(
+        None, "--env-file", help="Load credentials from this .env file"
+    ),
+    language: Optional[str] = typer.Option(
+        None, "--language", "-l", help="Review language for every model, e.g. 'Spanish'"
+    ),
+    no_qa: bool = typer.Option(
+        False,
+        "--no-qa",
+        help="Disable PDF extraction QA, including the automatic garble-triggered check",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip the run confirmation (required when stdin is not a terminal)",
+    ),
+) -> None:
+    """Extract a paper once and review it with several models in parallel.
+
+    Writes coarse-output/<paper>-<UTC stamp>-<suffix>/ containing the shared
+    extraction, one numbered review per --model, per-job logs, and summary.json.
+    Reviews skip the interactive cost gate; exit code 0 only if every review
+    succeeded (1 on failure, 130 when interrupted).
+    """
+    # Usage errors below print and exit 2 explicitly rather than raising a
+    # Click usage exception: one raised from inside a command body escapes
+    # Typer's error handler on some Typer releases (0.26.x exits 1 silently).
+    if os.name != "posix":
+        console.print(
+            "[red]coarse review-parallel supports macOS and Linux (POSIX process groups)[/red]"
+        )
+        raise typer.Exit(code=2)
+    if any(not entry.strip() for entry in model):
+        raise typer.BadParameter("--model cannot be empty")
+    if env_file is not None:
+        env_file = env_file.expanduser().resolve()
+        if not env_file.is_file():
+            raise typer.BadParameter(f"Environment file does not exist: {env_file}")
+        from dotenv import load_dotenv
+
+        load_dotenv(env_file, override=True)
+    if not yes and not sys.stdin.isatty():
+        console.print("[red]Noninteractive runs require --yes[/red]")
+        raise typer.Exit(code=2)
+
+    config = load_config()
+    try:
+        cli_parallel.preflight(file, model, config)
+    except ValueError as exc:
+        console.print(f"[red]{rich.markup.escape(str(exc))}[/red]")
+        raise typer.Exit(code=1)
+
+    if not yes:
+        console.print(
+            f"Extract {rich.markup.escape(file.name)} once and run "
+            f"{len(model)} reviews in parallel:"
+        )
+        for entry in model:
+            console.print(f"  {rich.markup.escape(cli_parallel.clean_text(entry))}")
+        console.print(
+            "This may incur extraction, QA, and review charges. "
+            "No combined cost estimate is available."
+        )
+        if not typer.confirm("Continue?", default=False):
+            return
+
+    code = cli_parallel.run_parallel(
+        file.resolve(),
+        model,
+        output_dir.expanduser().resolve(),
+        language=language,
+        no_qa=no_qa,
+    )
+    if code:
+        raise typer.Exit(code=code)
 
 
 # The `mcp-ingest` command was removed in v1.3.0 alongside the MCP

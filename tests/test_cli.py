@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -698,3 +700,147 @@ def test_install_skills_no_replacement_notice_on_first_install(tmp_path: Path, m
 
     assert result.exit_code == 0, result.output
     assert "replaced" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# review-parallel — option validation with the orchestration patched out
+# ---------------------------------------------------------------------------
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def _plain(text: str) -> str:
+    """Strip ANSI sequences so assertions hold under FORCE_COLOR shells."""
+    return _ANSI_RE.sub("", text)
+
+
+def _parallel_patches(run_result: int = 0, preflight_error: str | None = None):
+    """Patch load_config + cli_parallel.preflight/run_parallel; return (ctx, captured)."""
+    captured: dict[str, object] = {}
+
+    def fake_run_parallel(file, models, output_dir, *, language, no_qa):
+        captured.update(
+            file=file, models=models, output_dir=output_dir, language=language, no_qa=no_qa
+        )
+        return run_result
+
+    def fake_preflight(file, models, config):
+        captured["preflight"] = (file, list(models))
+        if preflight_error:
+            raise ValueError(preflight_error)
+
+    ctx = (
+        patch("coarse.cli.load_config", return_value=CoarseConfig()),
+        patch("coarse.cli.cli_parallel.preflight", side_effect=fake_preflight),
+        patch("coarse.cli.cli_parallel.run_parallel", side_effect=fake_run_parallel),
+    )
+    return ctx, captured
+
+
+def test_review_parallel_requires_model_and_existing_file(tmp_path: Path) -> None:
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    ctx, _ = _parallel_patches()
+    with ctx[0], ctx[1], ctx[2]:
+        missing_model = runner.invoke(app, ["review-parallel", str(pdf), "--yes"])
+        missing_file = runner.invoke(
+            app, ["review-parallel", str(tmp_path / "nope.pdf"), "--yes", "--model", "fake/one"]
+        )
+        empty_model = runner.invoke(app, ["review-parallel", str(pdf), "--yes", "--model", " "])
+        bad_env = runner.invoke(
+            app,
+            [
+                "review-parallel",
+                str(pdf),
+                "--yes",
+                "--model",
+                "fake/one",
+                "--env-file",
+                str(tmp_path / "missing.env"),
+            ],
+        )
+    assert missing_model.exit_code == 2, missing_model.output
+    assert missing_file.exit_code == 2, missing_file.output
+    assert empty_model.exit_code == 2 and "cannot be empty" in _plain(empty_model.output)
+    assert bad_env.exit_code == 2 and "does not exist" in _plain(bad_env.output)
+
+
+def test_review_parallel_noninteractive_requires_yes(tmp_path: Path) -> None:
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    ctx, captured = _parallel_patches()
+    with ctx[0], ctx[1], ctx[2]:
+        # CliRunner's stdin is never a TTY.
+        result = runner.invoke(app, ["review-parallel", str(pdf), "--model", "fake/one"])
+    assert result.exit_code == 2, result.output
+    assert "require --yes" in _plain(result.output)
+    assert "models" not in captured  # run_parallel never called
+
+
+def test_review_parallel_forwards_options_to_runner(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    env_file = tmp_path / "keys.env"
+    env_file.write_text("COARSE_TEST_PARALLEL_ENV=loaded\n", encoding="utf-8")
+    monkeypatch.delenv("COARSE_TEST_PARALLEL_ENV", raising=False)
+    ctx, captured = _parallel_patches()
+    with ctx[0], ctx[1], ctx[2]:
+        result = runner.invoke(
+            app,
+            [
+                "review-parallel",
+                "paper.pdf",
+                "--yes",
+                "--model",
+                "fake/one",
+                "-m",
+                "fake/two",
+                "--language",
+                "French",
+                "--no-qa",
+                "--env-file",
+                str(env_file),
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    assert captured["preflight"] == (Path("paper.pdf"), ["fake/one", "fake/two"])
+    assert captured["file"] == pdf.resolve()
+    assert captured["models"] == ["fake/one", "fake/two"]
+    assert captured["output_dir"] == (tmp_path / "coarse-output").resolve()
+    assert captured["language"] == "French"
+    assert captured["no_qa"] is True
+    assert os.environ.get("COARSE_TEST_PARALLEL_ENV") == "loaded"
+
+
+def test_review_parallel_preflight_failure_exits_1(tmp_path: Path) -> None:
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    ctx, captured = _parallel_patches(preflight_error="No API key configured for: fake/one")
+    with ctx[0], ctx[1], ctx[2]:
+        result = runner.invoke(app, ["review-parallel", str(pdf), "--yes", "--model", "fake/one"])
+    assert result.exit_code == 1, result.output
+    assert "No API key configured for: fake/one" in _plain(result.output)
+    assert "models" not in captured
+
+
+def test_review_parallel_propagates_runner_exit_code(tmp_path: Path) -> None:
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    ctx, _ = _parallel_patches(run_result=130)
+    with ctx[0], ctx[1], ctx[2]:
+        result = runner.invoke(app, ["review-parallel", str(pdf), "--yes", "--model", "fake/one"])
+    assert result.exit_code == 130
+
+
+def test_review_parallel_rejects_non_posix(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    monkeypatch.setattr("coarse.cli.os.name", "nt")
+    ctx, captured = _parallel_patches()
+    with ctx[0], ctx[1], ctx[2]:
+        result = runner.invoke(app, ["review-parallel", str(pdf), "--yes", "--model", "fake/one"])
+    assert result.exit_code == 2, result.output
+    assert "macOS and Linux" in _plain(result.output)
+    assert "models" not in captured
