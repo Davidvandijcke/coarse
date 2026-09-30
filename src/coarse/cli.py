@@ -440,12 +440,14 @@ def review_parallel(
     Reviews skip the interactive cost gate; exit code 0 only if every review
     succeeded (1 on failure, 130 when interrupted).
     """
-    import click
-
+    # Usage errors below print and exit 2 explicitly rather than raising a
+    # Click usage exception: one raised from inside a command body escapes
+    # Typer's error handler on some Typer releases (0.26.x exits 1 silently).
     if os.name != "posix":
-        raise click.UsageError(
-            "coarse review-parallel supports macOS and Linux (POSIX process groups)"
+        console.print(
+            "[red]coarse review-parallel supports macOS and Linux (POSIX process groups)[/red]"
         )
+        raise typer.Exit(code=2)
     if any(not entry.strip() for entry in model):
         raise typer.BadParameter("--model cannot be empty")
     if env_file is not None:
@@ -456,7 +458,8 @@ def review_parallel(
 
         load_dotenv(env_file, override=True)
     if not yes and not sys.stdin.isatty():
-        raise click.UsageError("Noninteractive runs require --yes")
+        console.print("[red]Noninteractive runs require --yes[/red]")
+        raise typer.Exit(code=2)
 
     config = load_config()
     try:

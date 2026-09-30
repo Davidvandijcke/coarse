@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import pty
+import re
 import select
 import signal
 import subprocess
@@ -27,6 +28,12 @@ from coarse.config import CoarseConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FAKE_SITE = REPO_ROOT / "tests" / "fake_parallel"
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def _plain(text: str) -> str:
+    """Strip ANSI sequences: Typer forces colour under GITHUB_ACTIONS/FORCE_COLOR."""
+    return _ANSI_RE.sub("", text)
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +144,7 @@ def test_failure_does_not_stop_other_reviews(harness: Harness) -> None:
     result, summary = harness.run(("fake/fail", "fake/two"))
     assert result.returncode == 1
     assert [review["status"] for review in summary["reviews"]] == ["failed", "succeeded"]
-    assert "review failed deliberately" in result.stdout
+    assert "review failed deliberately" in _plain(result.stdout)
 
 
 def test_extraction_failure_prevents_reviews(harness: Harness) -> None:
@@ -157,7 +164,7 @@ def test_missing_key_fails_before_extraction_and_creates_nothing(harness: Harnes
         timeout=30,
     )
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "No API key configured for: fake/two" in result.stdout + result.stderr
+    assert "No API key configured for: fake/two" in _plain(result.stdout + result.stderr)
     assert not harness.trace.exists()
     # Preflight runs before the run directory exists.
     assert not harness.outputs.exists()
@@ -180,7 +187,7 @@ def test_missing_vision_key_warns_and_continues(harness: Harness) -> None:
     result, summary = harness.run(env={"COARSE_FAKE_MISSING_KEY": "fake/vision"})
     assert result.returncode == 0, result.stdout + result.stderr
     assert harness.events("qa:") == []
-    assert "skipped: no vision-model API key" in result.stdout
+    assert "skipped: no vision-model API key" in _plain(result.stdout)
     assert summary["extraction"]["warnings"] == ["skipped: no vision-model API key"]
 
 
@@ -218,7 +225,7 @@ def test_env_file_and_language_are_forwarded(harness: Harness) -> None:
 def test_malformed_events_do_not_fail_review(harness: Harness) -> None:
     result, summary = harness.run(("fake/malformed",))
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "Ignored malformed" in result.stdout
+    assert "Ignored malformed" in _plain(result.stdout)
     assert summary["reviews"][0]["warnings"]
 
 
@@ -238,14 +245,15 @@ def test_help_and_noninteractive_confirmation(harness: Harness) -> None:
         timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "--model" in result.stdout
-    assert "--from" not in result.stdout
+    help_text = _plain(result.stdout)
+    assert "--model" in help_text
+    assert "--from" not in help_text
     command = [arg for arg in harness.command() if arg != "--yes"]
     result = subprocess.run(
         command, input="", capture_output=True, text=True, env=harness.env, timeout=30
     )
     assert result.returncode == 2, result.stdout + result.stderr
-    assert "require --yes" in result.stdout + result.stderr
+    assert "require --yes" in _plain(result.stdout + result.stderr)
     assert not harness.outputs.exists()
 
 
