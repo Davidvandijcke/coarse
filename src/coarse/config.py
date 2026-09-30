@@ -178,6 +178,12 @@ def has_provider_key(provider: str, config: CoarseConfig | None = None) -> bool:
 def resolve_api_key(provider: str, config: CoarseConfig | None = None) -> str | None:
     """Return API key for provider; env vars take priority over config file.
 
+    Falls back to the OpenRouter key (env var, then config file) when the
+    provider itself has none, because OpenRouter can proxy most providers.
+    This must agree with the routing decision in ``llm._normalize_model``,
+    which sends such models through OpenRouter whenever
+    ``resolve_api_key("openrouter", config)`` finds a key.
+
     Args:
         provider: Provider name or litellm model string (e.g. 'openai' or 'openai/gpt-4o').
         config: Optional pre-loaded config; if None, load_config() is called.
@@ -208,9 +214,16 @@ def resolve_api_key(provider: str, config: CoarseConfig | None = None) -> str | 
     if cfg_key:
         return cfg_key
 
-    # Last resort: OpenRouter can proxy most providers
-    or_key = _clean_env("OPENROUTER_API_KEY")
-    if or_key:
-        return or_key
+    # Last resort: OpenRouter can proxy most providers. Check the env var and
+    # then the config file — the same two sources the routing layer consults
+    # when it decides to proxy through OpenRouter. Reading only the env var
+    # here made a config-file-only OpenRouter key (the `coarse setup` path)
+    # pass routing but fail the "No API key configured" pre-flight gate.
+    if name != "openrouter":
+        or_key = (
+            _clean_env("OPENROUTER_API_KEY") or (config.api_keys.get("openrouter") or "").strip()
+        )
+        if or_key:
+            return or_key
 
     return None
