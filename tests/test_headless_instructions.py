@@ -101,7 +101,8 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
 
     # page.tsx must pass logFile + attachCmd through to buildAgentPrompt
     # on every call site (handleLaunch + the collapsible manual-commands UI).
-    assert "const fullPrompt = buildAgentPrompt({" in handoff_page
+    assert "const fullPrompt = useNative ? buildNativePrompt({" in handoff_page
+    assert ": buildAgentPrompt({" in handoff_page
     # Every prompt/launch call site must also thread the mint-time isPdf
     # flag (#186): two buildAgentPrompt call sites + buildLaunchUrl. See
     # test_handoff_key_guidance_is_pdf_conditional for the branch content.
