@@ -4,7 +4,7 @@ ALL model IDs live here. Never hardcode model strings elsewhere — import from
 this module. Verify IDs against OpenRouter before changing:
     python3 ~/.claude/skills/latest-models/scripts/fetch_models.py --search=<model>
 
-Last verified: 2026-07-29
+Last verified: 2026-10-05
 """
 
 import re
@@ -41,6 +41,15 @@ CLAUDE_FABLE_5_1_MODEL = "anthropic/claude-fable-5.1"
 GEMINI_3_8_FLASH_MODEL = "google/gemini-3.8-flash"
 QWEN_3_8_MAX_MODEL = "qwen/qwen3.8-max-0902"
 
+# Website replacements verified against OpenRouter on 2026-10-05.
+CLAUDE_OPUS_5_5_MODEL = "anthropic/claude-opus-5.5"
+CLAUDE_SONNET_5_5_MODEL = "anthropic/claude-sonnet-5.5"
+GPT_6_SOL_MODEL = "openai/gpt-6-sol"
+GPT_6_LUNA_MODEL = "openai/gpt-6-luna"
+GPT_6_1_SOL_MODEL = "openai/gpt-6.1-sol"
+GROK_4_7_MODEL = "x-ai/grok-4.7"
+GLM_5_3_MODEL = "z-ai/glm-5.3"
+
 # Featured-model long-context pricing. OpenRouter raises both input and output
 # rates once a *single request* crosses the prompt-token threshold below. Keep
 # these alongside the canonical IDs so the Python cost gate, LiteLLM actual-cost
@@ -48,6 +57,26 @@ QWEN_3_8_MAX_MODEL = "qwen/qwen3.8-max-0902"
 # flattening them to the cheaper base rate. Verified from each model's
 # OpenRouter ``pricing.overrides`` metadata on 2026-07-30.
 LONG_CONTEXT_PRICING_TIERS: dict[str, dict[str, int | float]] = {
+    GPT_6_SOL_MODEL: {
+        "min_prompt_tokens": 272000,
+        "input_cost_per_token": 4e-06,
+        "output_cost_per_token": 1.5e-05,
+    },
+    GPT_6_LUNA_MODEL: {
+        "min_prompt_tokens": 272000,
+        "input_cost_per_token": 2e-07,
+        "output_cost_per_token": 7.5e-07,
+    },
+    GPT_6_1_SOL_MODEL: {
+        "min_prompt_tokens": 272000,
+        "input_cost_per_token": 4e-06,
+        "output_cost_per_token": 1.5e-05,
+    },
+    GROK_4_7_MODEL: {
+        "min_prompt_tokens": 200000,
+        "input_cost_per_token": 4e-06,
+        "output_cost_per_token": 1.2e-05,
+    },
     GPT_6_ASTRA_MODEL: {
         "min_prompt_tokens": 272_000,
         "input_cost_per_token": 20e-6,
@@ -93,7 +122,7 @@ LONG_CONTEXT_PRICING_TIERS: dict[str, dict[str, int | float]] = {
 }
 
 # Primary package/CLI review model (routed via OpenRouter for non-direct
-# providers). The website intentionally starts on Opus 5 instead; this cheaper
+# providers). The website intentionally starts on Opus 5.5 instead; this cheaper
 # package default keeps local runs accessible.
 DEFAULT_MODEL = QWEN_3_7_PLUS_MODEL
 
@@ -125,21 +154,24 @@ FUSION_OUTPUT_COST_PER_TOKEN = 25e-6
 # tests/test_models.py parses ModelPicker.tsx and fails on any drift, including
 # the selected default. Keep labels/providers in the web component, but keep
 # every canonical ID here.
-WEB_DEFAULT_MODEL = CLAUDE_OPUS_5_MODEL
+WEB_DEFAULT_MODEL = CLAUDE_OPUS_5_5_MODEL
 WEB_FEATURED_MODEL_IDS: tuple[str, ...] = (
     CLAUDE_FABLE_5_1_MODEL,
-    CLAUDE_OPUS_5_MODEL,
-    CLAUDE_SONNET_5_MODEL,
+    CLAUDE_OPUS_5_5_MODEL,
+    CLAUDE_SONNET_5_5_MODEL,
     GPT_6_ASTRA_MODEL,
     GPT_6_ASTRA_PRO_MODEL,
+    GPT_6_1_SOL_MODEL,
+    GPT_6_SOL_MODEL,
+    GPT_6_LUNA_MODEL,
     GEMINI_3_1_PRO_MODEL,
     GEMINI_3_8_FLASH_MODEL,
     QWEN_3_8_MAX_MODEL,
     KIMI_K3_MODEL,
     DEEPSEEK_V4_PRO_MODEL,
-    GROK_4_5_MODEL,
+    GROK_4_7_MODEL,
     LLAMA_4_MAVERICK_MODEL,
-    GLM_5_2_MODEL,
+    GLM_5_3_MODEL,
     FUSION_MODEL,
 )
 
@@ -197,8 +229,8 @@ DEEP_LITERATURE_SEARCH_MODEL = "perplexity/sonar-deep-research"
 # its own command line. Kept here so ``cli_review``, ``headless_review``,
 # and ``headless_clients`` all agree on the canonical default.
 HEADLESS_DEFAULT_MODELS: dict[str, str] = {
-    "claude": CLAUDE_OPUS_5_MODEL.removeprefix("anthropic/"),
-    "codex": GPT_5_6_SOL_MODEL.removeprefix("openai/"),
+    "claude": CLAUDE_OPUS_5_5_MODEL.removeprefix("anthropic/").replace(".", "-"),
+    "codex": GPT_6_SOL_MODEL.removeprefix("openai/"),
     "gemini": GEMINI_3_6_FLASH_MODEL.removeprefix("google/"),
 }
 
@@ -206,6 +238,7 @@ HEADLESS_DEFAULT_MODELS: dict[str, str] = {
 # selector. GPT-5.6 added native ``max``; GPT-5.5/5.4 top out at ``xhigh``.
 # Prefix matching also covers tier variants and dated snapshots.
 CODEX_MAX_EFFORT_BY_MODEL_PREFIX: tuple[tuple[str, str], ...] = (
+    ("gpt-6", "max"),
     ("gpt-5.6", "max"),
     ("gpt-5.5", "xhigh"),
     ("gpt-5.4", "xhigh"),
@@ -255,12 +288,12 @@ REASONING_MODEL_PREFIXES: tuple[str, ...] = (
     # bare `gpt-5` covers direct-OpenAI-SDK IDs (gpt-5.4, gpt-5-mini, …).
     "openai/gpt-5",
     "gpt-5",
-    "openai/gpt-6-astra",
-    "gpt-6-astra",
+    "openai/gpt-6",
+    "gpt-6",
     GEMINI_3_8_FLASH_MODEL,
     QWEN_3_8_MAX_MODEL,
-    # GLM Flash spends hidden reasoning from max_tokens before emitting JSON.
-    GLM_5_3_FLASH_MODEL,
+    # GLM 5.3 (including Flash) uses hidden reasoning before emitting JSON.
+    GLM_5_3_MODEL,
     # Current adaptive/default-reasoning frontier models. OpenRouter reports
     # reasoning support for Claude 5 (including Fable), Qwen 3.7 Plus, and
     # Kimi K3, and mandatory reasoning for Gemini 3.6 Flash (verified
@@ -394,8 +427,8 @@ def model_filename_slug(model_id: str) -> str:
 # Keep this tuple tight — only add a model once a passed-temperature
 # request is confirmed to fail.
 TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = (
-    "openai/gpt-6-astra",
-    "gpt-6-astra",
+    "openai/gpt-6",
+    "gpt-6",
     # Opus 4.7 (reasoning-first, issue #162): dot / hyphen / Vertex / bare.
     "anthropic/claude-opus-4.7",  # OpenRouter form
     "anthropic/claude-opus-4-7",  # litellm direct-Anthropic form

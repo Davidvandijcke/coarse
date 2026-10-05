@@ -213,7 +213,7 @@ image = (
         "pillow>=12.3.0",
         "soupsieve>=2.8.4",
         "transformers>=5.10,<6",
-        "urllib3>=2.7.0",
+        "urllib3>=2.8.0",
     )
     .add_local_dir(_repo_root / "src" / "coarse", remote_path="/root/coarse")
 )

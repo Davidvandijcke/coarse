@@ -13,21 +13,25 @@ import litellm
 from coarse.config import CoarseConfig
 from coarse.llm import LLMClient
 from coarse.models import (
-    CLAUDE_FABLE_5_1_MODEL,
-    GEMINI_3_8_FLASH_MODEL,
-    GPT_6_ASTRA_MODEL,
-    GPT_6_ASTRA_PRO_MODEL,
-    QWEN_3_8_MAX_MODEL,
+    CLAUDE_OPUS_5_5_MODEL,
+    CLAUDE_SONNET_5_5_MODEL,
+    GLM_5_3_MODEL,
+    GPT_6_1_SOL_MODEL,
+    GPT_6_LUNA_MODEL,
+    GPT_6_SOL_MODEL,
+    GROK_4_7_MODEL,
 )
 from coarse.prompts import METADATA_SYSTEM, metadata_user
 from coarse.types import OverviewFeedback, PaperMetadata
 
 MODELS = (
-    GPT_6_ASTRA_MODEL,
-    GPT_6_ASTRA_PRO_MODEL,
-    CLAUDE_FABLE_5_1_MODEL,
-    GEMINI_3_8_FLASH_MODEL,
-    QWEN_3_8_MAX_MODEL,
+    CLAUDE_OPUS_5_5_MODEL,
+    CLAUDE_SONNET_5_5_MODEL,
+    GPT_6_SOL_MODEL,
+    GPT_6_LUNA_MODEL,
+    GPT_6_1_SOL_MODEL,
+    GROK_4_7_MODEL,
+    GLM_5_3_MODEL,
 )
 PAPER = (
     "# Randomized Tutoring and Test Scores\nWe randomly assigned 100 students "
