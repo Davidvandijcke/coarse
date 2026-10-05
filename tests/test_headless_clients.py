@@ -201,9 +201,21 @@ def test_codex_medium_effort_maps_directly_to_medium() -> None:
 
 @pytest.mark.parametrize(
     "model",
-    [None, "gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "openai/gpt-5.6-sol"],
+    [
+        None,
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
+        "gpt-6.1-sol",
+        "openai/gpt-6-sol",
+        "gpt-5.6",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "openai/gpt-5.6-sol",
+    ],
 )
-def test_codex_max_effort_maps_to_native_max_for_gpt_5_6(model: str | None) -> None:
+def test_codex_max_effort_maps_to_native_max_for_current_models(model: str | None) -> None:
     _mark_codex_config_override_supported(True)
     client = CodexClient(codex_bin="codex", codex_model=model, effort="max")
 
