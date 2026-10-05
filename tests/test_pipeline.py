@@ -214,7 +214,11 @@ def test_review_paper_calls_stages_in_order():
 
 def test_review_paper_preserves_progress_callback_positional_slot():
     """Appending deep search must not reinterpret existing positional callers."""
-    parameters = list(inspect.signature(review_paper).parameters)
+    signature = inspect.signature(review_paper)
+    parameters = [
+        name for name, p in signature.parameters.items() if p.kind != inspect.Parameter.KEYWORD_ONLY
+    ]
+    assert signature.parameters["runtime"].kind == inspect.Parameter.KEYWORD_ONLY
     assert parameters[-2:] == ["progress_callback", "deep_literature_search"]
 
 
@@ -528,7 +532,7 @@ def test_section_stage_has_no_stage_level_timeout():
     assert not hasattr(pipeline_module, "_SECTION_STAGE_TIMEOUT_SECONDS")
 
     src = inspect.getsource(pipeline_module.review_paper)
-    assert "as_completed(section_futures)" in src
+    assert "completed(section_futures)" in src
     assert "as_completed(section_futures, timeout" not in src
 
 

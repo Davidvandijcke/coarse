@@ -28,6 +28,7 @@ import {
   buildCliCommands,
   buildAgentPrompt,
 } from "@/lib/mcpHandoff";
+import { buildNativePrompt, nativeLaunchUrl, nativePilotAvailable } from "@/lib/nativeHandoff";
 import { buildReviewPath, parseReviewLocator } from "@/lib/reviewAccess";
 import { getVisibleSiteHost } from "@/lib/siteOrigin";
 
@@ -388,6 +389,7 @@ function PageBody() {
   const [handoffBundle, setHandoffBundle] = useState<CliHandoffBundle | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [selectedEffort, setSelectedEffort] = useState<EffortLevel>("high");
+  const [nativePilot, setNativePilot] = useState(false);
   const [launchStatus, setLaunchStatus] = useState<string>("");
 
   // Refresh system capacity state on mount and when the tab becomes active.
@@ -940,7 +942,10 @@ function PageBody() {
     // the custom URL scheme. On some browsers (notably on Windows),
     // awaiting an async clipboard write can consume user activation and
     // cause codex:// / claude:// launches to be blocked.
-    const fullPrompt = buildAgentPrompt({
+    const useNative = nativePilot && nativePilotAvailable(host, deepLiteratureSearch);
+    const fullPrompt = useNative ? buildNativePrompt({
+      handoffUrl: handoffBundle.handoff_url, paperId: handoffState.paperId, host, reviewLanguage, authorNotes,
+    }) : buildAgentPrompt({
       setupCmd, runCmd, attachCmd, logFile, isPdf: handoffState.isPdf, reviewLanguage,
       deepLiteratureSearch,
     });
@@ -954,7 +959,7 @@ function PageBody() {
     // timer: if the OS never switches focus to another app, the scheme
     // didn't resolve and we swap in a "didn't work — paste the commands
     // instead" hint so the user isn't stuck.
-    const launchUrl = buildLaunchUrl({
+    const launchUrl = useNative ? nativeLaunchUrl(host, fullPrompt) : buildLaunchUrl({
       host, runCmd, setupCmd, attachCmd, logFile, isPdf: handoffState.isPdf, reviewLanguage,
       deepLiteratureSearch,
     });
@@ -1810,6 +1815,7 @@ function PageBody() {
 
               {handoffBundle && handoffState && (() => {
                 const host = handoffState.host;
+                const useNative = nativePilot && nativePilotAvailable(host, deepLiteratureSearch);
                 const { setupCmd, runCmd, attachCmd, logFile } = buildCliCommands({
                   handoffUrl: handoffBundle.handoff_url,
                   host,
@@ -1843,11 +1849,21 @@ function PageBody() {
                       {t("handoffReviewWithPrefix")}<strong>{HOST_LABELS[host]}</strong>
                     </p>
 
+                    {nativePilotAvailable(host, deepLiteratureSearch) && (
+                      <label style={{ display: "block", marginBottom: "1rem" }}>
+                        <input type="checkbox" checked={nativePilot}
+                          onChange={(event) => setNativePilot(event.target.checked)} />{" "}
+                        Use native app review (pilot)
+                      </label>
+                    )}
+                    {useNative && <p>Uses the current app model and reasoning settings.
+                      Review tasks run as native subagents; the existing runner remains available.</p>}
                     {/* Model + effort dropdowns */}
                     <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
                       <label style={{ fontFamily: "var(--font-chalk)", fontSize: "0.95rem", color: "var(--dust)" }}>
                         {t("handoffModelLabel")}{" "}
                         <select
+                          disabled={useNative}
                           value={selectedModel}
                           onChange={(e) => setSelectedModel(e.target.value)}
                           style={{ marginLeft: "0.25rem", padding: "0.25rem 0.5rem", background: "var(--board)", color: "var(--chalk)", border: "1px solid var(--tray)", borderRadius: "2px", fontFamily: "monospace", fontSize: "0.92rem" }}
@@ -1858,6 +1874,7 @@ function PageBody() {
                       <label style={{ fontFamily: "var(--font-chalk)", fontSize: "0.95rem", color: "var(--dust)" }}>
                         {t("handoffEffortLabel")}{" "}
                         <select
+                          disabled={useNative}
                           value={selectedEffort}
                           onChange={(e) => setSelectedEffort(e.target.value as EffortLevel)}
                           style={{ marginLeft: "0.25rem", padding: "0.25rem 0.5rem", background: "var(--board)", color: "var(--chalk)", border: "1px solid var(--tray)", borderRadius: "2px", fontFamily: "monospace", fontSize: "0.92rem" }}
@@ -1884,7 +1901,10 @@ function PageBody() {
                         {t("handoffPastePromptPrefix")}{HOST_LABELS[host]}{t("handoffPastePromptSuffix")}
                       </div>
                       <CodeBlock
-                        text={buildAgentPrompt({
+                        text={useNative ? buildNativePrompt({
+                          handoffUrl: handoffBundle.handoff_url, paperId: handoffState.paperId,
+                          host, reviewLanguage, authorNotes,
+                        }) : buildAgentPrompt({
                           setupCmd, runCmd, attachCmd, logFile,
                           isPdf: handoffState.isPdf, reviewLanguage,
                           deepLiteratureSearch,

@@ -294,3 +294,8 @@ def run_editorial_pass(
     except Exception:
         logger.warning("Critique fallback also failed", exc_info=True)
         return _cap_comments(filtered_comments)
+
+
+def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]:
+    """Renumber comments sequentially 1..N."""
+    return [c.model_copy(update={"number": i}) for i, c in enumerate(comments, start=1)]

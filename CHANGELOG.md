@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Opt-in native Codex and Claude Code review pilot: app subagents answer the existing pipeline prompts through validated, resumable checkpoints. Includes separate native skills/plugin packaging, explicit publication, and a preview-only website toggle; the headless runner remains available.
+
 ## v1.9.6 — 2026-10-05
 
 ### Fixed

@@ -56,6 +56,7 @@ dev = ["pytest>=8.0", "pyyaml>=6.0", "ruff>=0.4"]
 coarse = "coarse.cli:app"
 coarse-ink = "coarse.cli:app"
 coarse-review = "coarse.cli_review:main"
+coarse-native = "coarse.native_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/coarse"]
