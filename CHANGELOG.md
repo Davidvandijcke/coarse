@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v1.9.6 — 2026-10-05
+
+### Fixed
+
+- Accept Markdown-wrapped subscription handoff URLs without changing their destination, and reject malformed URLs before launching a detached worker. Fence handoff commands in agent prompts, authorize presentation-only URL corrections, and diagnose missing pidfiles before retrying a failed launch.
+
 ## v1.9.5 — 2026-10-05
 
 ### Fixed
