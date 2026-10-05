@@ -325,3 +325,39 @@ def test_author_notes_reach_native_review_prompts(tmp_path, paper):
     tasks = [read_json(p) for p in (workspace / "tasks").glob("*.json")]
     overview = next(t for t in tasks if t["response_type"] == "OverviewFeedback")
     assert any(note in message["content"] for message in overview["messages"])
+
+
+def test_text_preparation_does_not_load_unused_api_credentials(tmp_path, paper):
+    with patch(
+        "coarse.native_review._ensure_openrouter_key_loaded",
+        side_effect=AssertionError("unused key access"),
+    ):
+        prepare(tmp_path / "text-only", paper=paper, host="codex")
+
+
+def test_publication_preserves_unicode_with_non_utf8_locale(tmp_path, paper, monkeypatch):
+    paper.write_text(PAPER + "\nUnicode notation: σ², 中, العربية.\n", encoding="utf-8")
+    bundle = {
+        "paper_id": "test",
+        "finalize_token": "fixture",
+        "callback_url": "https://example.test/finalize",
+    }
+    workspace = tmp_path / "unicode"
+    with (
+        patch("coarse.native_review._fetch_handoff", return_value=bundle),
+        patch("coarse.native_review._download_handoff_source", return_value=paper),
+    ):
+        prepare(workspace, handoff="https://example.test/h/test", host="codex")
+    finish(workspace)
+    original = Path.read_text
+
+    def locale_read(self, encoding=None, errors=None):
+        return original(self, encoding=encoding or "cp1252", errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", locale_read)
+    with patch(
+        "coarse.native_review._post_finalize",
+        return_value={"review_url": "https://example.test/review/test"},
+    ) as post:
+        publish(workspace)
+    assert "σ², 中, العربية" in post.call_args.kwargs["paper_markdown"]

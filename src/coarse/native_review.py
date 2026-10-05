@@ -65,7 +65,8 @@ def prepare(
             bundle = _fetch_handoff(handoff) if handoff else None
             source = _download_handoff_source(bundle, Path(tmp)) if bundle else paper
             assert source is not None
-            _ensure_openrouter_key_loaded(pre_extracted)
+            if source.suffix.lower() == ".pdf" and pre_extracted is None:
+                _ensure_openrouter_key_loaded(None)
             error = openrouter_key_preflight_error(source, pre_extracted)
             if error:
                 raise ValueError(error)
@@ -250,8 +251,8 @@ def publish(workspace: Path) -> dict:
             paper_title=review.title,
             domain=review.domain,
             taxonomy=review.taxonomy,
-            markdown=(workspace / "review.md").read_text(),
-            paper_markdown=(workspace / "paper.md").read_text(),
+            markdown=(workspace / "review.md").read_text(encoding="utf-8"),
+            paper_markdown=(workspace / "paper.md").read_text(encoding="utf-8"),
             host_label="native-pilot:" + run["host"],
             language=review.language.model_dump() if review.language else None,
         )
