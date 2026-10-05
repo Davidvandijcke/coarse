@@ -1858,12 +1858,11 @@ function PageBody() {
                     )}
                     {useNative && <p>Uses the current app model and reasoning settings.
                       Review tasks run as native subagents; the existing runner remains available.</p>}
-                    {/* Model + effort dropdowns */}
-                    <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+                    {/* CLI model choices are not used by native app sessions. */}
+                    {!useNative && <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
                       <label style={{ fontFamily: "var(--font-chalk)", fontSize: "0.95rem", color: "var(--dust)" }}>
                         {t("handoffModelLabel")}{" "}
                         <select
-                          disabled={useNative}
                           value={selectedModel}
                           onChange={(e) => setSelectedModel(e.target.value)}
                           style={{ marginLeft: "0.25rem", padding: "0.25rem 0.5rem", background: "var(--board)", color: "var(--chalk)", border: "1px solid var(--tray)", borderRadius: "2px", fontFamily: "monospace", fontSize: "0.92rem" }}
@@ -1874,7 +1873,6 @@ function PageBody() {
                       <label style={{ fontFamily: "var(--font-chalk)", fontSize: "0.95rem", color: "var(--dust)" }}>
                         {t("handoffEffortLabel")}{" "}
                         <select
-                          disabled={useNative}
                           value={selectedEffort}
                           onChange={(e) => setSelectedEffort(e.target.value as EffortLevel)}
                           style={{ marginLeft: "0.25rem", padding: "0.25rem 0.5rem", background: "var(--board)", color: "var(--chalk)", border: "1px solid var(--tray)", borderRadius: "2px", fontFamily: "monospace", fontSize: "0.92rem" }}
@@ -1882,7 +1880,7 @@ function PageBody() {
                           {EFFORT_LEVELS.map((e) => (<option key={e} value={e}>{e}</option>))}
                         </select>
                       </label>
-                    </div>
+                    </div>}
 
                     {/* PRIMARY: always-visible prompt. Uniform across
                         all three hosts — no collapsibles, no host-
@@ -1898,7 +1896,8 @@ function PageBody() {
                           marginBottom: "0.5rem",
                         }}
                       >
-                        {t("handoffPastePromptPrefix")}{HOST_LABELS[host]}{t("handoffPastePromptSuffix")}
+                        {useNative ? `Paste this prompt into the ${HOST_LABELS[host]} app:` :
+                          <>{t("handoffPastePromptPrefix")}{HOST_LABELS[host]}{t("handoffPastePromptSuffix")}</>}
                       </div>
                       <CodeBlock
                         text={useNative ? buildNativePrompt({
@@ -1920,7 +1919,7 @@ function PageBody() {
                           lineHeight: 1.5,
                         }}
                       >
-                        {t("handoffRunHint")}
+                        {useNative ? "The app coordinates native review tasks and saves progress so you can resume." : t("handoffRunHint")}
                       </p>
                       {handoffState.isPdf || deepLiteratureSearch ? (
                         <p
