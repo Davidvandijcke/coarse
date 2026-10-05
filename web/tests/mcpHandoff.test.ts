@@ -62,7 +62,12 @@ describe("deep-literature subscription handoff", () => {
 describe("subscription model selection", () => {
   it.each([
     ["claude-code", "anthropic/claude-fable-5.1", "claude-fable-5-1"],
+    ["claude-code", "anthropic/claude-opus-5.5", "claude-opus-5-5"],
+    ["claude-code", "anthropic/claude-sonnet-5.5", "claude-sonnet-5-5"],
     ["codex", "openai/gpt-6-astra", "gpt-6-astra"],
+    ["codex", "openai/gpt-6-sol", "gpt-6-sol"],
+    ["codex", "openai/gpt-6-luna", "gpt-6-luna"],
+    ["codex", "openai/gpt-6.1-sol", "gpt-6.1-sol"],
     ["gemini-cli", "google/gemini-3.8-flash", "gemini-3.8-flash"],
     ["gemini-cli", "google/gemini-99-flash:free", "gemini-99-flash"],
   ] as const)("carries %s selection into the native command", (host, selected, expected) => {
@@ -82,4 +87,17 @@ describe("subscription model selection", () => {
       expect(getHostModels(host, "other/model")).toEqual(getHostModels(host, ""));
     },
   );
+});
+
+
+describe("current agent handoff instructions", () => {
+  it("preserves launch choices and uses supported terminal sessions", () => {
+    const prompt = buildAgentPrompt({ ...baseCommands, isPdf: false });
+    expect(prompt).toContain(baseCommands.runCmd);
+    expect(prompt).toContain("2.1.284");
+    expect(prompt).toContain("write_stdin");
+    expect(prompt).toContain("run_in_background");
+    expect(prompt).not.toContain("--timeout 2700");
+    expect(prompt).not.toContain("2700000");
+  });
 });

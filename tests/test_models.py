@@ -20,6 +20,7 @@ from coarse.models import (
     GPT_5_6_LUNA_MODEL,
     GPT_5_6_SOL_MODEL,
     GPT_5_6_TERRA_MODEL,
+    GPT_6_SOL_MODEL,
     GROK_4_5_MODEL,
     HEADLESS_DEFAULT_MODELS,
     JSON_MODE_PREFIXES,
@@ -97,8 +98,8 @@ def test_web_picker_tracks_canonical_featured_models_and_default():
 
 def test_headless_defaults_track_current_host_models():
     assert HEADLESS_DEFAULT_MODELS == {
-        "claude": CLAUDE_OPUS_5_MODEL.removeprefix("anthropic/"),
-        "codex": GPT_5_6_SOL_MODEL.removeprefix("openai/"),
+        "claude": "claude-opus-5-5",
+        "codex": GPT_6_SOL_MODEL.removeprefix("openai/"),
         "gemini": GEMINI_3_6_FLASH_MODEL.removeprefix("google/"),
     }
 
@@ -461,3 +462,26 @@ def test_astra_cost_registry_preserves_long_context_surcharge():
             "input_cost_per_token": 20e-6,
             "output_cost_per_token": 75e-6,
         }
+
+
+@pytest.mark.parametrize(
+    "model, rates, long_rates",
+    [
+        ("openai/gpt-6-sol", (2e-6, 10e-6), (4e-6, 15e-6)),
+        ("openai/gpt-6.1-sol", (2e-6, 10e-6), (4e-6, 15e-6)),
+        ("openai/gpt-6-luna", (0.1e-6, 0.5e-6), (0.2e-6, 0.75e-6)),
+        ("x-ai/grok-4.7", (2e-6, 6e-6), (4e-6, 12e-6)),
+        ("z-ai/glm-5.3", (0.05e-6, 7e-6), (0.05e-6, 7e-6)),
+        ("anthropic/claude-opus-5.5", (4e-6, 20e-6), (4e-6, 20e-6)),
+        ("anthropic/claude-sonnet-5.5", (2e-6, 10e-6), (2e-6, 10e-6)),
+    ],
+)
+def test_october_models_preserve_reasoning_budgets_and_costs(model, rates, long_rates):
+    from coarse.llm import model_cost_per_token
+
+    routed = "openrouter/" + model
+    assert is_reasoning_model(routed)
+    assert model_cost_per_token(routed) == rates
+    assert model_cost_per_token(routed, prompt_tokens=300_000) == long_rates
+    if model.startswith("openai/"):
+        assert not supports_temperature(routed)

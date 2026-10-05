@@ -17,6 +17,8 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 
 ## Prerequisites
 
+Use a current Codex installation with access to the selected model. Check `codex --version` and update using the original installation method if the model is unsupported. Preserve the handoff command's exact `--model` and `--effort`; GPT-6 models support native `max` effort. Report any model-access error or fallback in the log. Do not change the model or switch to API billing silently.
+
 - `uvx` preferred, `uv` acceptable. First run:
   `command -v uvx || command -v uv`
   - If neither exists, install uv:
@@ -28,7 +30,7 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
   - If `uv` exists but `uvx` does not, replace `uvx --python 3.12 --from ...` below with
     `uv tool run --python 3.12 --from ...`.
 - Refresh the bundled `coarse-review` skill with an ephemeral install:
-  `uvx --python 3.12 --from 'coarse-ink==1.9.4' coarse install-skills --all --force`
+  `uvx --python 3.12 --from 'coarse-ink==1.9.5' coarse install-skills --all --force`
   (If that fails with `No such command 'install-skills'`, you're on a
   PyPI release that predates the command — upgrade or ignore; the skill
   bundle is also loadable directly via `uvx --from` without install.)
@@ -42,13 +44,13 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 
   > I need an OpenRouter API key for PDF OCR (~$0.10) and/or the requested deep literature search (~$0.30). A few options:
   >
-  > 1. Paste the key here and I'll save it to `~/.coarse/config.toml` via `uvx --python 3.12 --from 'coarse-ink==1.9.4' coarse setup`. Note the key passes through the LLM provider (OpenAI) on its way to me, so treat it as slightly less private than one you typed into a local terminal — rotate at https://openrouter.ai/settings/keys if that worries you.
+  > 1. Paste the key here and I'll save it to `~/.coarse/config.toml` via `uvx --python 3.12 --from 'coarse-ink==1.9.5' coarse setup`. Note the key passes through the LLM provider (OpenAI) on its way to me, so treat it as slightly less private than one you typed into a local terminal — rotate at https://openrouter.ai/settings/keys if that worries you.
   > 2. Set it yourself in a separate terminal: `export OPENROUTER_API_KEY=sk-or-v1-...` or add it to `.env` in your current directory, then re-ask me.
-  > 3. Run `uvx --python 3.12 --from 'coarse-ink==1.9.4' coarse setup` in a separate terminal yourself and paste the key into its interactive prompt — the key never touches this chat.
+  > 3. Run `uvx --python 3.12 --from 'coarse-ink==1.9.5' coarse setup` in a separate terminal yourself and paste the key into its interactive prompt — the key never touches this chat.
   >
   > Which do you want?
 
-  If the user pastes a key here, save it via `uvx --python 3.12 --from 'coarse-ink==1.9.4' coarse setup` with the pasted value and confirm it's stored. Their chat, their choice.
+  If the user pastes a key here, save it via `uvx --python 3.12 --from 'coarse-ink==1.9.5' coarse setup` with the pasted value and confirm it's stored. Their chat, their choice.
 - `codex` CLI logged in: `codex login`.
 
 ## How to run
@@ -61,16 +63,16 @@ Step 1 detaches the worker (~2 seconds) and writes `<log>.pid`. Step 2 uses `--a
 LOG=/tmp/coarse-review-$(basename <paper_path> .pdf).log
 
 # STEP 2a — launch (returns in ~2s)
-uvx --python 3.12 --from 'coarse-ink==1.9.4' \
+uvx --python 3.12 --from 'coarse-ink==1.9.5' \
   coarse-review --detach --log-file "$LOG" \
-  <paper_path> --host codex [--model gpt-5.6-sol] [--effort high] [--deep-literature-search]
+  <paper_path> --host codex [--model gpt-6-sol] [--effort high] [--deep-literature-search]
 
 # STEP 2b — wait (one blocking call, ~10-25 min, emits heartbeats)
-uvx --python 3.12 --from 'coarse-ink==1.9.4' \
+uvx --python 3.12 --from 'coarse-ink==1.9.5' \
   coarse-review --attach "$LOG"
 ```
 
-Run the attach call with a long tool timeout — at least 45 minutes (`--timeout 2700`) — so Codex doesn't kill the blocking command prematurely. The 45-minute recommendation leaves ~20 minutes of margin on top of the 10-25 minute review runtime for cold starts, slow models, long papers, and `--effort max` runs; 30 minutes is too tight because the tool timeout is a wall clock, not an idle-stream cap. Bump to 60 minutes (`--timeout 3600`) for book-length papers or the largest models. Do NOT re-run the `--detach` command from STEP 2a if the attach call returns early (that would spawn a second worker). Safe to Ctrl+C the attach: the watcher detaches but the worker keeps running, and re-attaching with the same command is idempotent. Attach exit codes: `0` complete, `1` failure marker, `2` silent crash, `3` missing pidfile, `124` attach's own 30-min timeout, `130` user interrupt.
+Run the attach command with Codex's terminal session mechanism. If `exec_command` returns a session ID, retain it and resume with `write_stdin` until completion; use the documented equivalents if your tool names differ. Do not invent a `--timeout` flag. If the terminal tool ends the watcher early, re-run the same attach command to reconnect. Never repeat `--detach` while that worker is running. Attach exit codes: `0` complete, `1` failure marker, `2` silent crash, `3` missing pidfile, `124` attach's own 30-minute timeout, `130` user interrupt.
 
 When attach exits cleanly, use the final log lines as the authoritative artifact locations:
 
@@ -81,7 +83,7 @@ rg '^  view:|^  local:' "$LOG"
 If `local:` is present, read that exact file. If `view:` is present, use that URL (it already includes the signed access token — use it as-is). Do not run broad filesystem searches trying to rediscover the review file.
 If `view:` says `unavailable`, report the callback failure and use only the `local:` path.
 
-Available models: `gpt-5.6-sol` (default), `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`.
+Available models: `gpt-6-sol` (default), `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`.
 Available effort levels: `low`, `medium`, `high` (default), `max`.
 
 These map to Codex's internal reasoning effort:
@@ -96,12 +98,12 @@ These map to Codex's internal reasoning effort:
 LOG=/tmp/coarse-review-$(date +%s).log
 
 # STEP 2a — launch
-uvx --python 3.12 --from 'coarse-ink==1.9.4' \
+uvx --python 3.12 --from 'coarse-ink==1.9.5' \
   coarse-review --detach --log-file "$LOG" \
   --handoff https://coarse.ink/h/<token> --host codex
 
 # STEP 2b — wait
-uvx --python 3.12 --from 'coarse-ink==1.9.4' \
+uvx --python 3.12 --from 'coarse-ink==1.9.5' \
   coarse-review --attach "$LOG"
 ```
 

@@ -1,0 +1,839 @@
+{
+  "limit_usd": 2.0,
+  "reserved_usd": 0.6516604250000001,
+  "calls": [
+    {
+      "model": "anthropic/claude-opus-5.5",
+      "reserved_usd": 0.09138500000000001,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 84,
+        "prompt_tokens": 1919,
+        "total_tokens": 2003,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.009356,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.009356,
+          "upstream_inference_prompt_cost": 0.007676,
+          "upstream_inference_completions_cost": 0.00168
+        }
+      },
+      "id": "gen-1791209271-9xksmn0azgc20rxzngdR",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "anthropic/claude-opus-5.5",
+      "reserved_usd": 0.094585,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 279,
+        "prompt_tokens": 2141,
+        "total_tokens": 2420,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 209,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.014144,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.014144,
+          "upstream_inference_prompt_cost": 0.008564,
+          "upstream_inference_completions_cost": 0.00558
+        }
+      },
+      "id": "gen-1791209275-fbOOv0JOwx7mtJm02wAt",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "anthropic/claude-opus-5.5",
+      "reserved_usd": 0.07539000000000001,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 756,
+        "prompt_tokens": 857,
+        "total_tokens": 1613,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.018548,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.018548,
+          "upstream_inference_prompt_cost": 0.003428,
+          "upstream_inference_completions_cost": 0.01512
+        }
+      },
+      "id": "gen-1791209281-h2cpwWufKmc5hIK09XMH",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "anthropic/claude-sonnet-5.5",
+      "reserved_usd": 0.045692500000000004,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 64,
+        "prompt_tokens": 1919,
+        "total_tokens": 1983,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.004478,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.004478,
+          "upstream_inference_prompt_cost": 0.003838,
+          "upstream_inference_completions_cost": 0.00064
+        }
+      },
+      "id": "gen-1791209291-0fHrtH5MFvAZNkVJLxnQ",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "anthropic/claude-sonnet-5.5",
+      "reserved_usd": 0.037695000000000006,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 1159,
+        "prompt_tokens": 857,
+        "total_tokens": 2016,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.013304,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.013304,
+          "upstream_inference_prompt_cost": 0.001714,
+          "upstream_inference_completions_cost": 0.01159
+        }
+      },
+      "id": "gen-1791209292-7Ey2jUhz6kB40pspdTDB",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "anthropic/claude-sonnet-5.5",
+      "reserved_usd": 0.04793,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 1042,
+        "prompt_tokens": 2158,
+        "total_tokens": 3200,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.014736,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.014736,
+          "upstream_inference_prompt_cost": 0.004316,
+          "upstream_inference_completions_cost": 0.01042
+        }
+      },
+      "id": "gen-1791209303-NbXO4UE96ptfnyhTqjj1",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "openai/gpt-6-sol",
+      "reserved_usd": 0.045692500000000004,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 87,
+        "prompt_tokens": 1321,
+        "total_tokens": 1408,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 40,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 1318,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 1318
+        },
+        "cost": 0.004171,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.004171,
+          "upstream_inference_prompt_cost": 0.003301,
+          "upstream_inference_completions_cost": 0.00087
+        }
+      },
+      "id": "gen-1791209309-QgOFrhMqHyG7gT2TVxON",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "openai/gpt-6-sol",
+      "reserved_usd": 0.037695000000000006,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 113,
+        "prompt_tokens": 578,
+        "total_tokens": 691,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 30,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.002286,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.002286,
+          "upstream_inference_prompt_cost": 0.001156,
+          "upstream_inference_completions_cost": 0.00113
+        }
+      },
+      "id": "gen-1791209314-fK78uoffQD9yZElS7MaA",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "openai/gpt-6-luna",
+      "reserved_usd": 0.002284625,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 183,
+        "prompt_tokens": 1321,
+        "total_tokens": 1504,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 122,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 1318,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 1318
+        },
+        "cost": 0.00025655,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.00025655,
+          "upstream_inference_prompt_cost": 0.00016505,
+          "upstream_inference_completions_cost": 9.15e-05
+        }
+      },
+      "id": "gen-1791209317-d9VVd9dE5qC0v87zblC7",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "openai/gpt-6-luna",
+      "reserved_usd": 0.00188475,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 337,
+        "prompt_tokens": 578,
+        "total_tokens": 915,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 98,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.0002263,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.0002263,
+          "upstream_inference_prompt_cost": 5.78e-05,
+          "upstream_inference_completions_cost": 0.0001685
+        }
+      },
+      "id": "gen-1791209320-GM0fTuhUagmEkCD09xFX",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "openai/gpt-6.1-sol",
+      "reserved_usd": 0.045692500000000004,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 61,
+        "prompt_tokens": 1321,
+        "total_tokens": 1382,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 1318,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 1318
+        },
+        "cost": 0.003911,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.003911,
+          "upstream_inference_prompt_cost": 0.003301,
+          "upstream_inference_completions_cost": 0.00061
+        }
+      },
+      "id": "gen-1791209325-kMJUgvFCFyvJ9916cyyS",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "openai/gpt-6.1-sol",
+      "reserved_usd": 0.037695000000000006,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 100,
+        "prompt_tokens": 578,
+        "total_tokens": 678,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.002156,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.002156,
+          "upstream_inference_prompt_cost": 0.001156,
+          "upstream_inference_completions_cost": 0.001
+        }
+      },
+      "id": "gen-1791209328-1elmyHpot6VKN2QNHHGS",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "x-ai/grok-4.7",
+      "reserved_usd": 0.032458,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 609,
+        "prompt_tokens": 2601,
+        "total_tokens": 3210,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 567,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 1152,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.007128,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.007128,
+          "upstream_inference_prompt_cost": 0.003474,
+          "upstream_inference_completions_cost": 0.003654
+        }
+      },
+      "id": "gen-1791209337-0h5gA44FpXChbJMweJhr",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "x-ai/grok-4.7",
+      "reserved_usd": 0.02606,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 531,
+        "prompt_tokens": 1869,
+        "total_tokens": 2400,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 220,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 1152,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.005196,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.005196,
+          "upstream_inference_prompt_cost": 0.00201,
+          "upstream_inference_completions_cost": 0.003186
+        }
+      },
+      "id": "gen-1791209344-fRu8UYiZsdZ6yPrj2dte",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "z-ai/glm-5.3",
+      "reserved_usd": 0.01484025,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 1536,
+        "prompt_tokens": 1322,
+        "total_tokens": 2858,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1769,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.0086092,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.0086092,
+          "upstream_inference_prompt_cost": 0.0018508,
+          "upstream_inference_completions_cost": 0.0067584
+        }
+      },
+      "id": "gen-1791209353-RLUpTE8dYnRMYvXQkRrn",
+      "finish_reason": "stop"
+    },
+    {
+      "model": "z-ai/glm-5.3",
+      "reserved_usd": 0.0146803,
+      "max_tokens": 2048,
+      "usage": {
+        "completion_tokens": 1246,
+        "prompt_tokens": 585,
+        "total_tokens": 1831,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1129,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null,
+          "image_tokens": 0,
+          "video_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null,
+          "video_tokens": 0,
+          "cache_creation_tokens": 0
+        },
+        "cost": 0.0063014,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.0063014,
+          "upstream_inference_prompt_cost": 0.000819,
+          "upstream_inference_completions_cost": 0.0054824
+        }
+      },
+      "id": "gen-1791209360-GbzGcmt3cfRRK54cGSCQ",
+      "finish_reason": "stop"
+    }
+  ],
+  "results": [
+    {
+      "model": "anthropic/claude-opus-5.5",
+      "stage": "metadata",
+      "status": "passed",
+      "output": {
+        "title": "Randomized Tutoring and Test Scores",
+        "domain": "social_sciences/education",
+        "taxonomy": "academic/research_paper",
+        "document_form": "manuscript",
+        "language": "en"
+      }
+    },
+    {
+      "model": "anthropic/claude-opus-5.5",
+      "stage": "overview",
+      "status": "passed",
+      "output": {
+        "summary": "The manuscript reports a randomized trial with 200 students, split evenly between tutoring and control. Mean test scores were 80 in the tutoring group and 75 in the control group. From this the authors conclude that tutoring causes a five-point increase in scores.",
+        "assessment": "Random assignment is a strong design choice for causal inference, and the question is clearly stated. However, the manuscript reports only a raw difference in means. With no measure of uncertainty and no check on whether randomization held up in practice, the causal claim cannot be evaluated.",
+        "issues": [
+          {
+            "title": "No uncertainty quantification or design-integrity checks for the causal claim",
+            "body": "The five-point effect is presented as an established result, but the manuscript gives no standard error, confidence interval, or test statistic. Readers therefore cannot tell whether the difference is distinguishable from chance variation at n=100 per arm. For example, if the score SD were around 15, the standard error of the difference would be about 2.1. That would give a wide 95% CI of roughly 0.8 to 9.2, and a modestly larger SD would make the estimate consistent with zero effect.\n\nThe authors also report nothing on attrition or baseline balance. Randomization identifies the average treatment effect only if outcomes are observed for the randomized samples. Differential dropout (for example, low performers leaving the tutoring arm) would bias the comparison of means, as would chance imbalance in prior achievement. Without these diagnostics, the claim that tutoring causes a five-point gain is not supported."
+          }
+        ],
+        "recommendation": "Major revision. The design could support causal inference, but the current report leaves the estimate's precision and the integrity of randomization unknown. The conclusion should not stand without these basic analyses.",
+        "revision_targets": [
+          "Report the standard error, a 95% confidence interval, and a hypothesis test for the treatment-control difference, along with group SDs.",
+          "Report attrition by arm (randomized vs. analyzed counts) and assess whether dropout differed by treatment or baseline characteristics. Consider bounds or intention-to-treat analysis if attrition is non-trivial.",
+          "Present a baseline balance table, including prior test scores, and consider covariate-adjusted estimates for precision.",
+          "Temper the causal language until uncertainty and design checks support it."
+        ]
+      }
+    },
+    {
+      "model": "anthropic/claude-sonnet-5.5",
+      "stage": "metadata",
+      "status": "passed",
+      "output": {
+        "title": "Randomized Tutoring and Test Scores",
+        "domain": "social_sciences/education",
+        "taxonomy": "academic/research_paper",
+        "document_form": "draft",
+        "language": "en"
+      }
+    },
+    {
+      "model": "anthropic/claude-sonnet-5.5",
+      "stage": "overview",
+      "status": "passed",
+      "output": {
+        "summary": "The manuscript reports a randomized experiment with 100 students assigned to tutoring and 100 to control. Mean test scores were 80 and 75, and the authors conclude that tutoring raises scores by five points. The text explicitly states that no standard errors, confidence intervals, attrition information, or baseline balance are reported.",
+        "assessment": "Random assignment is a strong design for causal inference, and the sample size is reasonable for a simple two-arm comparison. However, the manuscript reports only two group means and draws a firm causal and quantitative conclusion without any evidence on uncertainty, data completeness, or the integrity of randomization.",
+        "issues": [
+          {
+            "title": "Causal conclusion unsupported by any measure of uncertainty",
+            "body": "The claim that tutoring 'increases scores by five points' rests solely on a difference in means (80 vs. 75). The manuscript provides no standard errors, confidence intervals, test statistics, or p-values, and no information on score variability (e.g., SD). Without these, a reader cannot judge whether a 5-point gap is distinguishable from sampling noise. With n=100 per arm, a 5-point difference could be highly significant if the SD is around 10, or entirely compatible with chance if the SD is around 30. The point estimate is presented as the effect itself rather than as an estimate with a plausible range, and no standardized effect size is given to help interpret magnitude. The conclusion is therefore not warranted by the evidence shown."
+          },
+          {
+            "title": "Unreported attrition and baseline balance undermine randomization-based inference",
+            "body": "Randomization supports causal inference only if the analyzed groups remain comparable. The authors report no attrition data, so it is unknown whether all 200 students were tested or whether differential dropout biased the comparison. No baseline covariates or pre-test scores are provided, so there is no check that randomization produced balanced groups, which can matter at n=100 per arm. The randomization procedure, the tutoring intervention (dose, duration, tutor quality), the outcome test, and blinding of assessors are also not described. Without these, neither internal validity nor the interpretability of the 'five points' can be assessed, and a baseline-adjusted analysis that would improve precision is not possible."
+          }
+        ],
+        "recommendation": "major revision. The design is potentially sound, but the manuscript currently provides none of the inferential statistics or diagnostics needed to support its causal claim. Substantial reporting and analysis must be added before the conclusion can be evaluated.",
+        "revision_targets": [
+          "Report SDs, the estimated treatment effect with standard error and 95% confidence interval, a formal test, and a standardized effect size.",
+          "Report attrition and missing outcome data by arm, state whether the analysis is intention-to-treat, and assess sensitivity to differential attrition.",
+          "Present baseline characteristics (including any pre-test scores) by arm to demonstrate balance, and consider covariate-adjusted estimates.",
+          "Describe the randomization procedure, the tutoring intervention, the outcome measure, and any blinding.",
+          "Temper the conclusion to reflect the estimated uncertainty and the limits of generalizability."
+        ]
+      }
+    },
+    {
+      "model": "openai/gpt-6-sol",
+      "stage": "metadata",
+      "status": "passed",
+      "output": {
+        "title": "Randomized Tutoring and Test Scores",
+        "domain": "social_sciences/education",
+        "taxonomy": "academic/research_paper",
+        "document_form": "manuscript",
+        "language": "en"
+      }
+    },
+    {
+      "model": "openai/gpt-6-sol",
+      "stage": "overview",
+      "status": "passed",
+      "output": {
+        "summary": "",
+        "assessment": "",
+        "issues": [
+          {
+            "title": "No uncertainty estimate for the treatment effect",
+            "body": "The five-point difference in group means is reported without standard errors, confidence intervals, or score variability. The manuscript therefore does not show how precisely the effect is estimated or whether the observed difference is distinguishable from chance."
+          }
+        ],
+        "recommendation": "",
+        "revision_targets": []
+      }
+    },
+    {
+      "model": "openai/gpt-6-luna",
+      "stage": "metadata",
+      "status": "passed",
+      "output": {
+        "title": "Randomized Tutoring and Test Scores",
+        "domain": "social_sciences/education",
+        "taxonomy": "academic/research_paper",
+        "document_form": "draft",
+        "language": "en"
+      }
+    },
+    {
+      "model": "openai/gpt-6-luna",
+      "stage": "overview",
+      "status": "passed",
+      "output": {
+        "summary": "",
+        "assessment": "Random assignment provides a sound basis for estimating the effect of tutoring, and the reported five-point difference is potentially meaningful. However, the evidence provided is insufficient to assess how precisely that effect is estimated.",
+        "issues": [
+          {
+            "title": "Treatment effect is reported without uncertainty or attrition information",
+            "body": "The five-point difference in sample means does not show whether the estimated effect is distinguishable from chance variation. Without standard errors or confidence intervals, and without accounting for attrition, readers cannot assess the precision or potential bias of the estimate; the causal conclusion is therefore stronger than the reported evidence supports."
+          }
+        ],
+        "recommendation": "major revision. The randomized design is promising, but the manuscript must report uncertainty around the estimated effect and clarify attrition before the conclusion can be evaluated. The current information does not establish whether the five-point difference is reliable.",
+        "revision_targets": [
+          "Report a standard error or confidence interval for the treatment effect and describe the analysis used.",
+          "Report attrition by assigned group and explain how missing outcomes were handled."
+        ]
+      }
+    },
+    {
+      "model": "openai/gpt-6.1-sol",
+      "stage": "metadata",
+      "status": "passed",
+      "output": {
+        "title": "Randomized Tutoring and Test Scores",
+        "domain": "social_sciences/education",
+        "taxonomy": "academic/research_paper",
+        "document_form": "manuscript",
+        "language": "en"
+      }
+    },
+    {
+      "model": "openai/gpt-6.1-sol",
+      "stage": "overview",
+      "status": "passed",
+      "output": {
+        "summary": "",
+        "assessment": "",
+        "issues": [
+          {
+            "title": "No uncertainty estimate for the treatment effect",
+            "body": "The five-point difference is a point estimate, not sufficient evidence that tutoring increases scores. Without outcome variability, a standard error, or a confidence interval, readers cannot assess the estimate's precision or whether the results are compatible with no effect. Report an uncertainty estimate appropriate to the randomized design and qualify the conclusion accordingly."
+          }
+        ],
+        "recommendation": "",
+        "revision_targets": []
+      }
+    },
+    {
+      "model": "x-ai/grok-4.7",
+      "stage": "metadata",
+      "status": "passed",
+      "output": {
+        "title": "Randomized Tutoring and Test Scores",
+        "domain": "social_sciences/education",
+        "taxonomy": "academic/research_paper",
+        "document_form": "draft",
+        "language": "en"
+      }
+    },
+    {
+      "model": "x-ai/grok-4.7",
+      "stage": "overview",
+      "status": "passed",
+      "output": {
+        "summary": "The manuscript reports a five-point mean difference after random assignment but treats that difference as a causal effect without the statistics or design checks needed to support the claim.",
+        "assessment": "The design idea\u2014a randomized comparison of tutoring versus control\u2014is appropriate for estimating an effect on test scores. As written, the paper does not establish that the observed difference is distinguishable from chance or that the comparison remained valid after assignment.",
+        "issues": [
+          {
+            "title": "Causal claim unsupported by inference or design checks",
+            "body": "The conclusion that tutoring increases scores by five points rests only on a raw difference of means (80 versus 75). No standard errors, confidence intervals, or hypothesis tests are reported, so it is impossible to judge whether the difference is precise or statistically distinguishable from zero. The text also states that attrition and baseline balance are unreported, so differential dropout or failed randomization cannot be ruled out. Without those elements, the five-point figure is a descriptive contrast, not a supported causal estimate."
+          }
+        ],
+        "recommendation": "major revision. The randomized design could support an effect estimate, but the current manuscript asserts a precise causal increase without uncertainty or validity checks. Those omissions must be corrected before the conclusion can be evaluated.",
+        "revision_targets": [
+          "Report standard errors and confidence intervals (or an equivalent test) for the tutoring\u2013control difference, and qualify the causal claim accordingly.",
+          "Report attrition by arm and analyze whether dropout differs by treatment.",
+          "Report baseline balance on pre-treatment covariates and state how the estimator handles any imbalance."
+        ]
+      }
+    },
+    {
+      "model": "z-ai/glm-5.3",
+      "stage": "metadata",
+      "status": "passed",
+      "output": {
+        "title": "Randomized Tutoring and Test Scores",
+        "domain": "social_sciences/education",
+        "taxonomy": "academic/research_paper",
+        "document_form": "manuscript",
+        "language": "en"
+      }
+    },
+    {
+      "model": "z-ai/glm-5.3",
+      "stage": "overview",
+      "status": "passed",
+      "output": {
+        "summary": "The manuscript reports a randomized experiment (100 tutoring, 100 control) finding a 5-point difference in mean test scores (80 vs. 75), but omits all measures of statistical uncertainty and randomization diagnostics.",
+        "assessment": "The study's randomized design is a strength and the question is practically relevant. However, the central causal claim rests entirely on raw mean comparisons with no quantification of uncertainty, so the reported effect cannot be evaluated against the possibility of chance differences.",
+        "issues": [
+          {
+            "title": "No statistical inference supports the headline effect",
+            "body": "The paper concludes tutoring increases scores by five points based solely on the difference in raw means (80 vs. 75), explicitly reporting no standard errors or confidence intervals. With 100 students per arm, sampling variability alone could plausibly produce a difference of this magnitude, so readers cannot judge whether the effect differs from zero. The revision must report the standard error of the difference in means (or an equivalent t-test/regression), a 95% confidence interval, and a p-value, along with per-arm standard deviations so effect size can be contextualized."
+          }
+        ],
+        "recommendation": "Major revision. The design is sound, but the manuscript lacks the basic inferential evidence needed to support its conclusion; the revision must quantify uncertainty and document the integrity of the randomization before the finding can be assessed.",
+        "revision_targets": [
+          "Report standard errors, a 95% confidence interval, and a p-value for the treatment-control difference",
+          "Report baseline balance across arms to verify the randomization",
+          "Report attrition in each arm and discuss potential attrition bias",
+          "Report per-arm score distributions (e.g., standard deviations)"
+        ]
+      }
+    }
+  ],
+  "verified_at": "2026-10-05",
+  "sources": [
+    "https://openrouter.ai/api/v1/models",
+    "https://developers.openai.com/api/docs/models/gpt-6-sol",
+    "https://developers.openai.com/api/docs/models/gpt-6-luna",
+    "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+    "https://code.claude.com/docs/en/model-config"
+  ],
+  "provider_reported_cost_usd": 0.11480745
+}

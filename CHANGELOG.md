@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## v1.9.5 — 2026-10-05
+
+### Changed
+
+- Update the website default to Opus 5.5 and its suggestions to Sonnet 5.5, Grok 4.7, and GLM 5.3; add GPT-6 Sol, GPT-6 Luna, and GPT-6.1 Sol. Keep pricing, long-context surcharges, output limits, and reasoning budgets synchronized with OpenRouter.
+- Refresh Claude Code and Codex handoff model lists and bundled instructions. Use native Claude model IDs, document the required Claude Code versions, preserve selected models and effort, and wait through supported terminal sessions instead of unsupported timeout arguments.
+- Default local Claude and Codex reviews to Opus 5.5 and GPT-6 Sol, respectively; preserve native maximum reasoning effort for the GPT-6 family.
+
+
 ## v1.9.4 — 2026-09-09
 
 ### Changed
