@@ -42,6 +42,7 @@ from coarse.cli_attach import (
     write_pidfile,
 )
 from coarse.extraction import SUPPORTED_EXTENSIONS
+from coarse.handoff_url import handoff_url_argument, normalize_handoff_url
 from coarse.models import HEADLESS_DEFAULT_MODELS, model_filename_slug
 
 _DETACHED_ENV = "COARSE_REVIEW_DETACHED"
@@ -142,8 +143,7 @@ def _fetch_handoff(url: str) -> dict:
     """
     import requests
 
-    if not url.startswith(("http://", "https://")):
-        url = f"https://{url}"
+    url = normalize_handoff_url(url)
 
     # Ask for JSON explicitly — the /h/<token> route serves a landing
     # page to browsers and JSON to API clients that request it.
@@ -492,6 +492,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--handoff",
+        type=handoff_url_argument,
         metavar="URL",
         help="Handoff URL from the coarse web form (coarse.ink/h/<token>).",
     )
