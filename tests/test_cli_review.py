@@ -54,6 +54,67 @@ class _FakeResponse:
         return self._payload
 
 
+@pytest.mark.parametrize(
+    "wrapper",
+    [
+        "{}",
+        "  {}\n",
+        "[{}]({})",
+        "[Review paper]({})",
+        "[Review paper](<{}>)",
+        "<{}>",
+        "`{}`",
+        "`[Review paper]({})`",
+    ],
+)
+def test_fetch_handoff_unwraps_chat_links_without_changing_destination(wrapper) -> None:
+    url = (
+        "https://example.test/h/00000000-0000-4000-8000-000000000000"
+        "?x-vercel-protection-bypass=a%2Bb&next=(paper)&x-vercel-set-bypass-cookie=true"
+    )
+    bundle = {
+        "paper_id": "paper",
+        "finalize_token": "token",
+        "callback_url": "https://example.test/finalize",
+        "signed_download_url": "https://example.test/paper.pdf",
+    }
+    with patch("requests.get", return_value=_FakeResponse(200, bundle)) as get:
+        assert _fetch_handoff(wrapper.format(url, url)) == bundle
+    assert get.call_args.args == (url,)
+    assert get.call_args.kwargs["headers"]["Accept"] == "application/json"
+
+
+def test_fetch_handoff_preserves_schemeless_url_support() -> None:
+    with patch("requests.get", return_value=_FakeResponse(404)) as get:
+        with pytest.raises(RuntimeError, match="token not found"):
+            _fetch_handoff("coarse.ink/h/token")
+    assert get.call_args.args == ("https://coarse.ink/h/token",)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "[paper](https://coarse.ink/h/token",
+        "https://coarse.ink:invalid/h/token",
+        "https://coarse.ink/h/white space",
+        "https://",
+        "ftp://coarse.ink/h/token",
+        "[one](https://coarse.ink/h/one) [two](https://coarse.ink/h/two)",
+    ],
+)
+def test_invalid_handoff_fails_before_detach(value, capsys) -> None:
+    value += "?secret=never-print-this"
+    with patch("coarse.cli_review._detach_review_process") as detach, patch("requests.get") as get:
+        with pytest.raises(SystemExit) as exc:
+            main(["--handoff", value, "--detach", "--host", "codex"])
+    assert exc.value.code == 2
+    detach.assert_not_called()
+    get.assert_not_called()
+    error = capsys.readouterr().err
+    assert "--handoff requires a valid HTTP(S) URL" in error
+    assert "never-print-this" not in error
+
+
 def test_fetch_handoff_401_reports_vercel_preview_protection() -> None:
     """401 should name the preview-protection cause, not the old 15-min TTL."""
     with patch(
@@ -190,7 +251,10 @@ def test_infer_handoff_extension_uses_content_type_fallback() -> None:
     )
 
 
-def test_main_handoff_supports_markdown_source(tmp_path) -> None:
+@pytest.mark.parametrize(
+    "handoff", ["https://example.test/h/token", "[Paper](https://example.test/h/token)"]
+)
+def test_main_handoff_supports_markdown_source(tmp_path, handoff) -> None:
     """Handoff mode should preserve non-PDF extensions for direct extraction."""
     source = tmp_path / "paper.md"
     source.write_text("# Paper\n", encoding="utf-8")
@@ -213,7 +277,7 @@ def test_main_handoff_supports_markdown_source(tmp_path) -> None:
         return _make_review(), "# Review\n", PaperText(full_markdown="# Paper\n", token_estimate=2)
 
     with (
-        patch("coarse.cli_review._fetch_handoff", return_value=handoff_bundle),
+        patch("coarse.cli_review._fetch_handoff", return_value=handoff_bundle) as fetch,
         patch("coarse.cli_review._download_handoff_source", return_value=source),
         patch("coarse.headless_review.run_headless_review", side_effect=fake_run_headless_review),
         patch(
@@ -224,7 +288,7 @@ def test_main_handoff_supports_markdown_source(tmp_path) -> None:
         rc = main(
             [
                 "--handoff",
-                "https://example.test/h/token",
+                handoff,
                 "--host",
                 "codex",
                 "--model",
@@ -237,6 +301,7 @@ def test_main_handoff_supports_markdown_source(tmp_path) -> None:
         )
 
     assert rc == 0
+    fetch.assert_called_once_with("https://example.test/h/token")
     assert captured["paper_path"] == source
     assert captured["kwargs"] == {
         "host": "codex",

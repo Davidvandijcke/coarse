@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -133,6 +134,36 @@ def _infer_handoff_extension(
     return _CONTENT_TYPE_EXTENSIONS.get(normalized_type, ".pdf")
 
 
+def _normalize_handoff_url(value: str) -> str:
+    """Remove chat presentation wrappers without changing the URL destination."""
+    url = value.strip()
+    if url.startswith("`") and url.endswith("`"):
+        url = url[1:-1].strip()
+    link = re.fullmatch(r"\[[^\]\r\n]*\]\((https?://[^\s<>]+|<https?://[^\s<>]+>)\)", url)
+    if link:
+        url = link.group(1)
+    if url.startswith("<") and url.endswith(">"):
+        url = url[1:-1]
+    if "://" not in url:
+        url = f"https://{url}"
+    try:
+        parsed = urlsplit(url)
+        valid = (
+            parsed.scheme in ("http", "https")
+            and bool(parsed.hostname)
+            and not any(c.isspace() or c in "<>`\\" for c in url)
+            and not any(c in parsed.netloc for c in "()")
+        )
+        # Accessing port also validates malformed/non-numeric port strings.
+        parsed.port
+    except ValueError:
+        valid = False
+    if not valid:
+        # Never echo the input: preview URLs can contain access credentials.
+        raise ValueError("--handoff requires a valid HTTP(S) URL or a Markdown link to one")
+    return url
+
+
 def _fetch_handoff(url: str) -> dict:
     """Fetch the handoff bundle JSON from ``url``.
 
@@ -142,8 +173,7 @@ def _fetch_handoff(url: str) -> dict:
     """
     import requests
 
-    if not url.startswith(("http://", "https://")):
-        url = f"https://{url}"
+    url = _normalize_handoff_url(url)
 
     # Ask for JSON explicitly — the /h/<token> route serves a landing
     # page to browsers and JSON to API clients that request it.
@@ -602,6 +632,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.handoff and not args.paper_path:
         parser.error("either paper_path or --handoff is required")
+
+    if args.handoff:
+        try:
+            args.handoff = _normalize_handoff_url(args.handoff)
+        except ValueError as exc:
+            parser.error(str(exc))
 
     if args.detach and os.environ.get(_DETACHED_ENV) != "1":
         return _detach_review_process(argv, args.log_file)

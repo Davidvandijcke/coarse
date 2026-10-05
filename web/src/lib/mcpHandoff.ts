@@ -278,11 +278,17 @@ export function buildAgentPrompt(args: {
     `version-skew and is safe to ignore — the review runs the same way ` +
     `either way because uvx is already loading the coarse bundle via ` +
     `\`--from\`.\n\n` +
-    `${setupCmd}\n\n` +
+    `\`\`\`sh\n${setupCmd}\n\`\`\`\n\n` +
     `${step2}\n\n` +
-    `STEP 3 — Launch the detached review. Run the EXACT command below, ` +
-    `verbatim. Do not substitute, rewrite, or interpret any argument — ` +
-    `every piece is already filled in. The \`--handoff\` URL is the ` +
+    `STEP 3 — Launch the detached review. Run the command below, ` +
+    `preserving the selected model, effort, flags, and URL destination. ` +
+    `The shell argument after \`--handoff\` must be the bare URL inside ` +
+    `its shell quotes. If chat formatting wraps it as a Markdown link ` +
+    `(\`[label](URL)\`), an autolink (\`<URL>\`), or inline code, remove ` +
+    `only that presentation wrapper; preserve the entire destination, ` +
+    `including query parameters. This formatting correction is authorized ` +
+    `and does not require confirmation. Do not put Markdown link syntax ` +
+    `inside a shell argument. The \`--handoff\` URL is the ` +
     `paper source; coarse-review downloads the paper from that URL ` +
     `over the network at the start of the pipeline. You do NOT need ` +
     `to, and MUST NOT, search the filesystem (no \`find\`, no ` +
@@ -290,10 +296,10 @@ export function buildAgentPrompt(args: {
     `and you do NOT need to ask me for a paper path. This command ` +
     `returns immediately (within 2 seconds) after printing ` +
     `\`Review PID: <N>\` and \`Log file: ${logFile}\`. Run it:\n\n` +
-    `  ${runCmd}\n\n` +
+    `\`\`\`sh\n${runCmd}\n\`\`\`\n\n` +
     `STEP 4 — Attach to the running review. It usually takes 10-25 ` +
     `minutes, and longer for large papers or maximum effort. Run:\n\n` +
-    `  ${attachCmd}\n\n` +
+    `\`\`\`sh\n${attachCmd}\n\`\`\`\n\n` +
     `The watcher streams logs and idle heartbeats until completion. ` +
     `Use the terminal tool's supported background or session mechanism ` +
     `for this long-running command. In Codex, retain the session ID ` +
@@ -311,7 +317,9 @@ export function buildAgentPrompt(args: {
     `the log\n` +
     `  - 2 — review process died without a completion marker (silent ` +
     `crash); show me the last 50 log lines so I can diagnose\n` +
-    `  - 3 — pidfile missing (launcher never started); re-run STEP 3\n` +
+    `  - 3 — pidfile missing or malformed; the worker may have already ` +
+    `exited and removed it. Read the log and resolve any launch error ` +
+    `before retrying STEP 3. Never repeat an unchanged failing command.\n` +
     `  - 124 — attach's own 30-min timeout tripped (very unusual); ` +
     `re-run the attach command to continue waiting\n\n` +
     `STEP 5 — When attach exits with code 0, read the completion ` +

@@ -91,6 +91,26 @@ describe("subscription model selection", () => {
 
 
 describe("current agent handoff instructions", () => {
+  it.each(["codex", "claude-code", "gemini-cli"] as const)(
+    "keeps %s shell commands in literal code fences with bare URL arguments",
+    (host) => {
+      const handoffUrl = "https://example.test/h/token?a=b%2Bc&next=(paper)";
+      const commands = buildCliCommands({
+        handoffUrl, host, model: getHostModels(host, "")[0],
+        effort: "high", paperId: "test-paper",
+      });
+      const prompt = buildAgentPrompt({ ...commands, isPdf: false });
+      const shellBlocks = [...prompt.matchAll(/```sh\n([^]*?)\n```/g)].map((m) => m[1]);
+      expect(shellBlocks).toEqual([commands.setupCmd, commands.runCmd, commands.attachCmd]);
+      expect(shellBlocks[1]).toContain(`--handoff '${handoffUrl}'`);
+      expect(prompt).toContain("This formatting correction is authorized");
+      expect(prompt).toContain("preserve the entire destination, including query parameters");
+      expect(prompt).not.toContain("Do not substitute, rewrite, or interpret any argument");
+      expect(prompt).toContain("Read the log and resolve any launch error before retrying");
+      expect(prompt).not.toContain("launcher never started");
+    },
+  );
+
   it("preserves launch choices and uses supported terminal sessions", () => {
     const prompt = buildAgentPrompt({ ...baseCommands, isPdf: false });
     expect(prompt).toContain(baseCommands.runCmd);
