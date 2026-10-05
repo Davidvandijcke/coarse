@@ -87,6 +87,11 @@ For a website review, use `prepare --handoff URL` and publish only after `ready`
 uv run coarse-native publish --workspace .coarse-native/example
 ```
 
+Website handoff tokens retain their existing three-hour lifetime. Local checkpoints
+survive longer interruptions, but an expired handoff cannot publish; retain the
+local review and create a new website handoff. The pilot does not silently renew
+capabilities or extend their lifetime.
+
 No network publication occurs during prepare, next, or submit. Confirmed
 publication is locally idempotent. Before sending, the checkpoint records an
 uncertain outcome; a lost acknowledgement requires website inspection rather
