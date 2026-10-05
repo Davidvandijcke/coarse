@@ -47,6 +47,7 @@ def prepare(
     effort: str = "inherit",
     pre_extracted: Path | None = None,
     language: str | None = None,
+    author_notes: str | None = None,
 ) -> dict:
     if bool(paper) == bool(handoff):
         raise ValueError("Supply exactly one paper file or handoff URL")
@@ -89,6 +90,7 @@ def prepare(
                 "model": model,
                 "effort": effort,
                 "language": language,
+                "author_notes": author_notes,
                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "status": "prepared",
                 "pending": [],
@@ -118,6 +120,7 @@ def _replay(workspace: Path, run: dict) -> NativeRuntime:
             skip_cost_gate=True,
             config=CoarseConfig(extraction_qa=False, api_keys={}),
             language=run["language"],
+            author_notes=run.get("author_notes"),
             runtime=runtime,
         )
     except NativePending:

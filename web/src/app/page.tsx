@@ -944,7 +944,7 @@ function PageBody() {
     // cause codex:// / claude:// launches to be blocked.
     const useNative = nativePilot && nativePilotAvailable(host, deepLiteratureSearch);
     const fullPrompt = useNative ? buildNativePrompt({
-      handoffUrl: handoffBundle.handoff_url, paperId: handoffState.paperId, host, reviewLanguage,
+      handoffUrl: handoffBundle.handoff_url, paperId: handoffState.paperId, host, reviewLanguage, authorNotes,
     }) : buildAgentPrompt({
       setupCmd, runCmd, attachCmd, logFile, isPdf: handoffState.isPdf, reviewLanguage,
       deepLiteratureSearch,
@@ -1903,7 +1903,7 @@ function PageBody() {
                       <CodeBlock
                         text={useNative ? buildNativePrompt({
                           handoffUrl: handoffBundle.handoff_url, paperId: handoffState.paperId,
-                          host, reviewLanguage,
+                          host, reviewLanguage, authorNotes,
                         }) : buildAgentPrompt({
                           setupCmd, runCmd, attachCmd, logFile,
                           isPdf: handoffState.isPdf, reviewLanguage,

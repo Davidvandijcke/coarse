@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 from contextlib import contextmanager
+from importlib.metadata import version
 from pathlib import Path
 
 FORMAT_VERSION = 1
@@ -25,8 +26,13 @@ def file_digest(path: Path) -> str:
 def engine_digest() -> str:
     root = Path(__file__).parent
     # Refuse to replay old checkpoints against changed prompts, schemas or code.
-    paths = sorted(root.glob("*.py")) + sorted((root / "agents").glob("*.py"))
-    return digest({p.relative_to(root).as_posix(): file_digest(p) for p in paths})
+    paths = sorted(
+        p
+        for p in root.rglob("*")
+        if p.suffix in {".py", ".json", ".j2", ".jinja2", ".yaml", ".toml"}
+    )
+    files = {p.relative_to(root).as_posix(): file_digest(p) for p in paths}
+    return digest({"files": files, "pydantic": version("pydantic")})
 
 
 def read_json(path: Path):

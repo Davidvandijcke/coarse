@@ -17,7 +17,7 @@ describe("native handoff pilot", () => {
 
   it.each(["codex", "claude-code"] as const)("preserves %s handoff through shell and app launch", (host) => {
     const url = "https://example.test/h/pilot?a=b%2Bc&name=O'Reilly";
-    const prompt = buildNativePrompt({ handoffUrl: url, host, paperId: "pilot", reviewLanguage: "fr" });
+    const prompt = buildNativePrompt({ handoffUrl: url, host, paperId: "pilot", reviewLanguage: "fr", authorNotes: "Check the author's proof & assumptions" });
     const blocks = [...prompt.matchAll(/```sh\n([^]*?)\n```/g)].map(m => m[1]);
     expect(blocks).toHaveLength(2);
     expect(blocks[0]).toContain("coarse-native install-skill");
@@ -26,6 +26,7 @@ describe("native handoff pilot", () => {
     expect(args[args.indexOf("--handoff") + 1]).toBe(url);
     expect(args[args.indexOf("--host") + 1]).toBe(host === "codex" ? "codex" : "claude");
     expect(args[args.indexOf("--language") + 1]).toBe("French");
+    expect(args[args.indexOf("--author-notes") + 1]).toBe("Check the author's proof & assumptions");
     expect(args).not.toContain("--detach");
     expect(args).not.toContain("--model");
     const launch = nativeLaunchUrl(host, prompt);

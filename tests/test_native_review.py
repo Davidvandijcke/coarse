@@ -315,3 +315,13 @@ def test_empty_successful_findings_are_not_logged_as_failed_agents(
     assert finish(workspace)["status"] == "ready"
     assert read_json(workspace / "review.json")["detailed_comments"] == []
     assert "All section agents failed" not in caplog.text
+
+
+def test_author_notes_reach_native_review_prompts(tmp_path, paper):
+    workspace = tmp_path / "notes-review"
+    note = "Concentrate on variance calculations."
+    prepare(workspace, paper=paper, host="codex", author_notes=note)
+    finish(workspace)
+    tasks = [read_json(p) for p in (workspace / "tasks").glob("*.json")]
+    overview = next(t for t in tasks if t["response_type"] == "OverviewFeedback")
+    assert any(note in message["content"] for message in overview["messages"])

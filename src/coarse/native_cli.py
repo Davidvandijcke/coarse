@@ -31,6 +31,7 @@ def main(argv=None) -> int:
         default="inherit",
     )
     prep.add_argument("--language")
+    prep.add_argument("--author-notes")
     prep.add_argument("--pre-extracted", type=Path)
     for name in ["next", "status", "submit", "publish", "confirm-extraction"]:
         command = commands.add_parser(name)
@@ -65,6 +66,7 @@ def main(argv=None) -> int:
                 effort=args.effort,
                 pre_extracted=args.pre_extracted,
                 language=args.language,
+                author_notes=args.author_notes,
             )
         elif args.command == "next":
             result = advance(workspace)
