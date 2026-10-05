@@ -263,7 +263,8 @@ export function buildAgentPrompt(args: {
     `current chat uses a different model. For Claude Code, check ` +
     `\`claude --version\`: Opus 5.5 requires 2.1.280 or later and ` +
     `Sonnet 5.5 requires 2.1.284 or later; run \`claude update\` if needed. ` +
-    `For Codex, check \`codex --version\` and update using its original ` +
+    `Codex 0.160.0 was verified with GPT-6 Sol, Luna, and GPT-6.1 Sol. ` +
+    `Check \`codex --version\` and update using its original ` +
     `installation method if the selected GPT-6 model is unsupported. ` +
     `Model access depends on the signed-in account. Report any model ` +
     `access error or fallback shown in the log; do not silently change ` +

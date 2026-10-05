@@ -835,5 +835,42 @@
     "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
     "https://code.claude.com/docs/en/model-config"
   ],
-  "provider_reported_cost_usd": 0.11480745
+  "provider_reported_cost_usd": 0.11480745,
+  "subscription_cli_checks": [
+    {
+      "host": "claude",
+      "model": "claude-opus-5-5",
+      "effort": "max",
+      "passed": true,
+      "version": "2.1.289"
+    },
+    {
+      "host": "claude",
+      "model": "claude-sonnet-5-5",
+      "effort": "max",
+      "passed": true,
+      "version": "2.1.289"
+    },
+    {
+      "host": "codex",
+      "version": "0.160.0",
+      "model": "gpt-6-sol",
+      "effort": "max",
+      "passed": true
+    },
+    {
+      "host": "codex",
+      "version": "0.160.0",
+      "model": "gpt-6-luna",
+      "effort": "max",
+      "passed": true
+    },
+    {
+      "host": "codex",
+      "version": "0.160.0",
+      "model": "gpt-6.1-sol",
+      "effort": "max",
+      "passed": true
+    }
+  ]
 }

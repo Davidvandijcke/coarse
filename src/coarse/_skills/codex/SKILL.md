@@ -17,7 +17,7 @@ Runs the **full coarse review pipeline** on a paper using the local `codex exec`
 
 ## Prerequisites
 
-Use a current Codex installation with access to the selected model. Check `codex --version` and update using the original installation method if the model is unsupported. Preserve the handoff command's exact `--model` and `--effort`; GPT-6 models support native `max` effort. Report any model-access error or fallback in the log. Do not change the model or switch to API billing silently.
+Use a current Codex installation with access to the selected model. Codex 0.160.0 was verified with GPT-6 Sol, GPT-6 Luna, and GPT-6.1 Sol. Check `codex --version` and update using the original installation method if the model is unsupported. Preserve the handoff command's exact `--model` and `--effort`; GPT-6 models support native `max` effort. Report any model-access error or fallback in the log. Do not change the model or switch to API billing silently.
 
 - `uvx` preferred, `uv` acceptable. First run:
   `command -v uvx || command -v uv`

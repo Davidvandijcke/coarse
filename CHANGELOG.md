@@ -4,6 +4,10 @@
 
 ## v1.9.5 — 2026-10-05
 
+### Fixed
+
+- Raise the urllib3 floor to 2.8.0 in the package and Modal image to clear the dependency audit's newly reported advisories.
+
 ### Changed
 
 - Update the website default to Opus 5.5 and its suggestions to Sonnet 5.5, Grok 4.7, and GLM 5.3; add GPT-6 Sol, GPT-6 Luna, and GPT-6.1 Sol. Keep pricing, long-context surcharges, output limits, and reasoning budgets synchronized with OpenRouter.
