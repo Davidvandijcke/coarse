@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 import { buildAgentPrompt, buildCliCommands, getHostModels, type ChatHost } from "@/lib/mcpHandoff";
@@ -94,7 +95,7 @@ describe("current agent handoff instructions", () => {
   it.each(["codex", "claude-code", "gemini-cli"] as const)(
     "keeps %s shell commands in literal code fences with bare URL arguments",
     (host) => {
-      const handoffUrl = "https://example.test/h/token?a=b%2Bc&next=(paper)";
+      const handoffUrl = "https://example.test/h/token?a=b%2Bc&next=(paper)&name=O'Reilly";
       const commands = buildCliCommands({
         handoffUrl, host, model: getHostModels(host, "")[0],
         effort: "high", paperId: "test-paper",
@@ -102,7 +103,15 @@ describe("current agent handoff instructions", () => {
       const prompt = buildAgentPrompt({ ...commands, isPdf: false });
       const shellBlocks = [...prompt.matchAll(/```sh\n([^]*?)\n```/g)].map((m) => m[1]);
       expect(shellBlocks).toEqual([commands.setupCmd, commands.runCmd, commands.attachCmd]);
-      expect(shellBlocks[1]).toContain(`--handoff '${handoffUrl}'`);
+      // Exercise a real POSIX shell without launching uvx or spending credits.
+      const argv = execFileSync("/bin/sh", ["-c", `set -- ${shellBlocks[1]}; printf '%s\\0' "$@"`])
+        .toString().split("\0").filter(Boolean);
+      expect(argv[argv.indexOf("--handoff") + 1]).toBe(handoffUrl);
+      expect(argv[argv.indexOf("--host") + 1]).toBe(
+        { codex: "codex", "claude-code": "claude", "gemini-cli": "gemini" }[host],
+      );
+      expect(argv[argv.indexOf("--model") + 1]).toBe(getHostModels(host, "")[0]);
+      expect(argv[argv.indexOf("--effort") + 1]).toBe("high");
       expect(prompt).toContain("This formatting correction is authorized");
       expect(prompt).toContain("preserve the entire destination, including query parameters");
       expect(prompt).not.toContain("Do not substitute, rewrite, or interpret any argument");

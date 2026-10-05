@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -43,6 +42,7 @@ from coarse.cli_attach import (
     write_pidfile,
 )
 from coarse.extraction import SUPPORTED_EXTENSIONS
+from coarse.handoff_url import handoff_url_argument, normalize_handoff_url
 from coarse.models import HEADLESS_DEFAULT_MODELS, model_filename_slug
 
 _DETACHED_ENV = "COARSE_REVIEW_DETACHED"
@@ -134,36 +134,6 @@ def _infer_handoff_extension(
     return _CONTENT_TYPE_EXTENSIONS.get(normalized_type, ".pdf")
 
 
-def _normalize_handoff_url(value: str) -> str:
-    """Remove chat presentation wrappers without changing the URL destination."""
-    url = value.strip()
-    if url.startswith("`") and url.endswith("`"):
-        url = url[1:-1].strip()
-    link = re.fullmatch(r"\[[^\]\r\n]*\]\((https?://[^\s<>]+|<https?://[^\s<>]+>)\)", url)
-    if link:
-        url = link.group(1)
-    if url.startswith("<") and url.endswith(">"):
-        url = url[1:-1]
-    if "://" not in url:
-        url = f"https://{url}"
-    try:
-        parsed = urlsplit(url)
-        valid = (
-            parsed.scheme in ("http", "https")
-            and bool(parsed.hostname)
-            and not any(c.isspace() or c in "<>`\\" for c in url)
-            and not any(c in parsed.netloc for c in "()")
-        )
-        # Accessing port also validates malformed/non-numeric port strings.
-        parsed.port
-    except ValueError:
-        valid = False
-    if not valid:
-        # Never echo the input: preview URLs can contain access credentials.
-        raise ValueError("--handoff requires a valid HTTP(S) URL or a Markdown link to one")
-    return url
-
-
 def _fetch_handoff(url: str) -> dict:
     """Fetch the handoff bundle JSON from ``url``.
 
@@ -173,7 +143,7 @@ def _fetch_handoff(url: str) -> dict:
     """
     import requests
 
-    url = _normalize_handoff_url(url)
+    url = normalize_handoff_url(url)
 
     # Ask for JSON explicitly — the /h/<token> route serves a landing
     # page to browsers and JSON to API clients that request it.
@@ -522,6 +492,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--handoff",
+        type=handoff_url_argument,
         metavar="URL",
         help="Handoff URL from the coarse web form (coarse.ink/h/<token>).",
     )
@@ -632,12 +603,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.handoff and not args.paper_path:
         parser.error("either paper_path or --handoff is required")
-
-    if args.handoff:
-        try:
-            args.handoff = _normalize_handoff_url(args.handoff)
-        except ValueError as exc:
-            parser.error(str(exc))
 
     if args.detach and os.environ.get(_DETACHED_ENV) != "1":
         return _detach_review_process(argv, args.log_file)
