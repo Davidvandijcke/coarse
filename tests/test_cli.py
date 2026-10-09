@@ -190,6 +190,37 @@ def test_review_yes_flag_skips_cost_gate(tmp_path, monkeypatch):
     assert captured.get("skip_cost_gate") is True
 
 
+def test_review_accepts_config_file_openrouter_key_for_proxied_model(tmp_path, monkeypatch):
+    """Regression: with the OpenRouter key only in ~/.coarse/config.toml and no
+    provider-specific key, `coarse review --model <other-provider>/...` used to
+    stop at "No API key configured" even though routing would have proxied the
+    call through OpenRouter. Uses the real resolve_api_key on purpose."""
+    monkeypatch.chdir(tmp_path)
+    for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    captured: dict[str, object] = {}
+
+    def fake_review(**kwargs):
+        captured.update(kwargs)
+        from coarse.types import PaperText
+
+        return _make_review(), "# Test\n", PaperText(full_markdown="", token_estimate=0)
+
+    cfg = CoarseConfig(api_keys={"openrouter": "sk-or-cfg"})
+    with (
+        patch("coarse.cli.load_config", return_value=cfg),
+        patch("coarse.cli.review_paper", side_effect=fake_review),
+    ):
+        result = runner.invoke(
+            app, ["review", str(pdf), "--yes", "--model", "someprovider/some-model"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert captured.get("model") == "someprovider/some-model"
+
+
 def test_review_deep_literature_flag_reaches_pipeline(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     pdf = tmp_path / "paper.pdf"

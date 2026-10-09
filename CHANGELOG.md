@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Config-file OpenRouter keys now satisfy the pre-flight key check for proxied models.** `resolve_api_key()` fell back to `OPENROUTER_API_KEY` from the environment only, so `coarse review --model qwen/…` (or any model whose provider has no direct key) reported "No API key configured" when the OpenRouter key lived in `~/.coarse/config.toml` via `coarse setup` — even though routing would have proxied the call through OpenRouter correctly. The fallback now also reads the config file, matching the routing decision in `_normalize_model`. `has_provider_key()`, which drives direct-vs-proxy routing, is unchanged and still never falls back to OpenRouter.
 ### Added
 
 - Opt-in native Codex and Claude Code review pilot: app subagents answer the existing pipeline prompts through validated, resumable checkpoints. Includes separate native skills/plugin packaging, explicit publication, and a preview-only website toggle; the headless runner remains available.

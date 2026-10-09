@@ -143,6 +143,36 @@ def test_resolve_api_key_openrouter_fallback(monkeypatch):
     assert result == "sk-or-test"
 
 
+def test_resolve_api_key_openrouter_fallback_from_config_file(monkeypatch):
+    """An OpenRouter key saved by `coarse setup` (config file, no env var) must
+    satisfy the pre-flight check for a provider with no direct key — routing
+    (_normalize_model) already proxies such models through OpenRouter."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    cfg = CoarseConfig(api_keys={"openrouter": "sk-or-cfg"})
+    assert resolve_api_key("openai/gpt-4o", cfg) == "sk-or-cfg"
+
+
+def test_resolve_api_key_openrouter_fallback_env_beats_config_file(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-env")
+    cfg = CoarseConfig(api_keys={"openrouter": "sk-or-cfg"})
+    assert resolve_api_key("openai", cfg) == "sk-or-env"
+
+
+def test_resolve_api_key_openrouter_fallback_ignores_blank_config_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    cfg = CoarseConfig(api_keys={"openrouter": "   "})
+    assert resolve_api_key("openai", cfg) is None
+
+
+def test_resolve_api_key_openrouter_itself_has_no_fallback_loop(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    assert resolve_api_key("openrouter", CoarseConfig()) is None
+    assert resolve_api_key("openrouter/auto", CoarseConfig(api_keys={"openrouter": "k"})) == "k"
+
+
 def test_resolve_api_key_model_prefix_stripped(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env-openai")
     result = resolve_api_key("openai/gpt-4o", CoarseConfig())
@@ -174,6 +204,16 @@ def test_has_provider_key_no_openrouter_fallback(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or")
     assert has_provider_key("openai", CoarseConfig()) is False
+
+
+def test_has_provider_key_no_openrouter_fallback_from_config_file(monkeypatch):
+    """The config-file OpenRouter key must not leak into the direct-provider
+    check either — otherwise routing would call the provider directly with
+    no key of its own instead of proxying through OpenRouter."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    cfg = CoarseConfig(api_keys={"openrouter": "sk-or-cfg"})
+    assert has_provider_key("openai", cfg) is False
 
 
 def test_has_provider_key_gemini_accepts_google_api_key(monkeypatch):
