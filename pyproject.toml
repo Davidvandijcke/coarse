@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "coarse-ink"
-version = "1.9.4"
+version = "1.9.6"
 description = "Free, open-source AI academic paper reviewer. BYOK — bring your own key."
 readme = "README.md"
 license = "MIT"
@@ -30,7 +30,7 @@ dependencies = [
     "pymupdf>=1.24",
     "python-dotenv>=1.0",
     "requests>=2.31",
-    "urllib3>=2.7.0",
+    "urllib3>=2.8.0",
 ]
 
 [project.urls]
@@ -56,6 +56,7 @@ dev = ["pytest>=8.0", "pyyaml>=6.0", "ruff>=0.4"]
 coarse = "coarse.cli:app"
 coarse-ink = "coarse.cli:app"
 coarse-review = "coarse.cli_review:main"
+coarse-native = "coarse.native_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/coarse"]

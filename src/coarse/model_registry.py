@@ -10,7 +10,9 @@ import litellm
 from coarse.models import (
     CLAUDE_FABLE_5_1_MODEL,
     CLAUDE_FABLE_5_MODEL,
+    CLAUDE_OPUS_5_5_MODEL,
     CLAUDE_OPUS_5_MODEL,
+    CLAUDE_SONNET_5_5_MODEL,
     CLAUDE_SONNET_5_MODEL,
     DEFAULT_MODEL,
     FUSION_INPUT_COST_PER_TOKEN,
@@ -18,13 +20,18 @@ from coarse.models import (
     FUSION_OUTPUT_COST_PER_TOKEN,
     GEMINI_3_6_FLASH_MODEL,
     GEMINI_3_8_FLASH_MODEL,
+    GLM_5_3_MODEL,
     GPT_5_6_LUNA_MODEL,
     GPT_5_6_SOL_MODEL,
     GPT_5_6_SOL_PRO_MODEL,
     GPT_5_6_TERRA_MODEL,
+    GPT_6_1_SOL_MODEL,
     GPT_6_ASTRA_MODEL,
     GPT_6_ASTRA_PRO_MODEL,
+    GPT_6_LUNA_MODEL,
+    GPT_6_SOL_MODEL,
     GROK_4_5_MODEL,
+    GROK_4_7_MODEL,
     KIMI_K3_MODEL,
     LITELLM_OPENROUTER_PREFIX,
     LONG_CONTEXT_PRICING_TIERS,
@@ -35,6 +42,48 @@ from coarse.models import (
 def register_model_costs() -> None:
     """Add current featured models and prompt-length price tiers to LiteLLM."""
     custom_model_info: dict[str, dict[str, int | float]] = {
+        CLAUDE_OPUS_5_5_MODEL: {
+            "max_tokens": 1000000,
+            "max_output_tokens": 128000,
+            "input_cost_per_token": 4e-06,
+            "output_cost_per_token": 2e-05,
+        },
+        CLAUDE_SONNET_5_5_MODEL: {
+            "max_tokens": 1000000,
+            "max_output_tokens": 128000,
+            "input_cost_per_token": 2e-06,
+            "output_cost_per_token": 1e-05,
+        },
+        GPT_6_SOL_MODEL: {
+            "max_tokens": 1050000,
+            "max_output_tokens": 128000,
+            "input_cost_per_token": 2e-06,
+            "output_cost_per_token": 1e-05,
+        },
+        GPT_6_LUNA_MODEL: {
+            "max_tokens": 1050000,
+            "max_output_tokens": 128000,
+            "input_cost_per_token": 1e-07,
+            "output_cost_per_token": 5e-07,
+        },
+        GPT_6_1_SOL_MODEL: {
+            "max_tokens": 1050000,
+            "max_output_tokens": 128000,
+            "input_cost_per_token": 2e-06,
+            "output_cost_per_token": 1e-05,
+        },
+        GROK_4_7_MODEL: {
+            "max_tokens": 500000,
+            "max_output_tokens": 450000,
+            "input_cost_per_token": 2e-06,
+            "output_cost_per_token": 6e-06,
+        },
+        GLM_5_3_MODEL: {
+            "max_tokens": 1048576,
+            "max_output_tokens": 943718,
+            "input_cost_per_token": 5e-08,
+            "output_cost_per_token": 7e-06,
+        },
         GPT_6_ASTRA_MODEL: {
             "max_tokens": 1050000,
             "max_output_tokens": 128000,

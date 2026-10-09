@@ -29,8 +29,10 @@ from coarse.pipeline_spec import (
 )
 from coarse.progress import PipelineProgress, PipelineProgressCallback
 from coarse.quote_verify import QuoteVerificationDrop, verify_quotes, verify_quotes_detailed
+from coarse.review_runtime import ReviewRuntime
 from coarse.review_stages import (
     _detect_section_focus,
+    _renumber_comments,
     _review_section,
     _verify_with_fallback,
     calibrate_domain,
@@ -286,11 +288,6 @@ def _verify_section_with_fallback(
 _MIN_APPENDIX_CHARS = 500  # skip appendix sections shorter than this
 
 
-def _renumber_comments(comments: list[DetailedComment]) -> list[DetailedComment]:
-    """Renumber comments sequentially 1..N."""
-    return [c.model_copy(update={"number": i}) for i, c in enumerate(comments, start=1)]
-
-
 def extract_and_structure(
     file_path: str | Path,
     client: LLMClient,
@@ -360,6 +357,8 @@ def review_paper(
     site_language: str | None = None,
     progress_callback: PipelineProgressCallback | None = None,
     deep_literature_search: bool = False,
+    *,
+    runtime: ReviewRuntime | None = None,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
@@ -398,19 +397,17 @@ def review_paper(
         site_language: Optional BCP-47 code for the site/UI locale, used only as
             the lowest-priority fallback when there is no explicit language and
             the paper is detected as English/unknown. ``None`` is the default.
-        progress_callback: Optional callback receiving best-effort pipeline
-            progress updates, including cumulative actual token spend.
-        deep_literature_search: Use Perplexity Sonar Deep Research instead of
-            Sonar Pro Search. Defaults to False for compatible cost and latency.
+        progress_callback: Best-effort stage and cumulative cost updates.
+        deep_literature_search: Use Sonar Deep Research instead of Sonar Pro.
+        runtime: Optional native reasoning and scheduling services.
 
     Pipeline order:
-    1. Extract file → PaperText (format-specific extraction)
-    2. Cost gate (optional)
-    3. Analyze structure via markdown parsing + cheap LLM metadata → PaperStructure
-    4. Phase 1: Overview, completeness, and section-context setup
-    5. Phase 2: Section agents + proof verification + cross-section synthesis
-    6. Editorial filtering (with legacy fallback) + quote verification/repair
-    7. Synthesis → markdown
+    1. Extract file → PaperText and apply the optional cost gate
+    2. Analyze structure via markdown parsing + cheap LLM metadata → PaperStructure
+    3. Phase 1: Overview, completeness, and section-context setup
+    4. Phase 2: Section agents + proof verification + cross-section synthesis
+    5. Editorial filtering (with legacy fallback) + quote verification/repair
+    6. Synthesis → markdown
 
     Returns:
         (Review, markdown_string, paper_text)
@@ -424,7 +421,10 @@ def review_paper(
     # Effective output language resolves later; this is only the highest-priority candidate.
     explicit_language = language or config.review_language
     progress = _PipelineProgressReporter(progress_callback)
-    client = LLMClient(model=resolved_model, config=config, cost_callback=progress.update_cost)
+    make_client = runtime.create_client if runtime else LLMClient
+    completed = runtime.completed_futures if runtime else as_completed
+    literature_search = runtime.search_literature if runtime else search_literature
+    client = make_client(model=resolved_model, config=config, cost_callback=progress.update_cost)
     run_qa = False
 
     if skip_cost_gate:
@@ -463,7 +463,7 @@ def review_paper(
         if run_qa:
             if skip_cost_gate:
                 progress.start("extraction_qa", "Running extraction QA", client.cost_usd)
-            vision_client = LLMClient(model=config.vision_model, config=config)
+            vision_client = make_client(model=config.vision_model, config=config)
             corrected = run_extraction_qa(Path(pdf_path), paper_text, vision_client)
             client.add_cost(vision_client.cost_usd)
             if corrected is not paper_text:
@@ -541,7 +541,7 @@ def review_paper(
         future_map = {
             executor.submit(calibrate_domain, structure, client): "calibration",
             executor.submit(
-                search_literature,
+                literature_search,
                 structure.title,
                 structure.abstract,
                 client,
@@ -557,7 +557,7 @@ def review_paper(
 
         completed_futures = set()
         try:
-            for future in as_completed(future_map, timeout=_PARALLEL_SETUP_TIMEOUT_SECONDS):
+            for future in completed(future_map, timeout=_PARALLEL_SETUP_TIMEOUT_SECONDS):
                 completed_futures.add(future)
                 stage_key = future_map[future]
 
@@ -675,7 +675,7 @@ def review_paper(
         # every section future finishes regardless, so a stage guillotine never
         # bounds wall-clock — it only discards comments we already paid to compute.
         # The per-call timeout in the headless client is the real safety bound.
-        for future in as_completed(section_futures):
+        for future in completed(section_futures):
             section_index, sec_title = section_futures[future]
             stage_label = f"Reviewed section {section_index}/{len(non_ref_sections)}: {sec_title}"
             try:
@@ -689,7 +689,7 @@ def review_paper(
             progress.complete(f"section_{section_index}", stage_label, client.cost_usd)
 
     if not section_comments:
-        logger.error("All section agents failed — review will have no detailed comments")
+        logger.info("Section review produced no detailed comments")
 
     # --- Phase 2b: Cross-section synthesis (results ↔ discussion) ---
     results_sections = [
@@ -719,7 +719,7 @@ def review_paper(
                 ] = (i, disc_sec)
             completed_futures = set()
             try:
-                for future in as_completed(
+                for future in completed(
                     future_to_discussion,
                     timeout=_CROSS_SECTION_TIMEOUT_SECONDS,
                 ):

@@ -24,7 +24,7 @@ LOCK_FLOORS = {
     "soupsieve": "2.8.4",
     "torch": "2.13.0",
     "transformers": "5.10.0",
-    "urllib3": "2.7.0",
+    "urllib3": "2.8.0",
 }
 
 MODAL_FLOORS = (
@@ -37,7 +37,7 @@ MODAL_FLOORS = (
     "pillow>=12.3.0",
     "soupsieve>=2.8.4",
     "transformers>=5.10,<6",
-    "urllib3>=2.7.0",
+    "urllib3>=2.8.0",
 )
 
 
@@ -82,7 +82,7 @@ def test_published_dependency_metadata_carries_direct_security_floors() -> None:
         "litellm>=1.84.0",
         "aiohttp>=3.14.3",
         "click>=8.3.3",
-        "urllib3>=2.7.0",
+        "urllib3>=2.8.0",
     ):
         assert requirement in project["dependencies"]
 
@@ -126,9 +126,7 @@ def test_web_dependencies_use_current_security_fixes() -> None:
 def test_accelerate_advisory_waiver_is_narrow_and_unreachable() -> None:
     """Track the sole no-fix waiver and fail if its assumptions drift."""
     advisory = "CVE-2026-69112"
-    workflow = (REPO_ROOT / ".github" / "workflows" / "security.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (REPO_ROOT / ".github" / "workflows" / "security.yml").read_text(encoding="utf-8")
     assert workflow.count(f"--ignore-vuln {advisory}") == 1
 
     with (REPO_ROOT / "uv.lock").open("rb") as handle:

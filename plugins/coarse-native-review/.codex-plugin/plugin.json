@@ -1,0 +1,18 @@
+{
+  "name": "coarse-native-review",
+  "version": "0.1.0",
+  "description": "Run Coarse reviews with native app subagents and validated checkpoints.",
+  "author": {
+    "name": "David Van Dijcke"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Coarse Native Review Pilot",
+    "shortDescription": "Review papers with native app agents.",
+    "longDescription": "Opt-in pilot: native agents supply review reasoning; Coarse validates and saves each stage.",
+    "developerName": "David Van Dijcke",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use Coarse Native Review to review this paper with native subagents."
+  }
+}

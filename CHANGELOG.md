@@ -5,6 +5,28 @@
 ### Fixed
 
 - **Config-file OpenRouter keys now satisfy the pre-flight key check for proxied models.** `resolve_api_key()` fell back to `OPENROUTER_API_KEY` from the environment only, so `coarse review --model qwen/…` (or any model whose provider has no direct key) reported "No API key configured" when the OpenRouter key lived in `~/.coarse/config.toml` via `coarse setup` — even though routing would have proxied the call through OpenRouter correctly. The fallback now also reads the config file, matching the routing decision in `_normalize_model`. `has_provider_key()`, which drives direct-vs-proxy routing, is unchanged and still never falls back to OpenRouter.
+### Added
+
+- Opt-in native Codex and Claude Code review pilot: app subagents answer the existing pipeline prompts through validated, resumable checkpoints. Includes separate native skills/plugin packaging, explicit publication, and a preview-only website toggle; the headless runner remains available.
+
+## v1.9.6 — 2026-10-05
+
+### Fixed
+
+- Accept Markdown-wrapped subscription handoff URLs without changing their destination, and reject malformed URLs before launching a detached worker. Fence handoff commands in agent prompts, authorize presentation-only URL corrections, and diagnose missing pidfiles before retrying a failed launch.
+
+## v1.9.5 — 2026-10-05
+
+### Fixed
+
+- Raise the urllib3 floor to 2.8.0 in the package and Modal image to clear the dependency audit's newly reported advisories.
+
+### Changed
+
+- Update the website default to Opus 5.5 and its suggestions to Sonnet 5.5, Grok 4.7, and GLM 5.3; add GPT-6 Sol, GPT-6 Luna, and GPT-6.1 Sol. Keep pricing, long-context surcharges, output limits, and reasoning budgets synchronized with OpenRouter.
+- Refresh Claude Code and Codex handoff model lists and bundled instructions. Use native Claude model IDs, document the required Claude Code versions, preserve selected models and effort, and wait through supported terminal sessions instead of unsupported timeout arguments.
+- Default local Claude and Codex reviews to Opus 5.5 and GPT-6 Sol, respectively; preserve native maximum reasoning effort for the GPT-6 family.
+
 
 ## v1.9.4 — 2026-09-09
 

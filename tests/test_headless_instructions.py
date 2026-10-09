@@ -26,15 +26,9 @@ def test_bundled_skill_assets_use_ephemeral_uvx_flow() -> None:
         assert "uv tool run --python 3.12 --from ..." in text
         assert "coarse setup" in text
         assert "~/.coarse/config.toml" in text
-        # Pin to the version that will be published with the release PR
-        # that lands this branch on main. See CHANGELOG.md ## Unreleased
-        # "RELEASE BLOCKER" note — DEFAULT_MCP_UVX_FROM and these SKILL.md
-        # files must all flip from the temporary git-ref pin to
-        # ``coarse-ink==1.9.4`` as part of the release cut. The `[mcp]`
-        # extra was dropped to cut the uvx install from ~114 to ~60
-        # packages — the handoff flow does not need fastmcp or
-        # pymupdf4llm.
-        assert "uvx --python 3.12 --from 'coarse-ink==1.9.4'" in text
+        from coarse import __version__
+
+        assert f"uvx --python 3.12 --from 'coarse-ink=={__version__}'" in text
         assert "coarse install-skills --all --force" in text
         # Per-review unique log file: every skill uses a LOG env var
         # derived from a per-paper suffix so parallel runs in the same
@@ -107,7 +101,8 @@ def test_web_handoff_assets_use_shared_uvx_prompt_flow() -> None:
 
     # page.tsx must pass logFile + attachCmd through to buildAgentPrompt
     # on every call site (handleLaunch + the collapsible manual-commands UI).
-    assert "const fullPrompt = buildAgentPrompt({" in handoff_page
+    assert "const fullPrompt = useNative ? buildNativePrompt({" in handoff_page
+    assert ": buildAgentPrompt({" in handoff_page
     # Every prompt/launch call site must also thread the mint-time isPdf
     # flag (#186): two buildAgentPrompt call sites + buildLaunchUrl. See
     # test_handoff_key_guidance_is_pdf_conditional for the branch content.

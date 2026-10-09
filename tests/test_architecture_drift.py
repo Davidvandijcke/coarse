@@ -16,7 +16,7 @@ AGENT_DENY = {"pipeline", "cli", "synthesis", "extraction", "extraction_qa"}
 # `review_paper()` runs, and there's no clean way to do that without
 # importing `coarse.pipeline` directly. Treat it like cli.py for the
 # purposes of this whitelist.
-PIPELINE_ALLOW = {"cli", "cli_review", "headless_review", "__init__", "__main__"}
+PIPELINE_ALLOW = {"cli", "cli_review", "headless_review", "native_review", "__init__", "__main__"}
 # types may also import textscript — a dependency-free leaf util (CJK/token
 # heuristics) used by DetailedComment's script-aware quote-length validator.
 TYPES_ALLOW = {"models", "textscript"}

@@ -65,8 +65,8 @@ export const HOST_CLI_NAME: Record<ChatHost, "claude" | "codex" | "gemini"> = {
 // pre-selected default (see page.tsx setSelectedModel). Latest generation
 // leads; the prior generation stays available as a fallback option.
 export const HOST_DEFAULT_MODELS: Record<ChatHost, string[]> = {
-  "claude-code": ["claude-fable-5-1", "claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5"],
-  "codex": ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4"],
+  "claude-code": ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5"],
+  "codex": ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4"],
   "gemini-cli": [
     "gemini-3.8-flash",
     "gemini-3.7-flash",
@@ -107,13 +107,13 @@ export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 // The variable is still called `DEFAULT_MCP_UVX_FROM` for backward
 // compatibility with the `test_release_blocker_pin_is_coupled_to_unreleased_version`
 // drift test that enforces the pin matches `__version__`.
-const DEFAULT_MCP_UVX_FROM = "coarse-ink==1.9.4";
+const DEFAULT_MCP_UVX_FROM = "coarse-ink==1.9.6";
 
 export function resolvePinnedUvFrom(): string {
   const raw = (process.env.NEXT_PUBLIC_COARSE_UVX_FROM ?? "").trim();
   if (!raw) return DEFAULT_MCP_UVX_FROM;
   // Allowlist for `NEXT_PUBLIC_COARSE_UVX_FROM` overrides. Accepts:
-  //   1. Plain semver pin: `coarse-ink==1.9.4` (production default).
+  //   1. Plain semver pin: `coarse-ink==1.9.6` (production default).
   //   2. `[mcp]` extra form for operators who want the MCP path.
   //   3. Commit-sha git ref for pinned dev testing.
   //   4. `@dev` or `@main` branch ref — self-updating Preview default,
@@ -259,6 +259,16 @@ export function buildAgentPrompt(args: {
     `use \`uv tool run --python 3.12 --from ...\` ` +
     `wherever the steps below say \`uvx --python 3.12 --from ...\`. Do NOT get stuck on ` +
     `\`uvx: command not found\` or an older system Python.\n\n` +
+    `Use the exact model and effort in the launch command, even if your ` +
+    `current chat uses a different model. For Claude Code, check ` +
+    `\`claude --version\`: Opus 5.5 requires 2.1.280 or later and ` +
+    `Sonnet 5.5 requires 2.1.284 or later; run \`claude update\` if needed. ` +
+    `Codex 0.160.0 was verified with GPT-6 Sol, Luna, and GPT-6.1 Sol. ` +
+    `Check \`codex --version\` and update using its original ` +
+    `installation method if the selected GPT-6 model is unsupported. ` +
+    `Model access depends on the signed-in account. Report any model ` +
+    `access error or fallback shown in the log; do not silently change ` +
+    `the selected model or switch to API billing.\n\n` +
     `STEP 1 — Refresh the coarse-review skill files. ` +
     `Run this command to copy the pinned coarse-review skill bundle into ` +
     `your Claude Code / Codex / Gemini CLI skill folder. This uses uvx, ` +
@@ -268,11 +278,17 @@ export function buildAgentPrompt(args: {
     `version-skew and is safe to ignore — the review runs the same way ` +
     `either way because uvx is already loading the coarse bundle via ` +
     `\`--from\`.\n\n` +
-    `${setupCmd}\n\n` +
+    `\`\`\`sh\n${setupCmd}\n\`\`\`\n\n` +
     `${step2}\n\n` +
-    `STEP 3 — Launch the detached review. Run the EXACT command below, ` +
-    `verbatim. Do not substitute, rewrite, or interpret any argument — ` +
-    `every piece is already filled in. The \`--handoff\` URL is the ` +
+    `STEP 3 — Launch the detached review. Run the command below, ` +
+    `preserving the selected model, effort, flags, and URL destination. ` +
+    `The shell argument after \`--handoff\` must be the bare URL inside ` +
+    `its shell quotes. If chat formatting wraps it as a Markdown link ` +
+    `(\`[label](URL)\`), an autolink (\`<URL>\`), or inline code, remove ` +
+    `only that presentation wrapper; preserve the entire destination, ` +
+    `including query parameters. This formatting correction is authorized ` +
+    `and does not require confirmation. Do not put Markdown link syntax ` +
+    `inside a shell argument. The \`--handoff\` URL is the ` +
     `paper source; coarse-review downloads the paper from that URL ` +
     `over the network at the start of the pipeline. You do NOT need ` +
     `to, and MUST NOT, search the filesystem (no \`find\`, no ` +
@@ -280,36 +296,20 @@ export function buildAgentPrompt(args: {
     `and you do NOT need to ask me for a paper path. This command ` +
     `returns immediately (within 2 seconds) after printing ` +
     `\`Review PID: <N>\` and \`Log file: ${logFile}\`. Run it:\n\n` +
-    `  ${runCmd}\n\n` +
-    `STEP 4 — Wait for the review to finish with a single blocking ` +
-    `bash call. The review takes 10-25 minutes end-to-end. Instead of ` +
-    `polling \`tail\` every 60 seconds (which generates one permission ` +
-    `prompt per poll), use coarse-review's built-in \`--attach\` ` +
-    `watcher, which blocks in a single command until the worker ` +
-    `exits:\n\n` +
-    `  ${attachCmd}\n\n` +
-    `The attach command streams the log to stdout as it's written and ` +
-    `prints a \`[attach] pid=<N> elapsed=<mm:ss> — waiting…\` heartbeat ` +
-    `every 30 seconds of log idleness so the bash tool sees stdout ` +
-    `activity and doesn't think the command is hung. It exits ` +
-    `automatically when the review process exits. IMPORTANT: run it ` +
-    `with a long bash-tool timeout — at least **2700000 ms (45 min)** ` +
-    `in Claude Code's \`Bash\` tool via the \`timeout\` parameter, ` +
-    `\`--timeout 2700\` in Codex, or the equivalent in Gemini CLI. ` +
-    `The 45-minute recommendation leaves ~20 minutes of margin on top ` +
-    `of the 10-25 minute review runtime for cold starts, slow models, ` +
-    `very long papers, and \`--effort max\` runs. 30 minutes used to ` +
-    `be the recommendation and it was tight — every agent's tool ` +
-    `timeout is a wall clock, not an idle-stream cap, so a 25-minute ` +
-    `review with a 30-minute cap leaves only 5 minutes of safety ` +
-    `margin. Bump to 60 minutes if you're reviewing a book-length ` +
-    `paper or you've picked the largest model. Do NOT re-run the ` +
-    `\`--detach\` command from STEP 3 if the attach call returns ` +
-    `early — that would spawn a second worker against the same ` +
-    `handoff URL. If attach exits because the bash tool timed out ` +
-    `(not because the review finished), just re-run the EXACT same ` +
-    `attach command again — it's idempotent and will re-attach to ` +
-    `the same running worker.\n\n` +
+    `\`\`\`sh\n${runCmd}\n\`\`\`\n\n` +
+    `STEP 4 — Attach to the running review. It usually takes 10-25 ` +
+    `minutes, and longer for large papers or maximum effort. Run:\n\n` +
+    `\`\`\`sh\n${attachCmd}\n\`\`\`\n\n` +
+    `The watcher streams logs and idle heartbeats until completion. ` +
+    `Use the terminal tool's supported background or session mechanism ` +
+    `for this long-running command. In Codex, retain the session ID ` +
+    `returned by exec_command and resume with write_stdin; if your ` +
+    `tools use different names, use their documented equivalent. In ` +
+    `Claude Code, use Bash's run_in_background and its task-output ` +
+    `tool. Keep waiting on the same session until it exits. ` +
+    `If the tool ends the watcher early, re-run only this attach ` +
+    `command to reconnect to the same worker. Never repeat STEP 3 ` +
+    `while that worker is running.\n\n` +
     `Attach exit codes tell you what happened:\n` +
     `  - 0 — review completed successfully, \`view:\` + \`local:\` ` +
     `lines are in the log\n` +
@@ -317,7 +317,9 @@ export function buildAgentPrompt(args: {
     `the log\n` +
     `  - 2 — review process died without a completion marker (silent ` +
     `crash); show me the last 50 log lines so I can diagnose\n` +
-    `  - 3 — pidfile missing (launcher never started); re-run STEP 3\n` +
+    `  - 3 — pidfile missing or malformed; the worker may have already ` +
+    `exited and removed it. Read the log and resolve any launch error ` +
+    `before retrying STEP 3. Never repeat an unchanged failing command.\n` +
     `  - 124 — attach's own 30-min timeout tripped (very unusual); ` +
     `re-run the attach command to continue waiting\n\n` +
     `STEP 5 — When attach exits with code 0, read the completion ` +

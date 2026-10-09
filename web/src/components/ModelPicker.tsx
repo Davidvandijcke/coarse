@@ -17,26 +17,29 @@ type DefaultModel = {
 };
 
 /** Canonical web-review default, shared by the landing form and review chat. */
-export const DEFAULT_REVIEW_MODEL = "anthropic/claude-opus-5";
+export const DEFAULT_REVIEW_MODEL = "anthropic/claude-opus-5.5";
 
 const DEFAULT_MODELS: DefaultModel[] = [
   { id: "anthropic/claude-fable-5.1", label: "Fable 5.1", provider: "Anthropic" },
-  { id: DEFAULT_REVIEW_MODEL, label: "Opus 5", provider: "Anthropic" },
-  { id: "anthropic/claude-sonnet-5", label: "Sonnet 5", provider: "Anthropic" },
+  { id: DEFAULT_REVIEW_MODEL, label: "Opus 5.5", provider: "Anthropic" },
+  { id: "anthropic/claude-sonnet-5.5", label: "Sonnet 5.5", provider: "Anthropic" },
   { id: "openai/gpt-6-astra", label: "GPT-6 Astra", provider: "OpenAI" },
   { id: "openai/gpt-6-astra-pro", label: "GPT-6 Astra Pro", provider: "OpenAI" },
+  { id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", provider: "OpenAI" },
+  { id: "openai/gpt-6-sol", label: "GPT-6 Sol", provider: "OpenAI" },
+  { id: "openai/gpt-6-luna", label: "GPT-6 Luna", provider: "OpenAI" },
   { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", provider: "Google" },
   { id: "google/gemini-3.8-flash", label: "Gemini 3.8 Flash", provider: "Google" },
   { id: "qwen/qwen3.8-max-0902", label: "Qwen 3.8 Max", provider: "Qwen" },
   { id: "moonshotai/kimi-k3", label: "Kimi K3", provider: "Moonshot" },
   { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4", provider: "DeepSeek" },
-  { id: "x-ai/grok-4.5", label: "Grok 4.5", provider: "xAI" },
+  { id: "x-ai/grok-4.7", label: "Grok 4.7", provider: "xAI" },
   { id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", provider: "Meta" },
-  { id: "z-ai/glm-5.2", label: "GLM 5.2", provider: "Z.ai" },
+  { id: "z-ai/glm-5.3", label: "GLM 5.3", provider: "Z.ai" },
   // OpenRouter Fusion: a multi-model deliberation panel with web search.
   // Higher latency and variable (usage-based) cost than a single model — see
   // the FUSION_MODEL note in src/coarse/models.py. showProvider tags the chip
-  // "(OpenRouter)" since "Fusion" alone is less self-explanatory than e.g. "Opus 5".
+  // "(OpenRouter)" since "Fusion" alone is less self-explanatory than e.g. "Opus 5.5".
   { id: "openrouter/fusion", label: "Fusion", provider: "OpenRouter", showProvider: true },
 ];
 

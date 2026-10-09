@@ -1,0 +1,9 @@
+{
+  "name": "coarse-native-review",
+  "version": "0.1.0",
+  "description": "Run Coarse reviews with native app subagents and validated checkpoints.",
+  "author": {
+    "name": "David Van Dijcke"
+  },
+  "skills": "./skills/"
+}
