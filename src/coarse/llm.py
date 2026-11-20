@@ -663,6 +663,72 @@ class LLMClient:
             raise ValueError(f"Model {self._model} returned empty response")
         return _CTRL_CHAR_RE.sub("", content).replace("\\u0000", "").strip()
 
+    def complete_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        max_tokens: int = 8192,
+        temperature: float = 0.2,
+        timeout: int = 900,
+        **kwargs,
+    ) -> dict:
+        """One turn of a tool-calling conversation.
+
+        Returns the assistant message as a plain dict with ``content`` and
+        ``tool_calls`` keys, which is the shape the caller must append to
+        ``messages`` before sending tool results back. Used by the bounded
+        agent runtime (``coarse.agent.runner``); the structured-output path in
+        ``complete()`` cannot express a multi-turn tool loop.
+
+        Unlike ``complete()`` this does not go through instructor: tool
+        schemas are passed to the provider directly. The Responses-API path is
+        not supported here, so a client configured for it falls back to Chat
+        Completions for tool turns.
+        """
+        clamped = _clamp_max_tokens(self._model, max_tokens)
+        call_kwargs = dict(kwargs)
+        if self._api_key and "api_key" not in call_kwargs:
+            call_kwargs["api_key"] = self._api_key
+        if supports_temperature(self._model):
+            call_kwargs.setdefault("temperature", temperature)
+        if self._is_reasoning:
+            call_kwargs.setdefault("reasoning_effort", REASONING_EFFORT_DEFAULT)
+
+        response = _sanitized_completion(
+            model=self._model,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            max_tokens=clamped,
+            timeout=timeout,
+            **call_kwargs,
+        )
+        try:
+            cost = _completion_cost_with_long_context_pricing(response, self._model)
+            if cost is not None:
+                self.add_cost(cost)
+        except Exception:
+            logger.debug("Cost tracking failed for model %s", self._model, exc_info=True)
+
+        message = response.choices[0].message
+        tool_calls = []
+        for call in getattr(message, "tool_calls", None) or []:
+            tool_calls.append(
+                {
+                    "id": getattr(call, "id", "") or "",
+                    "type": "function",
+                    "function": {
+                        "name": getattr(call.function, "name", "") or "",
+                        "arguments": getattr(call.function, "arguments", "") or "{}",
+                    },
+                }
+            )
+        content = getattr(message, "content", None) or ""
+        out: dict = {"role": "assistant", "content": content}
+        if tool_calls:
+            out["tool_calls"] = tool_calls
+        return out
+
     def add_cost(self, cost_usd: float) -> None:
         """Register an external cost (e.g. from a direct litellm.completion call)."""
         with self._lock:
