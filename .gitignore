@@ -28,3 +28,6 @@ quality_gap_analysis.md
 # Build caches
 *.tsbuildinfo
 *.extraction_cache.json
+evals/papers/*/paper.pdf
+evals/papers/*/paper.md
+evals/runs/
