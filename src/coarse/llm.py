@@ -694,9 +694,10 @@ class LLMClient:
         if self._is_reasoning:
             call_kwargs.setdefault("reasoning_effort", REASONING_EFFORT_DEFAULT)
 
+        sent = _with_tool_loop_cache_breakpoints(messages, self.supports_prompt_caching)
         response = _sanitized_completion(
             model=self._model,
-            messages=messages,
+            messages=sent,
             tools=tools,
             tool_choice="auto",
             max_tokens=clamped,
@@ -800,6 +801,65 @@ class LLMClient:
         """
         lower = self._model.lower()
         return any(p in lower for p in ("anthropic", "claude", "gemini"))
+
+
+def _with_tool_loop_cache_breakpoints(
+    messages: list[dict],
+    enabled: bool,
+) -> list[dict]:
+    """Return *messages* with cache breakpoints for a multi-turn tool loop.
+
+    A tool loop resends the whole transcript every turn, and a review agent's
+    transcript is dominated by paper text it read through a tool — a single
+    appendix read can be 14k characters. Without caching the cost of a loop is
+    quadratic in its length: a 12-turn investigation on a 35k-token paper
+    re-bills the same tokens a dozen times.
+
+    Anthropic and Gemini cache a *prefix* up to an explicit breakpoint, so the
+    breakpoint has to move forward as the transcript grows. Two are placed: one
+    after the system prompt, which is stable for every agent in a role, and one
+    on the latest complete turn, which makes each turn's prefix a cache read of
+    the previous turn's write. Providers allow a small number of breakpoints,
+    so earlier ones are not kept.
+
+    Returns the input unchanged when the provider auto-caches (OpenAI,
+    DeepSeek) or is untested, so this is a no-op off the Anthropic/Gemini path.
+    """
+    if not enabled or not messages:
+        return messages
+
+    out = [dict(m) for m in messages]
+
+    def mark(index: int) -> None:
+        msg = out[index]
+        content = msg.get("content")
+        if isinstance(content, str):
+            if not content:
+                return
+            msg["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        elif isinstance(content, list) and content:
+            blocks = [dict(b) if isinstance(b, dict) else b for b in content]
+            last = blocks[-1]
+            if isinstance(last, dict) and last.get("type") == "text":
+                last["cache_control"] = {"type": "ephemeral"}
+            msg["content"] = blocks
+
+    if out and out[0].get("role") == "system":
+        mark(0)
+
+    # Walk back to the last message that ends a turn. Breaking inside a run of
+    # tool results would leave the rest of that turn uncached for no gain.
+    for i in range(len(out) - 1, 0, -1):
+        if out[i].get("role") == "tool":
+            mark(i)
+            break
+    return out
 
 
 def _normalize_model(model: str, config: CoarseConfig | None = None) -> str:
