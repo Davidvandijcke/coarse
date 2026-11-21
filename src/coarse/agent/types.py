@@ -46,9 +46,21 @@ class InvestigationTarget(BaseModel):
 
 
 class InvestigationPlan(BaseModel):
-    """Planner output."""
+    """Planner output.
 
-    targets: list[InvestigationTarget] = Field(default_factory=list)
+    At least one target is required. Unlike ``FindingBatch``, where an empty
+    result is the correct answer when nothing is wrong, an empty plan is never
+    useful: it means no referee is assigned. Leaving the list optional let the
+    planner submit ``{"targets": []}`` after a few turns of reading — it did so
+    on every run — which silently handed the whole paper to one fallback
+    investigation. Requiring a target makes that submission fail validation, so
+    the runner feeds the error back and the planner tries again.
+    """
+
+    targets: list[InvestigationTarget] = Field(
+        min_length=1,
+        description="One or more investigation targets, ordered most promising first.",
+    )
 
 
 class LedgerFinding(BaseModel):
