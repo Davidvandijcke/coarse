@@ -211,36 +211,62 @@ itself, by a judge from a different model family
 | swarm, structural targets | 3 | 3 | 8% | 83% | 100% | 1 of 6 | $2.06 | 731s |
 | sweep | 12 | 5 | 12% | 94% | 92% | 1 of 17 | $3.93 | 738s |
 
-### What refutation is worth, measured per comment
+### What refutation is worth, measured on identical generation
 
 A separate `pipeline_refuted` run cannot attribute anything, because it is a
-different review. `evals/refute_saved.py` instead runs the refuter over the
-exact comments the judge already adjudicated, so each comment is one paired
-observation.
+different review. `evals/refute_saved.py` instead runs the refuter over a saved
+review the judge has already adjudicated, and saves what survives as its own
+run. Generation is then identical on both sides and refutation is the only
+difference.
 
-**psi, pipeline after the section fix** (20 comments adjudicated)
+**psi**, pipeline after the section fix:
 
-| | refuter kept | refuter dropped |
-|---|---|---|
-| judge: supported | 14 | 0 |
-| judge: unsupported | 1 | 5 |
+| | comments | issues | recall | precision | of comments | of issues | unsupported |
+|---|---|---|---|---|---|---|---|
+| before | 20 | 11 | 11/16 | 68% | 70% | 64% | 10 |
+| after | 20 | 10 | 11/16 | **87%** | **90%** | **80%** | **4** |
 
-**coset_codes, pipeline** (19 comments adjudicated)
+**coset_codes**, held out:
 
-| | refuter kept | refuter dropped |
-|---|---|---|
-| judge: supported | 9 | 2 |
-| judge: unsupported | 4 | 4 |
+| | comments | issues | recall | precision | of comments | of issues | unsupported |
+|---|---|---|---|---|---|---|---|
+| before | 19 | 12 | 10/25 | 48% | 58% | 33% | 16 |
+| after | 13 | 10 | 9/25 | **65%** | **77%** | **50%** | **8** |
 
-Combined, refutation drops 9 of the 14 comments the judge called unsupported
-and 2 of the 25 it called supported. Comment precision goes from 64% to 82%
-across the two papers: 70% to 93% on `psi`, 58% to 69% on the held-out paper.
-It cost $1.92 for 44 refuter agents, which is cheap relative to a review.
+Unsupported claims halve on both papers, 10 to 4 and 16 to 8. Precision rises
+19 and 17 points. Recall is unchanged on `psi` and loses one reference finding
+of 25 on the held-out paper. The whole pass cost about $1.85 per paper over 30
+to 35 refuter agents.
 
-This is substantially smaller than a comparison of separate runs suggested, and
-the two papers differ a great deal: on `psi` the gate caught five of six with
-no collateral loss, on `coset_codes` four of eight while dropping two good
-comments.
+Extending the gate to the macro issues is what closed the gap the comment-only
+version left: issue precision rose from 64% to 80% and from 33% to 50%, against
+58% and 36% when only comments were refuted.
+
+#### How the gate acts, per claim
+
+Cross-tabulating each claim's judge verdict against what the refuter did with
+it, pooled over both papers:
+
+| | kept | narrowed | dropped |
+|---|---|---|---|
+| comments the judge called supported | 23 | — | 2 |
+| comments the judge called unsupported | 6 | — | 8 |
+| issues the judge called supported | 4 | 6 | 1 |
+| issues the judge called unsupported | 4 | 6 | 2 |
+
+The two halves behave differently, and the difference is the reason they have
+separate contracts. A comment is anchored and the gate either reproduces it or
+drops it: it catches 8 of 14 false ones for 2 of 25 good ones. An issue bundles
+several points, so the gate mostly narrows rather than drops — 12 of 23 issues
+were narrowed — and that is what the precision gain comes from, since a
+narrowed issue is re-adjudicated on its new text.
+
+Two caveats on this table. The refuter has real run-to-run variance: on `psi`
+two runs over the same comments dropped 5 of 6 and then 4 of 6 unsupported
+ones, and the issue verdicts moved more than that. And narrowing is not free —
+it also narrowed 6 issues the judge had called supported, which may have
+removed content worth keeping; the precision gain says the trade was net
+positive on these two papers, not that nothing good was lost.
 
 ### A second, stronger adjudication
 
@@ -282,12 +308,16 @@ coverage on both papers and also asserts the most claims the paper does not
 support. The failure has one cause: the objection is answered in a part of the
 paper a section agent cannot see.
 
-**Independent refutation removes about two thirds of it, cheaply.** Measured
-per comment, the gate drops 9 of 14 false criticisms for 2 of 25 good ones.
+**Independent refutation halves it, cheaply.** On identical generation,
+unsupported claims fall from 10 to 4 and from 16 to 8, precision rises 19 and
+17 points, and recall is unchanged on one paper and loses one finding of 25 on
+the other, for about $1.85 a paper.
 
-**The false criticism that survives is in the macro issues.** The stage only
-refutes detailed comments; macro-issue precision stays at 36% and 64%.
-Extending refutation there is the obvious next change.
+**Refuting the macro issues was the half that mattered most.** With comments
+alone refuted, issue precision sat at 58% and 36% and held total precision
+down. Refuting both halves takes issue precision to 80% and 50%. An issue is
+rarely wholly wrong, so the gate narrows it rather than dropping it, and the
+narrowed text is what gets re-adjudicated.
 
 **No agent-only arm beat a single well-prompted full-paper call on coverage.**
 Three to twelve comments against references holding 16 and 25 findings. The
@@ -309,9 +339,13 @@ support it.
 
 1. **Ship the section-selection fix.** Measured gain, no agents, no added cost.
 2. **Ship `--refute`.** It targets the measured defect, keeps the pipeline's
-   coverage, and costs about $1 per review.
-3. **Extend refutation to the macro issues.** All the surviving false criticism
-   is there.
+   coverage, and costs about $1.85 per review. Both halves of the review are
+   checked; the macro-issue half carries most of the gain.
+3. **Consider making it the default** once it has been run on more than two
+   papers and the refuter's run-to-run variance is quantified. It halves
+   unsupported claims for almost no coverage, which is the trade a referee
+   report should want, but two papers and one run per cell is not enough to
+   change a default on.
 4. **Keep `--agent swarm` as an opt-in deep mode** for theory papers, where the
    appendix findings it reaches are worth the coverage it gives up. Its recall
    is the open problem.

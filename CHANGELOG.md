@@ -4,12 +4,17 @@
 
 ### Added
 
-- `coarse review --refute` (and `review_paper(refute=True)`): re-check every
-  comment before reporting it. Each comment that survives the editorial filter
-  goes to a fresh-context agent with tool access to the whole paper and is
-  dropped unless that agent reproduces the defect from the paper; a comment
-  that is real but misstated is rewritten from the refuter's corrected claim.
-  Aimed at false criticism rather than coverage. Off by default.
+- `coarse review --refute` (and `review_paper(refute=True)`): re-check a review
+  against the paper before reporting it. Every detailed comment and every
+  macro-level issue goes to a fresh-context agent with tool access to the whole
+  paper. A comment is dropped unless that agent reproduces the defect, and
+  rewritten when it is real but misstated. An issue usually bundles several
+  points, so it is narrowed to what the paper bears out rather than dropped
+  wholesale. Measured on two papers with generation held fixed: unsupported
+  claims halve (10 to 4, and 16 to 8), precision rises 19 and 17 points, and
+  recall is unchanged on one paper and loses one finding of 25 on the other,
+  for about $1.85 a review. Aimed at false criticism rather than coverage. Off
+  by default.
 - `coarse review --agent sweep|swarm|single`: review through the bounded agent
   runtime (`coarse.agent`) instead of the staged pipeline. A per-review
   workspace holds the paper, one file per section, and an evidence ledger;
