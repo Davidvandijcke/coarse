@@ -6,10 +6,8 @@ bound. A text-only model has to do that in its head, which is the regime where
 the pipeline has previously produced confident wrong arithmetic. This module
 lets an agent run the check instead.
 
-Bounds, all enforced on the child process:
+Bounds enforced on the child process:
 
-* no network (``socket`` is disabled in the preamble, and nothing in the
-  allowed import set opens one);
 * wall-clock timeout and address-space cap via ``resource``;
 * output truncated;
 * ``-I`` isolated mode, so the current directory and user site-packages are
@@ -17,11 +15,27 @@ Bounds, all enforced on the child process:
   imported;
 * a scratch cwd, never the workspace or the repository.
 
-Not bounded: the child is an ordinary process and can still *read* files the
-user can read. Confining the filesystem needs OS-level isolation (a seatbelt
-profile on macOS, namespaces or seccomp on Linux) and is not implemented here.
-Treat this as a resource and network bound, not a filesystem jail; on the
-hosted path the surrounding container supplies the rest.
+Network denial is enforced by the OS where a mechanism is available, and
+otherwise is **not** enforced:
+
+* macOS: ``sandbox-exec`` with a deny-network profile. This holds against a
+  child process too, so ``subprocess`` cannot shell out to ``curl``.
+* Linux: ``unshare --net`` when permitted (it needs either root or
+  unprivileged user namespaces).
+* Anywhere else, or when the mechanism is unavailable: no network bound at
+  all. ``available_isolation()`` reports which case applies, and the tool
+  description shown to the model is written from it.
+
+The in-process ``socket`` patch in the preamble is a speed bump, not a bound.
+It is kept because it turns the common accidental case into a clear error
+message, but it is defeated by ``import _socket`` or by ``subprocess``, and
+both are covered by tests that assert the bypass so the limitation stays
+visible.
+
+Also not bounded in any mode: the child can read files the user can read.
+Confining the filesystem needs the same OS-level isolation plus a path policy
+and is not implemented. On the hosted path the surrounding container supplies
+the rest.
 
 This runs code the *model* wrote to check its own reasoning. It must never be
 used to run code taken out of the paper under review.
@@ -29,8 +43,11 @@ used to run code taken out of the paper under review.
 
 from __future__ import annotations
 
+import functools
 import os
+import platform
 import resource
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -45,11 +62,13 @@ MAX_CODE_CHARS = 20_000
 # allowed import set has no network client". Keeps an agent that imports
 # urllib from quietly exfiltrating the manuscript.
 #
-# Patch the connecting methods rather than replacing ``socket.socket``.
-# Replacing the class breaks ``ssl`` at import time (it subclasses
-# ``socket.socket``), which surfaces to the agent as an unrelated TypeError
-# and costs it turns guessing at a broken sandbox instead of reading a clear
-# refusal.
+# A speed bump, not a bound. It makes the ordinary `urllib`/`requests` path
+# fail with a legible message instead of hanging, which saves the agent turns;
+# it does NOT stop `import _socket` or `subprocess`. Real denial comes from
+# ``_isolation_prefix`` below. Patch the connecting methods rather than
+# replacing ``socket.socket``: replacing the class breaks ``ssl`` at import
+# time (it subclasses ``socket.socket``), which surfaces as an unrelated
+# TypeError.
 _PREAMBLE = """\
 import socket as _socket
 
@@ -92,6 +111,65 @@ class SandboxResult:
         if not parts:
             parts.append("(no output — remember to print() what you want to see)")
         return "\n\n".join(parts)
+
+
+# macOS seatbelt profile: inherit the ordinary filesystem view, deny all
+# networking. Verified to hold for child processes as well, so a sandboxed
+# script cannot reach the network by exec'ing curl.
+_MACOS_DENY_NETWORK_PROFILE = "(version 1)\n(allow default)\n(deny network*)\n"
+
+
+@functools.lru_cache(maxsize=1)
+def available_isolation() -> str:
+    """Return which network-denial mechanism this host offers.
+
+    One of ``"seatbelt"`` (macOS ``sandbox-exec``), ``"netns"`` (Linux
+    ``unshare --net``), or ``"none"``. Probed once per process by actually
+    running the mechanism, because both can be present and refuse: seatbelt
+    profiles can be rejected, and ``unshare`` needs root or unprivileged user
+    namespaces.
+    """
+    if platform.system() == "Darwin" and shutil.which("sandbox-exec"):
+        if _probe(["sandbox-exec", "-p", _MACOS_DENY_NETWORK_PROFILE]):
+            return "seatbelt"
+    if platform.system() == "Linux" and shutil.which("unshare"):
+        if _probe(["unshare", "--net", "--map-root-user"]):
+            return "netns"
+        if _probe(["unshare", "--net"]):
+            return "netns"
+    return "none"
+
+
+def _probe(prefix: list[str]) -> bool:
+    """True if *prefix* can run a trivial command successfully."""
+    try:
+        proc = subprocess.run(
+            [*prefix, sys.executable, "-I", "-c", "print(1)"],
+            capture_output=True,
+            text=True,
+            timeout=25,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0 and proc.stdout.strip() == "1"
+
+
+def _isolation_prefix() -> list[str]:
+    """Command prefix that denies the child network access, if any."""
+    mechanism = available_isolation()
+    if mechanism == "seatbelt":
+        return ["sandbox-exec", "-p", _MACOS_DENY_NETWORK_PROFILE]
+    if mechanism == "netns":
+        if _probe(["unshare", "--net", "--map-root-user"]):
+            return ["unshare", "--net", "--map-root-user"]
+        return ["unshare", "--net"]
+    return []
+
+
+def network_is_denied() -> bool:
+    """Whether a run of this sandbox actually has no network access."""
+    return available_isolation() != "none"
 
 
 def _set_limits(memory_bytes: int) -> None:
@@ -140,7 +218,7 @@ def run_python(
             fh.write(code)
         try:
             proc = subprocess.run(
-                [sys.executable, "-I", "-S", "-c", _loader(script)],
+                [*_isolation_prefix(), sys.executable, "-I", "-S", "-c", _loader(script)],
                 capture_output=True,
                 text=True,
                 timeout=timeout_s,

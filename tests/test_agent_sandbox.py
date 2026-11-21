@@ -89,3 +89,76 @@ def test_sympy_reproduces_a_sign_check():
     )
     assert result.ok, result.render()
     assert "True" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Network denial is an OS-level bound where one is available, and otherwise
+# is not a bound at all. These tests pin both halves of that so the claim in
+# the docstring and the tool description cannot drift from reality.
+# ---------------------------------------------------------------------------
+
+
+def test_available_isolation_reports_a_known_mechanism():
+    from coarse.agent.sandbox import available_isolation, network_is_denied
+
+    mechanism = available_isolation()
+    assert mechanism in {"seatbelt", "netns", "none"}
+    assert network_is_denied() is (mechanism != "none")
+
+
+@pytest.mark.skipif(
+    not __import__("coarse.agent.sandbox", fromlist=["x"]).network_is_denied(),
+    reason="no OS-level network isolation on this host",
+)
+def test_subprocess_cannot_reach_the_network():
+    """The in-process socket patch does not cover this; the OS bound must.
+
+    Shelling out to curl defeated the Python-level patch completely, which is
+    why denial moved to sandbox-exec / unshare.
+    """
+    result = run_python(
+        "import subprocess\n"
+        "p = subprocess.run(\n"
+        "    ['/usr/bin/curl', '-s', '-o', '/dev/null', '-w', '%{http_code}',\n"
+        "     '--max-time', '8', 'https://example.com'],\n"
+        "    capture_output=True, text=True)\n"
+        "print('exit', p.returncode, 'http', (p.stdout or '').strip())\n"
+    )
+    assert result.ok, result.render()
+    # curl exits non-zero and reports no HTTP status when it cannot resolve.
+    assert "http 000" in result.stdout or "exit 6" in result.stdout
+
+
+@pytest.mark.skipif(
+    not __import__("coarse.agent.sandbox", fromlist=["x"]).network_is_denied(),
+    reason="no OS-level network isolation on this host",
+)
+def test_the_underlying_socket_extension_cannot_connect():
+    """``import _socket`` bypasses the patched ``socket`` module."""
+    result = run_python(
+        "import _socket\n"
+        "s = _socket.socket()\n"
+        "s.settimeout(8)\n"
+        "s.connect(('example.com', 80))\n"
+        "print('CONNECTED')\n"
+    )
+    assert not result.ok
+    assert "CONNECTED" not in result.stdout
+
+
+def test_the_socket_patch_still_gives_a_legible_message():
+    """Kept for the message, not for the bound: an agent that reaches for
+    urllib should read a refusal rather than puzzle over a timeout."""
+    result = run_python(
+        "import urllib.request\n"
+        "print(urllib.request.urlopen('http://example.com', timeout=5).status)\n"
+    )
+    assert not result.ok
+    assert "disabled in this sandbox" in result.render()
+
+
+def test_computation_still_works_under_isolation():
+    """The isolation prefix must not break the thing the sandbox is for."""
+    result = run_python("import sympy as sp\nx = sp.symbols('x')\nprint(sp.diff(x**3, x))\n")
+    assert result.ok, result.render()
+    assert "3*x**2" in result.stdout
