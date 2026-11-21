@@ -69,6 +69,11 @@ from coarse.types import (
 
 logger = logging.getLogger(__name__)
 
+#: The modes ``run_agentic_review`` accepts. Validated rather than falling
+#: through to "swarm", so a typo in ``--agent`` is an error the user sees
+#: instead of a silent substitution of a different, dearer mode.
+AGENT_MODES = frozenset({"single", "swarm", "sweep"})
+
 DEFAULT_MAX_TARGETS = 10
 DEFAULT_MAX_PARALLEL = 4
 INVESTIGATOR_TOOL_BUDGET = 40
@@ -548,6 +553,10 @@ def run_agentic_review(
     The workspace is returned so the caller can inspect the ledger; it is
     deleted on cleanup unless ``keep_workspace`` is set.
     """
+    if mode not in AGENT_MODES:
+        raise ValueError(
+            f"unknown agent mode {mode!r}; expected one of {', '.join(sorted(AGENT_MODES))}"
+        )
     records: list[AgentRunRecord] = []
     workspace = ReviewWorkspace.create(
         paper_markdown,

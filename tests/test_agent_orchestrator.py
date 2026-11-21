@@ -623,3 +623,10 @@ def test_refute_comments_on_an_empty_list_is_a_noop(tmp_path):
         [], _paper(), _structure(), RoleFakeClient(verdicts={})
     )
     assert (kept, verdicts, records) == ([], [], [])
+
+
+def test_an_unknown_agent_mode_is_an_error_not_a_silent_swarm(tmp_path):
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError, match="unknown agent mode"):
+        _run(RoleFakeClient(verdicts={}), tmp_path, mode="swarmm")

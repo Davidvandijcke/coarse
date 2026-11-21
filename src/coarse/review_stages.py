@@ -44,6 +44,10 @@ _MATH_SECTION_WEIGHT = 2.5
 # against the start of the title. The reference list is frequently absorbed
 # into "Acknowledgements" by the heading parser, so that section can be very
 # long without containing anything reviewable.
+# Longest a heading can be and still be one of the boilerplate sections below
+# rather than a substantive section that happens to start with the same word.
+_MAX_BOILERPLATE_TITLE_CHARS = 40
+
 _SKIP_TITLE_PREFIXES = (
     "acknowledgement",
     "acknowledgment",
@@ -70,7 +74,13 @@ def _is_reviewable_section(section: SectionInfo) -> bool:
     if section.section_type == SectionType.REFERENCES:
         return False
     title = section.title.strip().lower().lstrip("#").strip()
-    if any(title.startswith(prefix) for prefix in _SKIP_TITLE_PREFIXES):
+    # Only treat a prefix match as boilerplate when the heading is short enough
+    # to BE that boilerplate. "Funding" is a front-matter section; "Funding and
+    # acquisition dynamics in venture capital" is a paper's results section, and
+    # a bare prefix test would discard it.
+    if len(title) <= _MAX_BOILERPLATE_TITLE_CHARS and any(
+        title.startswith(prefix) for prefix in _SKIP_TITLE_PREFIXES
+    ):
         return False
     if section.section_type == SectionType.APPENDIX:
         return len(section.text) >= _MIN_APPENDIX_CHARS

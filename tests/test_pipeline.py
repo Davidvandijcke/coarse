@@ -1882,3 +1882,20 @@ def test_review_paper_agent_mode_runs_the_agent_runtime_and_verifies_quotes():
     assert "Fabricated quote" not in titles, "the quote verifier must still drop it"
     assert [c.number for c in review.detailed_comments] == [1]
     assert "A Paper" in markdown
+
+
+def test_select_reviewable_sections_keeps_a_substantive_funding_section():
+    """A prefix match is boilerplate only when the heading is short enough.
+
+    "Funding" is front matter; "Funding and acquisition dynamics in venture
+    capital" is a results section, and a bare prefix test discarded it.
+    """
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("Funding", 600),
+        _sec("Funding and acquisition dynamics in venture capital", 6_000),
+        _sec("Acknowledgements", 9_000),
+    ]
+    kept = [s.title for s in select_reviewable_sections(sections)]
+    assert kept == ["Funding and acquisition dynamics in venture capital"]
