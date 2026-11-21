@@ -270,20 +270,6 @@ def test_an_editor_failure_falls_back_to_rendering_the_ledger(tmp_path):
     assert all(len(c.quote) >= 20 for c in review.detailed_comments)
 
 
-def test_a_planner_failure_falls_back_to_a_whole_paper_target(tmp_path):
-    class NoPlan(RoleFakeClient):
-        def complete_with_tools(self, messages, tools, **kwargs):
-            if "planning how a paper will be checked" in str(messages[0].get("content", "")):
-                return _submit({"targets": []})
-            return super().complete_with_tools(messages, tools, **kwargs)
-
-    client = NoPlan(verdicts={"f1": "confirmed", "f2": "confirmed"})
-    _review, _records, ws = _run(client, tmp_path)
-    manifest = json.loads((ws.root / "run.json").read_text())
-    assert manifest["targets"][0]["target_id"] == "t01"
-    assert manifest["candidate_findings"] == 2
-
-
 def test_comments_are_renumbered_sequentially(tmp_path):
     client = RoleFakeClient(verdicts={"f1": "confirmed", "f2": "confirmed"})
     review, _records, _ws = _run(client, tmp_path)
@@ -302,3 +288,97 @@ def test_the_manifest_records_per_agent_accounting(tmp_path):
     # Ledger ids are reassigned from the target, so they are collision-free
     # across investigators regardless of what the model returned.
     assert set(manifest["verdicts"]) == {"t01-f1", "t01-f2"}
+
+
+def test_structural_targets_cover_the_math_heavy_sections():
+    """The planner fallback must not collapse to one whole-paper target.
+
+    A planner that spends its tool budget and submits an empty plan used to
+    degrade the swarm to a single broad investigation, which measurably
+    under-covered the paper.
+    """
+    from coarse.agent.orchestrator import _structural_targets
+
+    structure = PaperStructure(
+        title="A Paper",
+        domain="statistics",
+        taxonomy="academic/research_paper",
+        abstract="An abstract.",
+        sections=[
+            SectionInfo(
+                number=1,
+                title="Introduction",
+                text="x" * 2_000,
+                section_type=SectionType.INTRODUCTION,
+            ),
+            SectionInfo(
+                number="A.10",
+                title="Proof of Proposition 2",
+                text="x" * 14_000,
+                section_type=SectionType.OTHER,
+                math_content=True,
+            ),
+            SectionInfo(
+                number="A.12",
+                title="Proof of Proposition 4",
+                text="x" * 5_000,
+                section_type=SectionType.OTHER,
+                math_content=True,
+            ),
+            SectionInfo(
+                number=9,
+                title="Experiments",
+                text="x" * 6_000,
+                section_type=SectionType.RESULTS,
+            ),
+            SectionInfo(
+                number=99,
+                title="References",
+                text="x" * 9_000,
+                section_type=SectionType.REFERENCES,
+            ),
+        ],
+    )
+    targets = _structural_targets(structure, 3)
+    assert len(targets) == 3
+    assert [t.target_id for t in targets] == ["t01", "t02", "t03"]
+    located = {loc for t in targets for loc in t.locations}
+    assert "Proof of Proposition 2" in located
+    assert "Proof of Proposition 4" in located
+    assert "References" not in located, "the reference list is not reviewable"
+    # A proof target asks the cross-location question; a prose one does not.
+    proof = next(t for t in targets if "Proposition 2" in t.locations[0])
+    assert "invokes" in proof.question
+
+
+def test_structural_targets_handles_a_paper_with_one_usable_section():
+    from coarse.agent.orchestrator import _structural_targets
+
+    structure = PaperStructure(
+        title="A Paper",
+        domain="statistics",
+        taxonomy="academic/research_paper",
+        abstract="An abstract.",
+        sections=[
+            SectionInfo(number=1, title="Body", text="x" * 500),
+            SectionInfo(number=2, title="Empty", text="   "),
+        ],
+    )
+    targets = _structural_targets(structure, 5)
+    assert [t.locations for t in targets] == [["Body"]]
+
+
+def test_a_planner_that_submits_nothing_falls_back_to_structural_targets(tmp_path):
+    class NoPlan(RoleFakeClient):
+        def complete_with_tools(self, messages, tools, **kwargs):
+            if "planning how a paper will be checked" in str(messages[0].get("content", "")):
+                return _submit({"targets": []})
+            return super().complete_with_tools(messages, tools, **kwargs)
+
+    client = NoPlan(verdicts={"f1": "confirmed", "f2": "confirmed"})
+    _review, _records, ws = _run(client, tmp_path)
+    manifest = json.loads((ws.root / "run.json").read_text())
+    # Two reviewable sections in the fixture, so two structural targets, not
+    # one catch-all.
+    assert len(manifest["targets"]) == 2
+    assert all("no plan was produced" in t["rationale"].lower() for t in manifest["targets"])

@@ -203,8 +203,10 @@ class ToolBox:
         if self.calls > self.max_calls:
             return (
                 f"TOOL BUDGET EXHAUSTED ({self.max_calls} calls). "
-                "Stop calling tools and report what you have, including anything "
-                "you could not finish checking."
+                "Stop calling tools and submit now, using what you already have. "
+                "Do not submit an empty result just because the budget ran out — "
+                "report what you established, and say in it what you could not "
+                "finish checking."
             )
         try:
             out = self._dispatch_inner(name, args)

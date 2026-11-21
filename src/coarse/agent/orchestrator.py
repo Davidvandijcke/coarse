@@ -70,7 +70,7 @@ DEFAULT_MAX_TARGETS = 10
 DEFAULT_MAX_PARALLEL = 4
 INVESTIGATOR_TOOL_BUDGET = 40
 REFUTER_TOOL_BUDGET = 20
-PLANNER_TOOL_BUDGET = 15
+PLANNER_TOOL_BUDGET = 35
 SINGLE_TOOL_BUDGET = 70
 
 # Labelled objects to surface to the planner. These are the things proofs
@@ -165,20 +165,77 @@ def _plan(
         ),
         toolbox=toolbox,
         submit_model=InvestigationPlan,
-        submit_description="Submit the investigation plan.",
+        submit_description=(
+            "Submit the investigation plan. It must contain at least one target; an "
+            "empty plan means no referee is assigned and the paper goes unreviewed."
+        ),
         max_turns=14,
         max_tokens=8192,
     )
     records.append(result.record)
     plan = result.result
     targets = list(plan.targets)[:max_targets] if isinstance(plan, InvestigationPlan) else []
+    if not targets:
+        # The planner can spend its whole tool budget skimming and then submit
+        # an empty plan. Falling back to one whole-paper target wastes the
+        # parallelism and measurably under-covers the paper, so derive targets
+        # from the paper's own structure instead.
+        logger.warning(
+            "planner produced no targets (%d turns, %d tool calls); "
+            "deriving targets from the paper structure",
+            result.record.turns,
+            result.record.tool_calls,
+        )
+        targets = _structural_targets(structure, max_targets)
     # Normalize ids so ledger filenames are stable regardless of what the
     # model emitted.
     for i, t in enumerate(targets, start=1):
         t.target_id = f"t{i:02d}"
-    if not targets:
-        logger.warning("planner produced no targets; falling back to a whole-paper target")
-        targets = [_whole_paper_target()]
+    return targets
+
+
+def _structural_targets(
+    structure: PaperStructure,
+    max_targets: int,
+) -> list[InvestigationTarget]:
+    """Derive investigation targets deterministically from the paper's sections.
+
+    The fallback when the planner returns nothing. Ranks sections the way
+    ``select_reviewable_sections`` does (length, with mathematical content
+    weighted up) and asks, for each, the question that the reference findings
+    this harness targets are shaped like: does this argument establish what the
+    results it invokes require?
+    """
+    candidates = [
+        s for s in structure.sections if s.text.strip() and s.section_type != SectionType.REFERENCES
+    ]
+    ranked = sorted(
+        candidates,
+        key=lambda s: -len(s.text) * (2.5 if s.math_content else 1.0),
+    )[: max(1, max_targets)]
+
+    targets: list[InvestigationTarget] = []
+    for i, section in enumerate(ranked, start=1):
+        if section.math_content:
+            question = (
+                f"Work through the argument in '{section.title}'. Does each step follow, "
+                "and does it establish what the definitions, lemmas and algorithms it "
+                "invokes actually require? Look each of them up and compare."
+            )
+        else:
+            question = (
+                f"Check '{section.title}' against the paper's formal results. Are the "
+                "claims it makes supported by what is actually proved, and do the "
+                "parameter values it uses satisfy the conditions the theory requires?"
+            )
+        targets.append(
+            InvestigationTarget(
+                target_id=f"t{i:02d}",
+                question=question,
+                locations=[section.title],
+                rationale="Derived from the paper structure because no plan was produced.",
+            )
+        )
     return targets
 
 
