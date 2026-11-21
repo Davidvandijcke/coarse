@@ -28,9 +28,17 @@
 
 ### Fixed
 
-- Review every section of a long paper. Section selection truncated to the
-  first 25 parsed sections, which on a theory paper with a long appendix
-  discarded every proof appendix before any agent saw it.
+- Stop discarding a long paper's appendices. Section selection truncated to
+  the first 25 parsed sections in document order, which on a 41-section theory
+  paper dropped every proof appendix before any agent saw it. Selection now
+  removes what is not reviewable (empty or marker-only sections, reference
+  lists) and, where the cap still binds, keeps sections by length with
+  mathematical content weighted up, rather than by position. The cap still
+  binds on a long paper, so some short sections are still skipped; which ones
+  are logged.
+- Keep a proof whose heading the parser mangled. A section titled
+  `<!-- PAGE BREAK -->` was filtered by title, and on the same paper one such
+  section is the proof of the central theorem.
 - Cache the prompt prefix of a multi-turn tool loop on providers that need
   explicit breakpoints. Without it the cost of a tool loop grew quadratically
   in its length, because each turn re-billed the paper text read in earlier

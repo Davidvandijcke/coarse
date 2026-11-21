@@ -40,9 +40,7 @@ def main() -> None:
     paper = (paper_dir / "paper.md").read_text()
 
     client = judge_client()
-    report = score_precision_with_tools(
-        review, paper, structure, client, limit=args.limit
-    )
+    report = score_precision_with_tools(review, paper, structure, client, limit=args.limit)
     report["meta"] = meta
     out = args.run / "score_tool_judge.json"
     out.write_text(json.dumps(report, indent=1), encoding="utf-8")
@@ -51,8 +49,10 @@ def main() -> None:
     print(f"  claims adjudicated : {report['n_scored']} of {report['n_claims']}")
     print(f"  supported          : {report['n_supported']}")
     print(f"  unsupported        : {report['n_unsupported']}")
-    print(f"     ... because answered elsewhere in the paper: "
-          f"{report['n_unsupported_because_answered_elsewhere']}")
+    print(
+        f"     ... because answered elsewhere in the paper: "
+        f"{report['n_unsupported_because_answered_elsewhere']}"
+    )
     print(f"  unclear            : {report['n_unclear']}")
     p = report["precision"]
     print(f"  precision          : {p:.0%}" if p is not None else "  precision : n/a")

@@ -81,13 +81,13 @@ src/coarse/
 ├── quality.py               # Quality eval against reference (dev only)
 ├── recall.py                # Recall eval vs. ground-truth expert reviews (dev only)
 ├── lang_eval.py             # Cross-language review-consistency evaluation (dev only)
-├── handoff_url.py           # Signed handoff-URL construction and parsing
-├── native_cli.py            # `coarse-native` entrypoint
-├── native_install.py        # Native host install/update helpers
-├── native_review.py         # Native-host review driver
-├── native_runtime.py        # Native-host runtime detection and launch
-├── native_store.py          # Native-host local state store
-├── review_runtime.py        # Shared review-runtime resolution
+├── handoff_url.py           # Parse subscription handoff URLs copied through chat apps
+├── native_cli.py            # Coordinator tools for the opt-in native-app review pilot
+├── native_install.py        # Install the native pilot beside the headless review skills
+├── native_review.py         # Checkpointed, app-native execution of the review pipeline
+├── native_runtime.py        # Suspend model calls as native tasks; replay validated replies
+├── native_store.py          # Private, atomic checkpoints for the native review pilot
+├── review_runtime.py        # Optional execution services for the review orchestrator
 ├── agent/                   # Bounded agent runtime (#264)
 │   ├── __init__.py
 │   ├── types.py             # Finding / verdict / target records for the ledger
