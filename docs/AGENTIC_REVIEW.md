@@ -211,62 +211,40 @@ itself, by a judge from a different model family
 | swarm, structural targets | 3 | 3 | 8% | 83% | 100% | 1 of 6 | $2.06 | 731s |
 | sweep | 12 | 5 | 12% | 94% | 92% | 1 of 17 | $3.93 | 738s |
 
-### What refutation is worth, measured on identical generation
+### What refutation is worth
 
-A separate `pipeline_refuted` run cannot attribute anything, because it is a
-different review. `evals/refute_saved.py` instead runs the refuter over a saved
-review the judge has already adjudicated, and saves what survives as its own
-run. Generation is then identical on both sides and refutation is the only
-difference.
+**Figures withdrawn pending re-measurement against the final code.** Three
+earlier attempts at this number were wrong in instructive ways, and the
+mistakes are recorded here because each of them would have shipped a false
+claim:
 
-**psi**, pipeline after the section fix:
+1. **Comparing a `pipeline_refuted` run with a `pipeline` run.** Two different
+   reviews, so nothing was attributable to the gate.
+2. **Scoring a post-refutation review end to end.** That re-judges claims the
+   gate left untouched, and the judge drifts: the arithmetic did not close, and
+   at least one byte-identical claim flipped verdict between scorings. Fixed by
+   carrying stored verdicts forward and judging only changed text.
+3. **Scoring "is this claim supported by the paper?" alone.** The gate was
+   rewriting comments as well as dropping them, and some rewrites retreated
+   from "X is wrong" to "the paper does not say how X was handled". That
+   satisfies the supported test while giving the author less, so the metric was
+   rewarding a hedge. Reading the saved reviews also showed every narrowed
+   issue body had come back *longer* than the one it replaced, each prefixed
+   with the issue title.
 
-| | comments | issues | recall | precision | of comments | of issues | unsupported |
-|---|---|---|---|---|---|---|---|
-| before | 20 | 11 | 11/16 | 68% | 70% | 64% | 10 |
-| after | 20 | 10 | 11/16 | **87%** | **90%** | **80%** | **4** |
+The third finding changed the design rather than the measurement. The gate is
+now purely subtractive: comments are kept or dropped and never rewritten, and
+an issue is narrowed only by deleting verbatim spans the refuter names, so
+every surviving word is the reviewer's own. `evals/refute_effect.py` measures
+it on identical generation, carrying stored verdicts forward for unchanged
+claims, and reports good and bad claim counts under both "supported" and
+"supported and substantive".
 
-**coset_codes**, held out:
-
-| | comments | issues | recall | precision | of comments | of issues | unsupported |
-|---|---|---|---|---|---|---|---|
-| before | 19 | 12 | 10/25 | 48% | 58% | 33% | 16 |
-| after | 13 | 10 | 9/25 | **65%** | **77%** | **50%** | **8** |
-
-Unsupported claims halve on both papers, 10 to 4 and 16 to 8. Precision rises
-19 and 17 points. Recall is unchanged on `psi` and loses one reference finding
-of 25 on the held-out paper. The whole pass cost about $1.85 per paper over 30
-to 35 refuter agents.
-
-Extending the gate to the macro issues is what closed the gap the comment-only
-version left: issue precision rose from 64% to 80% and from 33% to 50%, against
-58% and 36% when only comments were refuted.
-
-#### How the gate acts, per claim
-
-Cross-tabulating each claim's judge verdict against what the refuter did with
-it, pooled over both papers:
-
-| | kept | narrowed | dropped |
-|---|---|---|---|
-| comments the judge called supported | 23 | — | 2 |
-| comments the judge called unsupported | 6 | — | 8 |
-| issues the judge called supported | 4 | 6 | 1 |
-| issues the judge called unsupported | 4 | 6 | 2 |
-
-The two halves behave differently, and the difference is the reason they have
-separate contracts. A comment is anchored and the gate either reproduces it or
-drops it: it catches 8 of 14 false ones for 2 of 25 good ones. An issue bundles
-several points, so the gate mostly narrows rather than drops — 12 of 23 issues
-were narrowed — and that is what the precision gain comes from, since a
-narrowed issue is re-adjudicated on its new text.
-
-Two caveats on this table. The refuter has real run-to-run variance: on `psi`
-two runs over the same comments dropped 5 of 6 and then 4 of 6 unsupported
-ones, and the issue verdicts moved more than that. And narrowing is not free —
-it also narrowed 6 issues the judge had called supported, which may have
-removed content worth keeping; the precision gain says the trade was net
-positive on these two papers, not that nothing good was lost.
+The general shape that survived all three attempts: the gate removes some false
+criticism and costs some true criticism, the trade looked favourable on both
+papers, and it costs roughly $2 a paper. The magnitude is what was unreliable,
+and one run also sits inside the refuter's own variance — repeated on identical
+input it has dropped 4, 5 and 6 of the same comments.
 
 ### A second, stronger adjudication
 
@@ -308,16 +286,15 @@ coverage on both papers and also asserts the most claims the paper does not
 support. The failure has one cause: the objection is answered in a part of the
 paper a section agent cannot see.
 
-**Independent refutation halves it, cheaply.** On identical generation,
-unsupported claims fall from 10 to 4 and from 16 to 8, precision rises 19 and
-17 points, and recall is unchanged on one paper and loses one finding of 25 on
-the other, for about $1.85 a paper.
+**Independent refutation removes some of it, at a cost in coverage.** The size
+of the effect is being re-measured against the final code; see above for why
+three earlier figures were withdrawn.
 
-**Refuting the macro issues was the half that mattered most.** With comments
-alone refuted, issue precision sat at 58% and 36% and held total precision
-down. Refuting both halves takes issue precision to 80% and 50%. An issue is
-rarely wholly wrong, so the gate narrows it rather than dropping it, and the
-narrowed text is what gets re-adjudicated.
+**Refuting the macro issues matters as much as refuting the comments.** With
+comments alone refuted, macro-issue precision lagged badly and held total
+precision down, because the overall feedback was never checked. An issue is
+rarely wholly wrong, so it is narrowed by deleting the spans the paper answers
+rather than dropped whole.
 
 **No agent-only arm beat a single well-prompted full-paper call on coverage.**
 Three to twelve comments against references holding 16 and 25 findings. The
@@ -338,14 +315,12 @@ Do not replace the staged pipeline with the swarm. The measurement does not
 support it.
 
 1. **Ship the section-selection fix.** Measured gain, no agents, no added cost.
-2. **Ship `--refute`.** It targets the measured defect, keeps the pipeline's
-   coverage, and costs about $1.85 per review. Both halves of the review are
-   checked; the macro-issue half carries most of the gain.
-3. **Consider making it the default** once it has been run on more than two
-   papers and the refuter's run-to-run variance is quantified. It halves
-   unsupported claims for almost no coverage, which is the trade a referee
-   report should want, but two papers and one run per cell is not enough to
-   change a default on.
+2. **Ship `--refute` as opt-in.** It targets the measured defect and keeps the
+   pipeline's coverage, at roughly $2 a review and a shorter report. Both
+   halves of the review are checked.
+3. **Do not make it the default yet.** Its effect has been mis-measured three
+   times, and one run sits inside the refuter's own variance. Changing a
+   default needs the effect size on more papers with repeats per cell.
 4. **Keep `--agent swarm` as an opt-in deep mode** for theory papers, where the
    appendix findings it reaches are worth the coverage it gives up. Its recall
    is the open problem.
