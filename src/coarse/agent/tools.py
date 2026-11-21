@@ -263,8 +263,16 @@ class ToolBox:
             return f"Wrote {path.name} ({path.stat().st_size} bytes)."
         if name == "note_list":
             names = sorted(p.name for p in (self.workspace.root / "notes").glob("*"))
+            if self.workspace.board_path.is_file():
+                names.insert(0, "board.md")
             return "\n".join(names) if names else "(no notes yet)"
         if name == "note_read":
+            # The shared findings board lives beside the ledger rather than in
+            # notes/, but an agent should not have to know that.
+            if str(args.get("name", "")).strip() in {"board.md", "board"}:
+                if not self.workspace.board_path.is_file():
+                    return "(no findings board for this review)"
+                return self.workspace.board_path.read_text(encoding="utf-8")[:MAX_READ_CHARS]
             path = self.workspace.resolve_in_workspace(f"notes/{args.get('name', '')}")
             if not path.is_file():
                 return f"TOOL ERROR: no such note: {args.get('name')!r}"

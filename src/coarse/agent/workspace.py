@@ -224,3 +224,39 @@ class ReviewWorkspace:
 
     def __exit__(self, *_exc) -> None:
         self.cleanup()
+
+    # -- shared findings board -------------------------------------------
+
+    def write_board(self, entries: list[tuple[str, str, str, str]]) -> Path:
+        """Write the digest of what other investigators have found so far.
+
+        Deliberately a *digest*, written by the orchestrator rather than by the
+        agents: id, title, location and a one-line claim, and nothing of the
+        reasoning or the computation behind it. The point is to tell a second
+        investigator where to look, not to hand it a conclusion to agree with.
+        An agent given another's full derivation audits the derivation; the
+        whole value of the independent refuter rests on that distinction, and
+        the same risk applies here.
+        """
+        path = self.root / "findings" / "board.md"
+        lines = [
+            "# What other reviewers have found so far",
+            "",
+            "These are LEADS, not results. Each one was produced by another",
+            "reviewer working a different part of this paper, and none has been",
+            "independently checked yet. Treat an entry as a question to ask of",
+            "your own section, never as a fact you may rely on or repeat.",
+            "",
+        ]
+        if not entries:
+            lines.append("(nothing reported yet)")
+        for finding_id, title, location, claim in entries:
+            one_line = " ".join(claim.split())[:280]
+            lines.append(f"- **{finding_id}** ({location or 'location not given'}) {title}")
+            lines.append(f"  {one_line}")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return path
+
+    @property
+    def board_path(self) -> Path:
+        return self.root / "findings" / "board.md"

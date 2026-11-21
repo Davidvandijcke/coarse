@@ -140,6 +140,7 @@ def run_agent(
     workspace_root: Path,
     max_targets: int,
     max_parallel: int,
+    rounds: int = 1,
 ) -> tuple[Review, list, object]:
     from coarse.agent.orchestrator import run_agentic_review
 
@@ -152,6 +153,7 @@ def run_agent(
         max_parallel=max_parallel,
         workspace_root=str(workspace_root),
         keep_workspace=True,
+        rounds=rounds,
     )
 
 
@@ -167,6 +169,7 @@ def main() -> None:
             "pipeline_refuted",
             "agent_single",
             "agent_swarm",
+            "agent_swarm_xref",
             "agent_sweep",
         ],
     )
@@ -193,6 +196,7 @@ def main() -> None:
         review = run_pipeline(args.paper, args.model, refute=args.arm == "pipeline_refuted")
     else:
         mode = {"agent_single": "single", "agent_sweep": "sweep"}.get(args.arm, "swarm")
+        rounds = 2 if args.arm == "agent_swarm_xref" else 1
         review, records, workspace = run_agent(
             markdown,
             structure,
@@ -201,6 +205,7 @@ def main() -> None:
             workspace_root=out_dir / "workspace",
             max_targets=args.max_targets,
             max_parallel=args.max_parallel,
+            rounds=rounds,
         )
         logger.info("workspace kept at %s", workspace.root)
 

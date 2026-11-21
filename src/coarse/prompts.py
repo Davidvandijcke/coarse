@@ -3017,3 +3017,97 @@ Work through them and submit every defect you can demonstrate. If a section is \
 sound, say nothing about it.
 """
     )
+
+
+# ---------------------------------------------------------------------------
+# Second investigation round (cross-referencing what others found)
+# ---------------------------------------------------------------------------
+#
+# The swarm's measured deficiency is coverage, not precision: three to nine
+# comments against references holding 16 and 25 findings, at precision the
+# staged pipeline cannot match. Its investigators work in isolation, so one
+# checking an appendix proof never learns that another found the same quantity
+# treated differently in the main text — which is exactly the shape of the
+# cross-location findings this harness exists to recover.
+#
+# The second round hands each investigator a digest of what the others
+# reported and asks what that implies for its own part of the paper. The
+# digest carries no reasoning and no computation, and the brief is explicit
+# that another agent's finding is a lead rather than evidence, because
+# agreement between agents that share context is worth nothing here.
+
+AGENT_ROUND2_SYSTEM = (
+    """\
+You are an expert referee returning to a part of a paper you have already \
+checked, now that you can see what the other referees working on this paper \
+have reported.
+
+Their reports are leads, not results. None has been independently checked, and \
+some will be wrong. You may not repeat, cite or rely on any of them. What you \
+may do is ask what each one would imply for your own part of the paper, and \
+then establish the answer yourself, from the paper.
+"""
+    + _CONTENT_BOUNDARY_NOTICE
+    + _AGENT_TOOL_DISCIPLINE
+    + _AGENT_CONTRIBUTION_GUARD
+    + _AGENT_ABSTENTION
+    + _TONE_BLOCK
+    + _OCR_ARTIFACT_NOTICE
+    + """
+The findings worth adding in this round are the ones that span your part of the \
+paper and someone else's. Look for these specifically:
+
+- A quantity another referee reports as estimated, random or data-dependent \
+somewhere else, which your own section treats as fixed or known (or the \
+reverse). This is the single most productive cross-reference in a theory \
+paper.
+- A condition another referee reports as missing from a statement, where your \
+section is the place that statement gets used.
+- An error budget, tolerance or parameter another referee reports elsewhere, \
+which has to add up with the one your section spends.
+- A definition or lemma another referee reports as weaker than claimed, which \
+your section invokes.
+
+Do not re-report a finding already on the board, restate it in your own words, \
+or report that you agree with it. Report only a defect in YOUR part of the \
+paper that you have demonstrated yourself, and that the first pass over your \
+part did not already report. If the board implies nothing for your section, \
+submit an empty list — that is the expected outcome for most sections.
+"""
+)
+
+
+def agent_round2_user(
+    title: str,
+    question: str,
+    locations: str,
+    board: str,
+    already_reported: str,
+    author_notes: str | None = None,
+) -> str:
+    """Second-round prompt: the agent's own target plus the shared board."""
+    return (
+        author_notes_block(author_notes)
+        + f"""\
+Paper: "{_strip_fence_tags(title)}"
+
+**Your part of the paper**
+{_strip_fence_tags(question)}
+
+**Locations**
+{_strip_fence_tags(locations)}
+
+**What you already reported on it** (do not repeat these)
+<first_pass_review>
+{_strip_fence_tags(already_reported) or "(nothing)"}
+</first_pass_review>
+
+**What the other referees have reported elsewhere in this paper** (leads only)
+<first_pass_review>
+{_strip_fence_tags(board)}
+</first_pass_review>
+
+Work out what, if anything, those leads imply for your part of the paper, \
+establish it yourself, and submit only what you can demonstrate.
+"""
+    )

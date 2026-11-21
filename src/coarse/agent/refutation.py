@@ -26,7 +26,8 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from coarse.agent.orchestrator import DEFAULT_MAX_PARALLEL, _refute
+from coarse.agent.orchestrator import DEFAULT_MAX_PARALLEL
+from coarse.agent.roles import _refute
 from coarse.agent.types import (
     AgentRunRecord,
     LedgerFinding,

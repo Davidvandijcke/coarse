@@ -92,6 +92,7 @@ class RoleFakeClient:
         self.model = "fake/model"
         self.supports_prompt_caching = False
         self.editor_tasks: list[str] = []
+        self.xref_tasks: list[str] = []
         self.refuter_tasks: list[str] = []
         self._cost = 0.0
 
@@ -117,6 +118,9 @@ class RoleFakeClient:
                     ]
                 }
             )
+        if "returning to a part of a paper" in system:
+            self.xref_tasks.append(task)
+            return _submit({"findings": [_finding("x1", "Cross-referenced", QUOTE_B)]})
         if "checking one specific thing" in system or "assigned part of a paper" in system:
             return _submit({"findings": self.findings})
         if "check a single criticism" in system:
@@ -534,3 +538,58 @@ def test_an_unknown_agent_mode_is_an_error_not_a_silent_swarm(tmp_path):
 
     with _pytest.raises(ValueError, match="unknown agent mode"):
         _run(RoleFakeClient(verdicts={}), tmp_path, mode="swarmm")
+
+
+# -- cross-reference round -------------------------------------------------
+
+
+def test_rounds_one_does_not_run_a_cross_reference_round(tmp_path):
+    """The default path must be untouched by the new round."""
+    client = RoleFakeClient(verdicts={"f1": "confirmed", "f2": "confirmed"})
+    _review, records, ws = _run(client, tmp_path, rounds=1)
+    assert not any(r.role == "cross_reference" for r in records)
+    assert not (ws.root / "findings" / "board.md").exists()
+    manifest = json.loads((ws.root / "run.json").read_text())
+    assert manifest["rounds"] == 1
+
+
+def test_rounds_two_writes_a_board_and_reruns_each_investigator(tmp_path):
+    client = RoleFakeClient(verdicts={"f1": "confirmed", "f2": "confirmed"})
+    _review, records, ws = _run(client, tmp_path, rounds=2)
+    assert any(r.role == "cross_reference" for r in records)
+
+    board = (ws.root / "findings" / "board.md").read_text()
+    assert "Sign error" in board
+    assert "LEADS, not results" in board
+    manifest = json.loads((ws.root / "run.json").read_text())
+    assert manifest["rounds"] == 2
+    # Round-2 findings are candidates like any other and must be refuted.
+    assert manifest["candidate_findings"] > 2
+
+
+def test_the_board_carries_no_reasoning_or_computation(tmp_path):
+    """A second investigator shown another's derivation audits the derivation
+    instead of the paper. The board is a digest for that reason."""
+    from coarse.agent.workspace import ReviewWorkspace
+
+    ws = ReviewWorkspace.create(_paper(), _structure(), root=tmp_path / "bw")
+    ws.write_board([("t01-f1", "Sign error", "A.10", "The gradient sign is reversed.")])
+    board = ws.board_path.read_text()
+    assert "t01-f1" in board
+    assert "A.10" in board
+    assert "The gradient sign is reversed." in board
+    assert "LEADS, not results" in board
+    ws.cleanup()
+
+
+def test_the_board_is_readable_through_note_read(tmp_path):
+    from coarse.agent.tools import ToolBox
+    from coarse.agent.workspace import ReviewWorkspace
+
+    ws = ReviewWorkspace.create(_paper(), _structure(), root=tmp_path / "bt")
+    box = ToolBox(workspace=ws)
+    assert "no findings board" in box.dispatch("note_read", {"name": "board.md"})
+    ws.write_board([("t01-f1", "Sign error", "A.10", "Reversed sign.")])
+    assert "Sign error" in box.dispatch("note_read", {"name": "board.md"})
+    assert "board.md" in box.dispatch("note_list", {})
+    ws.cleanup()

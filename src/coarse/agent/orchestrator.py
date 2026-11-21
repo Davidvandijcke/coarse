@@ -33,11 +33,17 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from coarse.agent.roles import (
+    INVESTIGATOR_TOOL_BUDGET,
+    SINGLE_TOOL_BUDGET,
+    _cross_reference,
+    _investigate,
+    _refute,
+)
 from coarse.agent.runner import run_agent
-from coarse.agent.tools import ToolBox, finding_from_payload
+from coarse.agent.tools import ToolBox
 from coarse.agent.types import (
     AgentRunRecord,
-    FindingBatch,
     InvestigationPlan,
     InvestigationTarget,
     LedgerFinding,
@@ -47,15 +53,9 @@ from coarse.agent.workspace import ReviewWorkspace
 from coarse.llm import LLMClient
 from coarse.prompts import (
     AGENT_EDITOR_SYSTEM,
-    AGENT_INVESTIGATOR_SYSTEM,
     AGENT_PLANNER_SYSTEM,
-    AGENT_REFUTER_SYSTEM,
-    AGENT_SWEEP_SYSTEM,
     agent_editor_user,
-    agent_investigator_user,
     agent_planner_user,
-    agent_refuter_user,
-    agent_sweep_user,
 )
 from coarse.types import (
     DetailedComment,
@@ -75,10 +75,7 @@ AGENT_MODES = frozenset({"single", "swarm", "sweep"})
 
 DEFAULT_MAX_TARGETS = 10
 DEFAULT_MAX_PARALLEL = 4
-INVESTIGATOR_TOOL_BUDGET = 40
-REFUTER_TOOL_BUDGET = 20
 PLANNER_TOOL_BUDGET = 35
-SINGLE_TOOL_BUDGET = 70
 
 # Labelled objects to surface to the planner. These are the things proofs
 # invoke, and the gap between a label's statement and its use is where the
@@ -354,102 +351,6 @@ def _sweep_targets(
     return targets
 
 
-def _investigate(
-    client: LLMClient,
-    workspace: ReviewWorkspace,
-    structure: PaperStructure,
-    target: InvestigationTarget,
-    *,
-    author_notes: str | None,
-    tool_budget: int,
-    max_turns: int,
-    breadth: bool = False,
-) -> tuple[list[LedgerFinding], AgentRunRecord]:
-    toolbox = ToolBox(workspace=workspace, max_calls=tool_budget)
-    if breadth:
-        system = AGENT_SWEEP_SYSTEM
-        task = agent_sweep_user(
-            structure.title,
-            target.question,
-            target.rationale,
-            author_notes=author_notes,
-        )
-    else:
-        system = AGENT_INVESTIGATOR_SYSTEM
-        task = agent_investigator_user(
-            structure.title,
-            target.question,
-            "\n".join(f"- {loc}" for loc in target.locations) or "- (not specified)",
-            target.rationale,
-            author_notes=author_notes,
-        )
-    result = run_agent(
-        client,
-        role="sweep" if breadth else "investigator",
-        agent_id=target.target_id,
-        system=system,
-        task=task,
-        toolbox=toolbox,
-        submit_model=FindingBatch,
-        submit_description=(
-            "Submit your findings for this target. An empty list is valid when "
-            "nothing is demonstrable."
-            if breadth
-            else "Submit your findings for this target. An empty list is a valid and "
-            "preferred result when nothing is demonstrable."
-        ),
-        max_turns=max_turns,
-        max_tokens=16384,
-    )
-    findings: list[LedgerFinding] = []
-    if isinstance(result.result, FindingBatch):
-        for i, f in enumerate(result.result.findings, start=1):
-            try:
-                findings.append(
-                    finding_from_payload(f.model_dump(), target_id=target.target_id, index=i)
-                )
-            except Exception:
-                logger.debug("dropping malformed finding from %s", target.target_id, exc_info=True)
-    return findings, result.record
-
-
-def _refute(
-    client: LLMClient,
-    workspace: ReviewWorkspace,
-    structure: PaperStructure,
-    finding: LedgerFinding,
-    language: str | None = None,
-) -> tuple[RefutationVerdict | None, AgentRunRecord]:
-    """Re-establish one finding in a context that has not seen how it was made.
-
-    The prompt carries the claim, its location and the paper passages it points
-    at. It deliberately does not carry the investigator's reasoning or its
-    computation transcript: a refuter shown the derivation tends to audit the
-    derivation rather than the paper, which is the failure this step exists to
-    prevent.
-    """
-    toolbox = ToolBox(workspace=workspace, max_calls=REFUTER_TOOL_BUDGET)
-    anchors = "\n\n".join(a.quote for a in finding.anchors) or "(none recorded)"
-    result = run_agent(
-        client,
-        role="refuter",
-        agent_id=f"ref-{finding.finding_id}",
-        system=AGENT_REFUTER_SYSTEM,
-        task=agent_refuter_user(
-            structure.title, finding.claim, finding.location, anchors, language=language
-        ),
-        toolbox=toolbox,
-        submit_model=RefutationVerdict,
-        submit_description="Submit your verdict on this one criticism.",
-        max_turns=12,
-        max_tokens=8192,
-    )
-    verdict = result.result if isinstance(result.result, RefutationVerdict) else None
-    if verdict is not None:
-        verdict.finding_id = finding.finding_id
-    return verdict, result.record
-
-
 def _edit(
     client: LLMClient,
     workspace: ReviewWorkspace,
@@ -545,6 +446,7 @@ def run_agentic_review(
     language: str | None = None,
     workspace_root: str | None = None,
     keep_workspace: bool = False,
+    rounds: int = 1,
 ) -> tuple[Review, list[AgentRunRecord], ReviewWorkspace]:
     """Run an agentic review and return the Review plus per-agent accounting.
 
@@ -554,6 +456,12 @@ def run_agentic_review(
 
     The workspace is returned so the caller can inspect the ledger; it is
     deleted on cleanup unless ``keep_workspace`` is set.
+
+    ``rounds=2`` adds a cross-reference round in "swarm" and "sweep" mode:
+    after the first pass, a digest of every candidate finding is written to the
+    workspace and each investigator is re-run with it, to catch defects that
+    span its own part of the paper and someone else's. ``rounds=1`` is the
+    default and leaves that path untouched.
     """
     if mode not in AGENT_MODES:
         raise ValueError(
@@ -616,6 +524,40 @@ def run_agentic_review(
             findings.extend(got)
 
     logger.info("agentic review: %d candidate finding(s)", len(findings))
+
+    # --- cross-reference round -------------------------------------------
+    if rounds > 1 and mode in {"swarm", "sweep"} and findings:
+        workspace.write_board([(f.finding_id, f.title, f.location, f.claim) for f in findings])
+        by_target = {
+            t.target_id: [f for f in findings if f.target_id == t.target_id] for t in targets
+        }
+        round2: list[LedgerFinding] = []
+        with ThreadPoolExecutor(max_workers=max(1, min(max_parallel, len(targets)))) as pool:
+            futures = {
+                pool.submit(
+                    _cross_reference,
+                    client,
+                    workspace,
+                    structure,
+                    t,
+                    by_target.get(t.target_id, []),
+                    author_notes=author_notes,
+                ): t
+                for t in targets
+            }
+            for fut in as_completed(futures):
+                target = futures[fut]
+                try:
+                    got, record = fut.result()
+                except Exception:
+                    logger.warning("cross-reference %s failed", target.target_id, exc_info=True)
+                    continue
+                records.append(record)
+                for f in got:
+                    workspace.write_finding(f)
+                round2.extend(got)
+        logger.info("cross-reference round: %d additional candidate finding(s)", len(round2))
+        findings.extend(round2)
 
     # --- refute ----------------------------------------------------------
     verdicts: dict[str, RefutationVerdict] = {}
@@ -694,6 +636,7 @@ def run_agentic_review(
             "mode": mode,
             "model": client.model,
             "targets": [t.model_dump() for t in targets],
+            "rounds": rounds,
             "candidate_findings": len(findings),
             "confirmed_findings": len(confirmed),
             "verdicts": {k: v.verdict for k, v in verdicts.items()},

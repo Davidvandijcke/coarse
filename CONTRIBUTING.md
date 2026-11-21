@@ -70,6 +70,7 @@ src/coarse/
 │   ├── sandbox.py           # Bounded Python execution for algebra/numeric checks
 │   ├── tools.py             # paper_search / paper_read / python / note_* dispatch
 │   ├── runner.py            # Multi-turn tool loop with typed submission
+│   ├── roles.py            # The agent each role runs, as one tool-loop call
 │   └── orchestrator.py      # Planner / investigator / refuter / editor roles
 │   ├── refutation.py        # Apply the refutation gate to pipeline-produced comments
 └── agents/
