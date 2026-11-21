@@ -48,10 +48,13 @@ KNOWN_OVERSIZED: dict[str, int] = {
     # Cap bumped for the four bounded-agent role prompts (planner,
     # investigator, refuter, editor; #264), which land here rather than
     # in coarse/agent/ to keep the one-prompt-file rule in CLAUDE.md. Bumped
-    # again for the sweep brief. The five agent prompts are now a coherent
-    # ~450-line block and would sit better in their own module; that is a
-    # deliberate deferral to keep the one-prompt-file rule, not an oversight.
-    "prompts": 3050,
+    # three times on the agent branch (planner/investigator/refuter/editor,
+    # then the sweep brief, then the issue refuter). Those six prompts are now
+    # a coherent ~550-line block, and a third bump in one branch is the signal
+    # that they belong in their own module. Deferred deliberately to keep the
+    # one-prompt-file rule rather than change it in passing; whoever picks up
+    # the prompts.py split should start with them.
+    "prompts": 3150,
     # llm.py wraps litellm + instructor + retry + cost tracking.
     # Splitting it requires an API redesign, also deferred. Cap bumped
     # for complete_with_tools + the tool-loop cache breakpoints (#264):

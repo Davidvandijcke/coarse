@@ -134,3 +134,41 @@ class AgentRunRecord(BaseModel):
     cost_usd: float = 0.0
     duration_s: float = 0.0
     error: str = ""
+
+
+class IssueVerdict(BaseModel):
+    """Fresh-context verdict on one macro-level issue.
+
+    Separate from ``RefutationVerdict`` because a macro issue is a different
+    object. It carries no verbatim anchor, and it bundles several points under
+    one theme, so the common outcome is that some hold and some do not.
+    Collapsing that into confirmed/refuted would either ship a wrong point or
+    discard the right ones alongside it, so the verdict space includes
+    narrowing.
+    """
+
+    issue_index: int = Field(
+        default=0,
+        description="1-based position of the issue in the review's overall feedback.",
+    )
+    verdict: Literal["supported", "partly_supported", "refuted", "inconclusive"] = Field(
+        description=(
+            "supported: every substantive claim holds. partly_supported: some hold and "
+            "some do not — put the narrowed concern in rewritten_body. refuted: nothing "
+            "substantive holds, or it misreads the paper throughout. inconclusive: could "
+            "not be settled with the paper and the tools available."
+        )
+    )
+    rewritten_body: str = Field(
+        default="",
+        description=(
+            "Required when verdict is partly_supported: the concern narrowed to what the "
+            "paper bears out, in the author-facing register of the original. Must say "
+            "less than the original, never more. Empty otherwise."
+        ),
+    )
+    dropped_points: list[str] = Field(
+        default_factory=list,
+        description="Claims removed on review, each with where the paper answers it.",
+    )
+    reasoning: str = Field(description="How the verdict was reached, citing the paper.")

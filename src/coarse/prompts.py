@@ -2998,3 +2998,102 @@ Work through them and submit every defect you can demonstrate. If a section is \
 sound, say nothing about it.
 """
     )
+
+
+# ---------------------------------------------------------------------------
+# Macro-issue refutation
+# ---------------------------------------------------------------------------
+#
+# The comment refuter above judges one anchored claim and the answer is yes or
+# no. A macro issue is a different object and needs a different contract:
+#
+#   1. It carries no verbatim quote, so the refuter has to locate the passages
+#      itself rather than being handed them.
+#   2. It gathers several related points under one theme, so "partly right" is
+#      the common case. Dropping a four-point issue because its third point is
+#      wrong discards three good ones; keeping it whole ships the wrong one.
+#      The verdict space therefore includes narrowing.
+#
+# Measured on two papers: after comment refutation, comment precision was 94%
+# and 100% while macro-issue precision was 58% and 36%, so every surviving
+# false criticism was here.
+
+AGENT_ISSUE_REFUTER_SYSTEM = (
+    """\
+You are a referee checking one macro-level concern another referee has raised \
+about a paper, before it is sent to the author.
+
+You are not told how that referee reached it. Your job is to establish, from \
+the paper, which parts of the concern the paper actually bears out.
+"""
+    + _CONTENT_BOUNDARY_NOTICE
+    + _AGENT_TOOL_DISCIPLINE
+    + """
+A macro concern usually makes several points at once. Take them one at a time.
+
+1. Break the concern into the separate claims it makes about the paper.
+2. For each, find the relevant passages and read them. The concern gives you no \
+quote, so search for the objects it names — the theorem, the section, the \
+assumption, the experiment.
+3. Decide each claim on the paper. The commonest error in an automated review \
+is objecting to something the paper resolves elsewhere: in a later section, a \
+remark, a footnote, an appendix, or the very next sentence. Look before you \
+accept a claim.
+4. Where something is computable, compute it (`python`).
+
+Verdicts:
+
+- "supported" — every substantive claim the concern makes holds up.
+- "partly_supported" — some hold and some do not. This is the usual outcome for \
+a concern that makes several points. Put the narrowed concern in \
+`rewritten_body`: keep the parts the paper bears out, drop the rest, and keep \
+the author-facing prose and register of the original. List what you dropped, \
+with where the paper answers it, in `dropped_points`.
+- "refuted" — nothing substantive in it holds, or it misreads the paper \
+throughout. Say where the paper answers it.
+- "inconclusive" — you could not settle it with the paper and the tools you \
+have, or your tools failed. Do not resolve uncertainty upward.
+
+Do not strengthen a concern, add a new one, or rewrite one that is already \
+accurate. When you narrow, narrow: `rewritten_body` must say less than the \
+original, never more.
+
+Being agreeable here is a failure. A concern that reaches the author and turns \
+out to be answered on the next page costs the review its authority.
+"""
+)
+
+
+def agent_issue_refuter_user(
+    title: str,
+    issue_title: str,
+    issue_body: str,
+    abstract: str = "",
+) -> str:
+    """Issue-refuter prompt.
+
+    Carries no anchor because a macro issue has none: the refuter is expected
+    to locate the passages with its tools, which is the capability the stage
+    exists to add.
+    """
+    abstract_block = ""
+    if abstract.strip():
+        abstract_block = (
+            "\n**Paper abstract** (for orientation only)\n"
+            "<paper_abstract>\n"
+            f"{_strip_fence_tags(abstract[:_MAX_ABSTRACT_PREVIEW])}\n"
+            "</paper_abstract>\n"
+        )
+    return f"""\
+Paper: "{_strip_fence_tags(title)}"
+{abstract_block}
+**The concern to check**
+<first_pass_review>
+{_strip_fence_tags(issue_title)}
+
+{_strip_fence_tags(issue_body)}
+</first_pass_review>
+
+Break it into its separate claims, check each against the paper, then submit \
+your verdict.
+"""

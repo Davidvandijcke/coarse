@@ -818,28 +818,21 @@ def review_paper(
     progress.complete("editorial", "Completed editorial filter", client.cost_usd)
 
     if refute:
-        from coarse.agent.refutation import refute_comments
+        from coarse.agent.refutation import refute_review
 
-        progress.start("refutation", "Re-checking comments independently", client.cost_usd)
-        before = len(filtered_comments)
-        try:
-            filtered_comments, _verdicts, refute_records = refute_comments(
-                filtered_comments,
-                paper_text.full_markdown,
-                structure,
-                client,
-            )
-            logger.info(
-                "refutation stage: %d of %d comment(s) independently reproduced across %d agent(s)",
-                len(filtered_comments),
-                before,
-                len(refute_records),
-            )
-        except Exception:
-            logger.warning(
-                "refutation stage failed; keeping the unverified comments", exc_info=True
-            )
-        progress.complete("refutation", "Re-checked comments", client.cost_usd)
+        progress.start("refutation", "Re-checking the review independently", client.cost_usd)
+        # Both halves are checked. With comments alone refuted, comment
+        # precision reached 94% and 100% on the two benchmark papers while
+        # macro-issue precision stayed at 58% and 36%, so every surviving
+        # unsupported claim was in the overall feedback.
+        overview, filtered_comments, _refute_records = refute_review(
+            overview,
+            filtered_comments,
+            paper_text.full_markdown,
+            structure,
+            client,
+        )
+        progress.complete("refutation", "Re-checked the review", client.cost_usd)
 
     # Programmatic quote verification against full paper text
     progress.start("quote_verification", "Verifying quotes", client.cost_usd)
