@@ -142,9 +142,16 @@ class IssueVerdict(BaseModel):
     Separate from ``RefutationVerdict`` because a macro issue is a different
     object. It carries no verbatim anchor, and it bundles several points under
     one theme, so the common outcome is that some hold and some do not.
-    Collapsing that into confirmed/refuted would either ship a wrong point or
-    discard the right ones alongside it, so the verdict space includes
-    narrowing.
+
+    Narrowing is expressed as **deletion**, not as a rewrite. An earlier
+    version asked for a replacement body and told the model to say less; every
+    rewrite it produced on the benchmark papers was longer than the original
+    (by 1.0x to 1.6x) and prefixed with the issue title. Refusing those left
+    the issue half drop-only and worthless, and accepting them made this stage
+    an author of review content rather than a verifier of it. Naming the spans
+    to remove gets the narrowing while leaving the surviving text the
+    reviewer's own, and it is checkable: a span either appears in the body or
+    it does not.
     """
 
     issue_index: int = Field(
@@ -154,21 +161,23 @@ class IssueVerdict(BaseModel):
     verdict: Literal["supported", "partly_supported", "refuted", "inconclusive"] = Field(
         description=(
             "supported: every substantive claim holds. partly_supported: some hold and "
-            "some do not — put the narrowed concern in rewritten_body. refuted: nothing "
+            "some do not — name the unsupported spans in remove_spans. refuted: nothing "
             "substantive holds, or it misreads the paper throughout. inconclusive: could "
             "not be settled with the paper and the tools available."
         )
     )
-    rewritten_body: str = Field(
-        default="",
+    remove_spans: list[str] = Field(
+        default_factory=list,
         description=(
-            "Required when verdict is partly_supported: the concern narrowed to what the "
-            "paper bears out, in the author-facing register of the original. Must say "
-            "less than the original, never more. Empty otherwise."
+            "Required when verdict is partly_supported: the spans of the issue body "
+            "that the paper does not bear out, each copied VERBATIM from the body, "
+            "whole sentences wherever possible. The text that remains is published "
+            "unchanged, so do not paraphrase, summarize or rewrite — only quote what "
+            "should go. Empty otherwise."
         ),
     )
-    dropped_points: list[str] = Field(
+    removal_reasons: list[str] = Field(
         default_factory=list,
-        description="Claims removed on review, each with where the paper answers it.",
+        description="For each removed span, where in the paper the point is answered.",
     )
     reasoning: str = Field(description="How the verdict was reached, citing the paper.")

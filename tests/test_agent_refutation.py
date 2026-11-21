@@ -35,7 +35,8 @@ QUOTE_A = "The displayed gradient has the opposite sign from the derivative."
 QUOTE_B = "The curvature bound is half the exact curvature under these definitions."
 BODY = f"{QUOTE_A} {QUOTE_B} Padding to make the section substantial. " * 12
 
-NARROWED = "Only the first of the three points stands: the gradient sign is reversed."
+#: A span that really occurs in the fixture body, so a deletion can find it.
+REMOVABLE_SPAN = "This concern makes three points."
 
 
 def _structure() -> PaperStructure:
@@ -104,11 +105,11 @@ class FakeClient:
         *,
         comment_verdicts: dict[str, str] | None = None,
         issue_verdicts: dict[str, str] | None = None,
-        rewritten: str = NARROWED,
+        remove_spans: list[str] | None = None,
     ) -> None:
         self.comment_verdicts = comment_verdicts or {}
         self.issue_verdicts = issue_verdicts or {}
-        self.rewritten = rewritten
+        self.remove_spans = [REMOVABLE_SPAN] if remove_spans is None else list(remove_spans)
         self.issue_tasks: list[str] = []
         self.comment_tasks: list[str] = []
         self.model = "fake/model"
@@ -133,11 +134,9 @@ class FakeClient:
                 {
                     "issue_index": 0,
                     "verdict": verdict,
-                    "rewritten_body": self.rewritten if verdict == "partly_supported" else "",
-                    "dropped_points": (
-                        ["point two is answered in Section 6"]
-                        if verdict == "partly_supported"
-                        else []
+                    "remove_spans": (self.remove_spans if verdict == "partly_supported" else []),
+                    "removal_reasons": (
+                        ["answered in Section 6"] if verdict == "partly_supported" else []
                     ),
                     "reasoning": "Checked each point against the paper.",
                 }
@@ -190,14 +189,17 @@ def test_a_refuted_issue_is_dropped(tmp_path):
     assert [i.title for i in kept] == ["Stands up"]
 
 
-def test_a_partly_supported_issue_is_narrowed_not_dropped(tmp_path):
+def test_a_partly_supported_issue_is_narrowed_by_deleting_named_spans(tmp_path):
     """The path that distinguishes an issue from a comment.
 
     An issue making three points, one of which is answered elsewhere, must
-    reach the author with the two that hold rather than not at all.
+    reach the author with the rest rather than not at all -- and the text that
+    reaches them must be the reviewer's own words minus the named span, not a
+    model's rewrite of the whole thing.
     """
+    original = _issue("Error budget accounting")
     kept, verdicts, _r = refute_issues(
-        [_issue("Error budget accounting")],
+        [original],
         _paper(),
         _structure(),
         FakeClient(issue_verdicts={"Error budget accounting": "partly_supported"}),
@@ -206,11 +208,48 @@ def test_a_partly_supported_issue_is_narrowed_not_dropped(tmp_path):
     )
     assert len(kept) == 1
     assert kept[0].title == "Error budget accounting", "the title must survive narrowing"
-    assert kept[0].body == NARROWED
-    assert verdicts[0].dropped_points == ["point two is answered in Section 6"]
+    assert REMOVABLE_SPAN not in kept[0].body, "the named span must be gone"
+    assert len(kept[0].body) < len(original.body), "narrowing must shorten"
+    # Everything else is the original text, unaltered.
+    assert "Each point is set out at the length" in kept[0].body
+    assert verdicts[0].removal_reasons == ["answered in Section 6"]
 
 
-def test_a_narrowing_with_no_replacement_text_keeps_the_original(tmp_path):
+def test_a_span_that_is_not_in_the_body_removes_nothing(tmp_path):
+    """A hallucinated span must not silently alter the issue."""
+    original = _issue("Error budget accounting")
+    kept, _v, _r = refute_issues(
+        [original],
+        _paper(),
+        _structure(),
+        FakeClient(
+            issue_verdicts={"Error budget accounting": "partly_supported"},
+            remove_spans=["A sentence that appears nowhere in the concern at all."],
+        ),
+        max_parallel=1,
+        workspace_root=str(tmp_path / "w3b"),
+    )
+    assert kept == [original]
+
+
+def test_naming_every_span_drops_the_issue(tmp_path):
+    """A narrowing that removes the whole concern is a refutation in disguise."""
+    original = _issue("Error budget accounting")
+    kept, _v, _r = refute_issues(
+        [original, _issue("Survives")],
+        _paper(),
+        _structure(),
+        FakeClient(
+            issue_verdicts={"Error budget accounting": "partly_supported"},
+            remove_spans=[original.body],
+        ),
+        max_parallel=1,
+        workspace_root=str(tmp_path / "w3c"),
+    )
+    assert [i.title for i in kept] == ["Survives"]
+
+
+def test_a_narrowing_with_no_spans_keeps_the_original(tmp_path):
     """Keeping the original is the safe reading: the reviewer called it partly
     right, so dropping it would lose a concern it endorsed."""
     original = _issue("Error budget accounting")
@@ -218,7 +257,7 @@ def test_a_narrowing_with_no_replacement_text_keeps_the_original(tmp_path):
         [original],
         _paper(),
         _structure(),
-        FakeClient(issue_verdicts={"Error budget accounting": "partly_supported"}, rewritten="   "),
+        FakeClient(issue_verdicts={"Error budget accounting": "partly_supported"}, remove_spans=[]),
         max_parallel=1,
         workspace_root=str(tmp_path / "w4"),
     )
@@ -418,70 +457,132 @@ def test_the_review_language_reaches_both_refuters(tmp_path):
     assert "in French" in client.comment_tasks[0]
 
 
-# -- narrowed-body validation ---------------------------------------------
-#
-# Both cases below were found by reading the saved reviews, not the verdicts.
+# -- the gate only ever removes -------------------------------------------
 
 
-def test_a_narrowed_body_that_repeats_the_title_is_stripped(tmp_path):
-    """The rewrite came back starting with the issue title, so the rendered
-    review showed the title twice."""
-    issue = OverviewIssue(title="Error budget", body="x" * 400)
-    client = FakeClient(
-        issue_verdicts={"Error budget": "partly_supported"},
-        rewritten="Error budget. The budget exceeds the target.",
-    )
-    kept, _v, _r = refute_issues(
-        [issue],
-        _paper(),
-        _structure(),
-        client,
-        max_parallel=1,
-        workspace_root=str(tmp_path / "n1"),
-    )
-    assert kept[0].body == "The budget exceeds the target."
-    assert not kept[0].body.lower().startswith("error budget")
+def test_a_surviving_comment_is_published_as_written(tmp_path):
+    """The gate is subtractive.
 
-
-def test_a_narrowed_body_longer_than_the_original_is_refused(tmp_path):
-    """Narrowing must shorten.
-
-    Every narrowed body on the benchmark papers came back longer than the one
-    it replaced, against the prompt's explicit instruction. Accepting those
-    would make this stage a rewriter of review content rather than a verifier
-    of it.
+    Applying the refuter's ``corrected_claim`` was measured to be where the
+    stage's apparent precision gain came from, partly by retreating from an
+    error claim to a request for clarification, so the suggestion is recorded
+    and not applied.
     """
-    issue = OverviewIssue(title="Error budget", body="short original body here")
-    client = FakeClient(
-        issue_verdicts={"Error budget": "partly_supported"},
-        rewritten="a much longer replacement body " * 10,
-    )
-    kept, verdicts, _r = refute_issues(
-        [issue],
+
+    class Rewrites(FakeClient):
+        def complete_with_tools(self, messages, tools, **kwargs):
+            if "check a single criticism" in str(messages[0].get("content", "")):
+                return _submit(
+                    {
+                        "finding_id": "x",
+                        "verdict": "confirmed",
+                        "reasoning": "Reproduced.",
+                        "corrected_claim": "A softer restatement the author would read.",
+                        "severity_after_review": "major",
+                    }
+                )
+            return super().complete_with_tools(messages, tools, **kwargs)
+
+    original = _comment(1, "Sign error", QUOTE_A)
+    kept, verdicts, _r = refute_comments(
+        [original],
         _paper(),
         _structure(),
-        client,
+        Rewrites(),
         max_parallel=1,
-        workspace_root=str(tmp_path / "n2"),
+        workspace_root=str(tmp_path / "keep"),
     )
-    assert kept == [issue], "the original must be kept when the rewrite does not narrow"
-    assert verdicts[0].verdict == "partly_supported", "the verdict is still recorded"
+    assert kept[0].feedback == original.feedback
+    assert verdicts[0].corrected_claim, "the suggestion is still recorded on the verdict"
 
 
-def test_a_narrowing_within_the_length_tolerance_is_accepted(tmp_path):
-    """A rewrite may spend a few characters on a qualifier while cutting a
-    claim, so the bound is a tolerance rather than strict inequality."""
-    from coarse.agent.refutation import _LENGTH_TOLERANCE
+def test_severity_is_lowered_but_never_raised(tmp_path):
+    """``severity_after_review`` defaults to "major", so applying it
+    unconditionally raised the severity of a minor comment the refuter never
+    reconsidered."""
 
-    original = "y" * 200
-    issue = OverviewIssue(title="Concern", body=original)
-    slightly_longer = "z" * int(len(original) * (_LENGTH_TOLERANCE - 0.01))
-    kept, _v, _r = refute_issues(
-        [issue],
+    class Verdicts(FakeClient):
+        def __init__(self, severity: str) -> None:
+            super().__init__()
+            self.severity = severity
+
+        def complete_with_tools(self, messages, tools, **kwargs):
+            if "check a single criticism" in str(messages[0].get("content", "")):
+                return _submit(
+                    {
+                        "finding_id": "x",
+                        "verdict": "confirmed",
+                        "reasoning": "r",
+                        "severity_after_review": self.severity,
+                    }
+                )
+            return super().complete_with_tools(messages, tools, **kwargs)
+
+    critical = _comment(1, "Serious", QUOTE_A).model_copy(update={"severity": "critical"})
+    kept, _v, _r = refute_comments(
+        [critical],
         _paper(),
         _structure(),
-        FakeClient(issue_verdicts={"Concern": "partly_supported"}, rewritten=slightly_longer),
+        Verdicts("minor"),
         max_parallel=1,
-        workspace_root=str(tmp_path / "n3"),
+        workspace_root=str(tmp_path / "sev1"),
     )
-    assert kept[0].body == slightly_longer
+    assert kept[0].severity == "minor", "a downgrade is applied"
+
+    minor = _comment(1, "Small", QUOTE_A).model_copy(update={"severity": "minor"})
+    kept, _v, _r = refute_comments(
+        [minor],
+        _paper(),
+        _structure(),
+        Verdicts("major"),
+        max_parallel=1,
+        workspace_root=str(tmp_path / "sev2"),
+    )
+    assert kept[0].severity == "minor", "the default must not raise it"
+
+
+def test_narrow_by_deletion_matches_a_rewrapped_span():
+    """A model re-wraps a sentence it quotes, so matching is
+    whitespace-insensitive after an exact attempt."""
+    from coarse.agent.refutation import narrow_by_deletion
+
+    body = "Point one holds. Point two is answered in Section 6. Point three holds."
+    out, removed, missing = narrow_by_deletion(body, ["Point two is answered\n   in Section 6."])
+    assert removed and not missing
+    assert "Point two" not in out
+    assert "Point one holds." in out and "Point three holds." in out
+
+
+def test_narrow_by_deletion_refuses_a_span_too_short_to_identify_a_claim():
+    from coarse.agent.refutation import narrow_by_deletion
+
+    body = "Point one holds. Point two is answered in Section 6."
+    out, removed, missing = narrow_by_deletion(body, ["the"])
+    assert out == body
+    assert not removed
+    assert missing == ["the"]
+
+
+def test_refute_comments_on_an_empty_list_is_a_noop():
+    assert refute_comments([], _paper(), _structure(), FakeClient()) == ([], [], [])
+
+
+def test_refute_comments_keeps_a_comment_whose_check_could_not_run(tmp_path):
+    """An infrastructure failure must not silently delete a finding."""
+
+    class Broken(FakeClient):
+        def complete_with_tools(self, messages, tools, **kwargs):
+            if "check a single criticism" in str(messages[0].get("content", "")):
+                raise RuntimeError("provider down")
+            return super().complete_with_tools(messages, tools, **kwargs)
+
+    kept, verdicts, _r = refute_comments(
+        [_comment(1, "Sign error", QUOTE_A)],
+        _paper(),
+        _structure(),
+        Broken(),
+        max_parallel=1,
+        workspace_root=str(tmp_path / "broken"),
+    )
+    assert [c.title for c in kept] == ["Sign error"]
+    assert verdicts == []

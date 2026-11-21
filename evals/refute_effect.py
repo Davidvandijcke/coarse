@@ -1,5 +1,10 @@
 """Measure what refutation changes, with judge re-run noise held out.
 
+The gate is subtractive: it drops comments and deletes named spans from issues,
+and never rewrites. So every surviving comment carries the verdict already
+stored in `score.json` and needs no re-judging, and the only text the judge has
+to see again is a narrowed issue body.
+
 Scoring a post-refutation review end to end re-judges every claim, including
 the ones refutation left byte-identical. The judge is not deterministic -- on
 one run it moved a `psi` review from 13 of 20 supported to 12 of 20 between two
@@ -68,12 +73,13 @@ def main() -> None:
     # survivors inflated the after-total above the before-total, which is
     # impossible for a gate that only drops and rewrites.
     #
-    # Claims are tracked by TITLE, because the refuter rewrites `feedback` and
-    # `body` but leaves the title alone. Both the verdict and the judge's
-    # `substantive` flag are carried forward: "supported" alone is satisfiable
-    # by retreating from an error claim to "the paper does not say X", which
-    # the refuter does sometimes do, so precision measured on it alone rewards
-    # hedging. "supported and substantive" is the honest headline.
+    # Claims are tracked by (kind, title): the gate never alters a title, and
+    # titles are unique within a review in practice. Both the verdict and the
+    # judge's `substantive` flag are carried forward. "supported" alone was
+    # satisfiable by retreating from an error claim to "the paper does not say
+    # X" back when the gate rewrote comments; it no longer does, but the
+    # distinction is still reported because a narrowed issue can shed its
+    # substantive content and keep a defensible remainder.
     before_by_title: dict[tuple[str, str], tuple[str, bool, str]] = {}
     for d in stored:
         if d.get("verdict") not in {"supported", "unsupported"}:
@@ -195,7 +201,7 @@ def main() -> None:
 
     for label, require in (("supported", False), ("supported AND substantive", True)):
         print(f"  {label}")
-        print(f"  {'':10} {'before':>16} {'after':>16}")
+        print(f"  {'':10} {'before':>22} {'after':>22}")
         tot_sup_b = tot_sup_a = tot_n_b = tot_n_a = 0
         for kind in ("comment", "issue"):
             sup_a, n_a = tally(kind, require_substantive=require)
@@ -207,8 +213,9 @@ def main() -> None:
             tot_n_a += n_a
             print(
                 f"  {kind + 's':10} "
-                f"{f'{sup_b}/{n_b} ({_pct(sup_b, n_b)})':>16} "
-                f"{f'{sup_a}/{n_a} ({_pct(sup_a, n_a)})':>16}"
+                f"{f'{sup_b} good, {n_b - sup_b} bad':>22} "
+                f"{f'{sup_a} good, {n_a - sup_a} bad':>22}"
+                f"   ({_pct(sup_b, n_b)} -> {_pct(sup_a, n_a)})"
             )
         print(
             f"  {'total':10} "
@@ -254,6 +261,22 @@ def main() -> None:
         "refutation_cost_usd": round(client.cost_usd, 2),
         "judge_cost_usd": round(judge_cost, 2),
         "rewritten_detail": judged,
+        "actions": [
+            {
+                "kind": kind,
+                "title": title,
+                "judge_before": before_by_title[(kind, title)][0],
+                "substantive_before": before_by_title[(kind, title)][1],
+                "action": (
+                    "dropped"
+                    if (kind, title) not in survivors
+                    else "unchanged"
+                    if survivors[(kind, title)] == before_by_title[(kind, title)][2]
+                    else "narrowed"
+                ),
+            }
+            for (kind, title) in before_by_title
+        ],
     }
     (args.run / "refute_effect.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(f"\n  wrote {args.run / 'refute_effect.json'}")

@@ -2816,10 +2816,9 @@ def _refuter_language_line(language: str | None) -> str:
     if not language:
         return ""
     return (
-        f"\nWrite any text that will reach the author in {language}: the corrected "
-        "claim, the rewritten concern, and the dropped-point notes. Your reasoning "
-        "field may be in English. Keep every verbatim quote from the paper in the "
-        "paper's original language, unchanged.\n"
+        f"\nThe review reaching the author is in {language}. Quote any span you "
+        "name for removal exactly as it appears there, in that language. Your "
+        "reasoning may be in English.\n"
     )
 
 
@@ -3067,18 +3066,20 @@ Verdicts:
 
 - "supported" — every substantive claim the concern makes holds up.
 - "partly_supported" — some hold and some do not. This is the usual outcome for \
-a concern that makes several points. Put the narrowed concern in \
-`rewritten_body`: keep the parts the paper bears out, drop the rest, and keep \
-the author-facing prose and register of the original. List what you dropped, \
-with where the paper answers it, in `dropped_points`.
+a concern that makes several points. Do NOT rewrite the concern. Instead, copy \
+the spans that the paper does not bear out into `remove_spans`, verbatim from \
+the text above, whole sentences wherever you can. Whatever you do not name \
+stays exactly as written, so quote only what should go, and quote it exactly — \
+a span that does not appear in the text cannot be removed. For each one, say in \
+`removal_reasons` where the paper answers it.
 - "refuted" — nothing substantive in it holds, or it misreads the paper \
 throughout. Say where the paper answers it.
 - "inconclusive" — you could not settle it with the paper and the tools you \
 have, or your tools failed. Do not resolve uncertainty upward.
 
 Do not strengthen a concern, add a new one, or rewrite one that is already \
-accurate. When you narrow, narrow: `rewritten_body` must say less than the \
-original, never more.
+accurate. You cannot add a word to this review: the only edit available to you \
+is removing text the author would otherwise read.
 
 Being agreeable here is a failure. A concern that reaches the author and turns \
 out to be answered on the next page costs the review its authority.

@@ -15,6 +15,7 @@ it. See docs/AGENTIC_REVIEW.md for the paired per-comment measurement.
 from __future__ import annotations
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from coarse.agent.orchestrator import DEFAULT_MAX_PARALLEL, REFUTER_TOOL_BUDGET, _refute
@@ -56,9 +57,12 @@ def refute_comments(
 
     Each refuter runs in a fresh context with the claim, its quote, and tool
     access to the whole paper, and must reproduce the defect from the paper to
-    confirm it. A comment whose verdict is not ``confirmed`` is dropped; one
-    whose claim was real but misstated is rewritten from
-    ``corrected_claim``.
+    confirm it. A comment whose verdict is not ``confirmed`` is dropped, and a
+    comment that survives is published as the pipeline wrote it: this gate only
+    ever removes. It does not apply the refuter's ``corrected_claim``, which
+    was measured to be the source of its own apparent precision gain, some of
+    it by retreating from an error claim to a request for clarification. The
+    suggested wording stays on the returned verdict for a human to weigh.
 
     Returns the surviving comments, the verdicts, and per-agent accounting.
     """
@@ -128,9 +132,23 @@ def refute_comments(
                     verdict.reasoning[:160],
                 )
                 continue
-            update: dict = {"severity": verdict.severity_after_review, "confidence": "high"}
-            if verdict.corrected_claim.strip():
-                update["feedback"] = verdict.corrected_claim.strip()
+            # Keep or drop, never rewrite. Applying ``corrected_claim`` was
+            # measured to be where this stage's apparent precision gain came
+            # from, and in the wrong way: the rewrites that passed the judge
+            # included ones that retreated from "X is wrong" to "the paper
+            # does not say how X was handled". That satisfies "is this claim
+            # supported" while giving the author less, so the gain was partly
+            # an artefact of the metric. The refuter's suggested wording is
+            # returned on the verdict for a human to weigh, and not applied.
+            #
+            # Severity is only ever lowered. The field defaults to "major", so
+            # applying it unconditionally rewrote the severity of every kept
+            # comment, including raising a minor one the refuter never
+            # considered.
+            update: dict = {"confidence": "high"}
+            rank = {"critical": 0, "major": 1, "minor": 2}
+            if rank.get(verdict.severity_after_review, 1) > rank.get(comment.severity, 1):
+                update["severity"] = verdict.severity_after_review
             kept.append(comment.model_copy(update=update))
 
         logger.info(
@@ -177,6 +195,10 @@ def _refute_issue(
     return verdict, result.record
 
 
+#: Below this, a narrowed issue has nothing substantive left and the
+#: "narrowing" was a refutation in disguise.
+_MIN_NARROWED_CHARS = 80
+
 #: Shown when every macro issue was refuted. ``OverviewFeedback`` requires at
 #: least one issue, and substituting the least-bad refuted one would reinstate
 #: a claim the paper contradicts, so the honest answer goes in instead.
@@ -191,43 +213,77 @@ NO_ISSUES_SURVIVED = OverviewIssue(
 )
 
 
-def _clean_narrowed_body(issue: OverviewIssue, rewritten: str) -> str | None:
-    """Validate a narrowed issue body, or return None to keep the original.
+_WS_RE = re.compile(r"\s+")
 
-    Two defects were found by reading the actual output rather than the
-    verdicts, and neither is catchable in the prompt alone:
 
-    * The rewritten body began by repeating the issue title, so the rendered
-      review showed the title twice. Stripped here.
-    * Every "narrowed" body on the benchmark papers came back LONGER than the
-      one it replaced, against the prompt's explicit instruction to say less
-      and never more. That makes the stage a rewriter rather than a verifier,
-      which is a much larger behavioural change than it advertises and
-      reintroduces exactly the "an agent writes new review content" risk the
-      ledger link elsewhere exists to prevent. A body that is not shorter is
-      therefore refused and the original kept.
+def _normalize(text: str) -> str:
+    return _WS_RE.sub(" ", text).strip()
 
-    ``_LENGTH_TOLERANCE`` leaves room for prose that genuinely narrows while
-    spending a few more characters on a qualifier.
+
+def narrow_by_deletion(body: str, spans: list[str]) -> tuple[str, list[str], list[str]]:
+    """Remove *spans* from *body*, returning the result and what was and was not found.
+
+    The only edit the refuter can make to an issue. Asking for a replacement
+    body instead produced a rewrite longer than the original every time on the
+    benchmark papers, prefixed with the issue title, which made the stage an
+    author of review content rather than a verifier of it. Deleting named spans
+    leaves every surviving word the reviewer's own and is checkable: a span
+    either occurs in the body or it does not.
+
+    Matching is exact first, then whitespace-insensitive, because a model
+    re-wraps a quoted sentence. A span that still does not match is reported
+    rather than guessed at, so a hallucinated span removes nothing.
     """
-    body = rewritten.strip()
-    if not body:
-        return None
+    removed: list[str] = []
+    missing: list[str] = []
+    out = body
+    for span in spans:
+        candidate = span.strip()
+        if len(candidate) < 15:
+            # Too short to identify a claim, and likely to match incidentally.
+            missing.append(span)
+            continue
+        if candidate in out:
+            out = out.replace(candidate, " ", 1)
+            removed.append(candidate)
+            continue
+        # Whitespace-insensitive fallback: locate the span in a normalized copy
+        # and map the hit back onto the original by walking both in step.
+        norm_target = _normalize(candidate)
+        index = _normalize(out).find(norm_target)
+        if index < 0:
+            missing.append(span)
+            continue
+        out = _rebuild_without(out, norm_target)
+        removed.append(candidate)
+    return _WS_RE.sub(" ", out).strip(), removed, missing
 
-    title = issue.title.strip()
-    if title and body.lower().startswith(title.lower()):
-        body = body[len(title) :].lstrip(" .:\u2014-\n")
 
-    if not body:
-        return None
-    if len(body) > len(issue.body) * _LENGTH_TOLERANCE:
-        return None
-    return body
-
-
-#: How much longer than the original a "narrowed" body may be. Narrowing should
-#: shorten; a small allowance covers a qualifier added while cutting a claim.
-_LENGTH_TOLERANCE = 1.05
+def _rebuild_without(body: str, norm_target: str) -> str:
+    """Drop the first whitespace-insensitive occurrence of *norm_target*."""
+    norm_chars: list[int] = []
+    normalized: list[str] = []
+    previous_space = False
+    for i, ch in enumerate(body):
+        if ch.isspace():
+            if previous_space or not normalized:
+                continue
+            normalized.append(" ")
+            norm_chars.append(i)
+            previous_space = True
+            continue
+        normalized.append(ch)
+        norm_chars.append(i)
+        previous_space = False
+    haystack = "".join(normalized).strip()
+    offset = len("".join(normalized)) - len("".join(normalized).lstrip())
+    start = haystack.find(norm_target)
+    if start < 0:
+        return body
+    lo = norm_chars[start + offset]
+    hi_index = start + offset + len(norm_target) - 1
+    hi = norm_chars[min(hi_index, len(norm_chars) - 1)]
+    return body[:lo] + " " + body[hi + 1 :]
 
 
 def refute_issues(
@@ -280,40 +336,69 @@ def refute_issues(
 
         by_index = {v.issue_index: v for v in verdicts}
         kept: list[OverviewIssue] = []
+        # Per-claim record of what the gate did, so a refused narrowing or a
+        # hallucinated span is visible in a run's output rather than only in a
+        # WARNING nobody reads.
+        actions: list[tuple[int, str, str, str]] = []
         for i, issue in enumerate(issues, start=1):
             verdict = by_index.get(i)
             if verdict is None:
                 logger.info("no verdict for issue %d (%s); keeping it", i, issue.title)
                 kept.append(issue)
+                actions.append((i, issue.title, "no-verdict", "kept"))
                 continue
             if verdict.verdict == "refuted":
                 logger.info("dropping issue %d (%s): %s", i, issue.title, verdict.reasoning[:160])
+                actions.append((i, issue.title, verdict.verdict, "dropped"))
                 continue
             if verdict.verdict == "partly_supported":
-                narrowed = _clean_narrowed_body(issue, verdict.rewritten_body)
-                if narrowed is None:
-                    # Either no replacement text, or one that did not narrow.
-                    # Keeping the original is the safe reading: the reviewer
-                    # called the issue partly right, so dropping it would lose
-                    # a concern it endorsed, and accepting an expanded rewrite
-                    # would let this stage author review content.
+                narrowed, removed, missing = narrow_by_deletion(issue.body, verdict.remove_spans)
+                if missing:
                     logger.info(
-                        "issue %d (%s) was not narrowed usably; keeping the original",
+                        "issue %d (%s): %d named span(s) not found in the body",
+                        i,
+                        issue.title,
+                        len(missing),
+                    )
+                if not removed:
+                    # Nothing could be removed, so there is nothing to narrow
+                    # to. Keeping the original is the safe reading: the
+                    # reviewer called the issue partly right, so dropping it
+                    # would lose a concern it endorsed.
+                    logger.info(
+                        "issue %d (%s): nothing removable; keeping the original",
                         i,
                         issue.title,
                     )
                     kept.append(issue)
+                    actions.append((i, issue.title, verdict.verdict, "kept"))
+                    continue
+                if len(narrowed) < _MIN_NARROWED_CHARS:
+                    # Every substantive sentence was named for removal, which
+                    # is a refutation stated as a narrowing.
+                    logger.info(
+                        "issue %d (%s): narrowing removed the whole concern; dropping it",
+                        i,
+                        issue.title,
+                    )
+                    actions.append((i, issue.title, verdict.verdict, "dropped"))
                     continue
                 logger.info(
-                    "narrowing issue %d (%s); dropped: %s",
+                    "narrowing issue %d (%s): removed %d span(s), %d -> %d chars; %s",
                     i,
                     issue.title,
-                    "; ".join(verdict.dropped_points)[:200] or "(unspecified)",
+                    len(removed),
+                    len(issue.body),
+                    len(narrowed),
+                    "; ".join(verdict.removal_reasons)[:200] or "(no reason given)",
                 )
                 kept.append(issue.model_copy(update={"body": narrowed}))
+                actions.append((i, issue.title, verdict.verdict, "narrowed"))
                 continue
             kept.append(issue)
+            actions.append((i, issue.title, verdict.verdict, "kept"))
 
+        logger.info("issue actions: %s", actions)
         if issues and not kept:
             logger.warning("every macro issue was refuted; substituting an explicit notice")
             kept = [NO_ISSUES_SURVIVED]
