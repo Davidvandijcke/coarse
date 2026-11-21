@@ -1697,18 +1697,34 @@ def test_select_reviewable_sections_keeps_everything_under_the_cap():
     assert len(select_reviewable_sections(sections)) == 5
 
 
-def test_select_reviewable_sections_drops_marker_and_empty_sections():
+def test_select_reviewable_sections_drops_only_textless_sections():
     from coarse.pipeline import select_reviewable_sections
 
     sections = [
         _sec("1 Introduction", 2_000),
-        _sec("<!-- PAGE BREAK -->", 1_100),
         _sec("A Proofs", 0),
-        _sec("", 900),
         _sec("2 Whitespace only", 0),
     ]
     kept = [s.title for s in select_reviewable_sections(sections)]
     assert kept == ["1 Introduction"]
+
+
+def test_select_reviewable_sections_keeps_a_mistitled_proof():
+    """A marker title is not evidence the body is debris.
+
+    When a page break precedes a heading, the heading parser titles the
+    section ``<!-- PAGE BREAK -->`` and leaves the real heading in the body.
+    On the benchmark paper one such section is the proof of Theorem 2.
+    """
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("<!-- PAGE BREAK -->", 1_107, math=True),
+        _sec("<!-- PAGE BREAK -->", 0),
+    ]
+    kept = select_reviewable_sections(sections)
+    assert len(kept) == 1
+    assert kept[0].math_content
 
 
 def test_select_reviewable_sections_drops_reference_like_sections():

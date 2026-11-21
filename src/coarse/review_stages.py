@@ -57,12 +57,19 @@ _SKIP_TITLE_PREFIXES = (
 
 
 def _is_reviewable_section(section: SectionInfo) -> bool:
-    """Whether a parsed section is worth spending an agent call on."""
+    """Whether a parsed section is worth spending an agent call on.
+
+    Judged on a section's text, not on its title. A marker-looking title is
+    not evidence that the body is debris: when a page break falls immediately
+    before a heading, the heading parser titles the section
+    ``<!-- PAGE BREAK -->`` and the real heading stays in the body. On the
+    benchmark paper one such section is 1,107 characters of "A.6 Proof of
+    Theorem 2", the proof of the paper's central result. Filtering those by
+    title discarded it.
+    """
     if section.section_type == SectionType.REFERENCES:
         return False
     title = section.title.strip().lower().lstrip("#").strip()
-    if title.startswith("<!--") or not title:
-        return False
     if any(title.startswith(prefix) for prefix in _SKIP_TITLE_PREFIXES):
         return False
     if section.section_type == SectionType.APPENDIX:
