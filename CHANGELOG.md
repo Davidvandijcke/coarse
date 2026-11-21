@@ -4,13 +4,22 @@
 
 ### Added
 
-- Bounded agent runtime for review (`coarse.agent`), off by default. A per-review
+- `coarse review --refute` (and `review_paper(refute=True)`): re-check every
+  comment before reporting it. Each comment that survives the editorial filter
+  goes to a fresh-context agent with tool access to the whole paper and is
+  dropped unless that agent reproduces the defect from the paper; a comment
+  that is real but misstated is rewritten from the refuter's corrected claim.
+  Aimed at false criticism rather than coverage. Off by default.
+- `coarse review --agent sweep|swarm|single`: review through the bounded agent
+  runtime (`coarse.agent`) instead of the staged pipeline. A per-review
   workspace holds the paper, one file per section, and an evidence ledger;
   agents retrieve any part of the paper on demand, run bounded Python for
-  algebraic and numeric checks, and share notes through the workspace. In swarm
-  mode a planner divides the paper into claim-shaped targets, investigators work
-  them in parallel, and one refuter per candidate finding must independently
-  reproduce it in a fresh context before the editor may write it up.
+  algebraic and numeric checks, and share notes through the workspace. Swarm
+  divides the paper into claim-shaped targets, sweep covers every section by
+  region, and in both every candidate finding must be independently reproduced
+  by a fresh-context refuter before the editor may write it up. Off by default;
+  measured trade-offs against the staged pipeline are in
+  `docs/AGENTIC_REVIEW.md`.
 - `evals/`: a dev-only benchmark harness that runs the arms of a same-model
   ablation from one fixed extraction, scores recall against an atomized
   reference review, and adjudicates every emitted comment against the paper to
