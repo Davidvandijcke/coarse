@@ -158,7 +158,9 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--paper", required=True, type=Path)
     ap.add_argument(
-        "--arm", required=True, choices=["baseline", "pipeline", "agent_single", "agent_swarm"]
+        "--arm",
+        required=True,
+        choices=["baseline", "pipeline", "agent_single", "agent_swarm", "agent_sweep"],
     )
     ap.add_argument("--model", default="openrouter/anthropic/claude-opus-5.5")
     ap.add_argument("--run", type=int, default=1)
@@ -182,7 +184,7 @@ def main() -> None:
     elif args.arm == "pipeline":
         review = run_pipeline(args.paper, args.model)
     else:
-        mode = "single" if args.arm == "agent_single" else "swarm"
+        mode = {"agent_single": "single", "agent_sweep": "sweep"}.get(args.arm, "swarm")
         review, records, workspace = run_agent(
             markdown,
             structure,

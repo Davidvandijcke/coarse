@@ -50,10 +50,12 @@ from coarse.prompts import (
     AGENT_INVESTIGATOR_SYSTEM,
     AGENT_PLANNER_SYSTEM,
     AGENT_REFUTER_SYSTEM,
+    AGENT_SWEEP_SYSTEM,
     agent_editor_user,
     agent_investigator_user,
     agent_planner_user,
     agent_refuter_user,
+    agent_sweep_user,
 )
 from coarse.types import (
     DetailedComment,
@@ -307,6 +309,46 @@ def _whole_paper_target() -> InvestigationTarget:
     )
 
 
+def _sweep_targets(
+    structure: PaperStructure,
+    workspace: ReviewWorkspace,
+    max_targets: int,
+) -> list[InvestigationTarget]:
+    """Divide the whole paper into contiguous regions, one per investigator.
+
+    Where ``_structural_targets`` picks the most promising sections and asks one
+    question each, this covers every reviewable section. The arm it serves
+    exists because the two capabilities measured separately were complementary:
+    a single full-paper pass had the breadth and the role swarm had the
+    precision, so this gives a broad pass the swarm's refutation step.
+    """
+    sections = [s for s in structure.sections if s.text.strip()]
+    if not sections:
+        return [_whole_paper_target()]
+    groups = max(1, min(max_targets, len(sections)))
+    per_group = -(-len(sections) // groups)
+    id_by_title = {s.title: s.section_id for s in workspace.sections}
+
+    targets: list[InvestigationTarget] = []
+    for i in range(0, len(sections), per_group):
+        chunk = sections[i : i + per_group]
+        listing = "\n".join(
+            f"- `{id_by_title.get(s.title, '?')}` {s.title} "
+            f"({len(s.text)} chars{', mathematical' if s.math_content else ''})"
+            for s in chunk
+        )
+        region = f"{chunk[0].title} through {chunk[-1].title}"
+        targets.append(
+            InvestigationTarget(
+                target_id=f"t{len(targets) + 1:02d}",
+                question=region,
+                locations=[s.title for s in chunk],
+                rationale=listing,
+            )
+        )
+    return targets
+
+
 def _investigate(
     client: LLMClient,
     workspace: ReviewWorkspace,
@@ -316,24 +358,39 @@ def _investigate(
     author_notes: str | None,
     tool_budget: int,
     max_turns: int,
+    breadth: bool = False,
 ) -> tuple[list[LedgerFinding], AgentRunRecord]:
     toolbox = ToolBox(workspace=workspace, max_calls=tool_budget)
-    result = run_agent(
-        client,
-        role="investigator",
-        agent_id=target.target_id,
-        system=AGENT_INVESTIGATOR_SYSTEM,
-        task=agent_investigator_user(
+    if breadth:
+        system = AGENT_SWEEP_SYSTEM
+        task = agent_sweep_user(
+            structure.title,
+            target.question,
+            target.rationale,
+            author_notes=author_notes,
+        )
+    else:
+        system = AGENT_INVESTIGATOR_SYSTEM
+        task = agent_investigator_user(
             structure.title,
             target.question,
             "\n".join(f"- {loc}" for loc in target.locations) or "- (not specified)",
             target.rationale,
             author_notes=author_notes,
-        ),
+        )
+    result = run_agent(
+        client,
+        role="sweep" if breadth else "investigator",
+        agent_id=target.target_id,
+        system=system,
+        task=task,
         toolbox=toolbox,
         submit_model=FindingBatch,
         submit_description=(
-            "Submit your findings for this target. An empty list is a valid and "
+            "Submit your findings for this target. An empty list is valid when "
+            "nothing is demonstrable."
+            if breadth
+            else "Submit your findings for this target. An empty list is a valid and "
             "preferred result when nothing is demonstrable."
         ),
         max_turns=max_turns,
@@ -473,7 +530,7 @@ def run_agentic_review(
     structure: PaperStructure,
     client: LLMClient,
     *,
-    mode: Literal["single", "swarm"] = "swarm",
+    mode: Literal["single", "swarm", "sweep"] = "swarm",
     max_targets: int = DEFAULT_MAX_TARGETS,
     max_parallel: int = DEFAULT_MAX_PARALLEL,
     author_notes: str | None = None,
@@ -501,6 +558,8 @@ def run_agentic_review(
 
     if mode == "single":
         targets = [_whole_paper_target()]
+    elif mode == "sweep":
+        targets = _sweep_targets(structure, workspace, max_targets)
     else:
         targets = _plan(
             client,
@@ -516,6 +575,7 @@ def run_agentic_review(
     findings: list[LedgerFinding] = []
     budget = SINGLE_TOOL_BUDGET if mode == "single" else INVESTIGATOR_TOOL_BUDGET
     turns = 40 if mode == "single" else 24
+    breadth = mode == "sweep"
     with ThreadPoolExecutor(max_workers=max(1, min(max_parallel, len(targets)))) as pool:
         futures = {
             pool.submit(
@@ -527,6 +587,7 @@ def run_agentic_review(
                 author_notes=author_notes,
                 tool_budget=budget,
                 max_turns=turns,
+                breadth=breadth,
             ): t
             for t in targets
         }
@@ -546,7 +607,7 @@ def run_agentic_review(
 
     # --- refute ----------------------------------------------------------
     verdicts: dict[str, RefutationVerdict] = {}
-    if mode == "swarm" and findings:
+    if mode in {"swarm", "sweep"} and findings:
         with ThreadPoolExecutor(max_workers=max(1, min(max_parallel, len(findings)))) as pool:
             futures = {pool.submit(_refute, client, workspace, structure, f): f for f in findings}
             for fut in as_completed(futures):

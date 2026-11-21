@@ -117,7 +117,7 @@ class RoleFakeClient:
                     ]
                 }
             )
-        if "checking one specific thing" in system:
+        if "checking one specific thing" in system or "assigned part of a paper" in system:
             return _submit({"findings": self.findings})
         if "check a single criticism" in system:
             self.refuter_tasks.append(task)
@@ -472,3 +472,60 @@ def test_the_editor_cannot_reintroduce_a_refuted_finding(tmp_path):
     assert titles == ["Sign error"]
     manifest = json.loads((ws.root / "run.json").read_text())
     assert manifest["comments_dropped_unlinked"]
+
+
+def test_sweep_targets_cover_every_section_with_text(tmp_path):
+    from coarse.agent.orchestrator import _sweep_targets
+    from coarse.agent.workspace import ReviewWorkspace
+
+    structure = _structure()
+    ws = ReviewWorkspace.create(_paper(), structure, root=tmp_path / "sw")
+    targets = _sweep_targets(structure, ws, max_targets=2)
+    covered = [loc for t in targets for loc in t.locations]
+    assert covered == ["Introduction", "Proof of Proposition 2"]
+    # Each region's rationale lists the section ids its investigator must read.
+    assert all("`" in t.rationale for t in targets)
+    ws.cleanup()
+
+
+def test_sweep_targets_group_sections_when_there_are_more_than_targets(tmp_path):
+    from coarse.agent.orchestrator import _sweep_targets
+    from coarse.agent.workspace import ReviewWorkspace
+
+    sections = [
+        SectionInfo(number=i, title=f"S{i}", text="body text here " * 20) for i in range(1, 8)
+    ]
+    structure = PaperStructure(
+        title="A Paper",
+        domain="statistics",
+        taxonomy="academic/research_paper",
+        abstract="a",
+        sections=sections,
+    )
+    ws = ReviewWorkspace.create("# A Paper\n\nbody\n", structure, root=tmp_path / "sw2")
+    targets = _sweep_targets(structure, ws, max_targets=3)
+    assert len(targets) <= 3
+    covered = [loc for t in targets for loc in t.locations]
+    assert covered == [s.title for s in sections], "every section must be assigned"
+    ws.cleanup()
+
+
+def test_sweep_mode_refutes_its_candidates(tmp_path):
+    """Sweep trades the swarm's narrow targeting for breadth, but keeps the
+    refutation gate — that is the whole point of the arm."""
+    client = RoleFakeClient(verdicts={"f1": "confirmed", "f2": "refuted"})
+    _review, records, ws = _run(client, tmp_path, mode="sweep")
+    roles = {r.role for r in records}
+    assert "sweep" in roles
+    assert "refuter" in roles
+    assert "planner" not in roles, "sweep divides the paper deterministically"
+    manifest = json.loads((ws.root / "run.json").read_text())
+    assert manifest["mode"] == "sweep"
+    # Each region's sweeper emits both fixture findings, and the refuter
+    # confirms one of them and refutes the other, so exactly half survive.
+    n_targets = len(manifest["targets"])
+    assert manifest["candidate_findings"] == 2 * n_targets
+    assert manifest["confirmed_findings"] == n_targets
+    assert sorted(manifest["verdicts"].values()) == sorted(
+        ["confirmed", "refuted"] * n_targets
+    )

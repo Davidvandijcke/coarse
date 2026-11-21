@@ -88,9 +88,7 @@ def atomize_reference(markdown: str) -> list[dict]:
                     "id": f"D{match.group(1)}",
                     "origin": "detailed",
                     "importance": (importance.group(1).lower() if importance else "major"),
-                    "location": (
-                        quote.group(1).strip().lstrip("> ")[:160] if quote else ""
-                    ),
+                    "location": (quote.group(1).strip().lstrip("> ")[:160] if quote else ""),
                     "claim": claim,
                     "tags": [],
                 }
