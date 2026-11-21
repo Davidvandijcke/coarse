@@ -62,8 +62,8 @@ def main() -> None:
 
     print()
     header = (
-        f"{'arm':14} {'run':>3} {'cmts':>5} {'recall':>7} {'hits':>7} "
-        f"{'prec':>6} {'unsup':>6} {'cost$':>7} {'secs':>6}"
+        f"{'arm':14} {'run':>3} {'cmts':>5} {'iss':>4} {'recall':>7} {'via-c':>6} "
+        f"{'prec':>6} {'p-cmt':>6} {'p-iss':>6} {'unsup':>6} {'cost$':>7} {'secs':>6}"
     )
     print(header)
     print("-" * len(header))
@@ -71,15 +71,32 @@ def main() -> None:
         rec = report["recall"]
         prec = report["precision"]
         p = prec.get("precision")
+        by_kind = prec.get("by_kind", {})
+        pc = by_kind.get("comment", {}).get("precision")
+        pi = by_kind.get("issue", {}).get("precision")
+
+        def pct(value):
+            return f"{value:.0%}" if value is not None else "n/a"
+
         print(
             f"{meta['arm']:14} {meta['run']:>3} "
             f"{report['n_detailed_comments']:>5} "
-            f"{rec['recall']:>6.0%} "
-            f"{rec['n_matched']:>3}/{rec['n_reference_findings']:<3} "
-            f"{(f'{p:.0%}' if p is not None else '  n/a'):>6} "
+            f"{report['n_overall_issues']:>4} "
+            f"{rec['n_matched']:>2}/{rec['n_reference_findings']:<4} "
+            f"{rec.get('n_matched_via_detailed_comment', 0):>6} "
+            f"{pct(p):>6} {pct(pc):>6} {pct(pi):>6} "
             f"{prec.get('n_unsupported', 0):>6} "
             f"{meta['cost_usd']:>7.2f} {meta['elapsed_s']:>6.0f}"
         )
+
+    print(
+        "\n  cmts/iss = detailed comments / macro issues emitted; "
+        "recall = reference findings matched (of 16);"
+    )
+    print("  via-c = how many of those matched a DETAILED comment rather than only a macro issue;")
+    print(
+        "  prec = share of all adjudicated claims the paper supports (p-cmt / p-iss split by kind)."
+    )
 
     print("\nreference findings matched, by arm:")
     for meta, report in sorted(rows, key=lambda r: (r[0]["arm"], r[0]["run"])):

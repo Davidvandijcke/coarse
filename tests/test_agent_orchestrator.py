@@ -382,3 +382,93 @@ def test_a_planner_that_submits_nothing_falls_back_to_structural_targets(tmp_pat
     # one catch-all.
     assert len(manifest["targets"]) == 2
     assert all("no plan was produced" in t["rationale"].lower() for t in manifest["targets"])
+
+
+def test_link_comments_to_ledger_drops_unattributed_comments():
+    from coarse.agent.orchestrator import _EditorComment, _link_comments_to_ledger
+
+    comments = [
+        _EditorComment(
+            number=1,
+            title="Real finding",
+            quote=QUOTE_A,
+            feedback="f",
+            finding_id="t01-f1",
+        ),
+        _EditorComment(
+            number=2,
+            title="Invented by the editor",
+            quote=QUOTE_B,
+            feedback="f",
+            finding_id="t09-f9",
+        ),
+    ]
+    kept, dropped = _link_comments_to_ledger(comments, {"t01-f1"})
+    assert [c.title for c in kept] == ["Real finding"]
+    assert len(dropped) == 1
+    assert "Invented by the editor" in dropped[0]
+
+
+def test_link_comments_to_ledger_drops_a_comment_for_a_refuted_finding():
+    """The gate must hold at the editor boundary too, not only before it."""
+    from coarse.agent.orchestrator import _EditorComment, _link_comments_to_ledger
+
+    comments = [
+        _EditorComment(
+            number=1, title="Refuted one", quote=QUOTE_A, feedback="f", finding_id="t01-f2"
+        )
+    ]
+    kept, dropped = _link_comments_to_ledger(comments, {"t01-f1"})
+    assert kept == []
+    assert len(dropped) == 1
+
+
+def test_link_comments_to_ledger_keeps_everything_when_nothing_is_attributed():
+    """Degrade rather than discard a whole report over a missing field."""
+    from coarse.agent.orchestrator import _EditorComment, _link_comments_to_ledger
+
+    comments = [
+        _EditorComment(number=1, title="A", quote=QUOTE_A, feedback="f"),
+        _EditorComment(number=2, title="B", quote=QUOTE_B, feedback="f"),
+    ]
+    kept, dropped = _link_comments_to_ledger(comments, {"t01-f1"})
+    assert [c.title for c in kept] == ["A", "B"]
+    assert dropped == []
+
+
+def test_the_editor_cannot_reintroduce_a_refuted_finding(tmp_path):
+    """End to end: a refuted finding named by the editor still does not ship."""
+
+    class LeakyEditor(RoleFakeClient):
+        def complete_with_tools(self, messages, tools, **kwargs):
+            if "editor assembling" in str(messages[0].get("content", "")):
+                return _submit(
+                    {
+                        "assessment": "a",
+                        "issues": [{"title": "i", "body": "b"}],
+                        "detailed_comments": [
+                            {
+                                "number": 1,
+                                "title": "Sign error",
+                                "quote": QUOTE_A,
+                                "feedback": "f",
+                                "finding_id": "t01-f1",
+                            },
+                            {
+                                "number": 2,
+                                "title": "Curvature factor",
+                                "quote": QUOTE_B,
+                                "feedback": "f",
+                                "finding_id": "t01-f2",
+                            },
+                        ],
+                    }
+                )
+            return super().complete_with_tools(messages, tools, **kwargs)
+
+    client = LeakyEditor(verdicts={"f1": "confirmed", "f2": "refuted"})
+    review, _records, ws = _run(client, tmp_path)
+    titles = [c.title for c in review.detailed_comments]
+    assert titles == ["Sign error"]
+    manifest = json.loads((ws.root / "run.json").read_text())
+    assert manifest["comments_dropped_unlinked"]

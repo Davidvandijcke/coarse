@@ -136,14 +136,63 @@ def score_recall(
         results = list(pool.map(judge, findings))
 
     hits = [r for r in results if r.get("matched")]
+    via_issue = [r for r in hits if r.get("matched_comment", 0) >= 1001]
+    via_comment = [r for r in hits if 0 < r.get("matched_comment", 0) < 1001]
     return {
         "n_reference_findings": len(findings),
         "n_matched": len(hits),
         "recall": len(hits) / len(findings) if findings else 0.0,
+        "n_matched_via_detailed_comment": len(via_comment),
+        "n_matched_via_overall_issue": len(via_issue),
+        "recall_detailed_only": (len(via_comment) / len(findings) if findings else 0.0),
         "matched_ids": sorted(r["id"] for r in hits),
         "missed_ids": sorted(r["id"] for r in results if not r.get("matched")),
         "detail": results,
     }
+
+
+class _Claim(BaseModel):
+    """One adjudicable unit of a review: a detailed comment or a macro issue."""
+
+    number: int
+    kind: Literal["comment", "issue"]
+    title: str
+    quote: str = ""
+    feedback: str
+    severity: str = "major"
+
+
+def review_claims(review: Review, top_k: int = DEFAULT_TOP_K) -> list[_Claim]:
+    """Everything in a review that asserts something about the paper.
+
+    Both halves are included. Scoring only the detailed comments made the
+    measurement asymmetric: recall credited a macro issue for finding a
+    reference defect while precision never audited one, so an arm that put its
+    claims in the overall feedback was credited for hits and never charged for
+    misses. On the benchmark paper the whole of one arm's recall came from its
+    macro issues.
+    """
+    claims = [
+        _Claim(
+            number=c.number,
+            kind="comment",
+            title=c.title,
+            quote=c.quote,
+            feedback=c.feedback,
+            severity=c.severity,
+        )
+        for c in review.detailed_comments[:top_k]
+    ]
+    claims += [
+        _Claim(
+            number=1000 + i,
+            kind="issue",
+            title=issue.title,
+            feedback=issue.body,
+        )
+        for i, issue in enumerate(review.overall_feedback.issues, start=1)
+    ]
+    return claims
 
 
 def score_precision(
@@ -154,13 +203,13 @@ def score_precision(
     top_k: int = DEFAULT_TOP_K,
     max_parallel: int = 6,
 ) -> dict:
-    """Is each emitted comment actually supported by the paper?"""
-    comments = list(review.detailed_comments[:top_k])
+    """Is each claim the review makes actually supported by the paper?"""
+    comments = review_claims(review, top_k)
 
     def judge(comment) -> dict:
         task = (
-            "Below is the full text of a paper, then one comment from a referee report on "
-            "it. Decide whether the paper really has the defect the comment describes.\n\n"
+            "Below is the full text of a paper, then one item from a referee report on "
+            "it. Decide whether the paper really has the defect the item describes.\n\n"
             "Check the comment against the paper directly. Look up any definition, lemma, "
             "algorithm or equation the comment refers to. A comment is 'unsupported' if the "
             "paper does not have the defect, if the comment misreads the paper, if it "
@@ -168,8 +217,10 @@ def score_precision(
             "paper containing one. Do not be charitable about plausible-sounding but "
             "incorrect mathematics.\n\n"
             f"PAPER\n{paper_markdown}\n\n"
-            f"COMMENT\nTitle: {comment.title}\nSeverity: {comment.severity}\n"
-            f"Quote: {comment.quote}\nFeedback: {comment.feedback}"
+            f"{'MACRO ISSUE' if comment.kind == 'issue' else 'DETAILED COMMENT'}\n"
+            f"Title: {comment.title}\nSeverity: {comment.severity}\n"
+            + (f"Quote: {comment.quote}\n" if comment.quote else "")
+            + f"Feedback: {comment.feedback}"
         )
         try:
             out = client.complete(
@@ -190,9 +241,15 @@ def score_precision(
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("precision judge failed on comment %s: %s", comment.number, exc)
-            return {"number": comment.number, "verdict": "error", "error": str(exc)}
+            return {
+                "number": comment.number,
+                "kind": comment.kind,
+                "verdict": "error",
+                "error": str(exc),
+            }
         return {
             "number": comment.number,
+            "kind": comment.kind,
             "title": comment.title,
             "severity": comment.severity,
             "verdict": out.verdict,
@@ -210,8 +267,21 @@ def score_precision(
     supported = [r for r in scored if r["verdict"] == "supported"]
     unsupported = [r for r in scored if r["verdict"] == "unsupported"]
     substantive_supported = [r for r in supported if r.get("substantive")]
+    by_kind = {}
+    for kind in ("comment", "issue"):
+        of_kind = [r for r in scored if r.get("kind") == kind]
+        sup = [r for r in of_kind if r["verdict"] == "supported"]
+        by_kind[kind] = {
+            "n": len(of_kind),
+            "n_supported": len(sup),
+            "n_unsupported": sum(1 for r in of_kind if r["verdict"] == "unsupported"),
+            "precision": (len(sup) / len(of_kind)) if of_kind else None,
+        }
     return {
-        "n_comments": len(comments),
+        "n_claims": len(comments),
+        "n_comments": sum(1 for c in comments if c.kind == "comment"),
+        "n_issues": sum(1 for c in comments if c.kind == "issue"),
+        "by_kind": by_kind,
         "n_scored": len(scored),
         "n_supported": len(supported),
         "n_unsupported": len(unsupported),

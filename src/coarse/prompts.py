@@ -2870,6 +2870,10 @@ Quotes must be copied exactly from the anchors given to you. Do not edit, \
 shorten with ellipses, re-wrap, or normalize the LaTeX. A quote that does not \
 appear in the paper verbatim is dropped downstream, and the comment with it.
 
+Set `finding_id` on every detailed comment to the id of the finding it reports, \
+exactly as the findings list gives it. A comment with no id, or an id that is not \
+in the list, is discarded before the report reaches anyone.
+
 If a finding carries a corrected claim, use the corrected version. If a finding's \
 severity was revised down on review, use the revised severity.
 """

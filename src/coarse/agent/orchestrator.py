@@ -85,6 +85,61 @@ _LABEL_RE = re.compile(
 )
 
 
+class _EditorComment(DetailedComment):
+    """A detailed comment the editor must attribute to a ledger finding.
+
+    The editor is told to write only from confirmed findings. Requiring the
+    finding id makes that checkable instead of merely instructed: a comment
+    whose id is not in the confirmed set is dropped in
+    ``_link_comments_to_ledger``, so a finding an independent refuter did not
+    reproduce cannot re-enter the report through the editor.
+    """
+
+    finding_id: str = Field(
+        default="",
+        description=(
+            "The id of the confirmed finding this comment reports, exactly as given "
+            "in the findings list (for example 't03-f1')."
+        ),
+    )
+
+
+def _link_comments_to_ledger(
+    comments: list[_EditorComment],
+    confirmed_ids: set[str],
+) -> tuple[list[DetailedComment], list[str]]:
+    """Keep only comments attributed to a confirmed finding.
+
+    Returns the kept comments and the titles of the dropped ones. When the
+    editor attributes nothing at all (an older or confused model returning no
+    ids), the comments are kept: the alternative is discarding a whole report
+    over a missing field, and the prompt-level constraint still applies. That
+    degradation is logged so it is visible in a run's output.
+    """
+    if not any(c.finding_id.strip() for c in comments):
+        logger.warning(
+            "editor attributed no comment to a ledger finding; keeping all %d "
+            "comments on the prompt-level constraint alone",
+            len(comments),
+        )
+        return [DetailedComment.model_validate(c.model_dump()) for c in comments], []
+
+    kept: list[DetailedComment] = []
+    dropped: list[str] = []
+    for comment in comments:
+        if comment.finding_id.strip() in confirmed_ids:
+            kept.append(DetailedComment.model_validate(comment.model_dump()))
+        else:
+            dropped.append(f"{comment.title} (finding_id={comment.finding_id!r})")
+    if dropped:
+        logger.warning(
+            "dropping %d editor comment(s) not attributed to a confirmed finding: %s",
+            len(dropped),
+            "; ".join(dropped),
+        )
+    return kept, dropped
+
+
 class _AgentReport(BaseModel):
     """Editor submission envelope."""
 
@@ -92,7 +147,7 @@ class _AgentReport(BaseModel):
     issues: list[OverviewIssue] = Field(default_factory=list, description="4-6 macro issues")
     recommendation: str = Field(default="", description="accept / minor / major revision / reject")
     revision_targets: list[str] = Field(default_factory=list)
-    detailed_comments: list[DetailedComment] = Field(default_factory=list)
+    detailed_comments: list[_EditorComment] = Field(default_factory=list)
 
 
 def extract_labels(paper_markdown: str, *, limit: int = 160) -> str:
@@ -395,13 +450,14 @@ def _fallback_report(
             continue
         body = claim if not f.remediation else f"{claim}\n\n{f.remediation}"
         comments.append(
-            DetailedComment(
+            _EditorComment(
                 number=i,
                 title=f.title,
                 quote=quote,
                 feedback=body,
                 severity=(v.severity_after_review if v else f.severity),
                 confidence="high",
+                finding_id=f.finding_id,
             )
         )
     return _AgentReport(
@@ -548,9 +604,10 @@ def run_agentic_review(
         recommendation=report.recommendation,
         revision_targets=report.revision_targets,
     )
-    comments = [
-        c.model_copy(update={"number": i}) for i, c in enumerate(report.detailed_comments, start=1)
-    ]
+    linked, unlinked = _link_comments_to_ledger(
+        report.detailed_comments, {f.finding_id for f in confirmed}
+    )
+    comments = [c.model_copy(update={"number": i}) for i, c in enumerate(linked, start=1)]
     review = Review(
         title=structure.title,
         domain=structure.domain,
@@ -567,6 +624,7 @@ def run_agentic_review(
             "candidate_findings": len(findings),
             "confirmed_findings": len(confirmed),
             "verdicts": {k: v.verdict for k, v in verdicts.items()},
+            "comments_dropped_unlinked": unlinked,
             "agents": [r.model_dump() for r in records],
             "cost_usd": sum(r.cost_usd for r in records),
         }
