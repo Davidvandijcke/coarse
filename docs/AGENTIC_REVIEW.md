@@ -192,3 +192,64 @@ Decision rule, fixed before the results are read: if arm 1 matches arm 2, the
 swarm is unnecessary and only the workspace and tools ship. If arm 0 with a
 frontier model matches both, the harness change is not what was missing and the
 section-truncation fix carries the gain on its own.
+
+## Measured results
+
+One paper (the benchmark above), one model (`anthropic/claude-opus-5.5` via
+OpenRouter), one extraction shared by every arm, top-20 comment normalization.
+Recall is scored against the 16 atomized reference findings; precision is
+scored by adjudicating every emitted comment against the paper itself, by a
+judge from a different model family (`openai/gpt-5.6-terra-pro`) so no model
+grades its own prose.
+
+| arm | comments | recall | precision | unsupported | cost | time |
+|---|---|---|---|---|---|---|
+| pipeline (before the section fix) | 21 | 56% (9/16) | 65% | 7 | n/a | 442s |
+| baseline, one full-paper prompt | 14 | 56% (9/16) | 93% | 1 | $0.65 | 166s |
+| single agent with tools | 6 | 25% (4/16) | 100% | 0 | $1.05 | 492s |
+
+Three things follow.
+
+**The pipeline's deficit is precision, not recall.** It matched the plain
+one-prompt baseline's recall exactly, while emitting seven criticisms the
+adjudicator found the paper does not support. On a referee report that is the
+expensive kind of error: it costs the author time and it costs the review its
+authority.
+
+**Every one of those seven fails the same way.** The objection is already
+answered somewhere else in the paper. The adjudicator's reasons name the
+location each time: "the paper's actual stable algorithms (Algorithms 2 and 3)
+explicitly add Laplace noise", "its finite-sample Gaussian instantiation is
+instead Corollary 2", "the paper explicitly distinguishes ... in Sections 3
+and 7", "the paper already explicitly states in Section 6", "the immediately
+following sentence expressly acknowledges". A section agent sees one section
+and cannot check whether the paper resolves its objection elsewhere, so it
+reports the objection. This is a context failure rather than a reasoning
+failure, which is why the single agent that could look anywhere produced no
+unsupported comments at all.
+
+**A plain prompt is a strong baseline, and the harness has to earn its keep.**
+At a quarter of the wall-clock and with 28 points more precision, the
+one-prompt arm is the bar. This is the comparison #270 exists to force, and
+its decision rule applies: a harness that is indistinguishable from a much
+simpler same-model baseline should be simplified, not preserved.
+
+The single-agent arm bought precision at the cost of coverage: six comments,
+all supported, but 25% recall. One broad target does not cover a 41-section
+paper. That is what the swarm's planner is for, and the swarm run is the test
+of whether target decomposition recovers coverage without giving the precision
+back.
+
+### Caveats
+
+- One paper, one run per arm. No variance estimate, so none of these gaps is
+  established as reliable; the swarm arm is run twice for that reason.
+- The reference review is a truncated preview, which is why precision is
+  adjudicated against the paper and not against the reference. A comment that
+  does not match the reference is not scored against the arm.
+- The atomized reference and the judge prompts were written by the same author
+  as the harness under test. Independent adjudication of a sample is the
+  check this needs and has not had.
+- The `pipeline` arm's cost is not recorded: it builds its own client
+  internally, so the harness cannot see its spend. The judge's cost also reads
+  as zero, because litellm has no pricing entry for the judge model.
