@@ -67,6 +67,14 @@ KNOWN_OVERSIZED: dict[str, int] = {
     # bumped in commit ${COMMIT2_SHA} when the retry-loop + model-
     # fallback + semaphore landed.
     "headless_clients": 1100,
+    # pipeline.py is the review_paper orchestrator: extraction, the cost gate,
+    # the parallel setup phase, the section/cross-section/editorial stages,
+    # quote repair, and (added with the bounded agent runtime) the agent-mode
+    # branch. Moving the quote-repair helpers out to review_stages.py was
+    # tried and reverted: a large number of tests patch those names on
+    # coarse.pipeline, so the move is a breaking refactor of the test surface
+    # rather than a tidy-up, and it belongs in its own change.
+    "pipeline": 880,
     # cli_review.py is the standalone `coarse-review` entrypoint: it carries
     # argparse, the --detach launcher, the --handoff fetch/download/finalize
     # flow, and (added in #197) the OpenRouter-key preflight. It sat at 795

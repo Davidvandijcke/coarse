@@ -526,6 +526,4 @@ def test_sweep_mode_refutes_its_candidates(tmp_path):
     n_targets = len(manifest["targets"])
     assert manifest["candidate_findings"] == 2 * n_targets
     assert manifest["confirmed_findings"] == n_targets
-    assert sorted(manifest["verdicts"].values()) == sorted(
-        ["confirmed", "refuted"] * n_targets
-    )
+    assert sorted(manifest["verdicts"].values()) == sorted(["confirmed", "refuted"] * n_targets)

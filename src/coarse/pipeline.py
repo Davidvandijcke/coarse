@@ -356,6 +356,7 @@ def review_paper(
     deep_literature_search: bool = False,
     *,
     runtime: ReviewRuntime | None = None,
+    agent_mode: str | None = None,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
@@ -397,6 +398,14 @@ def review_paper(
         progress_callback: Best-effort stage and cumulative cost updates.
         deep_literature_search: Use Sonar Deep Research instead of Sonar Pro.
         runtime: Optional native reasoning and scheduling services.
+        agent_mode: Opt in to the bounded agent runtime instead of the staged
+            section/overview/editorial pipeline. One of "sweep" (every section
+            covered by a region investigator), "swarm" (planner-divided
+            claim-shaped targets) or "single" (one whole-paper referee). In
+            "sweep" and "swarm" each candidate finding must be reproduced by an
+            independent fresh-context refuter before it reaches the report.
+            ``None`` keeps the staged pipeline, so this is a no-op by default.
+            See docs/AGENTIC_REVIEW.md for the measured trade-offs.
 
     Pipeline order:
     1. Extract file → PaperText and apply the optional cost gate
@@ -511,6 +520,43 @@ def review_paper(
         detected_code=structure.paper_language,
         site_code=site_language,
     )
+
+    if agent_mode:
+        from coarse.agent.orchestrator import run_agentic_review
+
+        progress.start("agent_review", f"Running agent review ({agent_mode})", client.cost_usd)
+        review, records, workspace = run_agentic_review(
+            paper_text.full_markdown,
+            structure,
+            client,
+            mode=agent_mode,  # type: ignore[arg-type]
+            author_notes=author_notes,
+            language=directive_name,
+        )
+        workspace.cleanup()
+        progress.complete("agent_review", "Completed agent review", client.cost_usd)
+        logger.info(
+            "agent review: %d agent(s), %d comment(s) before quote verification",
+            len(records),
+            len(review.detailed_comments),
+        )
+        # Quote verification and rendering stay deterministic and shared with
+        # the staged path, so the verbatim-quote guarantee is identical.
+        verified = _verify_with_repair_fallback(
+            review.detailed_comments,
+            paper_text.full_markdown,
+            repair_agent=QuoteRepairAgent(client),
+        )
+        review = review.model_copy(
+            update={
+                "detailed_comments": _renumber_comments(verified),
+                "language": lang_ctx,
+            }
+        )
+        progress.start("synthesis", "Rendering final markdown", client.cost_usd)
+        markdown = render_review(review)
+        progress.complete("synthesis", "Rendered final markdown", client.cost_usd)
+        return review, markdown, paper_text
 
     non_ref_sections = select_reviewable_sections(structure.sections)
     progress.set_total(

@@ -1794,3 +1794,91 @@ def test_select_reviewable_sections_respects_the_cap():
 
     sections = [_sec(f"S{i}", 1_000) for i in range(40)]
     assert len(select_reviewable_sections(sections, limit=25)) == 25
+
+
+# ---------------------------------------------------------------------------
+# agent_mode dispatch (bounded agent runtime, #264)
+# ---------------------------------------------------------------------------
+
+
+def test_review_paper_without_agent_mode_does_not_touch_the_agent_runtime():
+    """The default path must be byte-identical: agent_mode is opt-in."""
+    import inspect
+
+    from coarse.pipeline import review_paper
+
+    assert inspect.signature(review_paper).parameters["agent_mode"].default is None
+    source = inspect.getsource(review_paper)
+    # The import is inside the branch, so the module is never loaded by default.
+    assert "if agent_mode:" in source
+    assert source.index("if agent_mode:") < source.index("run_agentic_review")
+
+
+def test_review_paper_agent_mode_runs_the_agent_runtime_and_verifies_quotes():
+    """The agent branch must still go through quote verification and render."""
+    from coarse.types import OverviewFeedback, OverviewIssue
+
+    paper_md = "Intro text. " * 120 + "The displayed gradient has the opposite sign. " * 5
+    structure = PaperStructure(
+        title="A Paper",
+        domain="statistics",
+        taxonomy="academic/research_paper",
+        abstract="An abstract.",
+        sections=[
+            SectionInfo(
+                number=1,
+                title="Introduction",
+                text="Intro text. " * 120,
+                section_type=SectionType.INTRODUCTION,
+            )
+        ],
+    )
+    agent_review = Review(
+        title="A Paper",
+        domain="statistics",
+        taxonomy="academic/research_paper",
+        date="01/01/2026",
+        overall_feedback=OverviewFeedback(issues=[OverviewIssue(title="t", body="b")]),
+        detailed_comments=[
+            DetailedComment(
+                number=7,
+                title="Real",
+                quote="The displayed gradient has the opposite sign.",
+                feedback="f",
+            ),
+            DetailedComment(
+                number=8,
+                title="Fabricated quote",
+                quote="This sentence does not appear in the paper at all.",
+                feedback="f",
+            ),
+        ],
+    )
+
+    captured = {}
+
+    def fake_run_agentic_review(markdown, struct, client, **kwargs):
+        captured["mode"] = kwargs.get("mode")
+        workspace = MagicMock()
+        return agent_review, [], workspace
+
+    with (
+        patch(
+            "coarse.pipeline.extract_file",
+            return_value=PaperText(full_markdown=paper_md, token_estimate=len(paper_md) // 4),
+        ),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.LLMClient"),
+        patch(
+            "coarse.agent.orchestrator.run_agentic_review",
+            side_effect=fake_run_agentic_review,
+        ),
+    ):
+        review, markdown, _paper = review_paper("paper.md", skip_cost_gate=True, agent_mode="sweep")
+
+    assert captured["mode"] == "sweep"
+    titles = [c.title for c in review.detailed_comments]
+    assert "Real" in titles
+    assert "Fabricated quote" not in titles, "the quote verifier must still drop it"
+    assert [c.number for c in review.detailed_comments] == [1]
+    assert "A Paper" in markdown
