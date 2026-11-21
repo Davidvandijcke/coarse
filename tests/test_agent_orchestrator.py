@@ -545,7 +545,7 @@ def test_refute_comments_drops_what_is_not_reproduced(tmp_path):
     unsupported claims, so its comments are worth verifying rather than
     replacing.
     """
-    from coarse.agent.orchestrator import refute_comments
+    from coarse.agent.refutation import refute_comments
 
     client = RoleFakeClient(verdicts={"f1": "confirmed", "f2": "refuted"})
     kept, verdicts, records = refute_comments(
@@ -566,7 +566,7 @@ def test_refute_comments_drops_what_is_not_reproduced(tmp_path):
 
 
 def test_refute_comments_applies_a_corrected_claim(tmp_path):
-    from coarse.agent.orchestrator import refute_comments
+    from coarse.agent.refutation import refute_comments
 
     class Corrects(RoleFakeClient):
         def complete_with_tools(self, messages, tools, **kwargs):
@@ -596,7 +596,7 @@ def test_refute_comments_applies_a_corrected_claim(tmp_path):
 
 def test_refute_comments_keeps_a_comment_whose_check_could_not_run(tmp_path):
     """An infrastructure failure must not silently delete a finding."""
-    from coarse.agent.orchestrator import refute_comments
+    from coarse.agent.refutation import refute_comments
 
     class Broken(RoleFakeClient):
         def complete_with_tools(self, messages, tools, **kwargs):
@@ -617,7 +617,7 @@ def test_refute_comments_keeps_a_comment_whose_check_could_not_run(tmp_path):
 
 
 def test_refute_comments_on_an_empty_list_is_a_noop(tmp_path):
-    from coarse.agent.orchestrator import refute_comments
+    from coarse.agent.refutation import refute_comments
 
     kept, verdicts, records = refute_comments(
         [], _paper(), _structure(), RoleFakeClient(verdicts={})

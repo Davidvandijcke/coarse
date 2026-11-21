@@ -96,6 +96,7 @@ src/coarse/
 │   ├── tools.py             # paper_search / paper_read / python / note_* dispatch
 │   ├── runner.py            # Multi-turn tool loop with typed submission
 │   └── orchestrator.py      # Planner / investigator / refuter / editor roles
+│   ├── refutation.py        # Apply the refutation gate to pipeline-produced comments
 └── agents/
     ├── __init__.py
     ├── base.py              # ReviewAgent ABC + _build_messages helper + prompt caching

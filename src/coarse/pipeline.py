@@ -818,7 +818,7 @@ def review_paper(
     progress.complete("editorial", "Completed editorial filter", client.cost_usd)
 
     if refute:
-        from coarse.agent.orchestrator import refute_comments
+        from coarse.agent.refutation import refute_comments
 
         progress.start("refutation", "Re-checking comments independently", client.cost_usd)
         before = len(filtered_comments)
