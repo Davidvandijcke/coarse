@@ -157,7 +157,9 @@ path, so the verbatim-quote guarantee is identical.
 ### Modes and entry points
 
 - `coarse review --refute` - keep the staged pipeline as the generator and send
-  every comment that survives the editorial filter to a refuter.
+  every comment that survives the editorial filter, and every macro issue, to a
+  refuter. A comment is kept or dropped; an issue is narrowed by deleting the
+  spans the refuter names.
 - `coarse review --agent sweep|swarm|single` - review through the agent runtime
   instead. `swarm` uses planner-divided targets; `sweep` divides every
   reviewable section into contiguous regions and briefs each investigator for
@@ -227,9 +229,34 @@ is-this-supported test alone is satisfiable by hedging.
 | `coset_codes` | 14 good, 17 bad | 14 good, 10 bad | −7 bad, 0 good |
 | `targeting` | 26 good, 6 bad | 26 good, 6 bad | no change |
 
-Across the three papers the gate removed 11 bad claims and cost 1 good one, at
-about $1.85 and 31 to 36 agent calls per paper. That is the trade a referee
-report should want.
+Net, the gate removed 11 bad claims and cost 1 good one, at about $1.85 and 31
+to 36 agent calls per paper. Gross, which is the number to judge it on:
+
+| | count |
+|---|---|
+| bad comments dropped | 9 |
+| good claims dropped | 3 (one `psi` issue, two `coset_codes` comments) |
+| bad issues that became good when their narrowed text was re-judged | 2 |
+
+The net figure nets those two flips against the three losses. Both flips are on
+`coset_codes`, and they came from a judge that has been seen to change verdict
+on byte-identical text, so the macro-issue half's entire upside rests on two
+re-judgements of exactly the kind this measurement otherwise takes pains to
+exclude.
+
+**Coverage survives the gate.** Crossing each reference finding's matching
+claim against what the gate did to that claim:
+
+| paper | reference hits | carried by a kept claim | by a narrowed claim | by a dropped claim |
+|---|---|---|---|---|
+| `psi` | 11 | 8 | 3 | **0** |
+| `coset_codes` | 10 | 5 | 5 | **0** |
+| `targeting` | 4 | 4 | 0 | **0** |
+
+No reference finding was carried by a claim the gate dropped. Eight ride on a
+narrowed claim, where a deletion could in principle have removed the part that
+matched; re-scoring recall on the post-refutation reviews would settle that and
+has not been done.
 
 Three things in that table matter more than the totals.
 
@@ -256,10 +283,14 @@ changed no verdict. That is the right failure mode — a gate that cannot find
 anything should not damage the review — but it also means the gate adds nothing
 where the generator was already accurate, so its value depends on the paper.
 
-**Making the gate subtractive also made it reproducible.** The two `psi` runs
-are two genuine runs ($1.72 and $1.76) and they agree exactly: 22 claims
-unchanged, 4 narrowed, 5 dropped, same verdict counts. While the gate rewrote
-comments, repeated runs over identical input dropped 4, then 5, then 6 of them.
+**Two `psi` runs gave the same counts.** They are genuinely separate runs
+($1.72 and $1.76) and both report 22 claims unchanged, 4 narrowed, 5 dropped
+with identical verdict counts. That is two observations compared on counts
+alone, and the second overwrote the first's per-claim record, so it is not
+evidence that the gate is deterministic — and it cannot be credited to making
+the gate subtractive, since the comment refuter's prompt and drop rule did not
+change. Earlier runs of the rewriting version dropped 4, then 5, then 6 of the
+same comments, so the variance seen then may simply not have recurred.
 
 ### Three retracted measurements, and what they changed
 
@@ -408,6 +439,13 @@ support it.
   `--refute`.
 - **The sandbox does not confine the filesystem**, and denies network only
   where the host offers a mechanism.
+- **The notice substituted when every macro issue is refuted is English only.**
+  The review language reaches both refuters, so a deletion-narrowed issue stays
+  in the review's language, but that fallback string does not.
+- **Nobody has read a deletion-narrowed issue end to end.** 15 of 35 issues
+  across the benchmark papers were narrowed. The text is now saved
+  (`review_after_refutation.md` beside each run) specifically so it can be
+  checked for a dangling fragment or an antecedent left behind.
 
 ## Distance from the original brief
 

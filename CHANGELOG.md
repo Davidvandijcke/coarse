@@ -7,10 +7,11 @@
 - `coarse review --refute` (and `review_paper(refute=True)`): re-check a review
   against the paper before reporting it. Every detailed comment and every
   macro-level issue goes to a fresh-context agent with tool access to the whole
-  paper. A comment is dropped unless that agent reproduces the defect, and
-  rewritten when it is real but misstated. An issue usually bundles several
-  points, so it is narrowed to what the paper bears out rather than dropped
-  wholesale. Aimed at false criticism rather than coverage, at the cost of a
+  paper. The gate only ever removes: a comment is dropped unless that agent
+  reproduces the defect, and otherwise published exactly as written. An issue
+  usually bundles several points, so rather than being dropped wholesale it is
+  narrowed by deleting the verbatim spans the reviewer names, leaving every
+  surviving word the original's. Aimed at false criticism rather than coverage, at the cost of a
   shorter review and one agent call per comment and per issue. Off by default;
   `docs/AGENTIC_REVIEW.md` reports what it is measured to be worth on two
   papers, and why that figure depends heavily on whether a hedged rewrite
