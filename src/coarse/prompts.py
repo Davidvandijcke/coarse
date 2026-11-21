@@ -2804,18 +2804,38 @@ sending; the ones that are not are the reason you exist.
 )
 
 
+def _refuter_language_line(language: str | None) -> str:
+    """Language directive for the refuters' author-facing rewrites.
+
+    A refuter emits prose that reaches the author: ``corrected_claim`` for a
+    comment and ``rewritten_body`` for an issue. Without this the rewrite comes
+    back in English inside a localized review, and since the issue refuter
+    rewrites most of the issues it touches, that is the common case rather than
+    an edge one.
+    """
+    if not language:
+        return ""
+    return (
+        f"\nWrite any text that will reach the author in {language}: the corrected "
+        "claim, the rewritten concern, and the dropped-point notes. Your reasoning "
+        "field may be in English. Keep every verbatim quote from the paper in the "
+        "paper's original language, unchanged.\n"
+    )
+
+
 def agent_refuter_user(
     title: str,
     claim: str,
     location: str,
     anchors: str,
+    language: str | None = None,
 ) -> str:
     """Refuter prompt. Deliberately omits the investigator's reasoning and
     computation so the check is independent rather than a confirmation of
     someone else's chain of thought."""
     return f"""\
 Paper: "{_strip_fence_tags(title)}"
-
+{_refuter_language_line(language)}
 **The criticism to check**
 <first_pass_review>
 Location: {_strip_fence_tags(location)}
@@ -3014,9 +3034,11 @@ sound, say nothing about it.
 #      wrong discards three good ones; keeping it whole ships the wrong one.
 #      The verdict space therefore includes narrowing.
 #
-# Measured on two papers: after comment refutation, comment precision was 94%
-# and 100% while macro-issue precision was 58% and 36%, so every surviving
-# false criticism was here.
+# Measured on two papers, refuting comments alone left macro-issue precision
+# well behind comment precision, so the overall feedback was where the
+# surviving false criticism sat. Figures live in docs/AGENTIC_REVIEW.md rather
+# than here: they have already been revised twice, and a number in a prompt
+# comment is a number nobody updates.
 
 AGENT_ISSUE_REFUTER_SYSTEM = (
     """\
@@ -3069,6 +3091,7 @@ def agent_issue_refuter_user(
     issue_title: str,
     issue_body: str,
     abstract: str = "",
+    language: str | None = None,
 ) -> str:
     """Issue-refuter prompt.
 
@@ -3086,7 +3109,7 @@ def agent_issue_refuter_user(
         )
     return f"""\
 Paper: "{_strip_fence_tags(title)}"
-{abstract_block}
+{_refuter_language_line(language)}{abstract_block}
 **The concern to check**
 <first_pass_review>
 {_strip_fence_tags(issue_title)}

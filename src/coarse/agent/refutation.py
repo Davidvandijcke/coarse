@@ -43,6 +43,7 @@ def refute_comments(
     *,
     max_parallel: int = DEFAULT_MAX_PARALLEL,
     workspace_root: str | None = None,
+    language: str | None = None,
 ) -> tuple[list[DetailedComment], list[RefutationVerdict], list[AgentRunRecord]]:
     """Re-establish each comment of an existing review, dropping what fails.
 
@@ -50,9 +51,8 @@ def refute_comments(
     produced, rather than to findings an investigator produced. It exists
     because of how the arms actually measured: the staged pipeline was the
     recall leader on both benchmark papers and also asserted the most claims
-    the paper does not support (roughly half of them), while the agent arms
-    reversed both. Generation and verification are therefore better combined
-    than substituted.
+    the paper does not support, while the agent arms reversed both. Generation
+    and verification are therefore better combined than substituted.
 
     Each refuter runs in a fresh context with the claim, its quote, and tool
     access to the whole paper, and must reproduce the defect from the paper to
@@ -69,22 +69,29 @@ def refute_comments(
     records: list[AgentRunRecord] = []
     verdicts: list[RefutationVerdict] = []
     try:
+        # Keyed on POSITION, not on ``comment.number``. This stage runs before
+        # ``_renumber_comments``, so the numbers here are whatever the
+        # editorial pass emitted; on the double-failure fallback path they are
+        # raw section order with section-local numbering, where duplicates are
+        # expected. Keying on the number collapsed the lookup maps and
+        # misattributed verdicts between comments that shared one.
         as_findings = [
             LedgerFinding(
-                finding_id=f"c{c.number:03d}",
+                finding_id=f"c{position:03d}",
                 title=c.title,
                 location="",
                 claim=c.feedback,
                 severity=c.severity,
                 anchors=[PaperAnchor(section_id="", quote=c.quote)],
             )
-            for c in comments
+            for position, c in enumerate(comments, start=1)
         ]
         by_id = {f.finding_id: c for f, c in zip(as_findings, comments, strict=True)}
 
         with ThreadPoolExecutor(max_workers=max(1, min(max_parallel, len(as_findings)))) as pool:
             futures = {
-                pool.submit(_refute, client, workspace, structure, f): f for f in as_findings
+                pool.submit(_refute, client, workspace, structure, f, language): f
+                for f in as_findings
             }
             for fut in as_completed(futures):
                 finding = futures[fut]
@@ -110,13 +117,13 @@ def refute_comments(
                 # No verdict means the check could not run, not that the
                 # comment is wrong. Keep it rather than silently losing a
                 # finding to an infrastructure failure.
-                logger.info("no verdict for comment %d; keeping it", comment.number)
+                logger.info("no verdict for comment %r; keeping it", comment.title)
                 kept.append(comment)
                 continue
             if verdict.verdict != "confirmed":
                 logger.info(
-                    "dropping comment %d (%s): %s",
-                    comment.number,
+                    "dropping comment %r (%s): %s",
+                    comment.title,
                     verdict.verdict,
                     verdict.reasoning[:160],
                 )
@@ -142,6 +149,7 @@ def _refute_issue(
     structure: PaperStructure,
     index: int,
     issue: OverviewIssue,
+    language: str | None = None,
 ) -> tuple[IssueVerdict | None, AgentRunRecord]:
     """Check one macro issue in a fresh context with whole-paper tools."""
     toolbox = ToolBox(workspace=workspace, max_calls=REFUTER_TOOL_BUDGET)
@@ -155,6 +163,7 @@ def _refute_issue(
             issue.title,
             issue.body,
             abstract=structure.abstract,
+            language=language,
         ),
         toolbox=toolbox,
         submit_model=IssueVerdict,
@@ -182,6 +191,45 @@ NO_ISSUES_SURVIVED = OverviewIssue(
 )
 
 
+def _clean_narrowed_body(issue: OverviewIssue, rewritten: str) -> str | None:
+    """Validate a narrowed issue body, or return None to keep the original.
+
+    Two defects were found by reading the actual output rather than the
+    verdicts, and neither is catchable in the prompt alone:
+
+    * The rewritten body began by repeating the issue title, so the rendered
+      review showed the title twice. Stripped here.
+    * Every "narrowed" body on the benchmark papers came back LONGER than the
+      one it replaced, against the prompt's explicit instruction to say less
+      and never more. That makes the stage a rewriter rather than a verifier,
+      which is a much larger behavioural change than it advertises and
+      reintroduces exactly the "an agent writes new review content" risk the
+      ledger link elsewhere exists to prevent. A body that is not shorter is
+      therefore refused and the original kept.
+
+    ``_LENGTH_TOLERANCE`` leaves room for prose that genuinely narrows while
+    spending a few more characters on a qualifier.
+    """
+    body = rewritten.strip()
+    if not body:
+        return None
+
+    title = issue.title.strip()
+    if title and body.lower().startswith(title.lower()):
+        body = body[len(title) :].lstrip(" .:\u2014-\n")
+
+    if not body:
+        return None
+    if len(body) > len(issue.body) * _LENGTH_TOLERANCE:
+        return None
+    return body
+
+
+#: How much longer than the original a "narrowed" body may be. Narrowing should
+#: shorten; a small allowance covers a qualifier added while cutting a claim.
+_LENGTH_TOLERANCE = 1.05
+
+
 def refute_issues(
     issues: list[OverviewIssue],
     paper_markdown: str,
@@ -190,13 +238,14 @@ def refute_issues(
     *,
     max_parallel: int = DEFAULT_MAX_PARALLEL,
     workspace_root: str | None = None,
+    language: str | None = None,
 ) -> tuple[list[OverviewIssue], list[IssueVerdict], list[AgentRunRecord]]:
     """Re-establish each macro issue, narrowing or dropping what fails.
 
     The complement of ``refute_comments``, and the change the measurement
-    pointed at: with comments refuted, comment precision reached 94% and 100%
-    on the two benchmark papers while macro-issue precision stayed at 58% and
-    36%, so all the surviving false criticism was in the overall feedback.
+    pointed at: with comments refuted, macro-issue precision lagged comment
+    precision badly on both benchmark papers, so the surviving false criticism
+    was in the overall feedback. Figures are in docs/AGENTIC_REVIEW.md.
 
     Unlike a comment, an issue is rarely wholly right or wholly wrong, so a
     ``partly_supported`` verdict replaces the body with the reviewer's narrowed
@@ -213,7 +262,7 @@ def refute_issues(
     try:
         with ThreadPoolExecutor(max_workers=max(1, min(max_parallel, len(issues)))) as pool:
             futures = {
-                pool.submit(_refute_issue, client, workspace, structure, i, issue): i
+                pool.submit(_refute_issue, client, workspace, structure, i, issue, language): i
                 for i, issue in enumerate(issues, start=1)
             }
             for fut in as_completed(futures):
@@ -241,13 +290,17 @@ def refute_issues(
                 logger.info("dropping issue %d (%s): %s", i, issue.title, verdict.reasoning[:160])
                 continue
             if verdict.verdict == "partly_supported":
-                narrowed = verdict.rewritten_body.strip()
-                if not narrowed:
-                    # The reviewer narrowed the issue but gave no replacement
-                    # text. Keeping the original is the safe reading: the
-                    # alternative is dropping an issue it called partly right.
+                narrowed = _clean_narrowed_body(issue, verdict.rewritten_body)
+                if narrowed is None:
+                    # Either no replacement text, or one that did not narrow.
+                    # Keeping the original is the safe reading: the reviewer
+                    # called the issue partly right, so dropping it would lose
+                    # a concern it endorsed, and accepting an expanded rewrite
+                    # would let this stage author review content.
                     logger.info(
-                        "issue %d narrowed without a rewritten body; keeping the original", i
+                        "issue %d (%s) was not narrowed usably; keeping the original",
+                        i,
+                        issue.title,
                     )
                     kept.append(issue)
                     continue
@@ -279,6 +332,7 @@ def refute_review(
     client: LLMClient,
     *,
     max_parallel: int = DEFAULT_MAX_PARALLEL,
+    language: str | None = None,
 ) -> tuple[OverviewFeedback, list[DetailedComment], list[AgentRunRecord]]:
     """Re-check both halves of a review, and return it with what survived.
 
@@ -292,7 +346,12 @@ def refute_review(
     comments_before = len(comments)
     try:
         comments, _verdicts, comment_records = refute_comments(
-            comments, paper_markdown, structure, client, max_parallel=max_parallel
+            comments,
+            paper_markdown,
+            structure,
+            client,
+            max_parallel=max_parallel,
+            language=language,
         )
         records.extend(comment_records)
         logger.info(
@@ -307,7 +366,12 @@ def refute_review(
     issues_before = len(overview.issues)
     try:
         kept_issues, _issue_verdicts, issue_records = refute_issues(
-            overview.issues, paper_markdown, structure, client, max_parallel=max_parallel
+            overview.issues,
+            paper_markdown,
+            structure,
+            client,
+            max_parallel=max_parallel,
+            language=language,
         )
         records.extend(issue_records)
         overview = overview.model_copy(update={"issues": kept_issues})

@@ -1899,3 +1899,73 @@ def test_select_reviewable_sections_keeps_a_substantive_funding_section():
     ]
     kept = [s.title for s in select_reviewable_sections(sections)]
     assert kept == ["Funding and acquisition dynamics in venture capital"]
+
+
+def test_review_paper_refute_runs_the_gate_on_both_halves():
+    """The shipped path: review_paper(refute=True) -> refute_review.
+
+    The benchmark drove refute_comments and refute_issues directly, so this
+    covers the wiring the CLI flag actually uses, including that an issue the
+    gate drops does not reach the rendered review.
+    """
+    from coarse.types import OverviewFeedback, OverviewIssue
+
+    paper_md = "Body text. " * 200
+    structure = PaperStructure(
+        title="A Paper",
+        domain="statistics",
+        taxonomy="academic/research_paper",
+        abstract="An abstract.",
+        sections=[
+            SectionInfo(
+                number=1,
+                title="Introduction",
+                text="Body text. " * 120,
+                section_type=SectionType.INTRODUCTION,
+            )
+        ],
+    )
+    kept_comment = DetailedComment(
+        number=1, title="Survives", quote="Body text. Body text.", feedback="f"
+    )
+    captured = {}
+
+    def fake_refute_review(overview, comments, markdown, struct, client, **kwargs):
+        captured["n_comments_in"] = len(comments)
+        captured["n_issues_in"] = len(overview.issues)
+        captured["language"] = kwargs.get("language")
+        return (
+            overview.model_copy(update={"issues": [OverviewIssue(title="Kept", body="b")]}),
+            [kept_comment],
+            [],
+        )
+
+    overview = OverviewFeedback(
+        issues=[OverviewIssue(title="Kept", body="b"), OverviewIssue(title="Dropped", body="b")]
+    )
+
+    with (
+        patch(
+            "coarse.pipeline.extract_file",
+            return_value=PaperText(full_markdown=paper_md, token_estimate=len(paper_md) // 4),
+        ),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.LLMClient"),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline.OverviewAgent") as overview_agent,
+        patch("coarse.pipeline.CompletenessAgent") as completeness_agent,
+        patch("coarse.pipeline.SectionAgent"),
+        patch("coarse.pipeline.ProofVerifyAgent"),
+        patch("coarse.pipeline.run_editorial_pass", return_value=[kept_comment]),
+        patch("coarse.agent.refutation.refute_review", side_effect=fake_refute_review),
+    ):
+        overview_agent.return_value.run.return_value = overview
+        completeness_agent.return_value.run.return_value = []
+        review, markdown, _paper = review_paper("paper.md", skip_cost_gate=True, refute=True)
+
+    assert captured["n_comments_in"] == 1
+    assert captured["n_issues_in"] == 2, "both issues must be offered to the gate"
+    assert [i.title for i in review.overall_feedback.issues] == ["Kept"]
+    assert "Dropped" not in markdown

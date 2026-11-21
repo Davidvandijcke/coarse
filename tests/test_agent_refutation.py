@@ -81,7 +81,16 @@ def _comment(number: int, title: str, quote: str) -> DetailedComment:
 
 
 def _issue(title: str) -> OverviewIssue:
-    return OverviewIssue(title=title, body=f"{title}. This concern makes three points.")
+    # Realistically long, so a genuine narrowing is shorter than it. A stub
+    # body makes any rewrite look like an expansion and trips the length rule
+    # in _clean_narrowed_body.
+    return OverviewIssue(
+        title=title,
+        body=(
+            f"{title}. This concern makes three points. "
+            + "Each point is set out at the length a macro issue usually runs to. " * 4
+        ),
+    )
 
 
 class FakeClient:
@@ -101,6 +110,7 @@ class FakeClient:
         self.issue_verdicts = issue_verdicts or {}
         self.rewritten = rewritten
         self.issue_tasks: list[str] = []
+        self.comment_tasks: list[str] = []
         self.model = "fake/model"
         self.supports_prompt_caching = False
         self._cost = 0.0
@@ -133,6 +143,7 @@ class FakeClient:
                 }
             )
         if "check a single criticism" in system:
+            self.comment_tasks.append(task)
             verdict = next(
                 (v for title, v in self.comment_verdicts.items() if title in task), "confirmed"
             )
@@ -360,3 +371,117 @@ def test_refute_comments_still_drops_what_is_not_reproduced(tmp_path):
         workspace_root=str(tmp_path / "w10"),
     )
     assert [c.title for c in kept] == ["Sign error"]
+
+
+def test_comments_sharing_a_number_are_judged_separately(tmp_path):
+    """Refutation runs before ``_renumber_comments``.
+
+    The numbers reaching this stage are whatever the editorial pass emitted,
+    and on the double-failure fallback path they are raw section order with
+    section-local numbering, so duplicates are expected. Keying the lookup on
+    the number collapsed the maps and misattributed verdicts.
+    """
+    comments = [
+        _comment(1, "Sign error", QUOTE_A),
+        _comment(1, "Curvature", QUOTE_B),
+        _comment(2, "Third point", QUOTE_A),
+    ]
+    kept, verdicts, records = refute_comments(
+        comments,
+        _paper(),
+        _structure(),
+        FakeClient(comment_verdicts={"Curvature": "refuted"}),
+        max_parallel=1,
+        workspace_root=str(tmp_path / "dup"),
+    )
+    assert [c.title for c in kept] == ["Sign error", "Third point"]
+    assert len(verdicts) == 3, "each comment must get its own verdict"
+    assert len(records) == 3
+    assert len({v.finding_id for v in verdicts}) == 3, "ledger ids must be unique"
+
+
+def test_the_review_language_reaches_both_refuters(tmp_path):
+    """A refuter writes author-facing prose, so it must write it in the review's
+    language. The issue refuter rewrites most of what it touches, so this is the
+    common case rather than an edge one."""
+    client = FakeClient(issue_verdicts={"Concern": "partly_supported"})
+    refute_review(
+        OverviewFeedback(issues=[_issue("Concern")]),
+        [_comment(1, "Sign error", QUOTE_A)],
+        _paper(),
+        _structure(),
+        client,
+        max_parallel=1,
+        language="French",
+    )
+    assert "in French" in client.issue_tasks[0]
+    assert "in French" in client.comment_tasks[0]
+
+
+# -- narrowed-body validation ---------------------------------------------
+#
+# Both cases below were found by reading the saved reviews, not the verdicts.
+
+
+def test_a_narrowed_body_that_repeats_the_title_is_stripped(tmp_path):
+    """The rewrite came back starting with the issue title, so the rendered
+    review showed the title twice."""
+    issue = OverviewIssue(title="Error budget", body="x" * 400)
+    client = FakeClient(
+        issue_verdicts={"Error budget": "partly_supported"},
+        rewritten="Error budget. The budget exceeds the target.",
+    )
+    kept, _v, _r = refute_issues(
+        [issue],
+        _paper(),
+        _structure(),
+        client,
+        max_parallel=1,
+        workspace_root=str(tmp_path / "n1"),
+    )
+    assert kept[0].body == "The budget exceeds the target."
+    assert not kept[0].body.lower().startswith("error budget")
+
+
+def test_a_narrowed_body_longer_than_the_original_is_refused(tmp_path):
+    """Narrowing must shorten.
+
+    Every narrowed body on the benchmark papers came back longer than the one
+    it replaced, against the prompt's explicit instruction. Accepting those
+    would make this stage a rewriter of review content rather than a verifier
+    of it.
+    """
+    issue = OverviewIssue(title="Error budget", body="short original body here")
+    client = FakeClient(
+        issue_verdicts={"Error budget": "partly_supported"},
+        rewritten="a much longer replacement body " * 10,
+    )
+    kept, verdicts, _r = refute_issues(
+        [issue],
+        _paper(),
+        _structure(),
+        client,
+        max_parallel=1,
+        workspace_root=str(tmp_path / "n2"),
+    )
+    assert kept == [issue], "the original must be kept when the rewrite does not narrow"
+    assert verdicts[0].verdict == "partly_supported", "the verdict is still recorded"
+
+
+def test_a_narrowing_within_the_length_tolerance_is_accepted(tmp_path):
+    """A rewrite may spend a few characters on a qualifier while cutting a
+    claim, so the bound is a tolerance rather than strict inequality."""
+    from coarse.agent.refutation import _LENGTH_TOLERANCE
+
+    original = "y" * 200
+    issue = OverviewIssue(title="Concern", body=original)
+    slightly_longer = "z" * int(len(original) * (_LENGTH_TOLERANCE - 0.01))
+    kept, _v, _r = refute_issues(
+        [issue],
+        _paper(),
+        _structure(),
+        FakeClient(issue_verdicts={"Concern": "partly_supported"}, rewritten=slightly_longer),
+        max_parallel=1,
+        workspace_root=str(tmp_path / "n3"),
+    )
+    assert kept[0].body == slightly_longer

@@ -418,6 +418,7 @@ def _refute(
     workspace: ReviewWorkspace,
     structure: PaperStructure,
     finding: LedgerFinding,
+    language: str | None = None,
 ) -> tuple[RefutationVerdict | None, AgentRunRecord]:
     """Re-establish one finding in a context that has not seen how it was made.
 
@@ -434,7 +435,9 @@ def _refute(
         role="refuter",
         agent_id=f"ref-{finding.finding_id}",
         system=AGENT_REFUTER_SYSTEM,
-        task=agent_refuter_user(structure.title, finding.claim, finding.location, anchors),
+        task=agent_refuter_user(
+            structure.title, finding.claim, finding.location, anchors, language=language
+        ),
         toolbox=toolbox,
         submit_model=RefutationVerdict,
         submit_description="Submit your verdict on this one criticism.",
