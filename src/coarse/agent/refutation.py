@@ -214,6 +214,11 @@ NO_ISSUES_SURVIVED = OverviewIssue(
 
 
 _WS_RE = re.compile(r"\s+")
+#: Marks where a span was removed, so whitespace is tidied only at the cut.
+_CUT = "\x00"
+_CUT_RE = re.compile(r"\s*" + _CUT + r"\s*")
+_BLANK_LINE_RE = re.compile(r"\n[ \t]*\n")
+_EXCESS_BLANKS_RE = re.compile(r"\n{3,}")
 
 
 def _normalize(text: str) -> str:
@@ -231,8 +236,13 @@ def narrow_by_deletion(body: str, spans: list[str]) -> tuple[str, list[str], lis
     either occurs in the body or it does not.
 
     Matching is exact first, then whitespace-insensitive, because a model
-    re-wraps a quoted sentence. A span that still does not match is reported
+    re-wraps a sentence it quotes. A span that still does not match is reported
     rather than guessed at, so a hallucinated span removes nothing.
+
+    Whitespace is tidied only at the cut. Collapsing the whole body was the
+    first implementation and it flattened paragraph breaks and the newlines
+    inside display math into one run-on block, which damages every narrowed
+    issue whether or not the deletion itself was right.
     """
     removed: list[str] = []
     missing: list[str] = []
@@ -244,19 +254,35 @@ def narrow_by_deletion(body: str, spans: list[str]) -> tuple[str, list[str], lis
             missing.append(span)
             continue
         if candidate in out:
-            out = out.replace(candidate, " ", 1)
+            out = out.replace(candidate, _CUT, 1)
             removed.append(candidate)
             continue
-        # Whitespace-insensitive fallback: locate the span in a normalized copy
-        # and map the hit back onto the original by walking both in step.
         norm_target = _normalize(candidate)
-        index = _normalize(out).find(norm_target)
-        if index < 0:
+        if _normalize(out).find(norm_target) < 0:
             missing.append(span)
             continue
         out = _rebuild_without(out, norm_target)
         removed.append(candidate)
-    return _WS_RE.sub(" ", out).strip(), removed, missing
+    return _close_cuts(out), removed, missing
+
+
+def _close_cuts(text: str) -> str:
+    """Join the text either side of each cut with the stronger separator.
+
+    A deletion that spanned a paragraph boundary keeps the paragraph break; one
+    inside a paragraph leaves a single space.
+    """
+
+    def join(match: re.Match[str]) -> str:
+        return "\n\n" if _BLANK_LINE_RE.search(match.group(0)) else " "
+
+    out = _CUT_RE.sub(join, text)
+    out = out.replace(_CUT, "")
+    out = _EXCESS_BLANKS_RE.sub("\n\n", out)
+    # Tidy a space left dangling before punctuation or at a line end.
+    out = re.sub(r" +([.,;:)])", r"\1", out)
+    out = re.sub(r"[ \t]+\n", "\n", out)
+    return out.strip()
 
 
 def _rebuild_without(body: str, norm_target: str) -> str:
@@ -283,7 +309,7 @@ def _rebuild_without(body: str, norm_target: str) -> str:
     lo = norm_chars[start + offset]
     hi_index = start + offset + len(norm_target) - 1
     hi = norm_chars[min(hi_index, len(norm_chars) - 1)]
-    return body[:lo] + " " + body[hi + 1 :]
+    return body[:lo] + _CUT + body[hi + 1 :]
 
 
 def refute_issues(

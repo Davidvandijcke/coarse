@@ -278,6 +278,36 @@ def main() -> None:
             for (kind, title) in before_by_title
         ],
     }
+    # Save the narrowed text and the refuter's records. 15 of 35 issues across
+    # the benchmark papers were narrowed and nothing was persisting what they
+    # now say, so no one could read a deletion-narrowed issue for dangling
+    # fragments or a lost antecedent.
+    review_after = review.model_copy(
+        update={
+            "overall_feedback": new_overview,
+            "detailed_comments": [
+                c.model_copy(update={"number": i}) for i, c in enumerate(kept_comments, start=1)
+            ],
+        }
+    )
+    (args.run / "review_after_refutation.json").write_text(
+        review_after.model_dump_json(indent=1), encoding="utf-8"
+    )
+    from coarse.synthesis import render_review
+
+    (args.run / "review_after_refutation.md").write_text(
+        render_review(review_after), encoding="utf-8"
+    )
+    out["narrowed_issues"] = [
+        {
+            "title": issue.title,
+            "before": before_by_title[("issue", issue.title)][2],
+            "after": issue.body,
+        }
+        for issue in new_overview.issues
+        if ("issue", issue.title) in before_by_title
+        and before_by_title[("issue", issue.title)][2] != issue.body
+    ]
     (args.run / "refute_effect.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(f"\n  wrote {args.run / 'refute_effect.json'}")
 

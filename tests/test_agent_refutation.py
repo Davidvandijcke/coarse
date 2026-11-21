@@ -586,3 +586,45 @@ def test_refute_comments_keeps_a_comment_whose_check_could_not_run(tmp_path):
     )
     assert [c.title for c in kept] == ["Sign error"]
     assert verdicts == []
+
+
+def test_narrow_by_deletion_preserves_paragraph_structure():
+    """Whitespace is tidied only at the cut.
+
+    The first implementation collapsed the whole body, which flattened
+    paragraph breaks and the newlines inside display math into one run-on
+    block — damaging every narrowed issue whether or not the deletion itself
+    was right.
+    """
+    from coarse.agent.refutation import narrow_by_deletion
+
+    body = "A holds.\n\nB is answered in Section 6.\n\nC holds."
+    out, removed, missing = narrow_by_deletion(body, ["B is answered in Section 6."])
+    assert removed and not missing
+    assert out == "A holds.\n\nC holds.", "the paragraph break must survive"
+
+
+def test_narrow_by_deletion_preserves_display_math():
+    from coarse.agent.refutation import narrow_by_deletion
+
+    body = "Prose before.\n\n$$\n  x = y + z\n$$\n\nThe bound fails. Prose after."
+    out, _removed, _missing = narrow_by_deletion(body, ["The bound fails."])
+    assert "$$\n  x = y + z\n$$" in out, "newlines inside the math must survive"
+    assert out == "Prose before.\n\n$$\n  x = y + z\n$$\n\nProse after."
+
+
+def test_narrow_by_deletion_joins_an_inline_cut_with_a_space():
+    from coarse.agent.refutation import narrow_by_deletion
+
+    body = "A holds. B is answered in Section 6. C holds."
+    out, _r, _m = narrow_by_deletion(body, ["B is answered in Section 6."])
+    assert out == "A holds. C holds."
+
+
+def test_narrow_by_deletion_leaves_no_dangling_space_at_the_end():
+    from coarse.agent.refutation import narrow_by_deletion
+
+    out, _r, _m = narrow_by_deletion(
+        "A holds. B is answered in Section 6.", ["B is answered in Section 6."]
+    )
+    assert out == "A holds."
