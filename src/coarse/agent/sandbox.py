@@ -44,15 +44,28 @@ MAX_CODE_CHARS = 20_000
 # Disable network at the Python level as a second line of defence behind "the
 # allowed import set has no network client". Keeps an agent that imports
 # urllib from quietly exfiltrating the manuscript.
+#
+# Patch the connecting methods rather than replacing ``socket.socket``.
+# Replacing the class breaks ``ssl`` at import time (it subclasses
+# ``socket.socket``), which surfaces to the agent as an unrelated TypeError
+# and costs it turns guessing at a broken sandbox instead of reading a clear
+# refusal.
 _PREAMBLE = """\
 import socket as _socket
 
-def _no_network(*_a, **_k):
-    raise OSError("network access is disabled in this sandbox")
+_MSG = "network access is disabled in this sandbox"
 
-_socket.socket = _no_network
+
+def _no_network(*_a, **_k):
+    raise OSError(_MSG)
+
+
+_socket.socket.connect = _no_network
+_socket.socket.connect_ex = _no_network
+_socket.socket.sendto = _no_network
 _socket.create_connection = _no_network
 _socket.getaddrinfo = _no_network
+_socket.gethostbyname = _no_network
 del _no_network
 """
 

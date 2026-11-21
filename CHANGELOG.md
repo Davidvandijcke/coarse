@@ -4,7 +4,34 @@
 
 ### Added
 
+- Bounded agent runtime for review (`coarse.agent`), off by default. A per-review
+  workspace holds the paper, one file per section, and an evidence ledger;
+  agents retrieve any part of the paper on demand, run bounded Python for
+  algebraic and numeric checks, and share notes through the workspace. In swarm
+  mode a planner divides the paper into claim-shaped targets, investigators work
+  them in parallel, and one refuter per candidate finding must independently
+  reproduce it in a fresh context before the editor may write it up.
+- `evals/`: a dev-only benchmark harness that runs the arms of a same-model
+  ablation from one fixed extraction, scores recall against an atomized
+  reference review, and adjudicates every emitted comment against the paper to
+  measure precision.
 - Opt-in native Codex and Claude Code review pilot: app subagents answer the existing pipeline prompts through validated, resumable checkpoints. Includes separate native skills/plugin packaging, explicit publication, and a preview-only website toggle; the headless runner remains available.
+
+### Fixed
+
+- Review every section of a long paper. Section selection truncated to the
+  first 25 parsed sections, which on a theory paper with a long appendix
+  discarded every proof appendix before any agent saw it.
+- Cache the prompt prefix of a multi-turn tool loop on providers that need
+  explicit breakpoints. Without it the cost of a tool loop grew quadratically
+  in its length, because each turn re-billed the paper text read in earlier
+  turns.
+
+### Changed
+
+- Document the `agent/` package and seven previously undocumented top-level
+  modules in the package-structure tables that `scripts/doc-sync-check.sh`
+  checks.
 
 ## v1.9.6 — 2026-10-05
 

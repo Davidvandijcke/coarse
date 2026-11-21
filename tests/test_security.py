@@ -41,9 +41,7 @@ FAKE_FINGERPRINT_LABEL = "TEST fixture key"
 def repo(tmp_path: Path) -> Path:
     """Minimal fake repo layout the scanner expects."""
     (tmp_path / "src" / "coarse").mkdir(parents=True)
-    (tmp_path / "src" / "coarse" / "models.py").write_text(
-        'DEFAULT_MODEL = "openai/gpt-5"\n'
-    )
+    (tmp_path / "src" / "coarse" / "models.py").write_text('DEFAULT_MODEL = "openai/gpt-5"\n')
     (tmp_path / "scripts").mkdir()
     (tmp_path / "tests").mkdir()
     return tmp_path
@@ -83,12 +81,8 @@ def test_clean_repo(repo: Path) -> None:
     assert findings == []
 
 
-def test_leaked_fingerprint_is_critical(
-    repo: Path, register_fake_fingerprint: None
-) -> None:
-    (repo / "scripts" / "deploy.sh").write_text(
-        f'curl -H "apikey: {FAKE_FINGERPRINT}"\n'
-    )
+def test_leaked_fingerprint_is_critical(repo: Path, register_fake_fingerprint: None) -> None:
+    (repo / "scripts" / "deploy.sh").write_text(f'curl -H "apikey: {FAKE_FINGERPRINT}"\n')
     code, findings = run(repo)
     assert code == 2
     kinds = {f.kind for f in findings}
@@ -96,12 +90,8 @@ def test_leaked_fingerprint_is_critical(
     assert any(f.severity == "CRITICAL" for f in findings)
 
 
-def test_fingerprint_allowed_in_env_file(
-    repo: Path, register_fake_fingerprint: None
-) -> None:
-    (repo / ".env").write_text(
-        f"SUPABASE_SERVICE_ROLE_KEY={FAKE_FINGERPRINT}\n"
-    )
+def test_fingerprint_allowed_in_env_file(repo: Path, register_fake_fingerprint: None) -> None:
+    (repo / ".env").write_text(f"SUPABASE_SERVICE_ROLE_KEY={FAKE_FINGERPRINT}\n")
     os.chmod(repo / ".env", 0o600)
     code, findings = run(repo)
     assert not any(f.kind == "leaked-fingerprint" for f in findings)
@@ -113,9 +103,7 @@ def test_provider_pattern_is_high(repo: Path) -> None:
         'OPENAI="sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEF"\n'
     )
     code, findings = run(repo)
-    assert any(
-        f.kind == "secret-pattern" and f.severity == "HIGH" for f in findings
-    )
+    assert any(f.kind == "secret-pattern" and f.severity == "HIGH" for f in findings)
     assert code == 0
     strict_code, _ = run(repo, "--strict")
     assert strict_code == 2
@@ -159,8 +147,7 @@ def test_env_permissions_tight(repo: Path) -> None:
 
 def test_docstring_model_id_skipped(repo: Path) -> None:
     (repo / "src" / "coarse" / "llm.py").write_text(
-        '"""Example model IDs like \'openai/gpt-4o\' go here."""\n'
-        'x = 1\n'
+        '"""Example model IDs like \'openai/gpt-4o\' go here."""\nx = 1\n'
     )
     _, findings = run(repo)
     assert not any(f.kind == "hardcoded-model-id" for f in findings)
@@ -168,15 +155,10 @@ def test_docstring_model_id_skipped(repo: Path) -> None:
 
 def test_real_model_id_literal_flagged(repo: Path) -> None:
     (repo / "src" / "coarse" / "llm.py").write_text(
-        'COSTS = {\n'
-        '    "openai/gpt-5.1": {"input": 1.0, "output": 5.0},\n'
-        '}\n'
+        'COSTS = {\n    "openai/gpt-5.1": {"input": 1.0, "output": 5.0},\n}\n'
     )
     _, findings = run(repo)
-    assert any(
-        f.kind == "hardcoded-model-id" and f.severity == "MEDIUM"
-        for f in findings
-    )
+    assert any(f.kind == "hardcoded-model-id" and f.severity == "MEDIUM" for f in findings)
 
 
 def test_models_py_itself_not_flagged(repo: Path) -> None:
@@ -192,9 +174,7 @@ def test_provider_auto_suffix_not_flagged(repo: Path) -> None:
     assert not any(f.kind == "hardcoded-model-id" for f in findings)
 
 
-def test_scanner_self_exempt(
-    repo: Path, register_fake_fingerprint: None
-) -> None:
+def test_scanner_self_exempt(repo: Path, register_fake_fingerprint: None) -> None:
     # Drop the fake fingerprint into the scanner path and verify it is
     # ignored there (SELF_EXEMPT).
     target = repo / "scripts" / "security_scanner.py"
@@ -209,9 +189,7 @@ def test_json_output_roundtrip(
     capsys: pytest.CaptureFixture,
     register_fake_fingerprint: None,
 ) -> None:
-    (repo / "scripts" / "deploy.sh").write_text(
-        f'curl -H "apikey: {FAKE_FINGERPRINT}"\n'
-    )
+    (repo / "scripts" / "deploy.sh").write_text(f'curl -H "apikey: {FAKE_FINGERPRINT}"\n')
     rc = scanner.main(["--root", str(repo), "--json"])
     out = capsys.readouterr().out
     import json

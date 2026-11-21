@@ -1,4 +1,5 @@
 """Tests for README.md, CHANGELOG.md, and package build artifacts."""
+
 from __future__ import annotations
 
 import subprocess
@@ -86,9 +87,7 @@ def test_readme_version_matches_pyproject():
     with open(PYPROJECT, "rb") as f:
         pyproject = tomllib.load(f)
     version = pyproject["project"]["version"]
-    assert version in readme_content, (
-        f"pyproject.toml version '{version}' not found in README.md"
-    )
+    assert version in readme_content, f"pyproject.toml version '{version}' not found in README.md"
 
 
 # ---------------------------------------------------------------------------
@@ -166,9 +165,7 @@ def test_package_installs_in_fresh_venv(tmp_path):
         capture_output=True,
         text=True,
     )
-    assert install_result.returncode == 0, (
-        f"pip install failed:\n{install_result.stderr}"
-    )
+    assert install_result.returncode == 0, f"pip install failed:\n{install_result.stderr}"
 
     # Run coarse --help
     help_result = subprocess.run(

@@ -1673,3 +1673,108 @@ def test_review_paper_config_review_language_is_explicit_choice():
     assert captured["overview_language"] == "Spanish"
     assert review.language is not None
     assert review.language.review_language == "es"
+
+
+# ---------------------------------------------------------------------------
+# Section selection (the truncation fix behind the agentic-review diagnosis)
+# ---------------------------------------------------------------------------
+
+
+def _sec(title, chars, *, math=False, stype=SectionType.OTHER):
+    return SectionInfo(
+        number=1,
+        title=title,
+        text="x" * chars,
+        section_type=stype,
+        math_content=math,
+    )
+
+
+def test_select_reviewable_sections_keeps_everything_under_the_cap():
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [_sec(f"S{i}", 1_000) for i in range(5)]
+    assert len(select_reviewable_sections(sections)) == 5
+
+
+def test_select_reviewable_sections_drops_marker_and_empty_sections():
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("1 Introduction", 2_000),
+        _sec("<!-- PAGE BREAK -->", 1_100),
+        _sec("A Proofs", 0),
+        _sec("", 900),
+        _sec("2 Whitespace only", 0),
+    ]
+    kept = [s.title for s in select_reviewable_sections(sections)]
+    assert kept == ["1 Introduction"]
+
+
+def test_select_reviewable_sections_drops_reference_like_sections():
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("A.10 Proof of Proposition 2", 14_000, math=True),
+        _sec("Acknowledgements", 10_000),
+        _sec("References", 8_000),
+        _sec("Data availability statement", 500),
+    ]
+    kept = [s.title for s in select_reviewable_sections(sections)]
+    assert kept == ["A.10 Proof of Proposition 2"]
+
+
+def test_select_reviewable_sections_keeps_appendix_proofs_when_the_cap_binds():
+    """The regression this fix exists for.
+
+    Selection used to be ``[:limit]`` over document order, so on a paper with
+    more sections than the cap the appendices — where the proofs are — were
+    the part discarded.
+    """
+    from coarse.pipeline import select_reviewable_sections
+
+    front = [_sec(f"{i} Front matter section", 1_000) for i in range(1, 26)]
+    appendix = [
+        _sec("A.10 Proof of Proposition 2", 14_000, math=True),
+        _sec("A.12 Proof of Proposition 4", 5_000, math=True),
+    ]
+    kept = {s.title for s in select_reviewable_sections(front + appendix, limit=25)}
+    assert "A.10 Proof of Proposition 2" in kept
+    assert "A.12 Proof of Proposition 4" in kept
+
+
+def test_select_reviewable_sections_returns_document_order():
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("1 Short intro", 400),
+        _sec("2 Long methods", 9_000, math=True),
+        _sec("3 Medium results", 3_000),
+    ]
+    kept = select_reviewable_sections(sections, limit=2)
+    # Ranking prefers the long math-bearing section, but output stays in
+    # document order because downstream numbering is positional.
+    assert [s.title for s in kept] == ["2 Long methods", "3 Medium results"]
+
+
+def test_select_reviewable_sections_weights_math_without_starving_long_prose():
+    """A short proof must not displace a much longer prose appendix.
+
+    Ranking all mathematical sections ahead of all prose dropped a 5.6k-char
+    numerical appendix in favour of a 551-char corollary proof.
+    """
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("A.4 Proof of a corollary", 551, math=True),
+        _sec("B Deferred numerical results", 5_571),
+    ]
+    kept = [s.title for s in select_reviewable_sections(sections, limit=1)]
+    assert kept == ["B Deferred numerical results"]
+
+
+def test_select_reviewable_sections_respects_the_cap():
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [_sec(f"S{i}", 1_000) for i in range(40)]
+    assert len(select_reviewable_sections(sections, limit=25)) == 25

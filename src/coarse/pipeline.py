@@ -287,6 +287,85 @@ def _verify_section_with_fallback(
 
 _MIN_APPENDIX_CHARS = 500  # skip appendix sections shorter than this
 
+# Weight applied to a mathematical section's length when the cap binds. A
+# proof is worth more per character than prose, but not infinitely more:
+# ranking all math ahead of all prose dropped a 5.6k-character numerical
+# appendix in favour of a 551-character proof of a corollary. Blending keeps a
+# long prose appendix competitive with a short proof.
+_MATH_SECTION_WEIGHT = 2.5
+
+# Section titles that are never worth reviewing. Matched case-insensitively
+# against the start of the title. The reference list is frequently absorbed
+# into "Acknowledgements" by the heading parser, so that section can be very
+# long without containing anything reviewable.
+_SKIP_TITLE_PREFIXES = (
+    "acknowledgement",
+    "acknowledgment",
+    "references",
+    "bibliography",
+    "funding",
+    "conflict of interest",
+    "data availability",
+    "author contribution",
+)
+
+
+def _is_reviewable_section(section: SectionInfo) -> bool:
+    """Whether a parsed section is worth spending an agent call on."""
+    if section.section_type == SectionType.REFERENCES:
+        return False
+    title = section.title.strip().lower().lstrip("#").strip()
+    if title.startswith("<!--") or not title:
+        return False
+    if any(title.startswith(prefix) for prefix in _SKIP_TITLE_PREFIXES):
+        return False
+    if section.section_type == SectionType.APPENDIX:
+        return len(section.text) >= _MIN_APPENDIX_CHARS
+    # Any section with text is eligible. Scarcity is resolved by the ranking
+    # below, not by a length cut: a length cut that is high enough to exclude
+    # parser debris also excludes brief but substantive subsections, and when
+    # the cap does not bind a short section costs one call that correctly
+    # returns no comments.
+    return bool(section.text.strip())
+
+
+def select_reviewable_sections(
+    sections: list[SectionInfo],
+    *,
+    limit: int = MAX_REVIEWABLE_SECTIONS,
+) -> list[SectionInfo]:
+    """Choose which sections get a section agent, in document order.
+
+    Selection used to be ``[:limit]`` over document order. On a paper with more
+    parsed sections than the cap that silently discarded the tail, and because
+    appendices come last the tail is exactly where proofs live: on a 41-section
+    theory paper every appendix proof was dropped before any agent saw it,
+    including a 14k-character proof of the paper's main proposition.
+
+    So: drop what is not reviewable at all, and if the cap still binds, keep
+    the sections most likely to carry a finding — ranked by length, with
+    mathematical content weighted up — rather than whichever happen to come
+    first. The returned list is restored to document order, since downstream
+    stages number and cross-reference comments by position.
+    """
+    candidates = [s for s in sections if _is_reviewable_section(s)]
+    if len(candidates) <= limit:
+        return candidates
+
+    def weight(section: SectionInfo) -> float:
+        return len(section.text) * (_MATH_SECTION_WEIGHT if section.math_content else 1.0)
+
+    ranked = sorted(enumerate(candidates), key=lambda pair: -weight(pair[1]))
+    kept_indices = sorted(index for index, _ in ranked[:limit])
+    dropped = [candidates[i].title for i in range(len(candidates)) if i not in set(kept_indices)]
+    logger.info(
+        "Section cap %d binds on %d reviewable sections; skipping: %s",
+        limit,
+        len(candidates),
+        ", ".join(dropped) or "(none)",
+    )
+    return [candidates[i] for i in kept_indices]
+
 
 def extract_and_structure(
     file_path: str | Path,
@@ -515,13 +594,7 @@ def review_paper(
         site_code=site_language,
     )
 
-    reviewable_sections = [
-        s
-        for s in structure.sections
-        if s.section_type != SectionType.REFERENCES
-        and (s.section_type != SectionType.APPENDIX or len(s.text) >= _MIN_APPENDIX_CHARS)
-    ]
-    non_ref_sections = reviewable_sections[:MAX_REVIEWABLE_SECTIONS]
+    non_ref_sections = select_reviewable_sections(structure.sections)
     progress.set_total(
         _actual_pipeline_stage_total(
             is_pdf=is_pdf,

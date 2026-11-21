@@ -45,10 +45,16 @@ KNOWN_OVERSIZED: dict[str, int] = {
     # prompts.py currently holds every LLM prompt template for the
     # pipeline — splitting it is a real refactor (per-agent files,
     # shared boundary-notice helpers) and is deferred to post-v1.3.0.
-    "prompts": 2700,
+    # Cap bumped for the four bounded-agent role prompts (planner,
+    # investigator, refuter, editor; #264), which land here rather than
+    # in coarse/agent/ to keep the one-prompt-file rule in CLAUDE.md.
+    "prompts": 2950,
     # llm.py wraps litellm + instructor + retry + cost tracking.
-    # Splitting it requires an API redesign, also deferred.
-    "llm": 1000,
+    # Splitting it requires an API redesign, also deferred. Cap bumped
+    # for complete_with_tools + the tool-loop cache breakpoints (#264):
+    # the agent runtime needs a multi-turn tool call, and the rule that
+    # all provider calls go through LLMClient puts it in this module.
+    "llm": 1150,
     # headless_clients.py holds the Claude / Codex / Gemini headless
     # LLMClient replacements + the shared retry / semaphore / probe
     # / fallback infrastructure. Post-v1.3.0 candidates for splitting

@@ -1,4 +1,5 @@
 """Tests for agents/base.py — ReviewAgent ABC."""
+
 from unittest.mock import MagicMock
 
 import pytest

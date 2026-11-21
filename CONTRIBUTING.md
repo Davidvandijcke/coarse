@@ -56,6 +56,21 @@ src/coarse/
 ├── structure.py             # PaperText → PaperStructure (heading parse + math + metadata)
 ├── synthesis.py             # Review → markdown string
 ├── types.py                 # Pydantic models (PaperText, Review, DetailedComment, …)
+├── handoff_url.py           # Signed handoff-URL construction and parsing
+├── native_cli.py            # `coarse-native` entrypoint
+├── native_install.py        # Native host install/update helpers
+├── native_review.py         # Native-host review driver
+├── native_runtime.py        # Native-host runtime detection and launch
+├── native_store.py          # Native-host local state store
+├── review_runtime.py        # Shared review-runtime resolution
+├── agent/                   # Bounded agent runtime (#264)
+│   ├── __init__.py
+│   ├── types.py             # Finding / verdict / target records for the ledger
+│   ├── workspace.py         # Ephemeral per-review workspace + evidence ledger
+│   ├── sandbox.py           # Bounded Python execution for algebra/numeric checks
+│   ├── tools.py             # paper_search / paper_read / python / note_* dispatch
+│   ├── runner.py            # Multi-turn tool loop with typed submission
+│   └── orchestrator.py      # Planner / investigator / refuter / editor roles
 └── agents/
     ├── base.py              # ReviewAgent ABC + _build_messages helper + prompt caching
     ├── completeness.py      # Flags structural gaps and missing content
