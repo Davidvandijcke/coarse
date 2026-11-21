@@ -47,8 +47,11 @@ KNOWN_OVERSIZED: dict[str, int] = {
     # shared boundary-notice helpers) and is deferred to post-v1.3.0.
     # Cap bumped for the four bounded-agent role prompts (planner,
     # investigator, refuter, editor; #264), which land here rather than
-    # in coarse/agent/ to keep the one-prompt-file rule in CLAUDE.md.
-    "prompts": 2950,
+    # in coarse/agent/ to keep the one-prompt-file rule in CLAUDE.md. Bumped
+    # again for the sweep brief. The five agent prompts are now a coherent
+    # ~450-line block and would sit better in their own module; that is a
+    # deliberate deferral to keep the one-prompt-file rule, not an oversight.
+    "prompts": 3050,
     # llm.py wraps litellm + instructor + retry + cost tracking.
     # Splitting it requires an API redesign, also deferred. Cap bumped
     # for complete_with_tools + the tool-loop cache breakpoints (#264):
