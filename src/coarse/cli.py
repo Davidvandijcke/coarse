@@ -236,12 +236,12 @@ def review(
         False,
         "--refute",
         help=(
-            "Experimental: re-check the review against the paper before reporting it. "
-            "Every comment and every paper-level issue goes to a fresh reviewer with "
-            "tool access to the whole paper. A comment is dropped unless that reviewer "
-            "reproduces the problem; an issue is narrowed to what the paper bears out. "
-            "Aimed at false criticism rather than coverage; adds one call per comment "
-            "and per issue. See docs/AGENTIC_REVIEW.md."
+            "Experimental: re-check every comment against the paper before reporting "
+            "it. Each one goes to a fresh reviewer with tool access to the whole "
+            "paper and is dropped unless that reviewer reproduces the problem; "
+            "comments that survive are printed exactly as written. Aimed at false "
+            "criticism rather than coverage, so expect a shorter review; adds one "
+            "call per comment. See docs/AGENTIC_REVIEW.md."
         ),
     ),
     agent: Optional[str] = typer.Option(

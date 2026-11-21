@@ -4,18 +4,15 @@
 
 ### Added
 
-- `coarse review --refute` (and `review_paper(refute=True)`): re-check a review
-  against the paper before reporting it. Every detailed comment and every
-  macro-level issue goes to a fresh-context agent with tool access to the whole
-  paper. The gate only ever removes: a comment is dropped unless that agent
-  reproduces the defect, and otherwise published exactly as written. An issue
-  usually bundles several points, so rather than being dropped wholesale it is
-  narrowed by deleting the verbatim spans the reviewer names, leaving every
-  surviving word the original's. Aimed at false criticism rather than coverage, at the cost of a
-  shorter review and one agent call per comment and per issue. Off by default;
-  `docs/AGENTIC_REVIEW.md` reports what it is measured to be worth on two
-  papers, and why that figure depends heavily on whether a hedged rewrite
-  counts as an improvement.
+- `coarse review --refute` (and `review_paper(refute=True)`): re-check every
+  detailed comment against the paper before reporting it. Each goes to a
+  fresh-context agent with tool access to the whole paper, and is dropped
+  unless that agent reproduces the defect; comments that survive are published
+  exactly as written, so the gate only ever removes. Aimed at false criticism
+  rather than coverage, at the cost of a shorter review and one agent call per
+  comment. Off by default. `docs/AGENTIC_REVIEW.md` reports what it is measured
+  to be worth on three papers, and why the same gate built for the macro issues
+  was dropped after measurement.
 - `coarse review --agent sweep|swarm|single`: review through the bounded agent
   runtime (`coarse.agent`) instead of the staged pipeline. A per-review
   workspace holds the paper, one file per section, and an evidence ledger;

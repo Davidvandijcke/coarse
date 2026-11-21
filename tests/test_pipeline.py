@@ -1901,12 +1901,12 @@ def test_select_reviewable_sections_keeps_a_substantive_funding_section():
     assert kept == ["Funding and acquisition dynamics in venture capital"]
 
 
-def test_review_paper_refute_runs_the_gate_on_both_halves():
-    """The shipped path: review_paper(refute=True) -> refute_review.
+def test_review_paper_refute_runs_the_comment_gate():
+    """The shipped path: review_paper(refute=True) -> refute_comments.
 
-    The benchmark drove refute_comments and refute_issues directly, so this
-    covers the wiring the CLI flag actually uses, including that an issue the
-    gate drops does not reach the rendered review.
+    Comments only. The macro-issue half was built, measured on three papers and
+    dropped (docs/AGENTIC_REVIEW.md), so the overall feedback must reach the
+    review untouched by this stage.
     """
     from coarse.types import OverviewFeedback, OverviewIssue
 
@@ -1925,23 +1925,21 @@ def test_review_paper_refute_runs_the_gate_on_both_halves():
             )
         ],
     )
-    kept_comment = DetailedComment(
+    survivor = DetailedComment(
         number=1, title="Survives", quote="Body text. Body text.", feedback="f"
+    )
+    dropped = DetailedComment(
+        number=2, title="Dropped", quote="Body text. Body text.", feedback="f"
     )
     captured = {}
 
-    def fake_refute_review(overview, comments, markdown, struct, client, **kwargs):
-        captured["n_comments_in"] = len(comments)
-        captured["n_issues_in"] = len(overview.issues)
+    def fake_refute_comments(comments, markdown, struct, client, **kwargs):
+        captured["n_in"] = len(comments)
         captured["language"] = kwargs.get("language")
-        return (
-            overview.model_copy(update={"issues": [OverviewIssue(title="Kept", body="b")]}),
-            [kept_comment],
-            [],
-        )
+        return [survivor], [], []
 
     overview = OverviewFeedback(
-        issues=[OverviewIssue(title="Kept", body="b"), OverviewIssue(title="Dropped", body="b")]
+        issues=[OverviewIssue(title="Kept", body="b"), OverviewIssue(title="Also kept", body="b")]
     )
 
     with (
@@ -1958,14 +1956,16 @@ def test_review_paper_refute_runs_the_gate_on_both_halves():
         patch("coarse.pipeline.CompletenessAgent") as completeness_agent,
         patch("coarse.pipeline.SectionAgent"),
         patch("coarse.pipeline.ProofVerifyAgent"),
-        patch("coarse.pipeline.run_editorial_pass", return_value=[kept_comment]),
-        patch("coarse.agent.refutation.refute_review", side_effect=fake_refute_review),
+        patch("coarse.pipeline.run_editorial_pass", return_value=[survivor, dropped]),
+        patch("coarse.agent.refutation.refute_comments", side_effect=fake_refute_comments),
     ):
         overview_agent.return_value.run.return_value = overview
         completeness_agent.return_value.run.return_value = []
         review, markdown, _paper = review_paper("paper.md", skip_cost_gate=True, refute=True)
 
-    assert captured["n_comments_in"] == 1
-    assert captured["n_issues_in"] == 2, "both issues must be offered to the gate"
-    assert [i.title for i in review.overall_feedback.issues] == ["Kept"]
+    assert captured["n_in"] == 2, "both comments must be offered to the gate"
+    assert [c.title for c in review.detailed_comments] == ["Survives"]
     assert "Dropped" not in markdown
+    assert [i.title for i in review.overall_feedback.issues] == ["Kept", "Also kept"], (
+        "the overall feedback must pass through this stage untouched"
+    )

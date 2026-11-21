@@ -260,8 +260,7 @@ has not been done.
 
 Three things in that table matter more than the totals.
 
-**The comment half carries the benefit; the issue half is marginal.** Split by
-half, over all three papers:
+**Only the comment half ships.** Split by half, over all three papers:
 
 | half | bad removed | good lost |
 |---|---|---|
@@ -269,12 +268,21 @@ half, over all three papers:
 | macro issues | 2 | 1 (net +1 good) |
 
 On `psi` the issue half was net *negative*: it converted no bad issue and
-dropped a good one. On `coset_codes` it was clearly positive, converting two.
-This is the opposite of what an earlier version of this document claimed, which
-was that the issue half "mattered most" — that claim came from the measurement
-mistakes recorded below and does not survive them. Refuting the issues is
-defensible on the pooled numbers and on the `coset_codes` result, not on
-`psi`.
+dropped a good one. On `coset_codes` it converted two, and both conversions are
+re-judgements by a judge known to change verdict on identical text.
+
+Reading the narrowed issues settled it. One `coset_codes` issue titled
+"Multiplicity formulas rest on unverified uniformity assumptions" came back
+with a body saying "That holds for the partitions checked here: 8 per coset for
+$D_4/RD_4$ ... which reproduces the table's 44, 252, 764 and 316" — the
+deletion had removed the criticism and left text confirming the assumption,
+under a title still asserting the defect. A gate that can leave a heading
+contradicting its own paragraph should not run on an author-facing review.
+
+**So the macro-issue half was removed.** `refute_issues`, `narrow_by_deletion`
+and `IssueVerdict` are in this branch's history if it is ever worth revisiting
+with more papers and a verdict-stable judge; nothing in the shipped path
+touches the overall feedback. `--refute` is comments only.
 
 **On a review that was already good, the gate is nearly inert.** `targeting` is
 the only paper no design decision here has touched. Its pipeline review was
@@ -363,11 +371,10 @@ coverage on both papers and also asserts the most claims the paper does not
 support. The failure has one cause: the objection is answered in a part of the
 paper a section agent cannot see.
 
-**Independent refutation removes about a third of the false criticism for
-almost no true criticism.** Over three papers, 11 bad claims removed against 1
-good one lost, at about $1.85 a paper. Nearly all of that comes from the
-comment half; the macro-issue half is marginal and was net negative on one
-paper.
+**Independent refutation of the comments removes 9 bad claims for 2 good
+ones** over three papers, at about $1.85 a paper, and no reference finding was
+carried by a comment it dropped. The same gate on the macro issues did not pay
+and was removed.
 
 **The gate adds nothing to a review that was already accurate.** On the one
 paper whose pipeline review was already 26 good to 6 bad, it dropped nothing
@@ -397,10 +404,7 @@ support it.
    pipeline's coverage, at roughly $1.85 a review and a shorter report.
 3. **Do not make it the default yet.** Three papers is thin, its effect was
    mis-measured three times before this, and on the one paper nobody tuned
-   against it did nothing at all. The comment half is the part that earned its
-   place; whether the macro-issue half should ship at all is the open
-   question, since it was net negative on one of the two papers where it
-   acted.
+   against it did nothing at all.
 4. **Keep `--agent swarm` as an opt-in deep mode** for theory papers, where the
    appendix findings it reaches are worth the coverage it gives up. Its recall
    is the open problem.

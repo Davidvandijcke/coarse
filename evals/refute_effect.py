@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from score import judge_client, score_precision  # noqa: E402
 
-from coarse.agent.refutation import refute_review  # noqa: E402
+from coarse.agent.refutation import refute_comments  # noqa: E402
 from coarse.config import load_config  # noqa: E402
 from coarse.llm import LLMClient  # noqa: E402
 from coarse.types import (  # noqa: E402
@@ -104,9 +104,10 @@ def main() -> None:
         )
 
     client = LLMClient(model=args.model, config=load_config())
-    new_overview, kept_comments, records = refute_review(
-        review.overall_feedback, list(review.detailed_comments), paper, structure, client
+    kept_comments, _verdicts, records = refute_comments(
+        list(review.detailed_comments), paper, structure, client
     )
+    new_overview = review.overall_feedback
 
     survivors: dict[tuple[str, str], str] = {}
     for c in kept_comments:

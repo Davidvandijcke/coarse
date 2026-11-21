@@ -408,15 +408,16 @@ def review_paper(
             ``None`` keeps the staged pipeline, so this is a no-op by default.
             See docs/AGENTIC_REVIEW.md for the measured trade-offs.
         refute: Add a verification stage to the staged pipeline. Every comment
-            that survives the editorial filter, and every macro-level issue, is
-            re-examined by an independent fresh-context agent with tool access
-            to the whole paper: a comment is dropped unless that agent
-            reproduces the defect, and an issue is narrowed to what the paper
-            bears out. Aimed at the measured defect of the staged path, which
-            is precision rather than coverage. Ignored when ``agent_mode`` is
-            set, since that path already refutes its own candidates. Costs one
-            agent per surviving comment and per issue. See
-            docs/AGENTIC_REVIEW.md for what it is measured to be worth.
+            that survives the editorial filter is re-examined by an independent
+            fresh-context agent with tool access to the whole paper, and is
+            dropped unless that agent reproduces the defect from the paper.
+            Comments that survive are published exactly as written: the gate
+            only ever removes. Aimed at the measured defect of the staged path,
+            which is precision rather than coverage. The macro issues are NOT
+            checked; that half was built, measured and dropped (see
+            docs/AGENTIC_REVIEW.md). Ignored when ``agent_mode`` is set, since
+            that path already refutes its own candidates. Costs one agent per
+            surviving comment.
 
     Pipeline order:
     1. Extract file → PaperText and apply the optional cost gate
@@ -820,23 +821,27 @@ def review_paper(
     progress.complete("editorial", "Completed editorial filter", client.cost_usd)
 
     if refute:
-        from coarse.agent.refutation import refute_review
+        from coarse.agent.refutation import refute_comments
 
-        progress.start("refutation", "Re-checking the review independently", client.cost_usd)
-        # Both halves are checked: refuting comments alone left the macro
-        # issues well behind, so that is where the surviving false criticism
-        # sat. See docs/AGENTIC_REVIEW.md for what the gate is measured to be
-        # worth, and for the caveat that its apparent gain shrinks sharply
-        # when hedged rewrites are scored as hedges.
-        overview, filtered_comments, _refute_records = refute_review(
-            overview,
-            filtered_comments,
-            paper_text.full_markdown,
-            structure,
-            client,
-            language=directive_name,
-        )
-        progress.complete("refutation", "Re-checked the review", client.cost_usd)
+        progress.start("refutation", "Re-checking comments independently", client.cost_usd)
+        before = len(filtered_comments)
+        try:
+            filtered_comments, _verdicts, refute_records = refute_comments(
+                filtered_comments,
+                paper_text.full_markdown,
+                structure,
+                client,
+                language=directive_name,
+            )
+            logger.info(
+                "refutation: %d of %d comment(s) independently reproduced across %d agent(s)",
+                len(filtered_comments),
+                before,
+                len(refute_records),
+            )
+        except Exception:
+            logger.warning("refutation failed; keeping the unverified comments", exc_info=True)
+        progress.complete("refutation", "Re-checked comments", client.cost_usd)
 
     # Programmatic quote verification against full paper text
     progress.start("quote_verification", "Verifying quotes", client.cost_usd)
