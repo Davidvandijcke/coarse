@@ -197,126 +197,141 @@ section-truncation fix carries the gain on its own.
 
 Two papers, one model (`anthropic/claude-opus-5.5` via OpenRouter), one
 extraction per paper shared by every arm, top-20 comment normalization. Recall
-is scored against the atomized reference findings. Precision is scored by
-adjudicating every claim a review makes — detailed comments and macro issues
-alike — against the paper itself, by a judge from a different model family
+is scored against the atomized reference findings. Precision adjudicates every
+claim a review makes — detailed comments and macro issues alike — against the
+paper itself, by a judge from a different model family
 (`openai/gpt-5.6-terra-pro`) so no model grades its own prose.
 
-`psi` is the paper the diagnosis was done on. `coset_codes` is held out: see
-the leakage caveat below, which is the reason it exists.
+`psi` is the paper the diagnosis was done on. `coset_codes` is held out; see the
+leakage caveat, which is the reason it exists.
 
 ### psi (16 reference findings)
 
-| arm | comments | issues | recall | precision | unsupported | cost | time |
-|---|---|---|---|---|---|---|---|
-| pipeline, before the section fix | 21 | 11 | 56% | 52% | 15 of 32 | n/a | 442s |
-| pipeline, after the section fix | 25 | 11 | **69%** | 68% | 10 of 36 | n/a | 504s |
-| baseline, one full-paper prompt | 14 | 5 | 56% | 95% | 1 of 19 | $0.65 | 166s |
-| single agent with tools | 6 | 4 | 25% | **100%** | 0 of 10 | $1.05 | 492s |
-| swarm, structural targets | 7 | 4 | 19% | **100%** | 0 of 11 | $2.09 | 547s |
-| swarm, structural targets | 6 | 5 | 31% | **100%** | 0 of 11 | $3.38 | 772s |
-| swarm, planner working | 9 | 4 | 44% | **100%** | 0 of 13 | $2.98 | 814s |
+| arm | comments | issues | recall | precision | of which comments | unsupported | cost | time |
+|---|---|---|---|---|---|---|---|---|
+| pipeline, before the section fix | 21 | 11 | 56% | 52% | 60% | 15 of 32 | n/a | 442s |
+| pipeline, after the section fix | 25 | 11 | **69%** | 68% | 70% | 10 of 36 | n/a | 504s |
+| pipeline + `--refute` | 16 | 12 | 56% | 79% | **94%** | 6 of 28 | n/a | 567s |
+| baseline, one full-paper prompt | 14 | 5 | 56% | 95% | 93% | 1 of 19 | $0.65 | 166s |
+| single agent with tools | 6 | 4 | 25% | 100% | 100% | 0 of 10 | $1.05 | 492s |
+| swarm, structural targets | 7 | 4 | 19% | 100% | 100% | 0 of 11 | $2.09 | 547s |
+| swarm, structural targets | 6 | 5 | 31% | 100% | 100% | 0 of 11 | $3.38 | 772s |
+| swarm, planner working | 9 | 4 | 44% | 100% | 100% | 0 of 13 | $2.98 | 814s |
+| sweep | 7 | 4 | 25% | 100% | 100% | 0 of 11 | $5.09 | 949s |
 
 ### coset_codes, held out (25 reference findings)
 
-| arm | comments | issues | recall | precision | unsupported | cost | time |
-|---|---|---|---|---|---|---|---|
-| pipeline | 19 | 12 | **40%** | 48% | 16 of 31 | n/a | 546s |
-| baseline, one full-paper prompt | 20 | 6 | 20% | 96% | 1 of 26 | $1.06 | 290s |
-| swarm, structural targets | 3 | 3 | 8% | 83% | 1 of 6 | $2.06 | 731s |
+| arm | comments | issues | recall | precision | of which comments | unsupported | cost | time |
+|---|---|---|---|---|---|---|---|---|
+| pipeline | 19 | 12 | **40%** | 48% | 58% | 16 of 31 | n/a | 546s |
+| pipeline + `--refute` | 14 | 11 | 32% | 72% | **100%** | 7 of 25 | n/a | 592s |
+| baseline, one full-paper prompt | 20 | 6 | 20% | 96% | 100% | 1 of 26 | $1.06 | 290s |
+| swarm, structural targets | 3 | 3 | 8% | 83% | 100% | 1 of 6 | $2.06 | 731s |
+| sweep | 12 | 5 | 12% | 94% | 92% | 1 of 17 | $3.93 | 738s |
+
+### A second, stronger adjudication
+
+The judge above answers from one prompt holding the whole paper, and it never
+returned "unclear" on roughly 170 claims, which is not credible calibration. It
+is also being asked to do what the harness exists to do — look a definition up,
+re-derive a step, check whether an objection is answered elsewhere — without the
+means. `evals/adjudicate.py` re-runs the audit with a judge that has the same
+workspace and tools the agents get.
+
+It is **more lenient** than the single-prompt judge, so the single-prompt
+precision figures above are too harsh:
+
+| run | single-prompt judge | tool-using judge |
+|---|---|---|
+| `coset_codes` pipeline (same 16 claims) | 48% | 69% |
+| `psi` swarm, planner working (13 claims) | 100% | 92% |
+
+The direction survives and the gap narrows. What the stronger judge establishes
+much more firmly is the *mechanism*: of the six unsupported claims it found
+across both runs, **five are objections the paper answers elsewhere**, and it
+names the location each time — "answered in Section 8.2", "answered in Section
+II.E, immediately following the redundancy definition", "answered in Section
+I-B". Even the agent arm's single failure is of that kind.
 
 ## What the numbers say
 
-**The section truncation was real and fixing it helped.** On `psi`, reviewing
-the appendices took recall from 56% to 69% and precision from 52% to 68%. This
-is the cheapest change in this branch and it needs no agents.
+**The section truncation was real and fixing it helped.** Reviewing the
+appendices took `psi` recall from 56% to 69% and precision from 52% to 68%. This
+is the cheapest change here and it needs no agents.
 
-**The staged pipeline's dominant defect is precision, not coverage.** It is the
-coverage leader on both papers, and on both roughly half of what it asserts is
-not supported by the paper: 15 of 32 claims on `psi` before the fix, 16 of 31
-on `coset_codes`. For a referee report that is the expensive error. It is also
-what a reader notices: a review with ten confident wrong criticisms reads as
-unreliable however much else it got right.
+**The staged pipeline's defect is precision, not coverage.** It is the coverage
+leader on both papers and also asserts the most claims the paper does not
+support. The failure has one cause, now confirmed by a judge that checked: the
+objection is answered in a part of the paper a section agent cannot see.
 
-**That failure has one specific cause.** Every unsupported comment examined in
-detail objects to something the paper answers somewhere else. The adjudicator
-names the location each time: "the paper's actual stable algorithms (Algorithms
-2 and 3) explicitly add Laplace noise", "its finite-sample Gaussian
-instantiation is instead Corollary 2", "the paper already explicitly states in
-Section 6", "the immediately following sentence expressly acknowledges". A
-section agent sees one section and cannot check whether the objection is
-resolved elsewhere, so it reports it. This is a context failure, not a
-reasoning failure.
+**Independent refutation fixes it at the point it matters.** Adding `--refute`
+to the staged pipeline took detailed-comment precision from 58% to 100% on the
+held-out paper and from 70% to 94% on the other, dropping three and four
+comments respectively. The refuter's reasons are the right ones: "I read the
+passage in §8.1. The sentence is conditional", "the paper does make the
+full-rank assumption only for the selected model".
 
-**Whole-paper retrieval with independent refutation removes it.** Across five
-agent runs on two papers, 51 adjudicated claims produced two unsupported ones.
-Four of the five runs produced none at all. The two capabilities that
-distinguish those runs are exactly the ones a section prompt lacks: the agent
-can look anywhere in the paper, and every finding must be reproduced from the
-paper by a second agent that never saw how the first one reached it.
+**The precision still missing is entirely in the macro issues.** After
+refutation, detailed-comment precision is 94% and 100% while macro-issue
+precision is 58% and 36%. The stage only refutes detailed comments. Extending
+it to the overall feedback is the obvious next change, and the measurement says
+it is where the remaining false criticism lives.
 
-**The agent arms as built badly under-cover.** Three to nine comments against
-references holding 16 and 25 findings. The planner mattered a great deal: with
-it working, `psi` swarm recall went from 19% and 31% to 44%, at unchanged
-precision. Even so the swarm is below a single well-prompted full-paper call,
-and the one held-out swarm run reached 8%.
+**The agent-only arms under-cover.** Three to twelve comments against references
+holding 16 and 25 findings. The planner mattered: with it working, `psi` swarm
+recall went from 19% and 31% to 44% at unchanged precision. Sweep did not fix
+coverage — it emitted more comments on the held-out paper (12) but matched fewer
+reference findings (12%), finding real but different things. No agent-only arm
+beat a single well-prompted full-paper call.
 
-**The two agent capabilities are complementary, not competing.** The agent arms
-reached two `psi` findings nothing else reached — a one-sided premise in a
-composition lemma, and a curvature bound off by a factor of two — both requiring
-a proof to be compared against a lemma it invokes and the algebra to be carried
-out. The baseline reached four the agents missed, all breadth. Neither replaces
-the other.
+**The two capabilities are complementary.** The agent arms reached two `psi`
+findings nothing else reached — a one-sided premise in a composition lemma, and
+a curvature bound off by a factor of two — both needing a proof compared against
+a lemma it invokes plus the algebra carried out. A plain prompt reached four
+breadth findings the agents missed.
 
 ## Recommendation
 
 Do not replace the staged pipeline with the swarm. The measurement does not
-support it: the pipeline has the coverage and the swarm has the precision.
+support it.
 
-Ship, in this order:
-
-1. **The section-selection fix.** Measured gain, no agents, no added cost.
-2. **`--refute`**: keep the staged pipeline as the generator and put every
-   comment it produces through the fresh-context refuter before reporting it.
-   This targets the measured defect directly and reuses the pipeline's
-   coverage. It costs one agent call per surviving comment.
-3. **`--agent swarm` as an opt-in deep mode** for theory papers, where the
-   appendix findings it reaches are worth the coverage it gives up.
-
-The swarm's recall is the open problem. The planner fix roughly doubled it and
-the sweep mode is the next attempt; neither has been shown to reach the
-baseline.
+1. **Ship the section-selection fix.** Measured gain, no agents, no added cost.
+2. **Ship `--refute`.** It targets the measured defect and keeps the pipeline's
+   coverage, at one agent call per surviving comment.
+3. **Extend refutation to the macro issues.** All the remaining unsupported
+   claims are there. Small change, and the evidence for it is in the table.
+4. **Keep `--agent swarm` as an opt-in deep mode** for theory papers, where the
+   appendix findings it reaches are worth the coverage it gives up. Its recall
+   is the open problem.
 
 ## Caveats
 
-These matter for how much weight the table carries.
-
 - **The role prompts were written after reading the `psi` reference review, and
-  name the patterns that review found.** The planner's list of gaps to target
-  maps onto specific reference findings: a general parameter whose proof fixes
-  one value, a quantity estimated in one place and fixed in another, an error
-  budget against its total, a bound controlling one coordinate where a maximum
-  is needed. `psi` swarm recall is therefore in-sample and cannot support a
-  quality claim on its own. `coset_codes` is the held-out measurement; the
-  prompts were not revised after seeing it. Precision is unaffected, since it
-  is adjudicated against the paper rather than against a reference.
+  name the patterns that review found** (a general parameter whose proof fixes
+  one value; a quantity estimated in one place and fixed in another; an error
+  budget against its total; a bound controlling one coordinate where a maximum
+  is needed). `psi` swarm recall is therefore in-sample. `coset_codes` is the
+  held-out measurement and the prompts were not revised after seeing it.
+  Precision is unaffected, being adjudicated against the paper.
 - **Mostly one run per cell.** The three `psi` swarm runs span 19% to 44%
   recall, so single-run differences of that size are not evidence.
-- **The judge is one model with no tools.** It returned no "unclear" verdict on
-  roughly 170 adjudicated claims, including appendix mathematics, which is not
-  credible calibration. Read the precision column as a strong signal of
-  direction, not as a rate. A blind sample should be checked by hand before any
-  public claim.
+- **Both judges abstain too rarely.** Neither returned "unclear" on any claim.
+  Read precision as direction, not as a rate, and hand-check a blind sample
+  before any public claim.
+- **The refutation gate rarely fires on agent-generated findings** (11 of 11 and
+  6 of 6 confirmed). So the agent arms' precision is attributable to
+  investigator conservatism plus whole-paper access, and the gate's independent
+  contribution is only visible where its input is known to be unreliable — which
+  is the `pipeline_refuted` arm, where it fires and works.
 - **The two references are not the same kind of document.** The `coset_codes`
-  reference is an older generation and many of its items are reading
-  difficulties rather than defects ("at first the statement made me think..."),
-  which suits a breadth-first arm and penalises one held to demonstration.
-- **The `pipeline` arm's cost is not recorded**: it builds its own client
-  internally, so the harness cannot see its spend. The judge's cost also reads
-  as zero because litellm has no pricing entry for the judge model.
-- **No hosted path.** Agent mode runs in-process against any model API, so it
-  works for BYOK, but it has not been wired into the Modal worker or the web
-  layer. The host-CLI backend is unusable on this machine until `claude login`
-  is re-run; its OAuth session has expired.
+  reference is an older generation and many items are reading difficulties
+  rather than defects, which suits a breadth-first arm over one held to
+  demonstration.
+- **The `pipeline` arms' cost is not recorded**: they build their own client
+  internally. The judge's cost reads as zero because litellm has no pricing
+  entry for the judge model.
+- **No hosted path.** Agent mode runs in-process against any model API so it
+  works for BYOK, but it is not wired into the Modal worker or the web layer.
+  The host-CLI backend is unusable until `claude login` is re-run.
 - **The sandbox bounds resources and network, not the filesystem.** A real
   filesystem jail needs OS-level isolation and is not implemented.

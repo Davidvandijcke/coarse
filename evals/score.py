@@ -322,3 +322,173 @@ def score_run(
         "precision": precision,
         "judge_cost_usd": round(client.cost_usd, 4),
     }
+
+
+# ---------------------------------------------------------------------------
+# Tool-using adjudication
+# ---------------------------------------------------------------------------
+#
+# The single-call judge above reads the whole paper in one prompt and answers
+# from it. On the first run it returned no "unclear" verdict on roughly 170
+# claims, including appendix mathematics, which is not credible calibration: a
+# judge that never abstains is not measuring its own uncertainty. It is also
+# being asked to do the thing the harness under test exists to do — look up a
+# definition, re-derive a step, check whether an objection is answered
+# elsewhere — with none of the means to do it.
+#
+# This variant gives the judge the same workspace and tools the agents get. It
+# is slower and dearer per claim, so it is opt-in and intended for a sample
+# rather than every run.
+
+
+class _AdjudicationVerdict(BaseModel):
+    """Tool-using adjudicator's verdict on one claim."""
+
+    verdict: Literal["supported", "unsupported", "unclear"] = Field(
+        description=(
+            "supported: the paper has this defect and the claim describes it "
+            "accurately. unsupported: the paper does not have it, the claim misreads "
+            "the paper, or the paper resolves the objection elsewhere. unclear: you "
+            "could not settle it with the paper and the tools available."
+        )
+    )
+    answered_elsewhere: bool = Field(
+        default=False,
+        description=(
+            "True only when the claim is unsupported BECAUSE the paper addresses the "
+            "objection in another section, a remark, a footnote or an appendix. This "
+            "is the specific failure the harness change targets, so it is recorded "
+            "separately."
+        ),
+    )
+    where: str = Field(
+        default="",
+        description="If answered_elsewhere, the location that answers it.",
+    )
+    substantive: bool = Field(default=True)
+    reasoning: str = Field(description="How the verdict was reached, citing the paper.")
+
+
+_ADJUDICATOR_SYSTEM = """\
+You audit one criticism from a referee report against the paper it is about. You \
+are an expert in mathematics and statistics, and your job is to catch confident \
+but wrong criticism.
+
+You have tools: search and read any part of the paper, and run Python. Use them. \
+Do not answer from an impression of the paper.
+
+Work in this order:
+
+1. Find the passage the criticism is about and read it with enough surrounding \
+text to see what it assumes and what it is used for.
+2. Look for the reason the criticism is wrong. Does the paper define the object \
+elsewhere in a way that makes the step valid? Does it address this in a remark, \
+a footnote, a later section or an appendix? Does an earlier condition already \
+rule out the case the criticism relies on? Search for it. This is the commonest \
+way a referee report goes wrong, so check it before anything else.
+3. If you find no such reason, try to reproduce the defect yourself: re-derive \
+the step, run the computation, construct the counterexample.
+
+Return "unclear" when you genuinely cannot settle it. A judge that never \
+abstains is not measuring anything. Do not resolve uncertainty upward in either \
+direction.
+"""
+
+
+def score_precision_with_tools(
+    review: Review,
+    paper_markdown: str,
+    structure,
+    client: LLMClient,
+    *,
+    top_k: int = DEFAULT_TOP_K,
+    max_parallel: int = 4,
+    limit: int | None = None,
+) -> dict:
+    """Adjudicate a review's claims with a judge that can read and compute.
+
+    ``limit`` caps how many claims are adjudicated, for sampling.
+    """
+    from concurrent.futures import as_completed
+
+    from coarse.agent.runner import run_agent
+    from coarse.agent.tools import ToolBox
+    from coarse.agent.workspace import ReviewWorkspace
+
+    claims = review_claims(review, top_k)
+    if limit is not None:
+        claims = claims[:limit]
+    if not claims:
+        return {"n_claims": 0, "precision": None, "detail": []}
+
+    workspace = ReviewWorkspace.create(paper_markdown, structure)
+    try:
+
+        def judge(claim) -> dict:
+            toolbox = ToolBox(workspace=workspace, allow_write=False, max_calls=20)
+            quote_block = f"Quote from the paper:\n{claim.quote}\n\n" if claim.quote else ""
+            result = run_agent(
+                client,
+                role="adjudicator",
+                agent_id=f"adj-{claim.number}",
+                system=_ADJUDICATOR_SYSTEM,
+                task=(
+                    f"Audit this criticism of the paper.\n\n"
+                    f"Title: {claim.title}\n"
+                    f"Stated severity: {claim.severity}\n"
+                    f"{quote_block}"
+                    f"The criticism:\n{claim.feedback}"
+                ),
+                toolbox=toolbox,
+                submit_model=_AdjudicationVerdict,
+                submit_description="Submit your verdict on this one criticism.",
+                max_turns=14,
+                max_tokens=6144,
+            )
+            out = result.result
+            if out is None:
+                return {
+                    "number": claim.number,
+                    "kind": claim.kind,
+                    "verdict": "error",
+                    "error": result.record.error,
+                }
+            return {
+                "number": claim.number,
+                "kind": claim.kind,
+                "title": claim.title,
+                "severity": claim.severity,
+                "verdict": out.verdict,
+                "answered_elsewhere": out.answered_elsewhere,
+                "where": out.where,
+                "substantive": out.substantive,
+                "reasoning": out.reasoning,
+                "tool_calls": result.record.tool_calls,
+            }
+
+        results: list[dict] = []
+        with ThreadPoolExecutor(max_workers=max_parallel) as pool:
+            futures = [pool.submit(judge, c) for c in claims]
+            for fut in as_completed(futures):
+                try:
+                    results.append(fut.result())
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("tool adjudicator failed: %s", exc)
+    finally:
+        workspace.cleanup()
+
+    scored = [r for r in results if r.get("verdict") in {"supported", "unsupported", "unclear"}]
+    supported = [r for r in scored if r["verdict"] == "supported"]
+    unsupported = [r for r in scored if r["verdict"] == "unsupported"]
+    elsewhere = [r for r in unsupported if r.get("answered_elsewhere")]
+    return {
+        "judge": "tool_using",
+        "n_claims": len(claims),
+        "n_scored": len(scored),
+        "n_supported": len(supported),
+        "n_unsupported": len(unsupported),
+        "n_unclear": len(scored) - len(supported) - len(unsupported),
+        "n_unsupported_because_answered_elsewhere": len(elsewhere),
+        "precision": len(supported) / len(scored) if scored else None,
+        "detail": sorted(results, key=lambda r: r.get("number", 0)),
+    }
