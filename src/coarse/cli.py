@@ -232,6 +232,16 @@ def review(
     cheap: bool = typer.Option(False, "--cheap", help="Use cheapest available model"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation prompt"),
     no_qa: bool = typer.Option(False, "--no-qa", help="Skip post-extraction quality check"),
+    refute: bool = typer.Option(
+        False,
+        "--refute",
+        help=(
+            "Experimental: re-check every comment independently before reporting it. "
+            "Each surviving comment goes to a fresh reviewer with tool access to the "
+            "whole paper, and is dropped unless that reviewer reproduces the problem. "
+            "Aimed at false criticism rather than coverage; adds one call per comment."
+        ),
+    ),
     agent: Optional[str] = typer.Option(
         None,
         "--agent",
@@ -347,6 +357,8 @@ def review(
         }
         if agent:
             review_kwargs["agent_mode"] = agent
+        if refute:
+            review_kwargs["refute"] = True
         if deep_literature_search:
             # Preserve the exact legacy call shape while the option is off;
             # third-party wrappers may still mirror the older signature.

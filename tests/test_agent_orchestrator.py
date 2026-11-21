@@ -527,3 +527,99 @@ def test_sweep_mode_refutes_its_candidates(tmp_path):
     assert manifest["candidate_findings"] == 2 * n_targets
     assert manifest["confirmed_findings"] == n_targets
     assert sorted(manifest["verdicts"].values()) == sorted(["confirmed", "refuted"] * n_targets)
+
+
+def _pipeline_comment(number, title, quote):
+    from coarse.types import DetailedComment
+
+    return DetailedComment(
+        number=number, title=title, quote=quote, feedback=f"{title}: this step fails."
+    )
+
+
+def test_refute_comments_drops_what_is_not_reproduced(tmp_path):
+    """The gate applied to the staged pipeline's own output.
+
+    Generation and verification measured as complements rather than
+    substitutes: the staged pipeline had the best coverage and the most
+    unsupported claims, so its comments are worth verifying rather than
+    replacing.
+    """
+    from coarse.agent.orchestrator import refute_comments
+
+    client = RoleFakeClient(verdicts={"f1": "confirmed", "f2": "refuted"})
+    kept, verdicts, records = refute_comments(
+        [
+            _pipeline_comment(1, "Sign error", QUOTE_A),
+            _pipeline_comment(2, "Curvature factor", QUOTE_B),
+        ],
+        _paper(),
+        _structure(),
+        client,
+        max_parallel=1,
+        workspace_root=str(tmp_path / "rw"),
+    )
+    assert [c.title for c in kept] == ["Sign error"]
+    assert len(verdicts) == 2
+    assert len(records) == 2
+    assert kept[0].confidence == "high"
+
+
+def test_refute_comments_applies_a_corrected_claim(tmp_path):
+    from coarse.agent.orchestrator import refute_comments
+
+    class Corrects(RoleFakeClient):
+        def complete_with_tools(self, messages, tools, **kwargs):
+            if "check a single criticism" in str(messages[0].get("content", "")):
+                return _submit(
+                    {
+                        "finding_id": "x",
+                        "verdict": "confirmed",
+                        "reasoning": "Real, but narrower than claimed.",
+                        "corrected_claim": "The constant is off by two, not the rate.",
+                        "severity_after_review": "minor",
+                    }
+                )
+            return super().complete_with_tools(messages, tools, **kwargs)
+
+    kept, _v, _r = refute_comments(
+        [_pipeline_comment(1, "Sign error", QUOTE_A)],
+        _paper(),
+        _structure(),
+        Corrects(verdicts={}),
+        max_parallel=1,
+        workspace_root=str(tmp_path / "rw2"),
+    )
+    assert kept[0].feedback == "The constant is off by two, not the rate."
+    assert kept[0].severity == "minor"
+
+
+def test_refute_comments_keeps_a_comment_whose_check_could_not_run(tmp_path):
+    """An infrastructure failure must not silently delete a finding."""
+    from coarse.agent.orchestrator import refute_comments
+
+    class Broken(RoleFakeClient):
+        def complete_with_tools(self, messages, tools, **kwargs):
+            if "check a single criticism" in str(messages[0].get("content", "")):
+                raise RuntimeError("provider down")
+            return super().complete_with_tools(messages, tools, **kwargs)
+
+    kept, verdicts, _r = refute_comments(
+        [_pipeline_comment(1, "Sign error", QUOTE_A)],
+        _paper(),
+        _structure(),
+        Broken(verdicts={}),
+        max_parallel=1,
+        workspace_root=str(tmp_path / "rw3"),
+    )
+    assert [c.title for c in kept] == ["Sign error"]
+    assert verdicts == []
+
+
+def test_refute_comments_on_an_empty_list_is_a_noop(tmp_path):
+    from coarse.agent.orchestrator import refute_comments
+
+    kept, verdicts, records = refute_comments(
+        [], _paper(), _structure(), RoleFakeClient(verdicts={})
+    )
+    assert (kept, verdicts, records) == ([], [], [])

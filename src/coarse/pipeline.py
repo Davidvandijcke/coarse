@@ -357,6 +357,7 @@ def review_paper(
     *,
     runtime: ReviewRuntime | None = None,
     agent_mode: str | None = None,
+    refute: bool = False,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
@@ -406,6 +407,14 @@ def review_paper(
             independent fresh-context refuter before it reaches the report.
             ``None`` keeps the staged pipeline, so this is a no-op by default.
             See docs/AGENTIC_REVIEW.md for the measured trade-offs.
+        refute: Add a verification stage to the staged pipeline: every comment
+            that survives the editorial filter is re-established by an
+            independent fresh-context agent with tool access to the whole
+            paper, and dropped unless that agent reproduces the defect. Aimed
+            at the measured defect of the staged path, which is precision
+            rather than coverage. Ignored when ``agent_mode`` is set, since
+            that path already refutes its own candidates. Costs one agent per
+            surviving comment.
 
     Pipeline order:
     1. Extract file → PaperText and apply the optional cost gate
@@ -807,6 +816,30 @@ def review_paper(
         language=directive_name,
     )
     progress.complete("editorial", "Completed editorial filter", client.cost_usd)
+
+    if refute:
+        from coarse.agent.orchestrator import refute_comments
+
+        progress.start("refutation", "Re-checking comments independently", client.cost_usd)
+        before = len(filtered_comments)
+        try:
+            filtered_comments, _verdicts, refute_records = refute_comments(
+                filtered_comments,
+                paper_text.full_markdown,
+                structure,
+                client,
+            )
+            logger.info(
+                "refutation stage: %d of %d comment(s) independently reproduced across %d agent(s)",
+                len(filtered_comments),
+                before,
+                len(refute_records),
+            )
+        except Exception:
+            logger.warning(
+                "refutation stage failed; keeping the unverified comments", exc_info=True
+            )
+        progress.complete("refutation", "Re-checked comments", client.cost_usd)
 
     # Programmatic quote verification against full paper text
     progress.start("quote_verification", "Verifying quotes", client.cost_usd)

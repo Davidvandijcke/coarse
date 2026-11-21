@@ -118,7 +118,7 @@ def run_baseline(markdown: str, structure: PaperStructure, client: LLMClient) ->
     )
 
 
-def run_pipeline(paper_dir: Path, model: str) -> Review:
+def run_pipeline(paper_dir: Path, model: str, *, refute: bool = False) -> Review:
     """The current pipeline, fed the same extracted markdown as every other arm."""
     from coarse.pipeline import review_paper
 
@@ -126,6 +126,7 @@ def run_pipeline(paper_dir: Path, model: str) -> Review:
         paper_dir / "paper.md",
         model=model,
         skip_cost_gate=True,
+        refute=refute,
     )
     return review
 
@@ -160,7 +161,14 @@ def main() -> None:
     ap.add_argument(
         "--arm",
         required=True,
-        choices=["baseline", "pipeline", "agent_single", "agent_swarm", "agent_sweep"],
+        choices=[
+            "baseline",
+            "pipeline",
+            "pipeline_refuted",
+            "agent_single",
+            "agent_swarm",
+            "agent_sweep",
+        ],
     )
     ap.add_argument("--model", default="openrouter/anthropic/claude-opus-5.5")
     ap.add_argument("--run", type=int, default=1)
@@ -181,8 +189,8 @@ def main() -> None:
 
     if args.arm == "baseline":
         review = run_baseline(markdown, structure, client)
-    elif args.arm == "pipeline":
-        review = run_pipeline(args.paper, args.model)
+    elif args.arm in {"pipeline", "pipeline_refuted"}:
+        review = run_pipeline(args.paper, args.model, refute=args.arm == "pipeline_refuted")
     else:
         mode = {"agent_single": "single", "agent_sweep": "sweep"}.get(args.arm, "swarm")
         review, records, workspace = run_agent(
