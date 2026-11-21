@@ -331,6 +331,57 @@ to weigh. An issue is narrowed only by deleting verbatim spans the refuter
 names, so every surviving word is the reviewer's own; a span that does not
 occur in the body removes nothing, and naming every span drops the issue.
 
+### The cross-reference round: tested and failed
+
+The swarm's deficiency is coverage, and its investigators work in isolation, so
+the obvious thing to try is letting them see each other's findings. `rounds=2`
+writes a digest of every candidate finding to the workspace and re-runs each
+investigator with it, asking what those leads imply for its own part of the
+paper. The digest carries no reasoning or computation, the brief forbids
+repeating or relying on an entry, and everything the round produces still
+passes the independent refuter.
+
+Decision rule, fixed before the numbers were seen: **recall must rise outside
+the baseline range and precision must not fall.**
+
+`psi`, one run each on identical code:
+
+| arm | comments | issues | recall | precision | unsupported | cost |
+|---|---|---|---|---|---|---|
+| swarm | 4 | 4 | 5/16 | 100% | 0 | $2.47 |
+| swarm + cross-reference | 11 | 4 | 5/16 | **87%** | **2** | $3.75 |
+
+It fails both conditions. Recall is identical, and the matched sets differ by a
+swap rather than a gain: the cross-reference round picked up D5 (Lemma 5's step
+sizes) which the baseline missed, and lost O4a. Precision fell from 100%, which
+every one of four baseline swarm runs had achieved, to 87%. Output volume
+nearly tripled, 4 comments to 11, for no new coverage.
+
+The mechanism itself works. Three of the eight candidate findings came from the
+second round, and two of those are real: the curvature constant understated by
+a factor of two, and Lemma 5 stated for arbitrary step sizes — reference
+findings D6 and D5. So agents cross-referencing each other does find things.
+
+What sank it is the other three. The round-1 finding "with estimated sigma-hat
+the LASSO oracle still depends on the data" went onto the board and came back
+written up twice, once as a detailed comment and once as a macro issue, and the
+adjudicator rejects both: the scores and the Laplace noise are scaled by the
+same 1/sigma-hat, so the selection is invariant to it. **The refuter confirmed
+all eight candidates.** The gate built specifically as the defence against this
+failure did not catch it.
+
+On `coset_codes` the arm went the other way (3 comments at 100% against 9 at
+83%), but that paper cannot resolve the question: its swarm recall is 1/25 and
+2/25 across runs, structurally capped because its reference is an older
+generation whose items are mostly phrased as reading difficulties that an agent
+held to demonstrate a defect will never report.
+
+Conclusion: more communication between agents bought volume and lost accuracy.
+The round is reverted. What is worth keeping from it is narrower and already
+proven elsewhere in this document: the capability that finds cross-location
+defects is a single investigator with whole-paper retrieval, not several
+investigators talking to each other.
+
 ### A second, stronger adjudication
 
 The judge above answers from one prompt holding the whole paper, and it never
