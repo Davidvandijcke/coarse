@@ -89,3 +89,50 @@ the spread, and it is the outcome I expect on four pairs.
   reported as a hedging gain and counts against the round, not for it. The
   `substantive` flag exists because an is-this-supported test alone has already
   misled this branch once.
+
+## Deviation, recorded 2026-11-23, before any scoring
+
+The four runs executed and exited 0, but **no arm A was emitted**. `run_arm.py`
+set `rounds=2` and then looked for `workspace/review_round1.json`, while
+`run_agentic_review` writes that file only when `emit_round1_review=True`,
+which the harness never passed. The save side was guarded by
+`if round1_path.is_file()`, so the pairing was skipped in silence. The
+orchestrator tests covered the flag and passed; nothing asserted that the eval
+harness sets it. The flag is now wired and a test asserts the harness produces
+the file.
+
+**Recovery: arm A is reconstructed, the runs are not repeated.** Everything
+arm A needs was written to the kept workspace before the second round began:
+
+- `findings/<id>.json` for every candidate, where a cross-reference finding
+  carries an `x` in its target id (`t06x-f1`), so the two rounds separate
+  exactly;
+- `findings/<id>.verdict.json` for every candidate, holding the full verdict
+  including the two fields the editor prompt actually reads,
+  `corrected_claim` and `severity_after_review`. Only the verdict *label* is
+  in `run.json`; the objects are on disk, which is what makes this possible.
+
+So arm A is produced by running the same `_assemble` over the round-1
+confirmed findings and their stored verdicts, in a fresh workspace built from
+the same `paper.md` and containing only those findings and no board. That is
+the same stage over frozen inputs: the planner, the first pass and the
+round-1 verdicts were all fixed before any of this was known, and no refuter
+is re-rolled. `notes/` is empty in all four runs, so arm A is not handicapped
+by starting from an empty notes directory.
+
+The reconstruction is marked `"reconstructed": true` in each arm-A
+`meta.json`.
+
+**What this costs in credibility.** Arm A's editor call happens in a later
+process than arm B's, and after the round-2 counts were visible. The counts
+were visible; no score was. The thresholds in the decision rule above are
+unchanged, both arms are scored in a single pass, and this note is committed
+before that pass runs.
+
+**Also now known, and reported rather than acted on:** the agent editor
+applies `corrected_claim` when a refuter supplies one
+(`_render_findings_for_editor`), while the pipeline gate in
+`agent/refutation.py` deliberately does not, because applying it was measured
+to be the source of that stage's apparent precision gain. That inconsistency
+is real and predates these runs. Changing it now would alter both arms
+mid-experiment, so it stays as it is and is written up as an open item.

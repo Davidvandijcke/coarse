@@ -154,6 +154,11 @@ def run_agent(
         workspace_root=str(workspace_root),
         keep_workspace=True,
         rounds=rounds,
+        # Without this a rounds=2 run emits no arm A, and the save side below
+        # is guarded by ``is_file()``, so the pairing is skipped in silence.
+        # That is what happened to the first four paired runs; see
+        # evals/PREREGISTRATION_xref.md.
+        emit_round1_review=rounds > 1,
     )
 
 
