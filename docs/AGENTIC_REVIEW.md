@@ -584,13 +584,17 @@ support it.
   needed). `psi` swarm recall is therefore in-sample. `coset_codes` is the
   held-out measurement and the prompts were not revised after seeing it.
   Precision is unaffected, being adjudicated against the paper.
-- **Mostly one run per cell.** The three `psi` swarm runs span 19% to 44%
-  recall, so single-run differences of that size are not evidence. The one
-  exception is the cross-reference A/B, which is four matched pairs, and even
-  there a pair whose second round contributed nothing still moved recall by one
-  finding.
+- **Mostly one run per cell.** Counting the round-1-only arm reconstructed for
+  the cross-reference pairs, nine `psi` swarm runs span 3 to 9 of 16 reference
+  findings. Single-run differences inside that range are not evidence, and that
+  range is wider than every between-arm gap in the tables above, most of which
+  are one run against one run. Two of those runs tie the single-prompt
+  baseline's 9 of 16, so no swarm average should be quoted either: the runs
+  differ in `max_targets` as well as in sampling.
 - **Two papers, one of them in-sample.** A third (`targeting`) was prepared and
-  never run.
+  only ever run through the pipeline. `coset_codes` is the one held-out paper,
+  and the cross-reference preregistration excluded it, so that experiment ran
+  entirely in-sample on the paper the role prompts were written against.
 - **Both judges abstain too rarely.** Neither returned "unclear" on any claim.
   Read precision as direction, not as a rate, and hand-check a blind sample
   before any public claim.
@@ -645,3 +649,34 @@ differs:
 - The goal of matching the reference reviews is not met. The best coverage
   measured here is 69% of the atomized findings on the in-sample paper and 40%
   on the held-out one.
+
+## What the next measurement already has
+
+Everything above is two papers wide, and the harness decisions were made
+against the one the role prompts were written from. The material for a wider
+measurement is already in the repository and unused:
+
+- `data/refine_examples/` holds five papers with a reference review:
+  `cortical_circuits`, `coset_codes`, `population_genetics`,
+  `targeting_interventions` and `r3d`.
+- Four of those five carry **two independent reference reviews** — refine's and
+  a second (`reference_review_stanford.md`) — and `cortical_circuits` has a
+  third from another reviewer. Only `psi`, `coset_codes` and `targeting` have
+  been atomized into `evals/references/`, and only `psi` is staged in
+  `evals/papers/`.
+
+Two independent lists per paper matter for more than sample size. The binding
+limit on the cross-reference experiment was that recall against a single fixed
+list scores a demonstrated defect absent from that list at zero. Scoring
+against the union of two reviewers relaxes that, and their intersection gives
+the quantity none of this has: how much two human referees of the same paper
+actually agree, which is the ceiling a reviewer should be measured against
+rather than 100%.
+
+The measurement rules for this already exist in issue #153 — frozen splits, no
+optimizer access to held-out labels, top-K normalization, deterministic
+matching reported separately from LLM adjudication — along with adapters for
+external benchmarks (SPOT, SPECS, ReviewBench in #269) that would supply
+papers with independently verified errors. None of the adapters are built. The
+cross-reference experiment violated the split rule by running entirely on the
+in-sample paper.
