@@ -434,6 +434,101 @@ def _fallback_report(
     )
 
 
+def _refute_all(
+    client: LLMClient,
+    workspace: ReviewWorkspace,
+    structure: PaperStructure,
+    findings: list[LedgerFinding],
+    *,
+    max_parallel: int,
+    records: list[AgentRunRecord],
+) -> tuple[dict[str, RefutationVerdict], list[LedgerFinding]]:
+    """Refute a batch of candidate findings; return verdicts and survivors."""
+    verdicts: dict[str, RefutationVerdict] = {}
+    if not findings:
+        return verdicts, []
+    with ThreadPoolExecutor(max_workers=max(1, min(max_parallel, len(findings)))) as pool:
+        futures = {pool.submit(_refute, client, workspace, structure, f): f for f in findings}
+        for fut in as_completed(futures):
+            finding = futures[fut]
+            try:
+                verdict, record = fut.result()
+            except Exception:
+                logger.warning("refuter for %s failed", finding.finding_id, exc_info=True)
+                continue
+            records.append(record)
+            if verdict is not None:
+                verdicts[verdict.finding_id] = verdict
+                workspace.write_verdict(verdict)
+    confirmed = [
+        f
+        for f in findings
+        if verdicts.get(f.finding_id) and verdicts[f.finding_id].verdict == "confirmed"
+    ]
+    logger.info(
+        "refutation: %d/%d finding(s) confirmed on independent review",
+        len(confirmed),
+        len(findings),
+    )
+    return verdicts, confirmed
+
+
+def _assemble(
+    client: LLMClient,
+    workspace: ReviewWorkspace,
+    structure: PaperStructure,
+    confirmed: list[LedgerFinding],
+    verdicts: dict[str, RefutationVerdict],
+    *,
+    author_notes: str | None,
+    language: str | None,
+    records: list[AgentRunRecord],
+) -> tuple[Review, list[str]]:
+    """Run the editor over confirmed findings and build the Review."""
+    report = _edit(
+        client,
+        workspace,
+        structure,
+        confirmed,
+        verdicts,
+        author_notes=author_notes,
+        language=language,
+        records=records,
+    )
+    if report is None:
+        logger.warning("editor failed; rendering the ledger directly")
+        report = _fallback_report(confirmed, verdicts)
+
+    issues = report.issues or [
+        OverviewIssue(
+            title="No issues confirmed",
+            body=(
+                "No candidate finding survived independent review. The paper may be "
+                "sound in the respects checked, or the review may have been too narrow."
+            ),
+        )
+    ]
+    overview = OverviewFeedback(
+        assessment=report.assessment,
+        issues=issues,
+        recommendation=report.recommendation,
+        revision_targets=report.revision_targets,
+    )
+    linked, unlinked = _link_comments_to_ledger(
+        report.detailed_comments, {f.finding_id for f in confirmed}
+    )
+    comments = [c.model_copy(update={"number": i}) for i, c in enumerate(linked, start=1)]
+    review = Review(
+        title=structure.title,
+        domain=structure.domain,
+        taxonomy=structure.taxonomy,
+        date=datetime.date.today().strftime("%m/%d/%Y"),
+        overall_feedback=overview,
+        detailed_comments=comments,
+    )
+    return review, unlinked
+
+
 def run_agentic_review(
     paper_markdown: str,
     structure: PaperStructure,
@@ -447,6 +542,7 @@ def run_agentic_review(
     workspace_root: str | None = None,
     keep_workspace: bool = False,
     rounds: int = 1,
+    emit_round1_review: bool = False,
 ) -> tuple[Review, list[AgentRunRecord], ReviewWorkspace]:
     """Run an agentic review and return the Review plus per-agent accounting.
 
@@ -456,6 +552,11 @@ def run_agentic_review(
 
     The workspace is returned so the caller can inspect the ledger; it is
     deleted on cleanup unless ``keep_workspace`` is set.
+
+    ``emit_round1_review`` additionally writes ``review_round1.json`` into the
+    workspace: the review the first pass alone would have produced, so one
+    ``rounds=2`` run yields a matched pair for the A/B in
+    ``evals/PREREGISTRATION_xref.md``. It costs one extra editor call.
 
     ``rounds=2`` adds a cross-reference round in "swarm" and "sweep" mode:
     after the first pass, a digest of every candidate finding is written to the
@@ -525,13 +626,45 @@ def run_agentic_review(
 
     logger.info("agentic review: %d candidate finding(s)", len(findings))
 
+    # --- refute round 1, then assemble arm A -----------------------------
+    #
+    # The cross-reference round is an increment on the first pass, so one run
+    # can emit both arms: the review the first pass alone would have produced,
+    # and the review with the second round's findings added. Both then share
+    # one plan, one first pass and one set of round-1 verdicts, which removes
+    # the planner variance that dominates an unpaired comparison. Round-1
+    # findings are refuted once and the verdicts are reused, so the pairing
+    # costs one extra editor call and nothing else.
+    # See evals/PREREGISTRATION_xref.md.
+    verdicts: dict[str, RefutationVerdict] = {}
+    confirmed: list[LedgerFinding] = findings
+    round1_review: Review | None = None
+    gated = mode in {"swarm", "sweep"}
+
+    if gated:
+        verdicts, confirmed = _refute_all(
+            client, workspace, structure, findings, max_parallel=max_parallel, records=records
+        )
+
+    if rounds > 1 and gated and emit_round1_review:
+        round1_review, _unlinked1 = _assemble(
+            client,
+            workspace,
+            structure,
+            confirmed,
+            verdicts,
+            author_notes=author_notes,
+            language=language,
+            records=records,
+        )
+
     # --- cross-reference round -------------------------------------------
-    if rounds > 1 and mode in {"swarm", "sweep"} and findings:
+    round2: list[LedgerFinding] = []
+    if rounds > 1 and gated and findings:
         workspace.write_board([(f.finding_id, f.title, f.location, f.claim) for f in findings])
         by_target = {
             t.target_id: [f for f in findings if f.target_id == t.target_id] for t in targets
         }
-        round2: list[LedgerFinding] = []
         with ThreadPoolExecutor(max_workers=max(1, min(max_parallel, len(targets)))) as pool:
             futures = {
                 pool.submit(
@@ -559,38 +692,14 @@ def run_agentic_review(
         logger.info("cross-reference round: %d additional candidate finding(s)", len(round2))
         findings.extend(round2)
 
-    # --- refute ----------------------------------------------------------
-    verdicts: dict[str, RefutationVerdict] = {}
-    if mode in {"swarm", "sweep"} and findings:
-        with ThreadPoolExecutor(max_workers=max(1, min(max_parallel, len(findings)))) as pool:
-            futures = {pool.submit(_refute, client, workspace, structure, f): f for f in findings}
-            for fut in as_completed(futures):
-                finding = futures[fut]
-                try:
-                    verdict, record = fut.result()
-                except Exception:
-                    logger.warning("refuter for %s failed", finding.finding_id, exc_info=True)
-                    continue
-                records.append(record)
-                if verdict is not None:
-                    verdicts[verdict.finding_id] = verdict
-                    workspace.write_verdict(verdict)
-
-        confirmed = [
-            f
-            for f in findings
-            if verdicts.get(f.finding_id, None) and verdicts[f.finding_id].verdict == "confirmed"
-        ]
-        logger.info(
-            "agentic review: %d/%d finding(s) confirmed on independent review",
-            len(confirmed),
-            len(findings),
+        verdicts2, confirmed2 = _refute_all(
+            client, workspace, structure, round2, max_parallel=max_parallel, records=records
         )
-    else:
-        confirmed = findings
+        verdicts.update(verdicts2)
+        confirmed = confirmed + confirmed2
 
     # --- edit ------------------------------------------------------------
-    report = _edit(
+    review, unlinked = _assemble(
         client,
         workspace,
         structure,
@@ -600,43 +709,20 @@ def run_agentic_review(
         language=language,
         records=records,
     )
-    if report is None:
-        logger.warning("editor failed; rendering the ledger directly")
-        report = _fallback_report(confirmed, verdicts)
 
-    issues = report.issues or [
-        OverviewIssue(
-            title="No issues confirmed",
-            body=(
-                "No candidate finding survived independent review. The paper may be "
-                "sound in the respects checked, or the review may have been too narrow."
-            ),
+    if round1_review is not None:
+        (workspace.root / "review_round1.json").write_text(
+            round1_review.model_dump_json(indent=1), encoding="utf-8"
         )
-    ]
-    overview = OverviewFeedback(
-        assessment=report.assessment,
-        issues=issues,
-        recommendation=report.recommendation,
-        revision_targets=report.revision_targets,
-    )
-    linked, unlinked = _link_comments_to_ledger(
-        report.detailed_comments, {f.finding_id for f in confirmed}
-    )
-    comments = [c.model_copy(update={"number": i}) for i, c in enumerate(linked, start=1)]
-    review = Review(
-        title=structure.title,
-        domain=structure.domain,
-        taxonomy=structure.taxonomy,
-        date=datetime.date.today().strftime("%m/%d/%Y"),
-        overall_feedback=overview,
-        detailed_comments=comments,
-    )
+
     workspace.dump_manifest(
         {
             "mode": mode,
             "model": client.model,
             "targets": [t.model_dump() for t in targets],
             "rounds": rounds,
+            "round2_candidate_findings": len(round2),
+            "paired_round1_review": round1_review is not None,
             "candidate_findings": len(findings),
             "confirmed_findings": len(confirmed),
             "verdicts": {k: v.verdict for k, v in verdicts.items()},

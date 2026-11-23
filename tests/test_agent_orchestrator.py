@@ -13,7 +13,7 @@ import json
 import pytest
 
 from coarse.agent.orchestrator import extract_labels, run_agentic_review
-from coarse.types import PaperStructure, SectionInfo, SectionType
+from coarse.types import PaperStructure, Review, SectionInfo, SectionType
 
 QUOTE_A = "The displayed gradient has the opposite sign from the derivative."
 QUOTE_B = "The curvature bound is half the exact curvature under these definitions."
@@ -593,3 +593,49 @@ def test_the_board_is_readable_through_note_read(tmp_path):
     assert "Sign error" in box.dispatch("note_read", {"name": "board.md"})
     assert "board.md" in box.dispatch("note_list", {})
     ws.cleanup()
+
+
+def test_emit_round1_review_writes_a_matched_pair(tmp_path):
+    """One rounds=2 run yields both arms of the A/B.
+
+    The cross-reference round is an increment on the first pass, so emitting
+    the round-1-only review alongside the full one makes every run a matched
+    pair: same plan, same first pass, same round-1 verdicts, differing only by
+    what the second round added. See evals/PREREGISTRATION_xref.md.
+    """
+    client = RoleFakeClient(verdicts={"f1": "confirmed", "f2": "confirmed"})
+    review, _records, ws = _run(client, tmp_path, rounds=2, emit_round1_review=True)
+
+    round1_path = ws.root / "review_round1.json"
+    assert round1_path.is_file()
+    round1 = Review.model_validate_json(round1_path.read_text())
+
+    manifest = json.loads((ws.root / "run.json").read_text())
+    assert manifest["paired_round1_review"] is True
+    assert manifest["round2_candidate_findings"] > 0
+    # Arm B saw the round-2 findings; arm A did not.
+    assert manifest["candidate_findings"] > manifest["round2_candidate_findings"]
+    assert isinstance(review, Review)
+    assert isinstance(round1, Review)
+
+
+def test_round1_findings_are_refuted_once_across_both_arms(tmp_path):
+    """Pairing must not double the refutation cost or re-roll its verdicts."""
+    client = RoleFakeClient(verdicts={"f1": "confirmed", "f2": "confirmed"})
+    _review, records, ws = _run(client, tmp_path, rounds=2, emit_round1_review=True)
+
+    manifest = json.loads((ws.root / "run.json").read_text())
+    refuters = [r for r in records if r.role == "refuter"]
+    assert len(refuters) == manifest["candidate_findings"], (
+        "one refuter per candidate finding, not one per candidate per arm"
+    )
+    editors = [r for r in records if r.role == "editor"]
+    assert len(editors) == 2, "one editor call per arm"
+
+
+def test_emit_round1_review_is_off_by_default(tmp_path):
+    client = RoleFakeClient(verdicts={"f1": "confirmed", "f2": "confirmed"})
+    _review, _records, ws = _run(client, tmp_path, rounds=2)
+    assert not (ws.root / "review_round1.json").exists()
+    manifest = json.loads((ws.root / "run.json").read_text())
+    assert manifest["paired_round1_review"] is False

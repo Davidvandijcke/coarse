@@ -169,6 +169,7 @@ def main() -> None:
             "pipeline_refuted",
             "agent_single",
             "agent_swarm",
+            "agent_swarm_r1",
             "agent_swarm_xref",
             "agent_sweep",
         ],
@@ -228,6 +229,38 @@ def main() -> None:
         "agents": [r.model_dump() for r in records],
     }
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
+
+    # A rounds=2 run also emits the round-1-only review. Save it as its own run
+    # so the two arms are scored identically; they share a plan, a first pass
+    # and a set of round-1 verdicts, so the pair is matched on everything but
+    # the second round. See evals/PREREGISTRATION_xref.md.
+    round1_path = out_dir / "workspace" / "review_round1.json"
+    if round1_path.is_file():
+        paired_dir = args.out / f"{paper_id}__agent_swarm_r1__run{args.run}"
+        paired_dir.mkdir(parents=True, exist_ok=True)
+        round1 = Review.model_validate_json(round1_path.read_text(encoding="utf-8"))
+        r1_verified, r1_before, r1_after = _finalize(round1, markdown)
+        (paired_dir / "review.json").write_text(
+            r1_verified.model_dump_json(indent=1), encoding="utf-8"
+        )
+        (paired_dir / "review.md").write_text(render_review(r1_verified), encoding="utf-8")
+        (paired_dir / "meta.json").write_text(
+            json.dumps(
+                {
+                    **meta,
+                    "arm": "agent_swarm_r1",
+                    "comments_before_quote_verify": r1_before,
+                    "comments_after_quote_verify": r1_after,
+                    "quote_drop_rate": round(1 - r1_after / r1_before, 3) if r1_before else None,
+                    "n_overall_issues": len(r1_verified.overall_feedback.issues),
+                    "paired_with": tag,
+                },
+                indent=1,
+            ),
+            encoding="utf-8",
+        )
+        print(f"paired round-1 arm saved to {paired_dir}")
+
     print(json.dumps(meta, indent=1))
 
 
