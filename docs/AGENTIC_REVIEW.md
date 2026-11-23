@@ -331,7 +331,7 @@ to weigh. An issue is narrowed only by deleting verbatim spans the refuter
 names, so every surviving word is the reviewer's own; a span that does not
 occur in the body removes nothing, and naming every span drops the issue.
 
-### The cross-reference round: measured, and not worth its cost
+### The cross-reference round: measured, still unresolved, off by default
 
 The swarm's deficiency is coverage, and its investigators work in isolation, so
 the obvious thing to try is letting them see each other's findings. `rounds=2`
@@ -369,7 +369,8 @@ run 11 is the highest recall any swarm run had reached, above the baseline
 ceiling of 7, at unchanged precision. Two observations against five, with a
 baseline spread of 3 to 7, cannot separate that from variance: one run two
 standard deviations above a five-run mean is suggestive and nothing more. The
-paired runs below were built to settle it, and they do, against the round.
+paired runs below were built to settle it. They remove the planner variance
+and return a verdict of keep-it-off, but they do not settle it.
 
 The mechanism does fire. Three of ten candidates came from the second round in
 each run, and across the two runs they include the curvature constant
@@ -391,7 +392,7 @@ across runs, structurally capped by a reference whose items are mostly phrased
 as reading difficulties that an agent held to demonstrate a defect will never
 report.
 
-#### Settled by a paired design: the round is not worth its cost
+#### A paired design: the rule says keep it off, and it is not settled
 
 Four unpaired runs per arm would have spent most of their power on planner
 variance, which is what produced the 3-to-7 spread above. The round is an
@@ -403,42 +404,77 @@ set of round-1 verdicts, so each run is a matched pair and the pairing costs
 one extra editor call. The decision rule, the metrics and the thresholds were
 written and committed before the runs in `evals/PREREGISTRATION_xref.md`, and
 `evals/analyze_xref.py` holds the thresholds as module constants so moving one
-shows up in a diff. "Bad" counts claims the judge calls *not*
-supported-and-substantive, because supported alone is satisfiable by hedging.
+shows up in a diff. "Good" counts claims the judge calls supported *and*
+substantive; "bad" is every other adjudicated claim, because supported alone is
+satisfiable by hedging.
 
-| run | round-2 findings | recall A | recall B | d | bad A | bad B | d |
-|---|---|---|---|---|---|---|---|
-| 20 | 1 | 9/16 | 9/16 | 0 | 0 | 0 | 0 |
-| 21 | 1 | 8/16 | **9/16** | **+1** | 3 | 2 | −1 |
-| 22 | **0** | 3/16 | **4/16** | **+1** | 2 | 2 | 0 |
-| 23 | 4 | 7/16 | 7/16 | 0 | 2 | **4** | **+2** |
+| run | round-2 findings | recall A | recall B | d | good A | good B | d | bad A | bad B | d |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 20 | 1 | 9/16 | 9/16 | 0 | 16 | 17 | +1 | 0 | 0 | 0 |
+| 21 | 1 | 8/16 | 9/16 | +1 | 14 | 15 | +1 | 3 | 2 | −1 |
+| 22 | **0** | 3/16 | 4/16 | +1 | 6 | 6 | 0 | 2 | 2 | 0 |
+| 23 | 4 | 7/16 | 7/16 | 0 | 11 | 13 | +2 | 2 | 4 | +2 |
 
-Mean `d_recall` +0.50 against a ship threshold of +1.0; mean `d_bad` +0.25
-against a ship threshold of 0. Mean `d_recall` is above 0 and only one run has
+Mean `d_recall` +0.50, below the +1.0 ship threshold; mean `d_bad` +0.25, above
+the ship threshold of 0. Mean `d_recall` is above 0 and only one run has
 `d_bad` >= +2, so the delete branch does not fire either. **The preregistered
-verdict is therefore "leave as is": implemented, `rounds=1` default, off.**
+verdict is "leave it as it is": implemented, `rounds=1` default, off.** That is
+what ships. What follows is why the experiment did not settle the question the
+rule was standing in for.
 
-**The reason it cannot be called a win is run 22.** Its cross-reference round
-produced no findings at all, so both arms handed the editor the identical four
-findings and both produced four comments and eight adjudicated claims — and
-recall still differed by one. That is the noise floor of this measurement,
-editor plus judge, on a single pair: ±1 reference finding. It is the same size
-as the only gain the round can actually be credited with.
+**Run 22 gives the noise floor, and it is the size of the effect.** Its
+cross-reference round produced no findings at all, so both arms handed the
+editor the identical four findings and both produced four comments and eight
+adjudicated claims — and recall still differed by one. So a single pair carries
+±1 reference finding of editor-plus-judge noise. That cuts both ways: it is the
+same size as the round's apparent gain, and it also means four pairs cannot
+establish that the round does nothing.
 
-That one gain is real and traceable. In run 21 the round's single finding is
-that Proposition 3's step count `k` depends on the variance estimate, so the
-stability level `kη` that Proposition 2 matches is data-dependent; it becomes
-arm B's comment 11 and matches reference finding O1b, and arm A has no comment
-on that defect. So the mechanism does work, exactly once in four runs, by an
-amount this same experiment shows is indistinguishable from noise.
+**Recall cannot see most of what the round produced.** Across the four pairs the
+round contributed six confirmed findings, and four of them became supported-and-
+substantive claims. Only one of those four was a reference item. The reference
+is a fixed list of 16 findings, so a correct, demonstrated defect that is not on
+it scores zero on the headline metric by construction. The `good` column is
+where the round's output actually shows up, and it rose in three pairs of four.
 
-The cost shows up in run 23, where the round contributed four findings. They
-became four more adjudicated claims, matched **no** reference finding, and two
-of them were not supported-and-substantive. Across all four pairs the round
-produced six extra confirmed findings and bought one reference match.
+Per-finding, in run 23, where the round contributed most:
 
-The earlier ambiguity is resolved in the direction of "no". Removing the
-planner variance did not reveal a signal underneath it.
+| round-2 finding | became | adjudicated |
+|---|---|---|
+| experiments never say where the variance estimate comes from | "Variance input in the simulations is unspecified" | supported, substantive |
+| A.3's "special case" does not cover Algorithm 3's procedure | "Claim 3 is not a special case of Proposition 4" | supported, substantive |
+| A.10 concludes a `(1/δ)kη²` first term against Proposition 2(a)'s `½kη²` | "Typo in the final ε of A.10" | supported, **not substantive** |
+| A.11's last step replaces the data-dependent σ̂ by σ | "Proposition 3's bound should involve σ̂" | **unsupported** |
+
+So the round went 2 good, 2 bad in that run, and the two bad ones are worth
+separating. The σ̂ claim is a genuine miss the refuter passed. The `(1/δ)kη²`
+mismatch is a constant that does not match the proposition it is proving, and
+the *editor* wrote it up as "a typo in the final ε", which the judge then
+reasonably called cosmetic. The round found something real and the write-up
+threw away its force.
+
+**Run 23's net `d_bad` of +2 is not cleanly the round's, either.** Decomposed:
+the editor dropped one round-1 bad claim that arm A published, created another
+by splitting the round-1 σ̂ material into a second comment that then failed
+adjudication, and the round itself added the two above. Round-1 claims flip
+between arms in run 21 as well. The `bad` column is as noisy as the recall
+column, and for the same reason: both arms run their own editor.
+
+**What is actually known.** The mechanism fires and its output is mostly sound:
+six findings, four good claims, one reference match traceable end to end — run
+21's round-2 finding that Proposition 3's step count depends on the variance
+estimate, so the stability level Proposition 2 matches is data-dependent, which
+becomes arm B's comment 11 and matches reference finding O1b, with no
+corresponding comment anywhere in arm A. What is not known is whether that is
+worth roughly a third more cost per review, because the metric the rule was
+written around cannot see four of the round's six findings and the per-pair
+noise is the size of the effect. Settling it needs either more pairs or a
+precision-weighted metric that credits a demonstrated defect which is not on
+the reference list, and the second of those is a change to how every arm in
+this document is scored.
+
+The honest summary is the one the preregistration committed to in advance: this
+landed in the "otherwise" branch, and it is not a win for either side.
 
 ### A second, stronger adjudication
 
@@ -517,13 +553,16 @@ support it.
 4. **Keep `--agent swarm` as an opt-in deep mode** for theory papers, where the
    appendix findings it reaches are worth the coverage it gives up. Its recall
    is the open problem.
-5. **Do not fix that recall problem with more agent-to-agent rounds.** The one
-   such round that was built and measured on a paired design returned one
-   reference finding across four runs, which is the same size as the
-   measurement's own noise floor, and in one run added two unsupported claims
-   for no reference match. `rounds=2` stays off. The capabilities that found
-   deep defects here were whole-paper retrieval and computation inside a
-   single agent, not agents talking to each other.
+5. **Do not turn the cross-reference round on, and do not count it out.** On
+   four matched pairs it returned one reference finding, which is the size of
+   the measurement's own per-pair noise, so the preregistered rule keeps it
+   off. But four of its six findings were judged supported and substantive and
+   only one of those was a reference item, so the recall metric the rule rests
+   on cannot see most of what it produced. Deciding it needs more pairs or a
+   metric that credits a demonstrated defect absent from the reference list.
+   Separately: the capabilities that found deep defects here were whole-paper
+   retrieval and computation inside a single agent, and that result is not in
+   question.
 
 ## Caveats
 
