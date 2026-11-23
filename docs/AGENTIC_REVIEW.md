@@ -508,13 +508,21 @@ support it.
   `--refute`.
 - **The sandbox does not confine the filesystem**, and denies network only
   where the host offers a mechanism.
-- **The notice substituted when every macro issue is refuted is English only.**
-  The review language reaches both refuters, so a deletion-narrowed issue stays
-  in the review's language, but that fallback string does not.
-- **Nobody has read a deletion-narrowed issue end to end.** 15 of 35 issues
-  across the benchmark papers were narrowed. The text is now saved
-  (`review_after_refutation.md` beside each run) specifically so it can be
-  checked for a dangling fragment or an antecedent left behind.
+- **The two refutation paths disagree about rewriting, and the agent path is
+  the permissive one.** `agent/refutation.py`, the gate behind `--refute`, is
+  purely subtractive: it never applies a refuter's `corrected_claim`, because
+  applying it was measured to be the source of that stage's apparent precision
+  gain, partly by retreating from an error claim to a request for
+  clarification. The agent editor does apply it
+  (`_render_findings_for_editor` prefers `corrected_claim` over the
+  investigator's own wording). So a refuter in the agent path can still author
+  review prose. The inconsistency predates the paired runs and was left alone
+  rather than changed mid-experiment; it should be resolved before agent mode
+  is offered to anyone, and resolving it means re-measuring the agent arms.
+- **The macro-issue gate and its deletion-narrowing are gone**, removed on the
+  "comments only" decision after measuring net zero. Earlier caveats about an
+  English-only all-issues-refuted notice and about nobody having read a
+  deletion-narrowed issue refer to that removed code and no longer apply.
 
 ## Distance from the original brief
 
