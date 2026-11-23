@@ -431,11 +431,15 @@ same size as the round's apparent gain, and it also means four pairs cannot
 establish that the round does nothing.
 
 **Recall cannot see most of what the round produced.** Across the four pairs the
-round contributed six confirmed findings, and four of them became supported-and-
-substantive claims. Only one of those four was a reference item. The reference
-is a fixed list of 16 findings, so a correct, demonstrated defect that is not on
-it scores zero on the headline metric by construction. The `good` column is
-where the round's output actually shows up, and it rose in three pairs of four.
+round contributed six confirmed findings. All six were traced to the comment
+they became and to that comment's adjudication, and four of them are supported
+and substantive: in run 20 that Claims 5 and 6 leave the conditioning event
+unspecified while their proofs fix it, in run 21 the step-count finding below,
+and in run 23 two of the four in the table. Only one of the four was a reference
+item. The reference is a fixed list of 16 findings, so a correct, demonstrated
+defect that is not on it scores zero on the headline metric by construction. The
+`good` column is where the round's output actually shows up, and it is
+non-negative in every pair and positive in three.
 
 Per-finding, in run 23, where the round contributed most:
 
@@ -459,6 +463,13 @@ by splitting the round-1 σ̂ material into a second comment that then failed
 adjudication, and the round itself added the two above. Round-1 claims flip
 between arms in run 21 as well. The `bad` column is as noisy as the recall
 column, and for the same reason: both arms run their own editor.
+
+The judge contributes some of that noise directly. Run 21's arm A raises the
+Claims 5/6 conditioning-event defect twice, in two differently worded comments,
+and the judge calls one supported and substantive and the other unsupported and
+not substantive — the second because it objects to the counterexample the
+comment chose rather than to the defect. Read a single run's `bad` count with
+that in mind.
 
 **What is actually known.** The mechanism fires and its output is mostly sound:
 six findings, four good claims, one reference match traceable end to end — run
