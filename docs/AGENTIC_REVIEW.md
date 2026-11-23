@@ -331,7 +331,7 @@ to weigh. An issue is narrowed only by deleting verbatim spans the refuter
 names, so every surviving word is the reviewer's own; a span that does not
 occur in the body removes nothing, and naming every span drops the issue.
 
-### The cross-reference round: not resolved, not shipped
+### The cross-reference round: measured, and not worth its cost
 
 The swarm's deficiency is coverage, and its investigators work in isolation, so
 the obvious thing to try is letting them see each other's findings. `rounds=2`
@@ -364,12 +364,12 @@ default and the existing path is untouched. Precision fell in one of the two
 cross-reference runs, against 100% in five of five baseline runs, and that is
 the disqualifying condition.
 
-**But the result is ambiguous rather than negative, and the ambiguity should
-not be tidied away.** The 8 of 16 in run 11 is the highest recall any swarm run
-has reached, above the baseline ceiling of 7, at unchanged precision. Two
-observations against five, with a baseline spread of 3 to 7, cannot separate
-that from variance: one run two standard deviations above a five-run mean is
-suggestive and nothing more.
+**At this point the result was ambiguous rather than negative.** The 8 of 16 in
+run 11 is the highest recall any swarm run had reached, above the baseline
+ceiling of 7, at unchanged precision. Two observations against five, with a
+baseline spread of 3 to 7, cannot separate that from variance: one run two
+standard deviations above a five-run mean is suggestive and nothing more. The
+paired runs below were built to settle it, and they do, against the round.
 
 The mechanism does fire. Three of ten candidates came from the second round in
 each run, and across the two runs they include the curvature constant
@@ -386,15 +386,59 @@ the defence against a claim spreading without being demonstrated did not catch
 it, which is worth recording separately from the round's own result — it bounds
 how much that gate can be trusted to carry anywhere else in this design.
 
-Settling this needs about four more runs per arm on `psi` (roughly $25) and an
-account of why the refuter passed the sigma-hat claim. Until then the code
-stays behind `rounds=2`, off, because one run at the best recall yet is worth
-someone's attention and one precision failure is worth nobody's trust.
-
 `coset_codes` cannot contribute either way: its swarm recall is 1/25 and 2/25
 across runs, structurally capped by a reference whose items are mostly phrased
 as reading difficulties that an agent held to demonstrate a defect will never
 report.
+
+#### Settled by a paired design: the round is not worth its cost
+
+Four unpaired runs per arm would have spent most of their power on planner
+variance, which is what produced the 3-to-7 spread above. The round is an
+increment on the first pass, so one run can emit both arms instead: refute
+round 1, run the editor over the survivors and emit **arm A**, then run the
+cross-reference round, refute only its findings, and run the editor again over
+everything to emit **arm B**. Both arms share one plan, one first pass and one
+set of round-1 verdicts, so each run is a matched pair and the pairing costs
+one extra editor call. The decision rule, the metrics and the thresholds were
+written and committed before the runs in `evals/PREREGISTRATION_xref.md`, and
+`evals/analyze_xref.py` holds the thresholds as module constants so moving one
+shows up in a diff. "Bad" counts claims the judge calls *not*
+supported-and-substantive, because supported alone is satisfiable by hedging.
+
+| run | round-2 findings | recall A | recall B | d | bad A | bad B | d |
+|---|---|---|---|---|---|---|---|
+| 20 | 1 | 9/16 | 9/16 | 0 | 0 | 0 | 0 |
+| 21 | 1 | 8/16 | **9/16** | **+1** | 3 | 2 | −1 |
+| 22 | **0** | 3/16 | **4/16** | **+1** | 2 | 2 | 0 |
+| 23 | 4 | 7/16 | 7/16 | 0 | 2 | **4** | **+2** |
+
+Mean `d_recall` +0.50 against a ship threshold of +1.0; mean `d_bad` +0.25
+against a ship threshold of 0. Mean `d_recall` is above 0 and only one run has
+`d_bad` >= +2, so the delete branch does not fire either. **The preregistered
+verdict is therefore "leave as is": implemented, `rounds=1` default, off.**
+
+**The reason it cannot be called a win is run 22.** Its cross-reference round
+produced no findings at all, so both arms handed the editor the identical four
+findings and both produced four comments and eight adjudicated claims — and
+recall still differed by one. That is the noise floor of this measurement,
+editor plus judge, on a single pair: ±1 reference finding. It is the same size
+as the only gain the round can actually be credited with.
+
+That one gain is real and traceable. In run 21 the round's single finding is
+that Proposition 3's step count `k` depends on the variance estimate, so the
+stability level `kη` that Proposition 2 matches is data-dependent; it becomes
+arm B's comment 11 and matches reference finding O1b, and arm A has no comment
+on that defect. So the mechanism does work, exactly once in four runs, by an
+amount this same experiment shows is indistinguishable from noise.
+
+The cost shows up in run 23, where the round contributed four findings. They
+became four more adjudicated claims, matched **no** reference finding, and two
+of them were not supported-and-substantive. Across all four pairs the round
+produced six extra confirmed findings and bought one reference match.
+
+The earlier ambiguity is resolved in the direction of "no". Removing the
+planner variance did not reveal a signal underneath it.
 
 ### A second, stronger adjudication
 
@@ -473,6 +517,13 @@ support it.
 4. **Keep `--agent swarm` as an opt-in deep mode** for theory papers, where the
    appendix findings it reaches are worth the coverage it gives up. Its recall
    is the open problem.
+5. **Do not fix that recall problem with more agent-to-agent rounds.** The one
+   such round that was built and measured on a paired design returned one
+   reference finding across four runs, which is the same size as the
+   measurement's own noise floor, and in one run added two unsupported claims
+   for no reference match. `rounds=2` stays off. The capabilities that found
+   deep defects here were whole-paper retrieval and computation inside a
+   single agent, not agents talking to each other.
 
 ## Caveats
 
@@ -484,7 +535,10 @@ support it.
   held-out measurement and the prompts were not revised after seeing it.
   Precision is unaffected, being adjudicated against the paper.
 - **Mostly one run per cell.** The three `psi` swarm runs span 19% to 44%
-  recall, so single-run differences of that size are not evidence.
+  recall, so single-run differences of that size are not evidence. The one
+  exception is the cross-reference A/B, which is four matched pairs, and even
+  there a pair whose second round contributed nothing still moved recall by one
+  finding.
 - **Two papers, one of them in-sample.** A third (`targeting`) was prepared and
   never run.
 - **Both judges abstain too rarely.** Neither returned "unclear" on any claim.

@@ -136,3 +136,43 @@ applies `corrected_claim` when a refuter supplies one
 to be the source of that stage's apparent precision gain. That inconsistency
 is real and predates these runs. Changing it now would alter both arms
 mid-experiment, so it stays as it is and is written up as an open item.
+
+## Outcome, 2026-11-23
+
+Four matched pairs on `psi`. Per-run, arm B minus arm A:
+
+| run | round-2 findings | recall A | recall B | d_recall | bad A | bad B | d_bad |
+|---|---|---|---|---|---|---|---|
+| 20 | 1 | 9/16 | 9/16 | 0 | 0 | 0 | 0 |
+| 21 | 1 | 8/16 | 9/16 | +1 | 3 | 2 | −1 |
+| 22 | 0 | 3/16 | 4/16 | +1 | 2 | 2 | 0 |
+| 23 | 4 | 7/16 | 7/16 | 0 | 2 | 4 | +2 |
+
+Mean `d_recall` +0.50, below the +1.0 ship threshold. Mean `d_bad` +0.25,
+above the ship threshold of 0. Mean `d_recall` is above 0 and only one run has
+`d_bad` >= +2, so the delete branch does not fire.
+
+**Verdict: leave it as it is.** `rounds=2` implemented, `rounds=1` default, off.
+This is the branch the design section above said it expected on four pairs.
+Thresholds were not touched; `evals/analyze_xref.py` applies them and writes
+`evals/runs/xref_analysis.json`.
+
+Two things the table does not show, both of which matter more than the means:
+
+- **Run 22 is the noise floor.** Its second round produced no findings, so both
+  arms handed the editor the identical four findings and both produced four
+  comments and eight adjudicated claims. Recall still differed by one. So a
+  single pair carries ±1 reference finding of editor-plus-judge noise, which is
+  the same size as the round's only gain.
+- **The one gain is real and traceable, and it is one.** Run 21's round-2
+  finding is that Proposition 3's step count depends on the variance estimate,
+  so the stability level Proposition 2 matches is data-dependent. It becomes arm
+  B's comment 11 and matches reference finding O1b; arm A has no comment on that
+  defect. Across all four pairs the round produced six extra confirmed findings
+  and bought that one match, while run 23's four extra findings matched nothing
+  and added two claims that were not supported-and-substantive.
+
+One measurement limitation to record: the judge's `substantive` field defaults
+to `True` when the judge omits it, so the substantive count is an upper bound
+and `d_bad` is, if anything, understated. The field was present and varying on
+every claim in the runs checked.
