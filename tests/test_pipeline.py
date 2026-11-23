@@ -1673,3 +1673,299 @@ def test_review_paper_config_review_language_is_explicit_choice():
     assert captured["overview_language"] == "Spanish"
     assert review.language is not None
     assert review.language.review_language == "es"
+
+
+# ---------------------------------------------------------------------------
+# Section selection (the truncation fix behind the agentic-review diagnosis)
+# ---------------------------------------------------------------------------
+
+
+def _sec(title, chars, *, math=False, stype=SectionType.OTHER):
+    return SectionInfo(
+        number=1,
+        title=title,
+        text="x" * chars,
+        section_type=stype,
+        math_content=math,
+    )
+
+
+def test_select_reviewable_sections_keeps_everything_under_the_cap():
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [_sec(f"S{i}", 1_000) for i in range(5)]
+    assert len(select_reviewable_sections(sections)) == 5
+
+
+def test_select_reviewable_sections_drops_only_textless_sections():
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("1 Introduction", 2_000),
+        _sec("A Proofs", 0),
+        _sec("2 Whitespace only", 0),
+    ]
+    kept = [s.title for s in select_reviewable_sections(sections)]
+    assert kept == ["1 Introduction"]
+
+
+def test_select_reviewable_sections_keeps_a_mistitled_proof():
+    """A marker title is not evidence the body is debris.
+
+    When a page break precedes a heading, the heading parser titles the
+    section ``<!-- PAGE BREAK -->`` and leaves the real heading in the body.
+    On the benchmark paper one such section is the proof of Theorem 2.
+    """
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("<!-- PAGE BREAK -->", 1_107, math=True),
+        _sec("<!-- PAGE BREAK -->", 0),
+    ]
+    kept = select_reviewable_sections(sections)
+    assert len(kept) == 1
+    assert kept[0].math_content
+
+
+def test_select_reviewable_sections_drops_reference_like_sections():
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("A.10 Proof of Proposition 2", 14_000, math=True),
+        _sec("Acknowledgements", 10_000),
+        _sec("References", 8_000),
+        _sec("Data availability statement", 500),
+    ]
+    kept = [s.title for s in select_reviewable_sections(sections)]
+    assert kept == ["A.10 Proof of Proposition 2"]
+
+
+def test_select_reviewable_sections_keeps_appendix_proofs_when_the_cap_binds():
+    """The regression this fix exists for.
+
+    Selection used to be ``[:limit]`` over document order, so on a paper with
+    more sections than the cap the appendices — where the proofs are — were
+    the part discarded.
+    """
+    from coarse.pipeline import select_reviewable_sections
+
+    front = [_sec(f"{i} Front matter section", 1_000) for i in range(1, 26)]
+    appendix = [
+        _sec("A.10 Proof of Proposition 2", 14_000, math=True),
+        _sec("A.12 Proof of Proposition 4", 5_000, math=True),
+    ]
+    kept = {s.title for s in select_reviewable_sections(front + appendix, limit=25)}
+    assert "A.10 Proof of Proposition 2" in kept
+    assert "A.12 Proof of Proposition 4" in kept
+
+
+def test_select_reviewable_sections_returns_document_order():
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("1 Short intro", 400),
+        _sec("2 Long methods", 9_000, math=True),
+        _sec("3 Medium results", 3_000),
+    ]
+    kept = select_reviewable_sections(sections, limit=2)
+    # Ranking prefers the long math-bearing section, but output stays in
+    # document order because downstream numbering is positional.
+    assert [s.title for s in kept] == ["2 Long methods", "3 Medium results"]
+
+
+def test_select_reviewable_sections_weights_math_without_starving_long_prose():
+    """A short proof must not displace a much longer prose appendix.
+
+    Ranking all mathematical sections ahead of all prose dropped a 5.6k-char
+    numerical appendix in favour of a 551-char corollary proof.
+    """
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("A.4 Proof of a corollary", 551, math=True),
+        _sec("B Deferred numerical results", 5_571),
+    ]
+    kept = [s.title for s in select_reviewable_sections(sections, limit=1)]
+    assert kept == ["B Deferred numerical results"]
+
+
+def test_select_reviewable_sections_respects_the_cap():
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [_sec(f"S{i}", 1_000) for i in range(40)]
+    assert len(select_reviewable_sections(sections, limit=25)) == 25
+
+
+# ---------------------------------------------------------------------------
+# agent_mode dispatch (bounded agent runtime, #264)
+# ---------------------------------------------------------------------------
+
+
+def test_review_paper_without_agent_mode_does_not_touch_the_agent_runtime():
+    """The default path must be byte-identical: agent_mode is opt-in."""
+    import inspect
+
+    from coarse.pipeline import review_paper
+
+    assert inspect.signature(review_paper).parameters["agent_mode"].default is None
+    source = inspect.getsource(review_paper)
+    # The import is inside the branch, so the module is never loaded by default.
+    assert "if agent_mode:" in source
+    assert source.index("if agent_mode:") < source.index("run_agentic_review")
+
+
+def test_review_paper_agent_mode_runs_the_agent_runtime_and_verifies_quotes():
+    """The agent branch must still go through quote verification and render."""
+    from coarse.types import OverviewFeedback, OverviewIssue
+
+    paper_md = "Intro text. " * 120 + "The displayed gradient has the opposite sign. " * 5
+    structure = PaperStructure(
+        title="A Paper",
+        domain="statistics",
+        taxonomy="academic/research_paper",
+        abstract="An abstract.",
+        sections=[
+            SectionInfo(
+                number=1,
+                title="Introduction",
+                text="Intro text. " * 120,
+                section_type=SectionType.INTRODUCTION,
+            )
+        ],
+    )
+    agent_review = Review(
+        title="A Paper",
+        domain="statistics",
+        taxonomy="academic/research_paper",
+        date="01/01/2026",
+        overall_feedback=OverviewFeedback(issues=[OverviewIssue(title="t", body="b")]),
+        detailed_comments=[
+            DetailedComment(
+                number=7,
+                title="Real",
+                quote="The displayed gradient has the opposite sign.",
+                feedback="f",
+            ),
+            DetailedComment(
+                number=8,
+                title="Fabricated quote",
+                quote="This sentence does not appear in the paper at all.",
+                feedback="f",
+            ),
+        ],
+    )
+
+    captured = {}
+
+    def fake_run_agentic_review(markdown, struct, client, **kwargs):
+        captured["mode"] = kwargs.get("mode")
+        workspace = MagicMock()
+        return agent_review, [], workspace
+
+    with (
+        patch(
+            "coarse.pipeline.extract_file",
+            return_value=PaperText(full_markdown=paper_md, token_estimate=len(paper_md) // 4),
+        ),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.LLMClient"),
+        patch(
+            "coarse.agent.orchestrator.run_agentic_review",
+            side_effect=fake_run_agentic_review,
+        ),
+    ):
+        review, markdown, _paper = review_paper("paper.md", skip_cost_gate=True, agent_mode="sweep")
+
+    assert captured["mode"] == "sweep"
+    titles = [c.title for c in review.detailed_comments]
+    assert "Real" in titles
+    assert "Fabricated quote" not in titles, "the quote verifier must still drop it"
+    assert [c.number for c in review.detailed_comments] == [1]
+    assert "A Paper" in markdown
+
+
+def test_select_reviewable_sections_keeps_a_substantive_funding_section():
+    """A prefix match is boilerplate only when the heading is short enough.
+
+    "Funding" is front matter; "Funding and acquisition dynamics in venture
+    capital" is a results section, and a bare prefix test discarded it.
+    """
+    from coarse.pipeline import select_reviewable_sections
+
+    sections = [
+        _sec("Funding", 600),
+        _sec("Funding and acquisition dynamics in venture capital", 6_000),
+        _sec("Acknowledgements", 9_000),
+    ]
+    kept = [s.title for s in select_reviewable_sections(sections)]
+    assert kept == ["Funding and acquisition dynamics in venture capital"]
+
+
+def test_review_paper_refute_runs_the_comment_gate():
+    """The shipped path: review_paper(refute=True) -> refute_comments.
+
+    Comments only. The macro-issue half was built, measured on three papers and
+    dropped (docs/AGENTIC_REVIEW.md), so the overall feedback must reach the
+    review untouched by this stage.
+    """
+    from coarse.types import OverviewFeedback, OverviewIssue
+
+    paper_md = "Body text. " * 200
+    structure = PaperStructure(
+        title="A Paper",
+        domain="statistics",
+        taxonomy="academic/research_paper",
+        abstract="An abstract.",
+        sections=[
+            SectionInfo(
+                number=1,
+                title="Introduction",
+                text="Body text. " * 120,
+                section_type=SectionType.INTRODUCTION,
+            )
+        ],
+    )
+    survivor = DetailedComment(
+        number=1, title="Survives", quote="Body text. Body text.", feedback="f"
+    )
+    dropped = DetailedComment(
+        number=2, title="Dropped", quote="Body text. Body text.", feedback="f"
+    )
+    captured = {}
+
+    def fake_refute_comments(comments, markdown, struct, client, **kwargs):
+        captured["n_in"] = len(comments)
+        captured["language"] = kwargs.get("language")
+        return [survivor], [], []
+
+    overview = OverviewFeedback(
+        issues=[OverviewIssue(title="Kept", body="b"), OverviewIssue(title="Also kept", body="b")]
+    )
+
+    with (
+        patch(
+            "coarse.pipeline.extract_file",
+            return_value=PaperText(full_markdown=paper_md, token_estimate=len(paper_md) // 4),
+        ),
+        patch("coarse.pipeline.analyze_structure", return_value=structure),
+        patch("coarse.pipeline.LLMClient"),
+        patch("coarse.pipeline.calibrate_domain", return_value=None),
+        patch("coarse.pipeline.search_literature", return_value=""),
+        patch("coarse.pipeline.extract_contribution", return_value=None),
+        patch("coarse.pipeline.OverviewAgent") as overview_agent,
+        patch("coarse.pipeline.CompletenessAgent") as completeness_agent,
+        patch("coarse.pipeline.SectionAgent"),
+        patch("coarse.pipeline.ProofVerifyAgent"),
+        patch("coarse.pipeline.run_editorial_pass", return_value=[survivor, dropped]),
+        patch("coarse.agent.refutation.refute_comments", side_effect=fake_refute_comments),
+    ):
+        overview_agent.return_value.run.return_value = overview
+        completeness_agent.return_value.run.return_value = []
+        review, markdown, _paper = review_paper("paper.md", skip_cost_gate=True, refute=True)
+
+    assert captured["n_in"] == 2, "both comments must be offered to the gate"
+    assert [c.title for c in review.detailed_comments] == ["Survives"]
+    assert "Dropped" not in markdown
+    assert [i.title for i in review.overall_feedback.issues] == ["Kept", "Also kept"], (
+        "the overall feedback must pass through this stage untouched"
+    )

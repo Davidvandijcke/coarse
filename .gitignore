@@ -28,3 +28,10 @@ quality_gap_analysis.md
 # Build caches
 *.tsbuildinfo
 *.extraction_cache.json
+# Benchmark inputs are not committed: the papers and reviews are third-party
+# documents, and structure.json embeds the whole paper text. evals/references/
+# holds the atomized findings, which are the committed work product, and
+# evals/prepare_paper.py regenerates everything else from a local PDF.
+evals/papers/
+evals/runs/
+evals/logs/

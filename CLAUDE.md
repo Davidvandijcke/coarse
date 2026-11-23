@@ -81,6 +81,23 @@ src/coarse/
 ├── quality.py               # Quality eval against reference (dev only)
 ├── recall.py                # Recall eval vs. ground-truth expert reviews (dev only)
 ├── lang_eval.py             # Cross-language review-consistency evaluation (dev only)
+├── handoff_url.py           # Parse subscription handoff URLs copied through chat apps
+├── native_cli.py            # Coordinator tools for the opt-in native-app review pilot
+├── native_install.py        # Install the native pilot beside the headless review skills
+├── native_review.py         # Checkpointed, app-native execution of the review pipeline
+├── native_runtime.py        # Suspend model calls as native tasks; replay validated replies
+├── native_store.py          # Private, atomic checkpoints for the native review pilot
+├── review_runtime.py        # Optional execution services for the review orchestrator
+├── agent/                   # Bounded agent runtime (#264)
+│   ├── __init__.py
+│   ├── types.py             # Finding / verdict / target records for the ledger
+│   ├── workspace.py         # Ephemeral per-review workspace + evidence ledger
+│   ├── sandbox.py           # Bounded Python execution for algebra/numeric checks
+│   ├── tools.py             # paper_search / paper_read / python / note_* dispatch
+│   ├── runner.py            # Multi-turn tool loop with typed submission
+│   ├── roles.py            # The agent each role runs, as one tool-loop call
+│   └── orchestrator.py      # Planner / investigator / refuter / editor roles
+│   ├── refutation.py        # Apply the refutation gate to pipeline-produced comments
 └── agents/
     ├── __init__.py
     ├── base.py              # ReviewAgent ABC + _build_messages helper + prompt caching

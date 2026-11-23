@@ -49,8 +49,11 @@ docling = [
     "transformers>=5.10,<6",
 ]
 formats = ["mammoth>=1.6", "markdownify>=0.12", "ebooklib>=0.18"]
-all = ["coarse-ink[docling]", "coarse-ink[formats]"]
-dev = ["pytest>=8.0", "pyyaml>=6.0", "ruff>=0.4"]
+# Symbolic/numeric checking for the bounded agent sandbox (coarse.agent.sandbox).
+# Without it the `python` tool still runs, it just has no CAS available.
+agent = ["sympy>=1.13", "numpy>=2.0"]
+all = ["coarse-ink[docling]", "coarse-ink[formats]", "coarse-ink[agent]"]
+dev = ["pytest>=8.0", "pyyaml>=6.0", "ruff>=0.4", "sympy>=1.13", "numpy>=2.0"]
 
 [project.scripts]
 coarse = "coarse.cli:app"

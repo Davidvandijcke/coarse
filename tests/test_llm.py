@@ -1685,3 +1685,59 @@ def test_sol_pro_variant_has_registered_pricing():
     in_cost, out_cost = model_cost_per_token(GPT_5_6_SOL_PRO_MODEL)
     assert in_cost > 0
     assert out_cost > 0
+
+
+# ---------------------------------------------------------------------------
+# Tool-loop cache breakpoints (bounded agent runtime, #264)
+# ---------------------------------------------------------------------------
+
+
+def test_tool_loop_cache_breakpoints_are_a_noop_when_disabled():
+    from coarse.llm import _with_tool_loop_cache_breakpoints
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "task"},
+    ]
+    assert _with_tool_loop_cache_breakpoints(messages, False) is messages
+
+
+def test_tool_loop_cache_breakpoints_mark_system_and_latest_turn():
+    from coarse.llm import _with_tool_loop_cache_breakpoints
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "task"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "a"}]},
+        {"role": "tool", "tool_call_id": "a", "name": "paper_read", "content": "paper text"},
+    ]
+    out = _with_tool_loop_cache_breakpoints(messages, True)
+
+    assert out[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+    assert out[0]["content"][0]["text"] == "sys"
+    assert out[3]["content"][0]["cache_control"] == {"type": "ephemeral"}
+    # The user turn between them must stay a plain string.
+    assert out[1]["content"] == "task"
+    # The input must not be mutated in place.
+    assert messages[0]["content"] == "sys"
+
+
+def test_tool_loop_cache_breakpoints_mark_only_the_last_tool_result():
+    from coarse.llm import _with_tool_loop_cache_breakpoints
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "task"},
+        {"role": "tool", "tool_call_id": "a", "name": "t", "content": "first"},
+        {"role": "tool", "tool_call_id": "b", "name": "t", "content": "second"},
+    ]
+    out = _with_tool_loop_cache_breakpoints(messages, True)
+    assert isinstance(out[2]["content"], str)
+    assert out[3]["content"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_tool_loop_cache_breakpoints_skip_an_empty_system_prompt():
+    from coarse.llm import _with_tool_loop_cache_breakpoints
+
+    out = _with_tool_loop_cache_breakpoints([{"role": "system", "content": ""}], True)
+    assert out[0]["content"] == ""

@@ -2,6 +2,7 @@
 
 Date field is emitted as-is from Review.date (no reformatting) to preserve fidelity.
 """
+
 from __future__ import annotations
 
 import re

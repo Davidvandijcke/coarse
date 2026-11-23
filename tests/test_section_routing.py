@@ -1,4 +1,5 @@
 """Tests for section routing (_detect_section_focus)."""
+
 from __future__ import annotations
 
 from coarse.pipeline import _detect_section_focus
@@ -11,7 +12,10 @@ def _make_section(
     math_content: bool = False,
 ) -> SectionInfo:
     return SectionInfo(
-        number=1, title="Test", text=text, section_type=section_type,
+        number=1,
+        title="Test",
+        text=text,
+        section_type=section_type,
         math_content=math_content,
     )
 

@@ -409,6 +409,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+agent = [
+    { name = "numpy" },
+    { name = "sympy" },
+]
 all = [
     { name = "docling", version = "2.99.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin'" },
     { name = "docling", version = "2.124.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin'" },
@@ -418,14 +422,18 @@ all = [
     { name = "lxml" },
     { name = "mammoth" },
     { name = "markdownify" },
+    { name = "numpy" },
     { name = "pillow" },
     { name = "soupsieve" },
+    { name = "sympy" },
     { name = "transformers" },
 ]
 dev = [
+    { name = "numpy" },
     { name = "pytest" },
     { name = "pyyaml" },
     { name = "ruff" },
+    { name = "sympy" },
 ]
 docling = [
     { name = "docling", version = "2.99.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin'" },
@@ -447,6 +455,7 @@ formats = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.14.3" },
     { name = "click", specifier = ">=8.3.3" },
+    { name = "coarse-ink", extras = ["agent"], marker = "extra == 'all'" },
     { name = "coarse-ink", extras = ["docling"], marker = "extra == 'all'" },
     { name = "coarse-ink", extras = ["formats"], marker = "extra == 'all'" },
     { name = "docling", marker = "extra == 'docling'", specifier = ">=2.94.0" },
@@ -457,6 +466,8 @@ requires-dist = [
     { name = "lxml", marker = "extra == 'docling'", specifier = ">=6.1.0" },
     { name = "mammoth", marker = "extra == 'formats'", specifier = ">=1.6" },
     { name = "markdownify", marker = "extra == 'formats'", specifier = ">=0.12" },
+    { name = "numpy", marker = "extra == 'agent'", specifier = ">=2.0" },
+    { name = "numpy", marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "pillow", marker = "extra == 'docling'", specifier = ">=12.3.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pymupdf", specifier = ">=1.24" },
@@ -467,12 +478,14 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "soupsieve", marker = "extra == 'docling'", specifier = ">=2.8.4" },
+    { name = "sympy", marker = "extra == 'agent'", specifier = ">=1.13" },
+    { name = "sympy", marker = "extra == 'dev'", specifier = ">=1.13" },
     { name = "tomli-w", specifier = ">=1.0" },
     { name = "transformers", marker = "extra == 'docling'", specifier = ">=5.10,<6" },
     { name = "typer", specifier = ">=0.12" },
     { name = "urllib3", specifier = ">=2.8.0" },
 ]
-provides-extras = ["docling", "formats", "all", "dev"]
+provides-extras = ["docling", "formats", "agent", "all", "dev"]
 
 [[package]]
 name = "cobble"

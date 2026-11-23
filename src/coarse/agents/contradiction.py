@@ -1,4 +1,5 @@
 """Contradiction check agent — flags comments that contradict the paper's stated contribution."""
+
 from __future__ import annotations
 
 from pydantic import BaseModel
@@ -12,6 +13,7 @@ _TEMPERATURE = 0.1
 
 class _CheckedComments(BaseModel):
     """Response envelope for checked comments."""
+
     comments: list[DetailedComment]
 
 

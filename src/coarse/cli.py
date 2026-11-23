@@ -232,6 +232,30 @@ def review(
     cheap: bool = typer.Option(False, "--cheap", help="Use cheapest available model"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip cost confirmation prompt"),
     no_qa: bool = typer.Option(False, "--no-qa", help="Skip post-extraction quality check"),
+    refute: bool = typer.Option(
+        False,
+        "--refute",
+        help=(
+            "Experimental: re-check every comment against the paper before reporting "
+            "it. Each one goes to a fresh reviewer with tool access to the whole "
+            "paper and is dropped unless that reviewer reproduces the problem; "
+            "comments that survive are printed exactly as written. Aimed at false "
+            "criticism rather than coverage, so expect a shorter review; adds one "
+            "call per comment. See docs/AGENTIC_REVIEW.md."
+        ),
+    ),
+    agent: Optional[str] = typer.Option(
+        None,
+        "--agent",
+        help=(
+            "Experimental: review with the bounded agent runtime instead of the "
+            "staged pipeline. sweep|swarm|single. Agents read any part of the "
+            "paper on demand and check algebra in a sandbox, and every finding "
+            "is re-established by an independent reviewer before it is reported. "
+            "Higher precision, lower coverage and higher cost than the default; "
+            "see docs/AGENTIC_REVIEW.md."
+        ),
+    ),
     deep_literature_search: bool = typer.Option(
         False,
         "--deep-literature-search",
@@ -333,6 +357,10 @@ def review(
             "language": language,
             "progress_callback": progress_callback,
         }
+        if agent:
+            review_kwargs["agent_mode"] = agent
+        if refute:
+            review_kwargs["refute"] = True
         if deep_literature_search:
             # Preserve the exact legacy call shape while the option is off;
             # third-party wrappers may still mirror the older signature.

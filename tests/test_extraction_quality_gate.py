@@ -1,4 +1,5 @@
 """Tests for extraction quality gate (_check_extraction_quality)."""
+
 from __future__ import annotations
 
 from coarse.pipeline import _check_extraction_quality

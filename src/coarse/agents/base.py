@@ -1,4 +1,5 @@
 """Abstract base classes for review agents."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -18,9 +19,7 @@ def truncate_section(section: SectionInfo, max_chars: int = MAX_CONTEXT_CHARS) -
     """Truncate a section's text if it exceeds *max_chars*."""
     if len(section.text) <= max_chars:
         return section
-    return section.model_copy(
-        update={"text": section.text[:max_chars] + "\n\n[...truncated]"}
-    )
+    return section.model_copy(update={"text": section.text[:max_chars] + "\n\n[...truncated]"})
 
 
 class ReviewAgent(ABC):
@@ -34,15 +33,19 @@ class ReviewAgent(ABC):
     def run(self, **kwargs) -> BaseModel: ...
 
     def _build_messages(
-        self, system: str, user: str,
+        self,
+        system: str,
+        user: str,
     ) -> list[dict]:
         """Build messages list, adding cache_control on system prompt for Anthropic."""
         if self.client.supports_prompt_caching:
             return [
-                {"role": "system", "content": [
-                    {"type": "text", "text": system,
-                     "cache_control": {"type": "ephemeral"}},
-                ]},
+                {
+                    "role": "system",
+                    "content": [
+                        {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
+                    ],
+                },
                 {"role": "user", "content": user},
             ]
         return [

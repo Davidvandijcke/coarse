@@ -1,0 +1,147 @@
+{
+  "paper_id": "psi",
+  "title": "Post-Selection Inference via Algorithmic Stability",
+  "source_pdf": "evals/papers/psi/paper.pdf",
+  "reference": {
+    "file": "evals/papers/psi/reference_preview.md",
+    "kind": "partial_preview",
+    "date": "2026-11-20",
+    "note": "Public preview of a current-generation reference review. It is TRUNCATED: 6 detailed comments shown. Unmatched candidate comments on this paper must NOT be scored as false positives on the basis of absence from this file."
+  },
+  "capability_tags": {
+    "section_access": "The finding lives in a paper section the pipeline must actually read.",
+    "cross_location": "Requires comparing two separated locations in the paper (a proof against the definition/lemma/algorithm it invokes).",
+    "computation": "Requires carrying out algebra, calculus or a numeric instantiation to see the error.",
+    "counterexample": "Requires constructing an edge case that violates a stated condition."
+  },
+  "findings": [
+    {
+      "id": "O1a",
+      "origin": "overall",
+      "importance": "critical",
+      "location": "Appendix A.10 / A.12, Corollary 2",
+      "claim": "In the unknown-variance analysis the proofs establish high-probability score bounds by averaging over the independent scale estimate sigma-hat, but compare selection on y against selection on the oracle mean mu while holding sigma-hat fixed. Because the oracle selection depends on sigma-hat, conditioning on the oracle model does not preserve the fixed-model t-distribution calibration invoked in Corollary 2.",
+      "tags": ["section_access", "cross_location"]
+    },
+    {
+      "id": "O1b",
+      "origin": "overall",
+      "importance": "major",
+      "location": "Proposition 3, Proposition 2",
+      "claim": "The recommended iteration count k depends on sigma-hat, so it is a random stopping time; the coverage argument cannot invoke the fixed-step certificate of Proposition 2 unchanged.",
+      "tags": ["cross_location"]
+    },
+    {
+      "id": "O2a",
+      "origin": "overall",
+      "importance": "major",
+      "location": "Claims 1 and 3 (Section 2), Appendix A.2 / A.3",
+      "claim": "Claims 1 and 3 allow a general noise level sigma, but their stated Laplace noise scales omit sigma and the proofs analyze unit-scale score deviations. Under equal means, increasing sigma with the stated perturbation held fixed pushes randomized selection toward the unrandomized maximum, for which the claimed interval can undercover. Fix: explicit standardization or sigma-scaled Laplace perturbations.",
+      "tags": ["section_access", "cross_location", "computation"]
+    },
+    {
+      "id": "O2b",
+      "origin": "overall",
+      "importance": "major",
+      "location": "Appendix C, Algorithms 6 and 7",
+      "claim": "The Orlicz-norm bound controls each individual projection at level delta rather than controlling the maximum across all d coordinates simultaneously at level delta. A simultaneous bound is needed, e.g. calibrating the noise scale with psi-inverse(d/delta).",
+      "tags": ["section_access", "computation"]
+    },
+    {
+      "id": "O3a",
+      "origin": "overall",
+      "importance": "major",
+      "location": "Section 7 / Claim 5, Appendix A.9, Figure 3",
+      "claim": "The high-probability event E is defined by the exact same deviation from mu that determines whether the interval covers, so whenever alpha(1-nu)exp(-eta) <= nu the interval automatically contains mu throughout E. At the Figure 3 parameter values (nu = 0.05, alpha <= 0.05) even the unadjusted interval has zero miscoverage on E.",
+      "tags": ["section_access", "cross_location", "computation"]
+    },
+    {
+      "id": "O3b",
+      "origin": "overall",
+      "importance": "major",
+      "location": "Section 7",
+      "claim": "A high marginal probability for E does not ensure E has high probability conditional on reporting, which is the primary regime of interest in the file-drawer problem where reporting is rare. The truncated guarantee should be distinguished from coverage conditional on reporting.",
+      "tags": ["cross_location"]
+    },
+    {
+      "id": "O4a",
+      "origin": "overall",
+      "importance": "major",
+      "location": "Appendix B, Propositions 2 and 4, Section 9",
+      "claim": "Appendix B states Algorithms 2 and 3 run with delta = 0.5, yet Propositions 2 and 4 spend delta on the stability failure event alone, which already exceeds Section 9's total miscoverage target of alpha = 0.1. Either the parameterization is ambiguous (delta as a fraction of alpha) or the experiments need recalibration.",
+      "tags": ["section_access", "cross_location", "computation"]
+    },
+    {
+      "id": "O4b",
+      "origin": "overall",
+      "importance": "major",
+      "location": "Section 9",
+      "claim": "The empirical section evaluates selection quality via LASSO FDR and marginal screening score loss without reporting simultaneous miscoverage for the selected-model projection coefficients, so neither metric tests the coverage event of Corollary 2.",
+      "tags": ["cross_location"]
+    },
+    {
+      "id": "O5a",
+      "origin": "overall",
+      "importance": "major",
+      "location": "Section 9, Section 5.1",
+      "claim": "Data-splitting intervals are treated as width-matched via the splitting fraction f(eta), but that equates only a scalar inflation factor and ignores realized OLS standard errors and the rank of the held-out design. For n = 50 and k = 20, the prescribed fraction leaves roughly six rows for inference at eta = 1, too few to fit the selected 20-variable model; and the held-out projection target can differ from the full-design target.",
+      "tags": ["section_access", "cross_location", "computation"]
+    },
+    {
+      "id": "O5b",
+      "origin": "overall",
+      "importance": "minor",
+      "location": "Section 9, Proposition 1",
+      "claim": "The evaluation omits a nonrandomized benchmark already established in the paper: at d = 200 and k = 20, Proposition 1 yields a smaller correction than basic composition at the upper end of the eta sweep for a matched error budget, without perturbing selection at all.",
+      "tags": ["section_access", "cross_location", "computation"]
+    },
+    {
+      "id": "D1",
+      "origin": "detailed",
+      "importance": "critical",
+      "location": "Appendix A.10",
+      "claim": "The Student-t calculation bounds the failure probability jointly over y and sigma-hat, whereas the selection-law comparison fixes a common realized sigma-hat. This does not establish the high-probability set of responses required by Definition 2 for the algorithm that uses the random variance estimate.",
+      "tags": ["section_access", "cross_location"]
+    },
+    {
+      "id": "D2",
+      "origin": "detailed",
+      "importance": "minor",
+      "location": "Appendix A.10, Lemma 3(b)",
+      "claim": "The one-sided comparison proved in A.10 suffices for simple composition but not for the advanced composition rate in Lemma 3(b), whose stated premise is also one-sided. At a common fixed scale the absolute score bound supplies the missing reverse comparison.",
+      "tags": ["section_access", "cross_location"]
+    },
+    {
+      "id": "D3",
+      "origin": "detailed",
+      "importance": "minor",
+      "location": "Appendix A.10, Algorithm 5",
+      "claim": "The displayed gradient has the opposite sign from both the derivative of the squared loss and the deterministic scores minimized in Algorithm 5. The sign error leaves the absolute score-deviation bound unchanged but the resulting noise threshold does not characterize selection of the stated vertex.",
+      "tags": ["section_access", "cross_location", "computation"]
+    },
+    {
+      "id": "D4",
+      "origin": "detailed",
+      "importance": "minor",
+      "location": "Appendix A.11",
+      "claim": "A.11 optimizes over all gamma > 0 although the expectation argument requires zeta = gamma/(2 C_1 L_1) to be a valid probability tolerance. For sufficiently large admissible sigma-hat the resulting expression is negative despite bounding a nonnegative loss gap, and in the same regime the ceiling argument defining k can fall below 1/2 so k = ceil(x) <= 2x also fails.",
+      "tags": ["section_access", "computation"]
+    },
+    {
+      "id": "D5",
+      "origin": "detailed",
+      "importance": "minor",
+      "location": "Lemma 5",
+      "claim": "Lemma 5's 1/(k+2) bound does not hold for arbitrary step sizes in [0,1]: if every step size is zero, even an exact linear oracle leaves the iterate at its starting point, which need not be optimal. Algorithm 2 uses a schedule that supports the bound but the lemma as stated does not require it.",
+      "tags": ["section_access", "counterexample"]
+    },
+    {
+      "id": "D6",
+      "origin": "detailed",
+      "importance": "minor",
+      "location": "Appendix A.11",
+      "claim": "The first upper bound on the curvature constant is half the exact curvature under the displayed definitions of L and C_L. The missing factor of two affects the explicit optimization term obtained by substitution but not its rate.",
+      "tags": ["section_access", "computation"]
+    }
+  ]
+}

@@ -663,6 +663,73 @@ class LLMClient:
             raise ValueError(f"Model {self._model} returned empty response")
         return _CTRL_CHAR_RE.sub("", content).replace("\\u0000", "").strip()
 
+    def complete_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        max_tokens: int = 8192,
+        temperature: float = 0.2,
+        timeout: int = 900,
+        **kwargs,
+    ) -> dict:
+        """One turn of a tool-calling conversation.
+
+        Returns the assistant message as a plain dict with ``content`` and
+        ``tool_calls`` keys, which is the shape the caller must append to
+        ``messages`` before sending tool results back. Used by the bounded
+        agent runtime (``coarse.agent.runner``); the structured-output path in
+        ``complete()`` cannot express a multi-turn tool loop.
+
+        Unlike ``complete()`` this does not go through instructor: tool
+        schemas are passed to the provider directly. The Responses-API path is
+        not supported here, so a client configured for it falls back to Chat
+        Completions for tool turns.
+        """
+        clamped = _clamp_max_tokens(self._model, max_tokens)
+        call_kwargs = dict(kwargs)
+        if self._api_key and "api_key" not in call_kwargs:
+            call_kwargs["api_key"] = self._api_key
+        if supports_temperature(self._model):
+            call_kwargs.setdefault("temperature", temperature)
+        if self._is_reasoning:
+            call_kwargs.setdefault("reasoning_effort", REASONING_EFFORT_DEFAULT)
+
+        sent = _with_tool_loop_cache_breakpoints(messages, self.supports_prompt_caching)
+        response = _sanitized_completion(
+            model=self._model,
+            messages=sent,
+            tools=tools,
+            tool_choice="auto",
+            max_tokens=clamped,
+            timeout=timeout,
+            **call_kwargs,
+        )
+        try:
+            cost = _completion_cost_with_long_context_pricing(response, self._model)
+            if cost is not None:
+                self.add_cost(cost)
+        except Exception:
+            logger.debug("Cost tracking failed for model %s", self._model, exc_info=True)
+
+        message = response.choices[0].message
+        tool_calls = []
+        for call in getattr(message, "tool_calls", None) or []:
+            tool_calls.append(
+                {
+                    "id": getattr(call, "id", "") or "",
+                    "type": "function",
+                    "function": {
+                        "name": getattr(call.function, "name", "") or "",
+                        "arguments": getattr(call.function, "arguments", "") or "{}",
+                    },
+                }
+            )
+        content = getattr(message, "content", None) or ""
+        out: dict = {"role": "assistant", "content": content}
+        if tool_calls:
+            out["tool_calls"] = tool_calls
+        return out
+
     def add_cost(self, cost_usd: float) -> None:
         """Register an external cost (e.g. from a direct litellm.completion call)."""
         with self._lock:
@@ -734,6 +801,65 @@ class LLMClient:
         """
         lower = self._model.lower()
         return any(p in lower for p in ("anthropic", "claude", "gemini"))
+
+
+def _with_tool_loop_cache_breakpoints(
+    messages: list[dict],
+    enabled: bool,
+) -> list[dict]:
+    """Return *messages* with cache breakpoints for a multi-turn tool loop.
+
+    A tool loop resends the whole transcript every turn, and a review agent's
+    transcript is dominated by paper text it read through a tool — a single
+    appendix read can be 14k characters. Without caching the cost of a loop is
+    quadratic in its length: a 12-turn investigation on a 35k-token paper
+    re-bills the same tokens a dozen times.
+
+    Anthropic and Gemini cache a *prefix* up to an explicit breakpoint, so the
+    breakpoint has to move forward as the transcript grows. Two are placed: one
+    after the system prompt, which is stable for every agent in a role, and one
+    on the latest complete turn, which makes each turn's prefix a cache read of
+    the previous turn's write. Providers allow a small number of breakpoints,
+    so earlier ones are not kept.
+
+    Returns the input unchanged when the provider auto-caches (OpenAI,
+    DeepSeek) or is untested, so this is a no-op off the Anthropic/Gemini path.
+    """
+    if not enabled or not messages:
+        return messages
+
+    out = [dict(m) for m in messages]
+
+    def mark(index: int) -> None:
+        msg = out[index]
+        content = msg.get("content")
+        if isinstance(content, str):
+            if not content:
+                return
+            msg["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        elif isinstance(content, list) and content:
+            blocks = [dict(b) if isinstance(b, dict) else b for b in content]
+            last = blocks[-1]
+            if isinstance(last, dict) and last.get("type") == "text":
+                last["cache_control"] = {"type": "ephemeral"}
+            msg["content"] = blocks
+
+    if out and out[0].get("role") == "system":
+        mark(0)
+
+    # Walk back to the last message that ends a turn. Breaking inside a run of
+    # tool results would leave the rest of that turn uncached for no gain.
+    for i in range(len(out) - 1, 0, -1):
+        if out[i].get("role") == "tool":
+            mark(i)
+            break
+    return out
 
 
 def _normalize_model(model: str, config: CoarseConfig | None = None) -> str:

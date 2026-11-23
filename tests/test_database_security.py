@@ -49,8 +49,7 @@ def test_hardening_migration_revokes_public_execution() -> None:
     source = _normalized("migrate_security_definer_hardening.sql")
     for signature in PRIVILEGED_SIGNATURES:
         assert (
-            f"revoke execute on function {signature} "
-            "from public, anon, authenticated;"
+            f"revoke execute on function {signature} from public, anon, authenticated;"
         ) in source
         assert f"grant execute on function {signature} to service_role;" in source
 

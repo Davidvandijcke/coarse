@@ -4,7 +4,54 @@
 
 ### Added
 
+- `coarse review --refute` (and `review_paper(refute=True)`): re-check every
+  detailed comment against the paper before reporting it. Each goes to a
+  fresh-context agent with tool access to the whole paper, and is dropped
+  unless that agent reproduces the defect; comments that survive are published
+  exactly as written, so the gate only ever removes. Aimed at false criticism
+  rather than coverage, at the cost of a shorter review and one agent call per
+  comment. Off by default. `docs/AGENTIC_REVIEW.md` reports what it is measured
+  to be worth on three papers, and why the same gate built for the macro issues
+  was dropped after measurement.
+- `coarse review --agent sweep|swarm|single`: review through the bounded agent
+  runtime (`coarse.agent`) instead of the staged pipeline. A per-review
+  workspace holds the paper, one file per section, and an evidence ledger;
+  agents retrieve any part of the paper on demand, run bounded Python for
+  algebraic and numeric checks, and share notes through the workspace. Swarm
+  divides the paper into claim-shaped targets, sweep covers every section by
+  region, and in both every candidate finding must be independently reproduced
+  by a fresh-context refuter before the editor may write it up. Off by default;
+  measured trade-offs against the staged pipeline are in
+  `docs/AGENTIC_REVIEW.md`.
+- `evals/`: a dev-only benchmark harness that runs the arms of a same-model
+  ablation from one fixed extraction, scores recall against an atomized
+  reference review, and adjudicates every emitted comment against the paper to
+  measure precision.
 - Opt-in native Codex and Claude Code review pilot: app subagents answer the existing pipeline prompts through validated, resumable checkpoints. Includes separate native skills/plugin packaging, explicit publication, and a preview-only website toggle; the headless runner remains available.
+
+### Fixed
+
+- Stop discarding a long paper's appendices. Section selection truncated to
+  the first 25 parsed sections in document order, which on a 41-section theory
+  paper dropped every proof appendix before any agent saw it. Selection now
+  removes what is not reviewable (empty or marker-only sections, reference
+  lists) and, where the cap still binds, keeps sections by length with
+  mathematical content weighted up, rather than by position. The cap still
+  binds on a long paper, so some short sections are still skipped; which ones
+  are logged.
+- Keep a proof whose heading the parser mangled. A section titled
+  `<!-- PAGE BREAK -->` was filtered by title, and on the same paper one such
+  section is the proof of the central theorem.
+- Cache the prompt prefix of a multi-turn tool loop on providers that need
+  explicit breakpoints. Without it the cost of a tool loop grew quadratically
+  in its length, because each turn re-billed the paper text read in earlier
+  turns.
+
+### Changed
+
+- Document the `agent/` package and seven previously undocumented top-level
+  modules in the package-structure tables that `scripts/doc-sync-check.sh`
+  checks.
 
 ## v1.9.6 — 2026-10-05
 

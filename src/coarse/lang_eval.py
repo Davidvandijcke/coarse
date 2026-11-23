@@ -182,9 +182,7 @@ def compare_languages(
 
     results: list[LanguageConsistency] = []
     for language, review in localized_reviews.items():
-        forward = compute_recall(
-            review.detailed_comments, english_gt, client=client, model=model
-        )
+        forward = compute_recall(review.detailed_comments, english_gt, client=client, model=model)
         reverse = compute_recall(
             english_review.detailed_comments,
             _to_ground_truth(review.detailed_comments),
@@ -199,9 +197,7 @@ def compare_languages(
                 issue_overlap=forward.semantic_recall,
                 reverse_overlap=reverse.semantic_recall,
                 english_quote_fidelity=english_fid,
-                localized_quote_fidelity=quote_fidelity(
-                    review.detailed_comments, paper_markdown
-                ),
+                localized_quote_fidelity=quote_fidelity(review.detailed_comments, paper_markdown),
             )
         )
 

@@ -1008,7 +1008,5 @@ def test_metadata_max_tokens_has_headroom_for_language_field(mock_client):
     """Adding the language field must not shrink the metadata budget below the
     512 that long-title papers already needed; it was bumped to leave headroom."""
     analyze_structure(make_paper_text(), mock_client)
-    metadata_call = next(
-        c for c in mock_client.complete.call_args_list if c[0][1] is PaperMetadata
-    )
+    metadata_call = next(c for c in mock_client.complete.call_args_list if c[0][1] is PaperMetadata)
     assert metadata_call[1]["max_tokens"] >= 512

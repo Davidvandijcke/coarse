@@ -3,6 +3,7 @@
 Compares a generated review against a reference review using an LLM judge.
 Supports both single-judge and multi-judge panel evaluation with synthesis.
 """
+
 from __future__ import annotations
 
 import base64
@@ -178,9 +179,12 @@ plus 2-3 strengths and 2-3 weaknesses.
         pdf_b64 = base64.b64encode(paper_pdf.read_bytes()).decode()
         return [
             {"type": "text", "text": prompt_text},
-            {"type": "image_url", "image_url": {
-                "url": f"data:application/pdf;base64,{pdf_b64}",
-            }},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:application/pdf;base64,{pdf_b64}",
+                },
+            },
         ]
 
     return prompt_text
@@ -225,8 +229,11 @@ def evaluate_review(
             {
                 "role": "user",
                 "content": _judge_user(
-                    reference, generated, paper_text,
-                    paper_pdf=paper_pdf, swap=swap,
+                    reference,
+                    generated,
+                    paper_text,
+                    paper_pdf=paper_pdf,
+                    swap=swap,
                 ),
             },
         ]
@@ -263,11 +270,13 @@ def evaluate_review(
             avg = round(avg * 2) / 2
         else:
             avg = normal_score
-        averaged_dims.append(DimensionScore(
-            dimension=d.dimension,
-            score=avg,
-            reasoning=d.reasoning,
-        ))
+        averaged_dims.append(
+            DimensionScore(
+                dimension=d.dimension,
+                score=avg,
+                reasoning=d.reasoning,
+            )
+        )
 
     overall = sum(d.score for d in averaged_dims) / len(averaged_dims)
 
@@ -341,8 +350,7 @@ def _synthesis_user(reports: list[QualityReport]) -> str:
     for i, report in enumerate(reports):
         label = ["Methodology Judge", "Empirical Judge", "Communication Judge"][i]
         dims = "\n".join(
-            f"  - {d.dimension}: {d.score}/6 — {d.reasoning}"
-            for d in report.dimensions
+            f"  - {d.dimension}: {d.score}/6 — {d.reasoning}" for d in report.dimensions
         )
         strengths = "\n".join(f"  + {s}" for s in report.strengths)
         weaknesses = "\n".join(f"  - {w}" for w in report.weaknesses)
@@ -392,9 +400,7 @@ def evaluate_review_panel(
             {"role": "system", "content": _make_panel_system(persona)},
             {"role": "user", "content": user_content},
         ]
-        result: _JudgeOutput = client.complete(
-            messages, _JudgeOutput, max_tokens=4096
-        )
+        result: _JudgeOutput = client.complete(messages, _JudgeOutput, max_tokens=4096)
         overall = sum(d.score for d in result.dimensions) / len(result.dimensions)
         return QualityReport(
             overall_score=overall,
@@ -425,9 +431,7 @@ def evaluate_review_panel(
         {"role": "system", "content": _SYNTHESIS_SYSTEM},
         {"role": "user", "content": _synthesis_user(individual_reports)},
     ]
-    synth: _SynthesisOutput = client.complete(
-        synth_messages, _SynthesisOutput, max_tokens=4096
-    )
+    synth: _SynthesisOutput = client.complete(synth_messages, _SynthesisOutput, max_tokens=4096)
     overall = sum(d.score for d in synth.dimensions) / len(synth.dimensions)
     synthesized = QualityReport(
         overall_score=overall,
@@ -453,8 +457,7 @@ def save_quality_report(
     timestamp = datetime.datetime.now().isoformat(timespec="seconds")
 
     dim_rows = "\n".join(
-        f"| {d.dimension} | {d.score}/6 | {d.reasoning} |"
-        for d in report.dimensions
+        f"| {d.dimension} | {d.score}/6 | {d.reasoning} |" for d in report.dimensions
     )
     strengths = "\n".join(f"- {s}" for s in report.strengths)
     weaknesses = "\n".join(f"- {w}" for w in report.weaknesses)

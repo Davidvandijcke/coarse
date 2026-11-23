@@ -45,10 +45,22 @@ KNOWN_OVERSIZED: dict[str, int] = {
     # prompts.py currently holds every LLM prompt template for the
     # pipeline — splitting it is a real refactor (per-agent files,
     # shared boundary-notice helpers) and is deferred to post-v1.3.0.
-    "prompts": 2700,
+    # Cap bumped for the four bounded-agent role prompts (planner,
+    # investigator, refuter, editor; #264), which land here rather than
+    # in coarse/agent/ to keep the one-prompt-file rule in CLAUDE.md. Bumped
+    # three times on the agent branch (planner/investigator/refuter/editor,
+    # then the sweep brief, then the issue refuter). Those six prompts are now
+    # a coherent ~550-line block, and a third bump in one branch is the signal
+    # that they belong in their own module. Deferred deliberately to keep the
+    # one-prompt-file rule rather than change it in passing; whoever picks up
+    # the prompts.py split should start with them.
+    "prompts": 3150,
     # llm.py wraps litellm + instructor + retry + cost tracking.
-    # Splitting it requires an API redesign, also deferred.
-    "llm": 1000,
+    # Splitting it requires an API redesign, also deferred. Cap bumped
+    # for complete_with_tools + the tool-loop cache breakpoints (#264):
+    # the agent runtime needs a multi-turn tool call, and the rule that
+    # all provider calls go through LLMClient puts it in this module.
+    "llm": 1150,
     # headless_clients.py holds the Claude / Codex / Gemini headless
     # LLMClient replacements + the shared retry / semaphore / probe
     # / fallback infrastructure. Post-v1.3.0 candidates for splitting
@@ -58,6 +70,14 @@ KNOWN_OVERSIZED: dict[str, int] = {
     # bumped in commit ${COMMIT2_SHA} when the retry-loop + model-
     # fallback + semaphore landed.
     "headless_clients": 1100,
+    # pipeline.py is the review_paper orchestrator: extraction, the cost gate,
+    # the parallel setup phase, the section/cross-section/editorial stages,
+    # quote repair, and (added with the bounded agent runtime) the agent-mode
+    # branch. Moving the quote-repair helpers out to review_stages.py was
+    # tried and reverted: a large number of tests patch those names on
+    # coarse.pipeline, so the move is a breaking refactor of the test surface
+    # rather than a tidy-up, and it belongs in its own change.
+    "pipeline": 880,
     # cli_review.py is the standalone `coarse-review` entrypoint: it carries
     # argparse, the --detach launcher, the --handoff fetch/download/finalize
     # flow, and (added in #197) the OpenRouter-key preflight. It sat at 795

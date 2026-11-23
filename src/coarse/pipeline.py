@@ -23,7 +23,6 @@ from coarse.extraction import extract_file
 from coarse.languages import resolve_language_context
 from coarse.llm import LLMClient
 from coarse.pipeline_spec import (
-    MAX_REVIEWABLE_SECTIONS,
     estimate_cross_section_count,
     estimate_section_count,
 )
@@ -38,6 +37,7 @@ from coarse.review_stages import (
     calibrate_domain,
     extract_contribution,
     run_editorial_pass,
+    select_reviewable_sections,
 )
 from coarse.review_stages import (
     _section_needs_proof_verify as _section_needs_proof_verify,  # noqa: F401
@@ -285,9 +285,6 @@ def _verify_section_with_fallback(
     return verified
 
 
-_MIN_APPENDIX_CHARS = 500  # skip appendix sections shorter than this
-
-
 def extract_and_structure(
     file_path: str | Path,
     client: LLMClient,
@@ -359,6 +356,8 @@ def review_paper(
     deep_literature_search: bool = False,
     *,
     runtime: ReviewRuntime | None = None,
+    agent_mode: str | None = None,
+    refute: bool = False,
 ) -> tuple[Review, str, PaperText]:
     """Full pipeline orchestrator.
 
@@ -400,6 +399,25 @@ def review_paper(
         progress_callback: Best-effort stage and cumulative cost updates.
         deep_literature_search: Use Sonar Deep Research instead of Sonar Pro.
         runtime: Optional native reasoning and scheduling services.
+        agent_mode: Opt in to the bounded agent runtime instead of the staged
+            section/overview/editorial pipeline. One of "sweep" (every section
+            covered by a region investigator), "swarm" (planner-divided
+            claim-shaped targets) or "single" (one whole-paper referee). In
+            "sweep" and "swarm" each candidate finding must be reproduced by an
+            independent fresh-context refuter before it reaches the report.
+            ``None`` keeps the staged pipeline, so this is a no-op by default.
+            See docs/AGENTIC_REVIEW.md for the measured trade-offs.
+        refute: Add a verification stage to the staged pipeline. Every comment
+            that survives the editorial filter is re-examined by an independent
+            fresh-context agent with tool access to the whole paper, and is
+            dropped unless that agent reproduces the defect from the paper.
+            Comments that survive are published exactly as written: the gate
+            only ever removes. Aimed at the measured defect of the staged path,
+            which is precision rather than coverage. The macro issues are NOT
+            checked; that half was built, measured and dropped (see
+            docs/AGENTIC_REVIEW.md). Ignored when ``agent_mode`` is set, since
+            that path already refutes its own candidates. Costs one agent per
+            surviving comment.
 
     Pipeline order:
     1. Extract file → PaperText and apply the optional cost gate
@@ -515,13 +533,44 @@ def review_paper(
         site_code=site_language,
     )
 
-    reviewable_sections = [
-        s
-        for s in structure.sections
-        if s.section_type != SectionType.REFERENCES
-        and (s.section_type != SectionType.APPENDIX or len(s.text) >= _MIN_APPENDIX_CHARS)
-    ]
-    non_ref_sections = reviewable_sections[:MAX_REVIEWABLE_SECTIONS]
+    if agent_mode:
+        from coarse.agent.orchestrator import run_agentic_review
+
+        progress.start("agent_review", f"Running agent review ({agent_mode})", client.cost_usd)
+        review, records, workspace = run_agentic_review(
+            paper_text.full_markdown,
+            structure,
+            client,
+            mode=agent_mode,  # type: ignore[arg-type]
+            author_notes=author_notes,
+            language=directive_name,
+        )
+        workspace.cleanup()
+        progress.complete("agent_review", "Completed agent review", client.cost_usd)
+        logger.info(
+            "agent review: %d agent(s), %d comment(s) before quote verification",
+            len(records),
+            len(review.detailed_comments),
+        )
+        # Quote verification and rendering stay deterministic and shared with
+        # the staged path, so the verbatim-quote guarantee is identical.
+        verified = _verify_with_repair_fallback(
+            review.detailed_comments,
+            paper_text.full_markdown,
+            repair_agent=QuoteRepairAgent(client),
+        )
+        review = review.model_copy(
+            update={
+                "detailed_comments": _renumber_comments(verified),
+                "language": lang_ctx,
+            }
+        )
+        progress.start("synthesis", "Rendering final markdown", client.cost_usd)
+        markdown = render_review(review)
+        progress.complete("synthesis", "Rendered final markdown", client.cost_usd)
+        return review, markdown, paper_text
+
+    non_ref_sections = select_reviewable_sections(structure.sections)
     progress.set_total(
         _actual_pipeline_stage_total(
             is_pdf=is_pdf,
@@ -770,6 +819,29 @@ def review_paper(
         language=directive_name,
     )
     progress.complete("editorial", "Completed editorial filter", client.cost_usd)
+
+    if refute:
+        from coarse.agent.refutation import refute_comments
+
+        progress.start("refutation", "Re-checking comments independently", client.cost_usd)
+        before = len(filtered_comments)
+        try:
+            filtered_comments, _verdicts, refute_records = refute_comments(
+                filtered_comments,
+                paper_text.full_markdown,
+                structure,
+                client,
+                language=directive_name,
+            )
+            logger.info(
+                "refutation: %d of %d comment(s) independently reproduced across %d agent(s)",
+                len(filtered_comments),
+                before,
+                len(refute_records),
+            )
+        except Exception:
+            logger.warning("refutation failed; keeping the unverified comments", exc_info=True)
+        progress.complete("refutation", "Re-checked comments", client.cost_usd)
 
     # Programmatic quote verification against full paper text
     progress.start("quote_verification", "Verifying quotes", client.cost_usd)

@@ -4,6 +4,7 @@ Measures what percentage of expert-identified errors the system actually found.
 Two-stage matching: location-based (cheap, via quote overlap) then semantic
 (LLM judge for unmatched pairs).
 """
+
 from __future__ import annotations
 
 import datetime
@@ -23,7 +24,9 @@ logger = logging.getLogger(__name__)
 
 class _YesNo(BaseModel):
     """Binary answer for semantic matching judge."""
+
     answer: str = Field(description="YES or NO")
+
 
 # ---------------------------------------------------------------------------
 # Ground-truth comment model
@@ -95,9 +98,14 @@ def parse_refine_review(markdown: str) -> list[GroundTruthComment]:
         if not feedback:
             feedback = block.strip()
 
-        comments.append(GroundTruthComment(
-            index=idx, title=title, quote=quote, feedback_text=feedback,
-        ))
+        comments.append(
+            GroundTruthComment(
+                index=idx,
+                title=title,
+                quote=quote,
+                feedback_text=feedback,
+            )
+        )
 
     return comments
 
@@ -133,15 +141,22 @@ def parse_plain_review(markdown: str) -> list[GroundTruthComment]:
         title = ""
         first_period = text.find(".")
         first_colon = text.find(":")
-        sep = min(
-            p for p in (first_period, first_colon) if p > 0
-        ) if any(p > 0 for p in (first_period, first_colon)) else -1
+        sep = (
+            min(p for p in (first_period, first_colon) if p > 0)
+            if any(p > 0 for p in (first_period, first_colon))
+            else -1
+        )
         if 0 < sep < 120:
             title = text[:sep].strip()
 
-        comments.append(GroundTruthComment(
-            index=global_idx, title=title, quote="", feedback_text=text,
-        ))
+        comments.append(
+            GroundTruthComment(
+                index=global_idx,
+                title=title,
+                quote="",
+                feedback_text=text,
+            )
+        )
 
     return comments
 
@@ -157,6 +172,7 @@ def parse_review_auto(markdown: str) -> list[GroundTruthComment]:
 # ---------------------------------------------------------------------------
 # Matching functions
 # ---------------------------------------------------------------------------
+
 
 def _tokenize(text: str) -> set[str]:
     """Tokenize text into lowercase word set."""
@@ -213,11 +229,7 @@ def _semantic_judge_prompt(gt: GroundTruthComment, pred: DetailedComment) -> str
     gt_block += f"Quote: {gt.quote}\n" if gt.quote else ""
     gt_block += f"Feedback: {gt.feedback_text[:500]}"
 
-    pred_block = (
-        f"Title: {pred.title}\n"
-        f"Quote: {pred.quote}\n"
-        f"Feedback: {pred.feedback[:500]}"
-    )
+    pred_block = f"Title: {pred.title}\nQuote: {pred.quote}\nFeedback: {pred.feedback[:500]}"
 
     return f"""\
 Do these two review comments identify the same issue in the paper?
@@ -301,7 +313,8 @@ def compute_recall(
         gen_comments = parse_refine_review(generated)
         generated = [
             DetailedComment(
-                number=c.index, title=c.title,
+                number=c.index,
+                title=c.title,
                 quote=c.quote or "placeholder quote text",
                 feedback=c.feedback_text,
             )
@@ -312,9 +325,15 @@ def compute_recall(
 
     if not reference:
         return RecallReport(
-            location_recall=0.0, semantic_recall=0.0, precision=0.0, f1=0.0,
-            n_ground_truth=0, n_generated=len(generated),
-            matched_pairs=[], unmatched_gt=[], unmatched_pred=[],
+            location_recall=0.0,
+            semantic_recall=0.0,
+            precision=0.0,
+            f1=0.0,
+            n_ground_truth=0,
+            n_generated=len(generated),
+            matched_pairs=[],
+            unmatched_gt=[],
+            unmatched_pred=[],
         )
 
     # Phase 1: Location matching (free)
@@ -327,10 +346,13 @@ def compute_recall(
             if pred.number in matched_pred:
                 continue
             if location_match(gt, pred, threshold=location_threshold):
-                matched_pairs.append(MatchPair(
-                    gt_index=gt.index, pred_number=pred.number,
-                    match_type="location",
-                ))
+                matched_pairs.append(
+                    MatchPair(
+                        gt_index=gt.index,
+                        pred_number=pred.number,
+                        match_type="location",
+                    )
+                )
                 matched_gt.add(gt.index)
                 matched_pred.add(pred.number)
                 break
@@ -347,7 +369,8 @@ def compute_recall(
     if unmatched_gt_comments and unmatched_pred_comments:
         # Run semantic matching in parallel for speed
         def _check_pair(
-            gt: GroundTruthComment, pred: DetailedComment,
+            gt: GroundTruthComment,
+            pred: DetailedComment,
         ) -> tuple[GroundTruthComment, DetailedComment, bool]:
             return gt, pred, semantic_match(gt, pred, client)
 
@@ -361,10 +384,13 @@ def compute_recall(
             for future in futures:
                 gt, pred, is_match = future.result()
                 if is_match and gt.index not in matched_gt and pred.number not in matched_pred:
-                    matched_pairs.append(MatchPair(
-                        gt_index=gt.index, pred_number=pred.number,
-                        match_type="semantic",
-                    ))
+                    matched_pairs.append(
+                        MatchPair(
+                            gt_index=gt.index,
+                            pred_number=pred.number,
+                            match_type="semantic",
+                        )
+                    )
                     matched_gt.add(gt.index)
                     matched_pred.add(pred.number)
 
@@ -372,7 +398,8 @@ def compute_recall(
     precision = len(matched_pred) / len(generated) if generated else 0.0
     f1 = (
         2 * semantic_recall * precision / (semantic_recall + precision)
-        if (semantic_recall + precision) > 0 else 0.0
+        if (semantic_recall + precision) > 0
+        else 0.0
     )
 
     return RecallReport(

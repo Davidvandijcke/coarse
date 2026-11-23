@@ -1,4 +1,5 @@
 """Tests for domain calibration (types and prompt formatting)."""
+
 from __future__ import annotations
 
 from coarse.prompts import _format_calibration, calibration_user, overview_user, section_user
@@ -48,7 +49,9 @@ def test_section_user_with_calibration():
     """section_user includes calibration when provided."""
     cal = _make_calibration()
     section = SectionInfo(
-        number=1, title="Methods", text="Some text.",
+        number=1,
+        title="Methods",
+        text="Some text.",
         section_type=SectionType.METHODOLOGY,
     )
     result = section_user("Paper", section, calibration=cal)
